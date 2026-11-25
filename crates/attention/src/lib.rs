@@ -8,12 +8,15 @@
 // Until every kind is in, some helpers are unused.
 #[allow(dead_code)]
 mod compute;
+mod db;
+mod hidden;
 mod kinds;
 mod quiet;
 
 use std::time::Duration;
 
 pub use compute::{Computed, Hidden, Inputs, compute};
+pub use hidden::{HiddenRow, HiddenStore};
 
 /// Thresholds and limits. The defaults are the EM's (25 Nov 2026).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,4 +45,9 @@ impl Default for AttentionConfig {
             settle: Duration::from_millis(150),
         }
     }
+}
+
+/// One line on stderr. The app captures it with the rest of its log.
+pub(crate) fn log(message: &str) {
+    eprintln!("airboss-attention: {message}");
 }
