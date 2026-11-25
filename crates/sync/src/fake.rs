@@ -7,6 +7,29 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 pub use airboss_services::fakes::FakeClock;
 
+thread_local! {
+    /// The log lines written on this thread while [`capture_logs`] runs.
+    static LOGS: std::cell::RefCell<Option<Vec<String>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Runs `f` and returns what `sync` logged on this thread meanwhile, as well as printing it.
+/// Tests drive the workers on their own thread, so other tests' lines never mix in.
+pub fn capture_logs<T>(f: impl FnOnce() -> T) -> (T, Vec<String>) {
+    LOGS.with(|l| *l.borrow_mut() = Some(Vec::new()));
+    let out = f();
+    let lines = LOGS.with(|l| l.borrow_mut().take()).unwrap_or_default();
+    (out, lines)
+}
+
+/// Keeps a log line for [`capture_logs`], if it's running on this thread.
+pub(crate) fn keep_log(line: &str) {
+    LOGS.with(|l| {
+        if let Some(lines) = l.borrow_mut().as_mut() {
+            lines.push(line.to_string());
+        }
+    });
+}
+
 /// A temp dir removed on drop, so tests need no extra crate.
 #[derive(Debug)]
 pub struct TempDir(PathBuf);

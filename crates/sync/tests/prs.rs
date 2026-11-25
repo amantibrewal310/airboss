@@ -12,7 +12,8 @@ use std::time::{Duration, SystemTime};
 use airboss_core::{Actor, LinkKind, PrState, Status, TaskId};
 use airboss_services::{Checks, PrRef, PrView, Refresh, Review};
 use airboss_sync::fake::{
-    FakeClaude, FakeFailure, FakeGh, FakePr, FakeT3, FakeWatch, T3Fixture, TempDir, fake_token,
+    FakeClaude, FakeFailure, FakeGh, FakePr, FakeT3, FakeWatch, T3Fixture, TempDir, capture_logs,
+    fake_token,
 };
 use airboss_sync::gh::GhClient;
 use airboss_sync::{Env, GhMsg, GhWorker, Hub, Step, StoreSummary, T3Msg, T3Worker};
@@ -886,9 +887,25 @@ fn no_token_in_argv_tables_logs_or_debug() {
     let t = task_with_pr(&core, "corp/secret#4");
     let gh = two_accounts();
     let mut rig = Rig::new(core, gh.clone());
-    rig.first_pass();
+    // Saving what the token read fails, so the pass that used it has something to log.
+    let raw = rusqlite::Connection::open(rig.core.dir.path().join("airboss.db")).unwrap();
+    raw.execute_batch(
+        "CREATE TRIGGER refuse_secret BEFORE INSERT ON observed_prs WHEN NEW.ref = 'corp/secret#4'
+         BEGIN SELECT RAISE(ABORT, 'refused for the test'); END;",
+    )
+    .unwrap();
+    let ((), logs) = capture_logs(|| {
+        rig.first_pass();
+    });
     let token = fake_token("work");
     assert!(gh.calls().iter().any(|c| c.token_set), "a token was used");
+    assert!(
+        logs.iter().any(|l| l.contains("corp/secret#4")),
+        "the log was captured: {logs:?}"
+    );
+    for line in &logs {
+        assert!(!line.contains(&token), "in the log: {line}");
+    }
     for c in gh.calls() {
         assert!(c.argv.iter().all(|a| !a.contains(&token)));
     }

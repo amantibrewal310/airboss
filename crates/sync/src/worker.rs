@@ -216,5 +216,8 @@ impl Env {
 
 /// Logs one line to stderr, where the app collects its services' output.
 pub(crate) fn log(what: &str) {
-    eprintln!("airboss-sync: {what}");
+    let line = format!("airboss-sync: {what}");
+    #[cfg(feature = "fakes")]
+    crate::fake::keep_log(&line);
+    eprintln!("{line}");
 }
