@@ -12,7 +12,7 @@ Every other module reads and writes tasks only through `core`: `mcp` for agents,
 
 - As me, I add a task of any size and nest it anywhere: a bug fix stays one task, a product gets phases and steps under it.
 - As me, I can see the history of every task: who changed what, when, and why.
-- As an agent, I can move my task to `doing`, `in_review` or `blocked`, add notes and links, and propose subtasks. I can't mark the task done, and I can't create subtasks directly.
+- As an agent, I can move my task to `doing`, `in_review` or `blocked`, add notes and links, and propose subtasks. I can mark a task `done` only if it has no linked PR, and I must say what I did. I can't create subtasks directly.
 - As `sync`, I can mark a task done when its linked PR merges.
 - As a settled plan (`add_tasks` with actor `Plan`), my phases and steps are created straight away as subtasks.
 
@@ -83,8 +83,12 @@ Four tables, starting from the draft-2 schema tested on 25 Nov 2026 in a throwaw
 
 **`core`'s code enforces these, each with its own test:**
 
-6. **Only `me` or `sync:gh` can set `done`.** `sync:gh` can do it only when the task has a linked PR that merged. Any other actor gets `Error::NotAllowed`.
-7. **Agents can set only `doing`, `in_review` or `blocked`.**
+6. **Who can set `done`:**
+   - `me`, always.
+   - `sync:gh`, when the task has a linked PR that merged.
+   - An agent, only when the task has **no** linked PR, and only with a note saying what was done (e.g. "Wrote docs/booking-api.md"). A task with a PR finishes only when the PR merges, so unmerged code is never `done`.
+   - Anyone else gets `Error::NotAllowed`. A missing note gets `Error::NoteRequired`.
+7. **Agents can set only `doing`, `in_review`, `blocked`, and `done` under rule 6.** They can't set `todo`, `proposed` or `dropped`.
 8. **An agent's new subtasks start as `proposed`.** Only `me` can accept them (moving them to `todo`) or reject them (deleting them).
 9. **`plan` creates subtasks as `todo` directly,** because I settled the plan.
 10. **No cycles.** A task can't be moved under itself or under one of its own subtasks.
@@ -130,11 +134,12 @@ impl Store {
 ## Code style
 
 ```rust
-/// Agents can move work forward, but only me or a merged PR can finish it.
-fn check_allowed(actor: &Actor, to: Status) -> Result<()> {
+/// Agents can move work forward and finish PR-less work; code finishes only when its PR merges.
+fn check_allowed(actor: &Actor, task: &TaskFacts, to: Status) -> Result<()> {
     match (actor, to) {
         (Actor::Me, _) => Ok(()),
-        (Actor::SyncGh, Status::Done) => Ok(()),
+        (Actor::SyncGh, Status::Done) if task.pr_merged => Ok(()),
+        (Actor::Agent(_), Status::Done) if !task.has_pr => Ok(()), // note checked by caller
         (Actor::Agent(_), Status::Doing | Status::InReview | Status::Blocked) => Ok(()),
         _ => Err(Error::NotAllowed { actor: actor.clone(), to }),
     }
@@ -149,7 +154,7 @@ fn check_allowed(actor: &Actor, to: Status) -> Result<()> {
 
 ## Testing strategy
 
-- Tests come first: one failing test per rule (1–17) before its code. Rule tests live in `tests/rules.rs`, named after the rule, e.g. `agent_cannot_set_done`.
+- Tests come first: one failing test per rule (1–17) before its code. Rule tests live in `tests/rules.rs`, named after the rule, e.g. `agent_cannot_finish_task_with_pr`.
 - Every test uses `Store::open_in_memory()`, so no test touches disk or another test's data.
 - Tree tests cover nesting 5 levels deep, moving a subtree, reordering, and the cycle check.
 - **Performance checks** run in release mode, `#[ignore]`d by default:
@@ -178,7 +183,8 @@ fn check_allowed(actor: &Actor, to: Status) -> Result<()> {
 ## Success criteria
 
 - [ ] `cargo test -p airboss-core` passes, with a test for every rule 1–17.
-- [ ] Agents get `NotAllowed` for `done`, for `todo`, and for deleting a task.
+- [ ] Agents get `NotAllowed` for `done` on a task with a linked PR, for `todo`, and for deleting a task.
+- [ ] An agent can set `done` on a task with no PR only with a note; without one it gets `NoteRequired`.
 - [ ] `sync:gh` can set `done` only on a task with a merged linked PR.
 - [ ] An agent's subtasks come back from `proposed()` and don't appear as `todo` until I accept them.
 - [ ] Running `add_tasks` with the same plan twice leaves the tree unchanged the second time.
