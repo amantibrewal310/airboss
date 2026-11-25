@@ -90,7 +90,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
 
 ## Phase 3: Settling and the service
 
-- [ ] **T10. Settling and the worker** (M)
+- [x] **T10. Settling and the worker** (M)
   - **Description:** `settle.rs` and `worker.rs`: `find_thread` for Do it rows, `lost` after `settle_after`, linking unlinked rows, `LaunchWorker::handle` and its `Step`.
   - **Acceptance:** a timeout leaves the row pending and a later `find_thread` hit links it with no second `t3` call; a restart settles a pending row on start; `AlreadyStarting` until `again`; a pending Plan it stays pending; `lost` at 3 minutes; settle at 10 s, 30 s, 60 s and 3 min; the 15-minute cap; `Woke`; `next_wake > now` after every step; a failed link is retried; two starts at once make one pending row and one `t3` call.
   - **Verify:** `tests/worker.rs`, `tests/idempotency.rs`.

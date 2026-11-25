@@ -9,10 +9,10 @@ use airboss_services::{
 };
 
 use crate::brief::{self, RepoPlace};
-use crate::db::{AlreadyPending, NewRow, State};
+use crate::db::{Inserted, NewRow, State};
 use crate::prepare::{Facts, core_error, started_thread};
 use crate::t3cli::{self, Answer};
-use crate::{Inner, LaunchMsg, branch, errors, lock, log, settle};
+use crate::{Inner, LaunchMsg, PlaceKey, branch, errors, lock, log, settle};
 
 /// The most `-N` suffixes tried for an again-branch.
 const AGAIN_MAX: u32 = 999;
@@ -59,6 +59,9 @@ enum Planned {
 }
 
 struct Go {
+    /// The newest row id of this place when it was checked; "Start again" replaces only
+    /// rows up to it.
+    seen: i64,
     argv: Vec<String>,
     stdin: String,
     title: String,
@@ -124,7 +127,8 @@ fn valid_branch(inner: &Inner, name: &str) -> Result<bool, ServiceError> {
 /// The repo's base: the override, else its default branch. It must follow `core`'s rule,
 /// since it goes to `t3` and into the brief.
 fn base_of(inner: &Inner, repo: &Repo, path: &Path) -> Result<String, ServiceError> {
-    let base = match lock(&inner.db).base_ref(repo.id)? {
+    let base_override = lock(&inner.db).base_ref(repo.id)?;
+    let base = match base_override {
         Some(b) => Some(b),
         None => lock(&inner.git)
             .default_branch(path)
@@ -198,6 +202,7 @@ fn plan(
             return Ok(Planned::Fail(errors::already_starting(name)));
         }
     }
+    let seen = rows.iter().map(|row| row.id).max().unwrap_or(0);
     let label = spot.label();
     if !spot.folder.is_absolute() {
         return Ok(Planned::Fail(errors::not_a_full_path(&label, &spot.folder)));
@@ -242,6 +247,7 @@ fn plan(
             let title =
                 t3cli::thread_title(task.id, &task.title, several.then_some(repo.name.as_str()));
             Go {
+                seen,
                 argv: t3cli::do_it_argv(&title, &base, &branch, &folder),
                 stdin: brief::do_it(&reference, &here, &all, &branch, &base, &nonce),
                 title,
@@ -251,6 +257,7 @@ fn plan(
         (Mode::DoIt, _, _) => {
             let title = t3cli::thread_title(task.id, &task.title, None);
             Go {
+                seen,
                 argv: t3cli::folder_argv(&title, &folder),
                 stdin: brief::research(&reference, &folder, &nonce),
                 title,
@@ -270,6 +277,7 @@ fn plan(
                 .collect();
             let title = t3cli::plan_title(task.id, &task.title);
             Go {
+                seen,
                 argv: t3cli::folder_argv(&title, &folder),
                 stdin: brief::plan_it(&reference, &repos, &nonce),
                 title,
@@ -342,7 +350,8 @@ pub(crate) fn start(inner: &Inner, req: &StartRequest) -> Result<LaunchReport, S
             Ok(Planned::Go(go)) => go,
         };
         match run(inner, task, req, spot, &go) {
-            Ok(thread) => report.started.push(thread),
+            Ok(Ran::Started(thread)) => report.started.push(thread),
+            Ok(Ran::Skipped) => report.skipped.extend(repo),
             Err(e) => {
                 if t3cli::stops_the_loop(e.code) {
                     stopped = Some(e.clone());
@@ -361,6 +370,39 @@ pub(crate) fn start(inner: &Inner, req: &StartRequest) -> Result<LaunchReport, S
     Ok(report)
 }
 
+/// This call is running `t3` for a place; released when dropped.
+struct InFlight<'a> {
+    inner: &'a Inner,
+    key: PlaceKey,
+}
+
+impl<'a> InFlight<'a> {
+    /// `None` if another call in this process holds the place.
+    fn claim(inner: &'a Inner, key: PlaceKey) -> Option<InFlight<'a>> {
+        // Not `then_some`: it would build (and drop, releasing the other call's claim) an
+        // `InFlight` even when the insert fails.
+        let claimed = lock(&inner.in_flight).insert(key);
+        if claimed {
+            Some(InFlight { inner, key })
+        } else {
+            None
+        }
+    }
+}
+
+impl Drop for InFlight<'_> {
+    fn drop(&mut self) {
+        lock(&self.inner.in_flight).remove(&self.key);
+    }
+}
+
+/// What one place came to.
+enum Ran {
+    Started(StartedThread),
+    /// Another call started it first.
+    Skipped,
+}
+
 /// Commits the pending row, runs `t3`, and settles the row by its answer.
 fn run(
     inner: &Inner,
@@ -368,7 +410,7 @@ fn run(
     req: &StartRequest,
     spot: &Spot,
     go: &Go,
-) -> Result<StartedThread, ServiceError> {
+) -> Result<Ran, ServiceError> {
     let repo = spot.repo.as_ref().map(|x| x.id);
     let folder = spot.folder.display().to_string();
     let new = NewRow {
@@ -382,10 +424,16 @@ fn run(
             .map(|(b, base)| (b.as_str(), base.as_str())),
         title: &go.title,
     };
-    let id = match lock(&inner.db).insert_pending(&new, req.again, inner.clock.now())? {
-        Ok(id) => id,
-        // Another call committed its pending row for this place first.
-        Err(AlreadyPending) => {
+    let Some(_flying) = InFlight::claim(inner, (task, repo, req.mode)) else {
+        let name = spot.repo.as_ref().map(|x| x.name.as_str());
+        return Err(errors::already_starting(name));
+    };
+    let inserted = lock(&inner.db).insert_pending(&new, req.again, go.seen, inner.clock.now())?;
+    let id = match inserted {
+        Inserted::Row(id) => id,
+        // Another call got here first, between this call's check and now.
+        Inserted::Started => return Ok(Ran::Skipped),
+        Inserted::Pending => {
             let name = spot.repo.as_ref().map(|x| x.name.as_str());
             return Err(errors::already_starting(name));
         }
@@ -410,7 +458,7 @@ fn run(
             let linked = settle::link(inner, &row);
             let mut thread = started_thread(&row).ok_or_else(errors::bad_answer)?;
             thread.linked = linked;
-            Ok(thread)
+            Ok(Ran::Started(thread))
         }
         Answer::Failed(e) => {
             lock(&inner.db).failed(id, &e.message, now)?;

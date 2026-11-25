@@ -95,9 +95,16 @@ pub(crate) struct NewRow<'a> {
     pub title: &'a str,
 }
 
-/// A pending row already holds this task, repo and mode.
+/// What `insert_pending` found.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct AlreadyPending;
+pub(crate) enum Inserted {
+    /// The new pending row's id.
+    Row(i64),
+    /// A pending row already holds this place.
+    Pending,
+    /// A thread already started here (and isn't being replaced).
+    Started,
+}
 
 const COLUMNS: &str = "id, task_id, repo_id, mode, state, thread_id, project_path, branch, \
                        title, linked, created_at";
@@ -190,19 +197,41 @@ impl Db {
         )
     }
 
-    /// Commits a pending row, or says one already holds the place. With `again`, a pending
-    /// row for the same place becomes `lost` first, in the same transaction.
+    /// Commits a pending row, unless the place is taken, in one IMMEDIATE transaction, so
+    /// two calls at once can't both pass the check.
+    ///
+    /// Without `again`, a started or pending row takes the place. With `again`, the rows the
+    /// caller saw (ids up to `seen`) are replaced: their pending rows become `lost`. A row
+    /// made after that, by a call running at the same time, still takes the place.
     pub fn insert_pending(
         &mut self,
         new: &NewRow<'_>,
         again: bool,
+        seen: i64,
         now: SystemTime,
-    ) -> Result<std::result::Result<i64, AlreadyPending>> {
+    ) -> Result<Inserted> {
         let at = time::to_ts(now);
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(storage)?;
+        let after = if again { seen } else { 0 };
+        let taken: Option<String> = tx
+            .query_row(
+                "SELECT state FROM launch_threads
+                 WHERE task_id = ?1 AND ifnull(repo_id, 0) = ifnull(?2, 0) AND mode = ?3
+                   AND state IN ('started', 'pending') AND id > ?4
+                 ORDER BY state = 'started' DESC LIMIT 1",
+                params![new.task.0, new.repo.map(|r| r.0), mode_str(new.mode), after],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(storage)?;
+        match taken.as_deref() {
+            Some("started") => return Ok(Inserted::Started),
+            Some(_) => return Ok(Inserted::Pending),
+            None => {}
+        }
         if again {
             tx.execute(
                 "UPDATE launch_threads SET state = 'lost', settled_at = ?4
@@ -231,12 +260,13 @@ impl Db {
             Ok(_) => {
                 let id = tx.last_insert_rowid();
                 tx.commit().map_err(storage)?;
-                Ok(Ok(id))
+                Ok(Inserted::Row(id))
             }
+            // Only the one-pending index can refuse it; the check above makes this rare.
             Err(rusqlite::Error::SqliteFailure(f, _))
                 if f.extended_code == rusqlite::ffi::SQLITE_CONSTRAINT_UNIQUE =>
             {
-                Ok(Err(AlreadyPending))
+                Ok(Inserted::Pending)
             }
             Err(e) => Err(storage(e)),
         }

@@ -26,7 +26,7 @@ mod start;
 pub mod t3cli;
 mod worker;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::{self, Sender};
@@ -147,7 +147,13 @@ pub(crate) struct Inner {
     pub changes: Changes,
     pub queue: Sender<LaunchMsg>,
     pub shut: AtomicBool,
+    /// Places a `start` in this process is running `t3` for right now. Their pending rows
+    /// aren't stale, so "Start again" doesn't replace them.
+    pub in_flight: Mutex<HashSet<PlaceKey>>,
 }
+
+/// One place: a task, a repo (or none) and a mode.
+pub(crate) type PlaceKey = (TaskId, Option<RepoId>, Mode);
 
 impl Inner {
     /// Queues work for the worker. A worker that has stopped has nothing left to do.
@@ -198,6 +204,7 @@ pub fn open(
         changes: Changes::new(),
         queue: tx,
         shut: AtomicBool::new(false),
+        in_flight: Mutex::new(HashSet::new()),
     });
     inner.queue(LaunchMsg::CheckAvailability);
     inner.queue(LaunchMsg::Settle);
