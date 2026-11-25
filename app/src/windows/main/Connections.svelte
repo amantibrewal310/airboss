@@ -55,9 +55,10 @@
 </div>
 
 <style>
+  /* The hairline stops at the sidebar's 8px padding on both sides. */
   .conn {
-    margin: 0 -8px;
-    padding: 8px 8px 10px;
+    margin: 0;
+    padding: 8px 0 10px;
     border-top: 1px solid var(--line);
     position: relative;
     flex: none;

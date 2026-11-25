@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { render } from 'vitest-browser-svelte';
-import { createRawSnippet } from 'svelte';
+import { createRawSnippet, tick } from 'svelte';
 import VirtualList from '../../src/lib/components/VirtualList.svelte';
 
 type Item = { key: string; n: number };
@@ -31,5 +31,16 @@ describe('VirtualList', () => {
     expect(row.top).toBeGreaterThanOrEqual(box.top);
     expect(row.bottom).toBeLessThanOrEqual(box.bottom + 1);
     expect(document.querySelectorAll('.r').length).toBeLessThan(60);
+  });
+
+  it('follows a fast fling on the scroll event itself, not a frame later', async () => {
+    const screen = await render(VirtualList<Item>, { target: host(400), props: { items, heightOf: () => 38, item } });
+    await expect.element(screen.getByText('Row 0')).toBeInTheDocument();
+    const scroller = document.querySelector<HTMLElement>('.scroller')!;
+    scroller.scrollTop = 38 * 1200;
+    scroller.dispatchEvent(new Event('scroll'));
+    await tick();
+    expect(document.querySelector('[data-n="1200"]')).not.toBeNull();
+    expect(document.querySelectorAll('.r').length).toBeLessThan(40);
   });
 });

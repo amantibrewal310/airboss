@@ -20,7 +20,8 @@
     { view: 'all', label: 'All tasks', icon: 'list', count: () => app.counts.all },
   ];
 
-  const current = (v: View) => app.ui.view === v && !app.ui.pageOpen;
+  /** The full page keeps its view highlighted, so you can see where Esc goes back to. */
+  const current = (v: View) => app.ui.view === v;
 
   /** ↑↓ move between sidebar items (roving focus); ↩ and Space open; Esc goes to the list. */
   function keydown(e: KeyboardEvent) {

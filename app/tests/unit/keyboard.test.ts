@@ -27,6 +27,10 @@ describe('keymap', () => {
   it('shows keys as Mac key caps', () => {
     expect(capsOf('shift+mod+enter')).toEqual(['⇧', '⌘', '↩']);
     expect(capsOf('g n')).toEqual(['G', 'N']);
+    // Words, not symbols, for the two keys people don't know by symbol.
+    expect(capsOf('esc')).toEqual(['Esc']);
+    expect(capsOf('tab')).toEqual(['Tab']);
+    expect(capsOf('shift+tab')).toEqual(['⇧', 'Tab']);
     expect(keyLabel('mod+backspace')).toBe('⌘⌫');
     expect(acceleratorLabel('Control+Alt+N')).toBe('⌃⌥N');
     expect(acceleratorOf(k('n', 'KeyN', { ctrlKey: true, altKey: true }))).toBe('Control+Alt+N');

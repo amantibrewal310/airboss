@@ -99,7 +99,8 @@
         <button type="button" class="tag" title="Link repos (R)" onclick={(e) => app.open({ kind: 'repos', task: row.id, at: anchorOf(e) })}><RepoDot id={r!.id} />{r!.name}</button>
       {/each}
       {#if row.repos_from_subtasks}<span class="faint">· from subtasks</span>{/if}
-      {#if !rail || !repos.length}
+      <!-- Inherited repos are changed on the subtasks, so a parent offers no "+ Link repo". -->
+      {#if !row.repos_from_subtasks && (!rail || !repos.length)}
         <button type="button" class="add" onclick={(e) => app.open({ kind: 'repos', task: row.id, at: anchorOf(e) })}>+ {repos.length ? 'Link repo' : 'Link a repo'}</button>
       {/if}
     </span>

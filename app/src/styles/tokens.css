@@ -173,6 +173,7 @@
     --warn-text: #a9550f;
     --link: #4b50d4;
     --seg-on: #ffffff;
+    --seg-lift: 0 1px 2px rgba(0, 0, 0, 0.08);
     --repo-1: #2f73e0;
     --repo-2: #cc4386;
     --repo-3: #1f9e74;
@@ -217,6 +218,7 @@
   --warn-text: #a9550f;
   --link: #4b50d4;
   --seg-on: #ffffff;
+  --seg-lift: 0 1px 2px rgba(0, 0, 0, 0.08);
   --repo-1: #2f73e0;
   --repo-2: #cc4386;
   --repo-3: #1f9e74;
