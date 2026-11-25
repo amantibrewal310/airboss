@@ -6,7 +6,8 @@ use std::path::Path;
 use airboss_core::{Actor, LinkKind, NewLink, NewTask, RepoId, Status, Store, TaskId};
 use airboss_mcp::identity::Identity;
 use airboss_mcp::tools::{
-    self, AgentStatus, GetTask, Link, LinkKindName, ListTasks, PrStateName, StatusName, UpdateTask,
+    self, AgentStatus, DependsOn, GetTask, ImportPlan, Link, LinkKindName, ListTasks, PlanStep,
+    PrStateName, Proposal, ProposeTasks, StatusName, UpdateTask,
 };
 
 const THREAD: &str = "97b5c8b5";
@@ -660,5 +661,396 @@ fn link_on_a_missing_task_names_it() {
     assert_eq!(
         err,
         "There's no task #5. List the tasks to find the right id."
+    );
+}
+
+// ---- propose_tasks ----
+
+fn proposal(title: &str) -> Proposal {
+    Proposal {
+        title: title.into(),
+        body: None,
+        repos: vec![],
+    }
+}
+
+fn propose(
+    s: &mut Store,
+    parent: Option<TaskId>,
+    tasks: Vec<Proposal>,
+) -> Result<Vec<airboss_mcp::render::TaskView>, String> {
+    tools::propose_tasks(
+        s,
+        &t3(),
+        ProposeTasks {
+            parent: parent.map(|p| p.0),
+            tasks,
+        },
+    )
+    .map_err(|e| e.to_string())
+}
+
+fn task_count(s: &Store) -> usize {
+    s.tree().unwrap().len()
+}
+
+#[test]
+fn propose_tasks_always_makes_proposals() {
+    let mut s = store();
+    let web = repo(&mut s, "web");
+    let parent = add(&mut s, "Booking");
+    let got = propose(
+        &mut s,
+        Some(parent),
+        vec![
+            Proposal {
+                body: Some("why".into()),
+                repos: vec!["web".into()],
+                ..proposal("Add tests")
+            },
+            proposal("Update docs"),
+        ],
+    )
+    .unwrap();
+    assert_eq!(got.len(), 2);
+    for t in &got {
+        assert_eq!(t.status, Status::Proposed);
+        assert_eq!(t.origin, airboss_core::Origin::Agent);
+        assert_eq!(t.parent, Some(parent));
+    }
+    assert_eq!(got[0].repos, ["web"]);
+    assert_eq!(got[0].body.as_deref(), Some("why"));
+    assert_eq!(s.task(got[0].id).unwrap().repos, [web]);
+    let e = last_event(&s, got[1].id);
+    assert_eq!(e.actor, Actor::Agent(format!("t3/{THREAD}")));
+}
+
+#[test]
+fn propose_tasks_takes_between_1_and_20() {
+    let mut s = store();
+    assert_eq!(
+        propose(&mut s, None, vec![]).unwrap_err(),
+        "Propose between 1 and 20 tasks at a time."
+    );
+    let many = (0..21).map(|i| proposal(&format!("t{i}"))).collect();
+    assert_eq!(
+        propose(&mut s, None, many).unwrap_err(),
+        "Propose between 1 and 20 tasks at a time."
+    );
+    assert_eq!(task_count(&s), 0);
+}
+
+#[test]
+fn propose_tasks_checks_everything_before_writing() {
+    let mut s = store();
+    repo(&mut s, "web");
+    let err = propose(&mut s, None, vec![proposal("fine"), proposal("  ")]).unwrap_err();
+    assert_eq!(err, "Give every task a title that isn't blank.");
+    let bad_repo = Proposal {
+        repos: vec!["nope".into()],
+        ..proposal("second")
+    };
+    let err = propose(&mut s, None, vec![proposal("fine"), bad_repo]).unwrap_err();
+    assert_eq!(
+        err,
+        "There's no repo named \"nope\". Registered repos: web."
+    );
+    assert_eq!(task_count(&s), 0);
+}
+
+#[test]
+fn propose_tasks_under_a_finished_parent_says_so() {
+    let mut s = store();
+    let parent = add(&mut s, "old");
+    set(&mut s, parent, Status::Done);
+    let err = propose(&mut s, Some(parent), vec![proposal("more")]).unwrap_err();
+    assert_eq!(
+        err,
+        format!(
+            "Task #{} is done, so nothing can go under it. Pick an open parent or none.",
+            parent.0
+        )
+    );
+    assert_eq!(task_count(&s), 1);
+}
+
+#[test]
+fn propose_tasks_under_a_missing_parent_names_it() {
+    let mut s = store();
+    let err = propose(&mut s, Some(TaskId(8)), vec![proposal("more")]).unwrap_err();
+    assert_eq!(
+        err,
+        "There's no task #8. List the tasks to find the right id."
+    );
+}
+
+// ---- import_plan ----
+
+struct PlanFile(std::path::PathBuf);
+
+impl PlanFile {
+    fn new(name: &str) -> PlanFile {
+        static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "airboss-mcp-plan-{}-{}",
+            std::process::id(),
+            N.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(name);
+        std::fs::write(&path, "# plan").unwrap();
+        PlanFile(path.canonicalize().unwrap())
+    }
+
+    fn path(&self) -> String {
+        self.0.to_string_lossy().into_owned()
+    }
+}
+
+impl Drop for PlanFile {
+    fn drop(&mut self) {
+        if let Some(dir) = self.0.parent() {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+    }
+}
+
+fn step(key: &str, title: &str) -> PlanStep {
+    PlanStep {
+        key: key.into(),
+        title: title.into(),
+        body: None,
+        repos: vec![],
+        depends_on: vec![],
+        children: vec![],
+    }
+}
+
+fn booking_plan() -> Vec<PlanStep> {
+    vec![
+        PlanStep {
+            children: vec![step("p1.a", "Schema"), step("p1.b", "API")],
+            ..step("p1", "Phase 1")
+        },
+        PlanStep {
+            depends_on: vec![DependsOn::Key("p1".into())],
+            repos: vec!["web".into()],
+            ..step("p2", "Phase 2")
+        },
+    ]
+}
+
+fn import(
+    s: &mut Store,
+    file: &str,
+    parent: Option<TaskId>,
+    plan: Vec<PlanStep>,
+) -> Result<airboss_mcp::render::PlanView, String> {
+    tools::import_plan(
+        s,
+        &t3(),
+        ImportPlan {
+            plan_file: file.into(),
+            parent: parent.map(|p| p.0),
+            plan,
+        },
+    )
+    .map_err(|e| e.to_string())
+}
+
+#[test]
+fn import_plan_creates_the_tree_as_plan() {
+    let mut s = store();
+    repo(&mut s, "web");
+    let file = PlanFile::new("booking.md");
+    let got = import(&mut s, &file.path(), None, booking_plan()).unwrap();
+    assert_eq!(got.created.len(), 4);
+    assert!(got.existing.is_empty());
+    let p1 = got.keys["p1"];
+    let p2 = got.keys["p2"];
+    let schema = s.task(got.keys["p1.a"]).unwrap();
+    assert_eq!(schema.parent, Some(p1));
+    assert_eq!(schema.origin, airboss_core::Origin::Plan);
+    assert_eq!(schema.status, Status::Todo);
+    let deps = s.dependencies(p2).unwrap();
+    assert_eq!(deps.waits_on.iter().map(|t| t.id).collect::<Vec<_>>(), [p1]);
+    assert_eq!(s.task(p2).unwrap().repos.len(), 1);
+}
+
+#[test]
+fn import_plan_links_the_plan_file_to_its_top_level_tasks() {
+    let mut s = store();
+    repo(&mut s, "web");
+    let file = PlanFile::new("booking.md");
+    let got = import(&mut s, &file.path(), None, booking_plan()).unwrap();
+    for key in ["p1", "p2"] {
+        let links = s.links(got.keys[key]).unwrap();
+        assert_eq!(links.len(), 1, "{key}");
+        assert_eq!(links[0].kind, LinkKind::Doc);
+        assert_eq!(links[0].r#ref, file.path());
+        assert_eq!(links[0].title.as_deref(), Some("booking.md"));
+        assert_eq!(links[0].linked_by, Actor::Plan);
+    }
+    assert!(s.links(got.keys["p1.a"]).unwrap().is_empty());
+}
+
+#[test]
+fn import_plan_records_which_thread_sent_it_on_every_created_task() {
+    let mut s = store();
+    repo(&mut s, "web");
+    let file = PlanFile::new("booking.md");
+    let got = import(&mut s, &file.path(), None, booking_plan()).unwrap();
+    for id in &got.created {
+        let history = s.history(*id).unwrap();
+        assert_eq!(history[0].actor, Actor::Plan);
+        let note = history
+            .iter()
+            .find(|e| e.kind == airboss_core::EventKind::Note)
+            .expect("an import note");
+        assert_eq!(note.actor, Actor::Agent(format!("t3/{THREAD}")));
+        assert_eq!(
+            note.body.as_deref(),
+            Some(format!("Imported by agent:t3/{THREAD} from {}", file.path()).as_str())
+        );
+    }
+}
+
+#[test]
+fn import_plan_twice_changes_nothing() {
+    let mut s = store();
+    repo(&mut s, "web");
+    let file = PlanFile::new("booking.md");
+    let first = import(&mut s, &file.path(), None, booking_plan()).unwrap();
+    let events = s.events_after(airboss_core::EventId(0)).unwrap().len();
+    let again = import(&mut s, &file.path(), None, booking_plan()).unwrap();
+    assert!(again.created.is_empty());
+    assert_eq!(again.existing.len(), 4);
+    assert_eq!(again.keys, first.keys);
+    assert_eq!(
+        s.events_after(airboss_core::EventId(0)).unwrap().len(),
+        events
+    );
+}
+
+#[test]
+fn import_plan_refuses_a_plan_file_that_does_not_exist() {
+    let mut s = store();
+    let err = import(&mut s, "/no/such/plan.md", None, vec![step("a", "A")]).unwrap_err();
+    assert_eq!(
+        err,
+        "There's no file at \"/no/such/plan.md\". Give the path of the plan file the user settled in plan-review."
+    );
+    assert_eq!(task_count(&s), 0);
+}
+
+#[test]
+fn import_plan_needs_a_step() {
+    let mut s = store();
+    let file = PlanFile::new("p.md");
+    let err = import(&mut s, &file.path(), None, vec![]).unwrap_err();
+    assert_eq!(err, "Give `plan` at least one step.");
+}
+
+#[test]
+fn import_plan_can_wait_on_an_existing_task_and_go_under_a_parent() {
+    let mut s = store();
+    let parent = add(&mut s, "Booking");
+    let before = add(&mut s, "Design");
+    let file = PlanFile::new("p.md");
+    let plan = vec![PlanStep {
+        depends_on: vec![DependsOn::Task(before.0)],
+        ..step("build", "Build")
+    }];
+    let got = import(&mut s, &file.path(), Some(parent), plan).unwrap();
+    let build = got.keys["build"];
+    assert_eq!(s.task(build).unwrap().parent, Some(parent));
+    assert_eq!(s.dependencies(build).unwrap().waits_on[0].id, before);
+}
+
+#[test]
+fn import_plan_explains_duplicate_keys_loops_and_bad_targets() {
+    let mut s = store();
+    let file = PlanFile::new("p.md");
+    let err = import(
+        &mut s,
+        &file.path(),
+        None,
+        vec![step("a", "A"), step("a", "B")],
+    )
+    .unwrap_err();
+    assert_eq!(
+        err,
+        "The plan uses the key \"a\" twice. Give every step its own key."
+    );
+
+    let looped = vec![
+        PlanStep {
+            depends_on: vec![DependsOn::Key("b".into())],
+            ..step("a", "A")
+        },
+        PlanStep {
+            depends_on: vec![DependsOn::Key("a".into())],
+            ..step("b", "B")
+        },
+    ];
+    let err = import(&mut s, &file.path(), None, looped).unwrap_err();
+    assert_eq!(
+        err,
+        "That would make a loop of tasks waiting on each other. Remove one of the dependencies."
+    );
+
+    let on_parent = vec![PlanStep {
+        children: vec![PlanStep {
+            depends_on: vec![DependsOn::Key("top".into())],
+            ..step("kid", "Kid")
+        }],
+        ..step("top", "Top")
+    }];
+    let err = import(&mut s, &file.path(), None, on_parent).unwrap_err();
+    assert_eq!(
+        err,
+        "A task can't wait on its own parent or subtask. Remove that dependency."
+    );
+
+    let done = add(&mut s, "done");
+    set(&mut s, done, Status::Done);
+    let err = import(&mut s, &file.path(), Some(done), vec![step("x", "X")]).unwrap_err();
+    assert_eq!(
+        err,
+        format!(
+            "Task #{} is done, so nothing can go under it. Pick an open parent or none.",
+            done.0
+        )
+    );
+
+    let err = import(
+        &mut s,
+        &file.path(),
+        None,
+        vec![PlanStep {
+            depends_on: vec![DependsOn::Task(999)],
+            ..step("y", "Y")
+        }],
+    )
+    .unwrap_err();
+    assert_eq!(
+        err,
+        "There's no task #999. List the tasks to find the right id."
+    );
+    assert_eq!(task_count(&s), 1);
+}
+
+#[test]
+fn import_plan_names_an_unknown_repo() {
+    let mut s = store();
+    let file = PlanFile::new("p.md");
+    let plan = vec![PlanStep {
+        repos: vec!["web".into()],
+        ..step("a", "A")
+    }];
+    let err = import(&mut s, &file.path(), None, plan).unwrap_err();
+    assert_eq!(
+        err,
+        "There's no repo named \"web\". No repos are registered yet; leave `repos` out."
     );
 }

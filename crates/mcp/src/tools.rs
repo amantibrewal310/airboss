@@ -5,14 +5,19 @@
 
 use std::collections::HashSet;
 
-use airboss_core::{LinkKind, NewLink, PrState, Repo, RepoId, Status, Store, TaskId};
+use std::path::{Path, PathBuf};
+
+use airboss_core::{
+    Actor, DepRef, LinkKind, NewLink, NewTask, PlanTask, PrState, Repo, RepoId, Status, Store,
+    TaskId,
+};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::identity::Identity;
 use crate::render::{
-    DependencyView, EventView, LinkView, NodeView, RepoNames, Subject, TaskDetail, TaskList,
-    TaskRef, TaskView, ToolError, explain,
+    DependencyView, EventView, LinkView, NodeView, PlanView, RepoNames, Subject, TaskDetail,
+    TaskList, TaskRef, TaskView, ToolError, explain,
 };
 
 /// The most tasks `list_tasks` returns at once.
@@ -20,6 +25,9 @@ pub const LIST_LIMIT: usize = 200;
 
 /// How many history entries `get_task` returns.
 pub const HISTORY_LIMIT: usize = 20;
+
+/// The most tasks `propose_tasks` takes at once.
+pub const PROPOSE_LIMIT: usize = 20;
 
 /// A task status, as tool arguments spell it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
@@ -187,6 +195,74 @@ pub struct Link {
     /// A short name to show instead of the ref, e.g. "booking-flow.md".
     #[serde(default)]
     pub title: Option<String>,
+}
+
+/// Arguments for `propose_tasks`.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ProposeTasks {
+    /// The task to put them under. Left out: top level.
+    #[serde(default)]
+    pub parent: Option<i64>,
+    /// 1 to 20 tasks, added in this order.
+    pub tasks: Vec<Proposal>,
+}
+
+/// One proposed task.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Proposal {
+    /// A short title saying what to do.
+    pub title: String,
+    /// Notes: why, and anything the user needs to decide.
+    #[serde(default)]
+    pub body: Option<String>,
+    /// The repos it touches, by name.
+    #[serde(default)]
+    pub repos: Vec<String>,
+}
+
+/// Arguments for `import_plan`.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ImportPlan {
+    /// Path to the settled plan file, absolute or relative to this thread's directory.
+    /// It must exist; it's linked to the plan's top-level tasks.
+    pub plan_file: String,
+    /// The task to put the plan under. Left out: top level.
+    #[serde(default)]
+    pub parent: Option<i64>,
+    /// The plan's top-level steps, each with its own steps under it.
+    pub plan: Vec<PlanStep>,
+}
+
+/// One step of a plan.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PlanStep {
+    /// The plan's own id for this step, unique in the plan. Sending the plan again matches
+    /// steps by key, so keep keys stable when revising it.
+    pub key: String,
+    pub title: String,
+    #[serde(default)]
+    pub body: Option<String>,
+    /// The repos it touches, by name.
+    #[serde(default)]
+    pub repos: Vec<String>,
+    /// What it waits on: other steps' keys, or existing task ids.
+    #[serde(default)]
+    pub depends_on: Vec<DependsOn>,
+    /// Its own steps.
+    #[serde(default)]
+    pub children: Vec<PlanStep>,
+}
+
+/// Another step's key, or an existing task's id.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum DependsOn {
+    Key(String),
+    Task(i64),
 }
 
 /// Lists tasks in tree order, filtered, at most [`LIST_LIMIT`].
@@ -388,6 +464,174 @@ fn missing_ref(kind: LinkKind) -> ToolError {
         LinkKind::Slack => "Give `ref` for a slack link: the message's permalink.",
         LinkKind::Doc => "Give `ref` for a doc link: the file's path.",
     })
+}
+
+/// Proposes new work. Every task arrives `proposed` and waits for the user to accept it.
+/// Everything is checked before the first one is added.
+pub fn propose_tasks(
+    store: &mut Store,
+    who: &Identity,
+    args: ProposeTasks,
+) -> Result<Vec<TaskView>, ToolError> {
+    if args.tasks.is_empty() || args.tasks.len() > PROPOSE_LIMIT {
+        return Err(ToolError::new(format!(
+            "Propose between 1 and {PROPOSE_LIMIT} tasks at a time."
+        )));
+    }
+    let actor = &who.actor;
+    let parent = args.parent.map(TaskId);
+    let under = Subject {
+        parent,
+        ..Subject::default()
+    };
+    if let Some(p) = parent {
+        let status = store
+            .task(p)
+            .map_err(|e| explain(store, actor, e, &under))?
+            .status;
+        if matches!(status, Status::Proposed | Status::Done | Status::Dropped) {
+            return Err(explain(
+                store,
+                actor,
+                airboss_core::Error::InvalidTarget,
+                &under,
+            ));
+        }
+    }
+    let repos = store.repos().map_err(ToolError::from_core)?;
+    let mut new = Vec::with_capacity(args.tasks.len());
+    for p in args.tasks {
+        if p.title.trim().is_empty() {
+            return Err(ToolError::from_core(airboss_core::Error::EmptyTitle));
+        }
+        let mut task = NewTask::new(p.title);
+        task.parent = parent;
+        task.body = p.body.filter(|b| !b.trim().is_empty());
+        for id in repo_ids(&repos, &p.repos)? {
+            task = task.in_repo(id);
+        }
+        new.push(task);
+    }
+    let names = RepoNames::new(&repos);
+    let mut added: Vec<TaskView> = Vec::with_capacity(new.len());
+    for task in new {
+        match store.add_task(task, actor) {
+            Ok(t) => added.push(TaskView::new(t, &names)),
+            Err(e) => {
+                let ToolError(why) = explain(store, actor, e, &under);
+                let done: Vec<String> = added.iter().map(|t| format!("#{}", t.id.0)).collect();
+                return Err(ToolError::new(if done.is_empty() {
+                    why
+                } else {
+                    format!("{why} (Already proposed: {}.)", done.join(", "))
+                }));
+            }
+        }
+    }
+    Ok(added)
+}
+
+/// Imports a plan the user settled in plan-review, as `plan`, so its tasks start `todo`.
+/// The plan file is linked to the top-level tasks, and each new task gets a note naming
+/// the thread that sent it.
+pub fn import_plan(
+    store: &mut Store,
+    who: &Identity,
+    args: ImportPlan,
+) -> Result<PlanView, ToolError> {
+    if args.plan.is_empty() {
+        return Err(ToolError::new("Give `plan` at least one step."));
+    }
+    let file = plan_file(&args.plan_file)?;
+    let repos = store.repos().map_err(ToolError::from_core)?;
+    let mut others = Vec::new();
+    let plan = args
+        .plan
+        .into_iter()
+        .map(|step| plan_task(step, &repos, &mut others))
+        .collect::<Result<Vec<_>, _>>()?;
+    let parent = args.parent.map(TaskId);
+    let about = Subject {
+        parent,
+        others,
+        ..Subject::default()
+    };
+    let result = store
+        .add_tasks(parent, &plan, &Actor::Plan)
+        .map_err(|e| explain(store, &who.actor, e, &about))?;
+
+    let path = file.to_string_lossy().into_owned();
+    let title = file
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.clone());
+    let after = |store: &Store, e| {
+        let ToolError(why) = explain(store, &who.actor, e, &Subject::default());
+        ToolError::new(format!(
+            "The plan was imported, but finishing it failed: {why}"
+        ))
+    };
+    for step in &plan {
+        if let Some(id) = result.id(&step.key) {
+            let doc = NewLink::new(LinkKind::Doc, path.clone()).with_title(title.clone());
+            store
+                .link(id, doc, &Actor::Plan)
+                .map_err(|e| after(store, e))?;
+        }
+    }
+    let note = format!("Imported by {} from {path}", who.actor);
+    for &id in &result.created {
+        store
+            .add_note(id, &note, &who.actor)
+            .map_err(|e| after(store, e))?;
+    }
+    Ok(PlanView {
+        keys: result.keys.iter().cloned().collect(),
+        created: result.created,
+        existing: result.existing,
+    })
+}
+
+/// The plan file as an absolute path, if it exists.
+fn plan_file(given: &str) -> Result<PathBuf, ToolError> {
+    let missing = || {
+        ToolError::new(format!(
+            "There's no file at \"{given}\". Give the path of the plan file the user \
+             settled in plan-review."
+        ))
+    };
+    let path = Path::new(given.trim());
+    if given.trim().is_empty() || !path.is_file() {
+        return Err(missing());
+    }
+    path.canonicalize().map_err(|_| missing())
+}
+
+/// One plan step in `core`'s terms, with repo names resolved. Collects the existing
+/// task ids it waits on, so a missing one can be named.
+fn plan_task(
+    step: PlanStep,
+    repos: &[Repo],
+    others: &mut Vec<TaskId>,
+) -> Result<PlanTask, ToolError> {
+    let mut task = PlanTask::new(step.key, step.title);
+    task.body = step.body.filter(|b| !b.trim().is_empty());
+    for id in repo_ids(repos, &step.repos)? {
+        task = task.in_repo(id);
+    }
+    for dep in step.depends_on {
+        task.depends_on.push(match dep {
+            DependsOn::Key(key) => DepRef::Key(key),
+            DependsOn::Task(id) => {
+                others.push(TaskId(id));
+                DepRef::Task(TaskId(id))
+            }
+        });
+    }
+    for child in step.children {
+        task = task.child(plan_task(child, repos, others)?);
+    }
+    Ok(task)
 }
 
 /// Maps repo names to ids; an unknown name lists the registered ones.
