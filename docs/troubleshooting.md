@@ -92,6 +92,8 @@ A new database comes with new settings, so it's a first run, but with `AIRBOSS_D
 
 - **"Airboss can't open its database"** fills the window, with the path and the reason, **Show in Finder** and **Try again**.
 - **"Database moved"** in the footer: the file was moved or replaced while the app was open. Quit Airboss and open it again.
+- **"This database was created by a newer Airboss. Update the `airboss` command."** from the CLI or an agent: a newer app has migrated the file, and this `airboss` is older, so it won't touch it. If you built the CLI yourself, build it again; the one the app installs updates with the app. An agent's `airboss mcp` that was running before the update says this for every write: start a new thread.
+- **A backup.** `airboss backup <path>` writes a consistent copy while everything runs. See [the CLI](cli.md#backup).
 
 ## Logs
 
