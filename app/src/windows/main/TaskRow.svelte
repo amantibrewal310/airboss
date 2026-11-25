@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { fullTitle } from '../../lib/actions/fullTitle';
   import type { Repo, RepoId, RowDto } from '../../lib/types';
   import StatusIcon from '../../lib/components/StatusIcon.svelte';
   import ProgressRing from '../../lib/components/ProgressRing.svelte';
@@ -124,7 +125,7 @@
   {#if renaming}
     <input bind:this={input} class="rename" value={row.title} aria-label="Rename {row.id}" onkeydown={renameKey} onblur={() => onrename?.(input?.value ?? null)} />
   {:else}
-    <span class="t" title={row.title} aria-hidden="true">{row.title}</span>
+    <span class="t" use:fullTitle={row.title} aria-hidden="true">{row.title}</span>
   {/if}
   {#if row.progress}
     <span class="prog" title="{pct}% done" aria-hidden="true">

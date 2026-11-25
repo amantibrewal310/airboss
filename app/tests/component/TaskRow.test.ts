@@ -60,6 +60,9 @@ describe('TaskRow', () => {
     const t = el.querySelector<HTMLElement>('.t')!;
     expect(t.scrollWidth).toBeGreaterThan(t.clientWidth);
     expect(getComputedStyle(t).textOverflow).toBe('ellipsis');
+    // The tooltip is added on hover, and only because the title is cut off.
+    expect(t.hasAttribute('title')).toBe(false);
+    t.dispatchEvent(new PointerEvent('pointerenter'));
     expect(t.title).toContain('screen readers');
     expect(el.getBoundingClientRect().height).toBe(38);
   });

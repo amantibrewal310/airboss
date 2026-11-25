@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { fullTitle } from '../../lib/actions/fullTitle';
   import Icon from '../../lib/components/Icon.svelte';
   import Button from '../../lib/components/Button.svelte';
   import type { NeedsItem } from '../../lib/types';
@@ -58,8 +59,8 @@
           <span class="sr">{`${KIND_LABEL[n.kind]}: ${n.task} ${n.task_title}. ${n.context}.${n.stale ? ' May be out of date.' : ''} Return: ${mainLabel(n.kind)}`}</span>
           <span class="ic" aria-hidden="true"><Icon name={KIND_ICON[n.kind]} size={15} /></span>
           <div class="w" aria-hidden="true">
-            <div class="l1"><span class="id">{n.task}</span><span class="tt" title={n.task_title}>{n.task_title}</span><span class="tm">{relative(n.since, app.now)}</span></div>
-            <div class="l2" title={n.context}>{n.stale ? `May be out of date · ${n.context}` : n.context}</div>
+            <div class="l1"><span class="id">{n.task}</span><span class="tt" use:fullTitle={n.task_title}>{n.task_title}</span><span class="tm">{relative(n.since, app.now)}</span></div>
+            <div class="l2" use:fullTitle={n.stale ? `May be out of date · ${n.context}` : n.context}>{n.stale ? `May be out of date · ${n.context}` : n.context}</div>
           </div>
         </div>
       {/each}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { fullTitle } from '../../lib/actions/fullTitle';
   import { tick } from 'svelte';
   import Icon from '../../lib/components/Icon.svelte';
   import Kbd from '../../lib/components/Kbd.svelte';
@@ -64,10 +65,10 @@
   <div class="big" class:stale={item.stale}>
     <div class="k">
       <span class="kic"><Icon name={KIND_ICON[item.kind]} size={14} /></span>
-      <span>
-        {KIND_LABEL[item.kind]} · {relative(item.since, app.now)} ago ·
-        <button type="button" class="task" onclick={() => app.reveal(item.task)}>{item.task} {item.task_title}</button>
-        {#if item.stale}<span class="stale-note">{' · May be out of date'}</span>{/if}
+      <span class="ln">
+        <span class="lead">{`${KIND_LABEL[item.kind]} · ${relative(item.since, app.now)} ago ·`}</span>
+        <button type="button" class="task" use:fullTitle={`${item.task} ${item.task_title}`} onclick={() => app.reveal(item.task)}>{item.task} {item.task_title}</button>
+        {#if item.stale}<span class="stale-note">{'· May be out of date'}</span>{/if}
       </span>
     </div>
     <p class="q">{item.headline}</p>
@@ -129,10 +130,13 @@
   .big.stale .q {
     color: var(--text-2);
   }
+  /* One line: the kind and time stay whole; the task name gives way with an ellipsis. */
   .k {
     display: flex;
     align-items: center;
     gap: 8px;
+    min-width: 0;
+    white-space: nowrap;
     font-size: var(--fs-meta);
     line-height: 16px;
     color: var(--text-2);
@@ -142,8 +146,21 @@
     color: var(--needs);
     display: flex;
   }
+  .ln {
+    display: flex;
+    gap: 0.3em;
+    min-width: 0;
+  }
+  .lead,
+  .stale-note {
+    flex: none;
+  }
   .task {
     color: var(--text);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .task:hover {
     text-decoration: underline;

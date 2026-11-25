@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { fullTitle } from '../../lib/actions/fullTitle';
   import Icon from '../../lib/components/Icon.svelte';
   import type { IconName } from '../../lib/components/icons';
   import StatusIcon from '../../lib/components/StatusIcon.svelte';
@@ -69,9 +70,9 @@
         <div class="sech">Parents</div>
         {#each app.parents as p (p.id)}
           {@const pct = percent(p.progress)}
-          <button type="button" class="nav" class:on={current(`parent:${p.id}`)} data-nav title={p.title} onclick={() => app.go(`parent:${p.id}`)}>
+          <button type="button" class="nav" class:on={current(`parent:${p.id}`)} data-nav onclick={() => app.go(`parent:${p.id}`)}>
             <StatusIcon shape={shapeOf(p)} />
-            <span class="t">{p.title}</span>
+            <span class="t" use:fullTitle={p.title}>{p.title}</span>
             <span class="c pc">{pct}%</span>
             <ProgressRing {pct} size={13} label={p.progress ? `${p.progress.done} of ${p.progress.total} done` : undefined} />
           </button>

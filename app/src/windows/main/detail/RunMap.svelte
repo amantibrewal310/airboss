@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { fullTitle } from '../../../lib/actions/fullTitle';
   import StatusIcon from '../../../lib/components/StatusIcon.svelte';
   import RepoDot from '../../../lib/components/RepoDot.svelte';
   import type { RunMap } from '../../../lib/types';
@@ -123,7 +124,7 @@
             app.open({ kind: 'context', task: s.id, at: { x: e.clientX, y: e.clientY } });
           }}
         >
-          <b title={r.title}>{r.title}</b>
+          <b use:fullTitle={r.title}>{r.title}</b>
           <small><span>{s.id} · <span class={info.tone}>{info.text}</span></span>{#each r.repos as repo (repo)}<RepoDot id={repo} name={app.tasks.repoById.get(repo)?.name} />{/each}</small>
         </button>
       {/if}
