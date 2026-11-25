@@ -725,6 +725,29 @@ fn edit_repo_refuses_a_taken_name_or_path_a_blank_one_or_a_missing_repo() {
 }
 
 #[test]
+fn a_removed_repos_id_is_never_handed_out_again() {
+    let mut s = store();
+    let [web, api, ios] = three_repos(&mut s);
+    let highest = web.0.max(api.0).max(ios.0);
+    assert_eq!(ios.0, highest, "the newest repo has the highest id");
+    let t = s
+        .add_task(NewTask::new("Booking").in_repo(ios), &Actor::Me)
+        .unwrap();
+    s.remove_repo(ios, &Actor::Me).unwrap();
+
+    let next = s
+        .add_repo("android", Path::new("/w/android"), None, &Actor::Me)
+        .unwrap();
+    assert!(
+        next.id.0 > highest,
+        "{:?} was handed out before (up to {highest})",
+        next.id
+    );
+    // So nothing keyed by the old id, here or in another module's table, points at it.
+    assert!(s.task(t.id).unwrap().repos.is_empty());
+}
+
+#[test]
 fn remove_repo_unlinks_it_from_every_task_with_an_event_each_then_deletes_it() {
     let mut s = store();
     let [web, api, ios] = three_repos(&mut s);

@@ -65,6 +65,7 @@ crates/core/
   src/migrations/001_core.sql
   src/migrations/002_pr_refs.sql   PR refs already stored, in the canonical form
   src/migrations/003_event_ids.sql task_events rebuilt so event ids are never reused
+  src/migrations/004_repo_ids.sql  repos rebuilt so repo ids are never reused
   src/tasks.rs             Add, edit, move, delete, tree
   src/repos.rs             Repos, and the repos each task links to
   src/status.rs            Status changes and who may make them
@@ -82,11 +83,14 @@ Later modules get their own crates (`crates/mcp`, `crates/sync`, `crates/launch`
 
 ## Data model
 
-Six tables, plus `schema_migrations`. This is the full first migration, as migration 3 left it: `task_events.id` is `AUTOINCREMENT`. On 25 Nov 2026 it was loaded into a throwaway in-memory SQLite database: the valid rows went in, and each of the 10 constraint checks rejected its bad row.
+Six tables, plus `schema_migrations`. This is the full first migration, as migrations 3 and 4 left it: `task_events.id` and `repos.id` are `AUTOINCREMENT`. On 25 Nov 2026 it was loaded into a throwaway in-memory SQLite database: the valid rows went in, and each of the 10 constraint checks rejected its bad row.
 
 v2 edited `001_core.sql` in place instead of adding a migration 002, because no real database existed yet. **Once `mcp` ships, migrations are append-only:** every later change is a new numbered file. `mcp` shipped on 26 Nov 2026. v3 added two:
 - `002_pr_refs.sql` changes no table. It rewrites PR refs already stored into the canonical form (rule 29).
 - `003_event_ids.sql` rebuilds `task_events` with `id INTEGER PRIMARY KEY AUTOINCREMENT`, keeping every row, column, constraint and index, so no event id is ever handed out twice (rule 23). It follows SQLite's [procedure for other schema changes](https://sqlite.org/lang_altertable.html#otheralter).
+
+v4 added one:
+- `004_repo_ids.sql` rebuilds `repos` the same way, keeping every row, both UNIQUEs, and every `task_repos` row with its foreign key and cascade, so no repo id is ever handed out twice (rule 33). The new table is built as `repos_new` and renamed to `repos`, which leaves `task_repos`' `REFERENCES repos(id)` pointing at it. Copying the ids seeds `sqlite_sequence` at max(id).
 
 Every migration, any module's, runs with foreign keys off, since `PRAGMA foreign_keys` does nothing inside a transaction and a table rebuild would cascade or fail partway. It must pass `PRAGMA foreign_key_check` before it commits, and foreign keys go back on afterwards, whether it worked or not.
 
@@ -99,7 +103,7 @@ CREATE TABLE schema_migrations (
 );
 
 CREATE TABLE repos (                     -- one git repo tasks can point at
-  id          INTEGER PRIMARY KEY,
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,  -- never reused, even after remove_repo
   name        TEXT NOT NULL UNIQUE,
   path        TEXT NOT NULL UNIQUE,
   remote_url  TEXT                       -- null: local-only repo
@@ -248,7 +252,7 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
 33. **Repos can be edited and removed, by `me` only.**
     - `edit_repo` changes a repo's name, path or remote; what it's not given stays as it is, and `Some(None)` clears the remote. The name is trimmed. A blank name or path is `Error::InvalidTarget`, a name or path another repo has is `Error::AlreadyExists`, and a missing repo is `Error::NotFound`. Tasks keep the repo, so they follow it. Like `add_repo`, it writes no event.
     - `remove_repo` unlinks the repo from every task that has it, in any status, with a `repo_unlinked` event on each naming the repo, then deletes it, all in one change. It returns those tasks by id. A missing repo is `Error::NotFound`.
-    - A removed repo's id can be handed out again to the next repo added. A module keeping its own rows by repo id mustn't assume otherwise.
+    - **A removed repo's id is never handed out again** (`004_repo_ids.sql`), so a row another module keeps by repo id can't pass to the next repo added. The one exception is ids removed before migration 4 that were higher than every id left then: nothing recorded them. So a module keeping rows by repo id also keeps the repo's path, and ignores a row whose path no longer matches (`launch` does, for `launch_repos`).
 25. **A task has at most one branch,** shared by every thread `launch` starts for it. Null means no branch yet. `set_branch` writes one `edited` event whose body names the branch, e.g. `branch: booking-flow`, or `branch cleared`. A blank name clears it. Setting the branch it already has writes nothing.
     - A name, once trimmed, uses only `A–Z`, `a–z`, `0–9`, `.`, `_`, `/` and `-`, and is at most 200 characters long.
     - It can't contain `..`, start with `-` or `/`, or end with `/` or `.lock`.
@@ -617,6 +621,7 @@ The final audit of `main` found gaps that need `core`. They're folded into the r
 2. **One place for the database path.** `default_db_path()` and `DB_VAR` replace the CLI's and the app's own copies. With no `HOME` the CLI errored while the app used a relative path; now both get the same error.
 3. **Repos can be edited and removed** (rules 8 and 33). A wrong first-run folder or a moved checkout needed SQLite to fix.
 4. **Backup.** `backup(to, overwrite)`, through `rusqlite`'s `backup` feature (rule 34), for `airboss backup`.
+5. **Repo ids are never reused** (rule 33). With `remove_repo`, SQLite could give a new repo a removed repo's id, and `launch_repos` rows (a repo's base branch and T3 project) are kept by repo id, so Do it could start in the wrong project. `004_repo_ids.sql` rebuilds `repos` with `AUTOINCREMENT`, as `003` did for events, and `launch` also checks a row's stored path.
 
 **Success criteria for v4:**
 
@@ -624,6 +629,7 @@ The final audit of `main` found gaps that need `core`. They're folded into the r
 - [x] `default_db_path` honours `AIRBOSS_DB`, and with no `HOME` is an error, never a relative path.
 - [x] `edit_repo` and `remove_repo` are `me`'s only; removing writes one `repo_unlinked` event per task and is all or nothing.
 - [x] A backup opens as the same tasks and history, leaves out uncommitted writes, keeps an existing file unless told, and never targets the database itself.
+- [x] A repo's id is never handed out again after `remove_repo` (`a_removed_repos_id_is_never_handed_out_again`, which fails without `004`), and a database at migration 3 keeps every repo and link through `004` (`migration_4_keeps_every_repo_and_link_and_never_reuses_a_repo_id`).
 
 ## Open questions
 

@@ -1,6 +1,6 @@
 //! Launch's own connection and tables: `launch_threads` and `launch_repos`.
 //!
-//! The schema is migration `launch` v1, run through `core`'s `migrate_module` on the same
+//! The schema is migrations `launch` v1 and v2, run through `core`'s `migrate_module` on the same
 //! file as `core`'s tables. After that, launch reads and writes its own tables only, on its
 //! own connection.
 
@@ -14,10 +14,16 @@ use rusqlite::{Connection, OptionalExtension, Row as SqlRow, TransactionBehavior
 use crate::errors;
 
 /// Launch's migrations, run with `Store::migrate_module("launch", MIGRATIONS)`.
-pub const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    sql: include_str!("migrations/001_launch.sql"),
-}];
+pub const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        sql: include_str!("migrations/001_launch.sql"),
+    },
+    Migration {
+        version: 2,
+        sql: include_str!("migrations/002_repo_path.sql"),
+    },
+];
 
 /// Where one row stands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -376,12 +382,13 @@ impl Db {
             .map_err(storage)
     }
 
-    /// The repo's base override, if set.
-    pub fn base_ref(&self, repo: RepoId) -> Result<Option<String>> {
+    /// The repo's base override, if set. A row kept for this id but another path (or none) is
+    /// another repo's, or this one's before it moved, so it's ignored.
+    pub fn base_ref(&self, repo: RepoId, path: &str) -> Result<Option<String>> {
         self.conn
             .query_row(
-                "SELECT base_ref FROM launch_repos WHERE repo_id = ?1",
-                params![repo.0],
+                "SELECT base_ref FROM launch_repos WHERE repo_id = ?1 AND repo_path = ?2",
+                params![repo.0, path],
                 |r| r.get::<_, Option<String>>(0),
             )
             .optional()
@@ -389,13 +396,24 @@ impl Db {
             .map_err(storage)
     }
 
-    /// Records the T3 project a repo resolved to.
-    pub fn set_t3_project(&mut self, repo: RepoId, project: &str, now: SystemTime) -> Result<()> {
+    /// Records the T3 project the repo at `path` resolved to. A row this id kept for another
+    /// path is taken over, and its base override, which was for that other repo, is dropped.
+    pub fn set_t3_project(
+        &mut self,
+        repo: RepoId,
+        path: &str,
+        project: &str,
+        now: SystemTime,
+    ) -> Result<()> {
+        // Every right-hand side reads the row as it was, so the CASE sees the old path.
         self.conn
             .execute(
-                "INSERT INTO launch_repos (repo_id, t3_project_id, updated_at) VALUES (?1, ?2, ?3)
-                 ON CONFLICT (repo_id) DO UPDATE SET t3_project_id = ?2, updated_at = ?3",
-                params![repo.0, project, time::to_ts(now)],
+                "INSERT INTO launch_repos (repo_id, repo_path, t3_project_id, updated_at)
+                 VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT (repo_id) DO UPDATE SET
+                   base_ref = CASE WHEN repo_path IS ?2 THEN base_ref END,
+                   repo_path = ?2, t3_project_id = ?3, updated_at = ?4",
+                params![repo.0, path, project, time::to_ts(now)],
             )
             .map_err(storage)?;
         Ok(())

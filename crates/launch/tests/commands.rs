@@ -233,8 +233,8 @@ fn the_base_is_origin_head_or_the_override() {
     h.git.set_default(h.path_of(&web), Some("develop"));
     h.db()
         .execute(
-            "INSERT INTO launch_repos (repo_id, base_ref) VALUES (?1, 'release/2026')",
-            [api.id.0],
+            "INSERT INTO launch_repos (repo_id, repo_path, base_ref) VALUES (?1, ?2, 'release/2026')",
+            rusqlite::params![api.id.0, api.path],
         )
         .unwrap();
     let t = h.task("Both", &[&web, &api]);
@@ -252,6 +252,96 @@ fn the_base_is_origin_head_or_the_override() {
             .iter()
             .any(|c| c.starts_with("default_branch") && c.contains("/api"))
     );
+}
+
+/// A row kept for another repo under the same id (one removed before core stopped reusing
+/// repo ids), or for this repo before it moved, is not this repo's.
+#[test]
+fn a_launch_repos_row_for_another_path_is_ignored() {
+    let h = H::new();
+    let api = h.repo("api");
+    h.git.set_default(h.path_of(&api), Some("main"));
+    h.db()
+        .execute_batch(&format!(
+            "INSERT INTO launch_repos (repo_id, repo_path, base_ref, t3_project_id)
+               VALUES ({}, '/src/removed-repo', 'release/old', 'project-of-removed-repo')",
+            api.id.0
+        ))
+        .unwrap();
+    let t = h.task("Api work", &[&api]);
+    h.launch.start(&do_it(t.id)).unwrap();
+    let bases: Vec<String> =
+        h.t3.starts()
+            .iter()
+            .map(|c| c.flag("--worktree").unwrap().to_string())
+            .collect();
+    assert_eq!(bases, ["main"], "the other repo's override isn't used");
+}
+
+#[test]
+fn a_launch_repos_row_without_a_path_is_ignored() {
+    let h = H::new();
+    let api = h.repo("api");
+    h.git.set_default(h.path_of(&api), Some("main"));
+    // Written before launch stored paths: it can't be checked, so it isn't trusted.
+    h.db()
+        .execute(
+            "INSERT INTO launch_repos (repo_id, base_ref) VALUES (?1, 'release/2026')",
+            [api.id.0],
+        )
+        .unwrap();
+    let t = h.task("Api work", &[&api]);
+    h.launch.start(&do_it(t.id)).unwrap();
+    assert_eq!(h.t3.starts()[0].flag("--worktree"), Some("main"));
+}
+
+#[test]
+fn recording_a_t3_project_stores_the_path_and_drops_another_repos_override() {
+    let h = H::new();
+    let api = h.repo("api");
+    h.git.set_default(h.path_of(&api), Some("main"));
+    h.db()
+        .execute(
+            "INSERT INTO launch_repos (repo_id, repo_path, base_ref, t3_project_id)
+               VALUES (?1, '/src/removed-repo', 'release/old', 'project-of-removed-repo')",
+            [api.id.0],
+        )
+        .unwrap();
+    let t = h.task("Api work", &[&api]);
+    h.launch.start(&do_it(t.id)).unwrap();
+
+    let row: (String, Option<String>, String) = h
+        .db()
+        .query_row(
+            "SELECT repo_path, base_ref, t3_project_id FROM launch_repos WHERE repo_id = ?1",
+            [api.id.0],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(row, (api.path.clone(), None, "project-1".to_string()));
+}
+
+#[test]
+fn recording_a_t3_project_keeps_this_repos_own_override() {
+    let h = H::new();
+    let api = h.repo("api");
+    h.db()
+        .execute(
+            "INSERT INTO launch_repos (repo_id, repo_path, base_ref) VALUES (?1, ?2, 'release/2026')",
+            rusqlite::params![api.id.0, api.path],
+        )
+        .unwrap();
+    let t = h.task("Api work", &[&api]);
+    h.launch.start(&do_it(t.id)).unwrap();
+    let base: Option<String> = h
+        .db()
+        .query_row(
+            "SELECT base_ref FROM launch_repos WHERE repo_id = ?1",
+            [api.id.0],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(base.as_deref(), Some("release/2026"));
 }
 
 #[test]

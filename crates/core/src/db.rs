@@ -51,6 +51,10 @@ const CORE_MIGRATIONS: &[Migration] = &[
         version: 3,
         sql: include_str!("migrations/003_event_ids.sql"),
     },
+    Migration {
+        version: 4,
+        sql: include_str!("migrations/004_repo_ids.sql"),
+    },
 ];
 
 const CREATE_SCHEMA_MIGRATIONS: &str = "
@@ -254,7 +258,100 @@ mod tests {
     }
 
     /// `core`'s newest migration: every core migration, applied once.
-    const CORE_VERSION: i64 = 3;
+    const CORE_VERSION: i64 = 4;
+
+    fn rows<T: rusqlite::types::FromSql>(conn: &Connection, sql: &str) -> Vec<Vec<Option<T>>> {
+        let mut stmt = conn.prepare(sql).unwrap();
+        let n = stmt.column_count();
+        stmt.query_map([], |r| (0..n).map(|i| r.get(i)).collect())
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap()
+    }
+
+    #[test]
+    fn migration_4_keeps_every_repo_and_link_and_never_reuses_a_repo_id() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        migrate(&mut conn, "core", &CORE_MIGRATIONS[..3]).unwrap();
+        conn.execute_batch(
+            "INSERT INTO repos (id, name, path, remote_url) VALUES
+               (1, 'web', '/w/web', 'git@github.com:acme/web.git'),
+               (2, 'api', '/w/api', NULL),
+               (5, 'ios', '/w/ios', NULL);
+             INSERT INTO tasks (title, position, origin) VALUES ('one', 1, 'me'), ('two', 2, 'me');
+             INSERT INTO task_repos (task_id, repo_id, linked_by, linked_at) VALUES
+               (1, 1, 'me', '2026-11-25T10:00:00.000Z'),
+               (1, 5, 'plan', '2026-11-25T10:00:01.000Z'),
+               (2, 2, 'me', '2026-11-25T10:00:02.000Z');",
+        )
+        .unwrap();
+        let repos_sql = "SELECT id, name, path, remote_url FROM repos ORDER BY id";
+        let links_sql = "SELECT task_id, repo_id, linked_by, linked_at FROM task_repos ORDER BY task_id, repo_id";
+        let (repos_before, links_before) = (
+            rows::<rusqlite::types::Value>(&conn, repos_sql),
+            rows::<rusqlite::types::Value>(&conn, links_sql),
+        );
+
+        migrate(&mut conn, "core", CORE_MIGRATIONS).unwrap();
+        assert_eq!(core_version(&conn), CORE_VERSION);
+        assert_eq!(rows(&conn, repos_sql), repos_before, "every repo kept");
+        assert_eq!(rows(&conn, links_sql), links_before, "every link kept");
+
+        let sql: String = conn
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE name = 'repos'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(
+            sql.contains("id          INTEGER PRIMARY KEY AUTOINCREMENT"),
+            "{sql}"
+        );
+        let seq: i64 = conn
+            .query_row(
+                "SELECT seq FROM sqlite_sequence WHERE name = 'repos'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(seq, 5, "seeded at max(id)");
+        assert_eq!(pragma(&conn, "foreign_keys"), "1", "switched back on");
+        // task_repos still points at repos, not at the table it was rebuilt from.
+        let links: String = conn
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE name = 'task_repos'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(links.contains("REFERENCES repos(id)"), "{links}");
+
+        // Both UNIQUEs, the foreign key and the cascade came across.
+        for dup in [
+            "INSERT INTO repos (name, path) VALUES ('web', '/elsewhere')",
+            "INSERT INTO repos (name, path) VALUES ('other', '/w/web')",
+            "INSERT INTO task_repos (task_id, repo_id, linked_by) VALUES (2, 99, 'me')",
+            "DELETE FROM repos WHERE id = 1",
+        ] {
+            assert!(conn.execute(dup, []).is_err(), "{dup}");
+        }
+        conn.execute("DELETE FROM tasks WHERE id = 1", []).unwrap();
+        assert_eq!(
+            rows::<i64>(&conn, "SELECT task_id FROM task_repos"),
+            vec![vec![Some(2)]]
+        );
+
+        // The newest repo removed, the next one gets a new id.
+        conn.execute("DELETE FROM repos WHERE id = 5", []).unwrap();
+        conn.execute(
+            "INSERT INTO repos (name, path) VALUES ('android', '/w/android')",
+            [],
+        )
+        .unwrap();
+        assert_eq!(conn.last_insert_rowid(), 6);
+    }
 
     type EventRow = (
         i64,

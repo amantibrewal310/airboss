@@ -104,7 +104,7 @@ pub enum LaunchMsg { CheckAvailability, Settle, Woke, Tick, Shutdown }
 
 ## Data / SQL
 
-Migration `launch` version 1 (not shipped yet, so still editable), run with `migrate_module("launch", …)`. Loaded into an in-memory SQLite on 26 Nov 2026; valid rows went in and each CHECK rejected its bad row.
+Migrations `launch` version 1 and version 2, run with `migrate_module("launch", …)`. Version 2 (`002_repo_path.sql`) adds `launch_repos.repo_path`. Loaded into an in-memory SQLite on 26 Nov 2026; valid rows went in and each CHECK rejected its bad row.
 
 ```sql
 CREATE TABLE launch_threads (             -- one thread launch started, or may have started
@@ -136,9 +136,12 @@ CREATE TABLE launch_repos (               -- per-repo launch settings
   repo_id       INTEGER PRIMARY KEY,
   base_ref      TEXT CHECK (base_ref IS NULL OR length(base_ref) > 0),  -- null: use origin/HEAD
   t3_project_id TEXT,                     -- the project T3 last resolved this repo to
-  updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  repo_path     TEXT CHECK (repo_path IS NULL OR length(repo_path) > 0)  -- version 2: the repo's path when written
 );
 ```
+
+**A `launch_repos` row is trusted only for the repo it was written for.** Rows are kept by `core`'s repo id. Before `core`'s migration 4, a repo removed with `remove_repo` could hand its id to the next repo added, and that repo would then get the old repo's base and T3 project. So launch reads a row only while its `repo_path` equals the repo's current path. A row with another path, or none (one written before version 2), is ignored. Recording a T3 project takes such a row over for the current repo: it stores the path and drops the old base override, which was for the other repo. A repo whose path I edit loses its base override the same way, which is the safe side.
 
 The partial unique index makes a second pending row for the same task, repo and mode impossible, even from two calls at once. Rows of deleted tasks are removed when `core` answers `NotFound`.
 
@@ -208,7 +211,7 @@ A pending Plan it or research row has no branch to look up, so it stays pending 
 ```
 
 - **Title:** `<id> <task title>`, plus ` · <repo name>` with several repos, cut to 80 characters with `…`.
-- **Base:** `launch_repos.base_ref`, else `git -C <path> symbolic-ref --short refs/remotes/origin/HEAD` minus the remote prefix (`origin/main` gives `main`), else `git -C <path> branch --show-current`, else `NoBaseBranch`.
+- **Base:** `launch_repos.base_ref` (only from a row whose `repo_path` is the repo's path), else `git -C <path> symbolic-ref --short refs/remotes/origin/HEAD` minus the remote prefix (`origin/main` gives `main`), else `git -C <path> branch --show-current`, else `NoBaseBranch`.
 - **Git checks:** `has_branch` is `git -C <path> rev-parse --verify --quiet refs/heads/<branch>` (exit 0 yes, 1 no); `valid_branch_name` is `git check-ref-format --branch <name>`. `git` is `/usr/bin/git`.
 - **The brief** goes on stdin (`-`), then stdin is closed. It's never an argument.
 - **Process:** working directory `$HOME`; the app's environment minus `T3CODE_THREAD_ID`, `CLAUDE_CODE_SESSION_ID` and `AIRBOSS_THREAD`; timeout 30 s.

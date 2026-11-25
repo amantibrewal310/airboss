@@ -127,7 +127,7 @@ fn valid_branch(inner: &Inner, name: &str) -> Result<bool, ServiceError> {
 /// The repo's base: the override, else its default branch. It must follow `core`'s rule,
 /// since it goes to `t3` and into the brief.
 fn base_of(inner: &Inner, repo: &Repo, path: &Path) -> Result<String, ServiceError> {
-    let base_override = lock(&inner.db).base_ref(repo.id)?;
+    let base_override = lock(&inner.db).base_ref(repo.id, &repo.path)?;
     let base = match base_override {
         Some(b) => Some(b),
         None => lock(&inner.git)
@@ -454,12 +454,12 @@ fn run(
                 return Err(errors::bad_answer());
             };
             // Only a record of where T3 resolved the repo: the thread exists either way.
-            if let (Some(repo), Some(project)) = (repo, project_id) {
-                let saved = lock(&inner.db).set_t3_project(repo, &project, now);
+            if let (Some(repo), Some(project)) = (&spot.repo, project_id) {
+                let saved = lock(&inner.db).set_t3_project(repo.id, &repo.path, &project, now);
                 if let Err(e) = saved {
                     log(&format!(
                         "couldn't record repo {}'s T3 project: {e}",
-                        repo.0
+                        repo.id.0
                     ));
                 }
             }
