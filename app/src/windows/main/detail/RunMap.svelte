@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { fullTitle } from '../../../lib/actions/fullTitle';
   import StatusIcon from '../../../lib/components/StatusIcon.svelte';
   import RepoDot from '../../../lib/components/RepoDot.svelte';
   import type { RunMap } from '../../../lib/types';
@@ -16,6 +17,21 @@
   const layout = $derived(layoutRunMap(map, width));
   const outside = $derived(new Map(map.outside.map((o) => [o.task, o.blockers])));
   let hover = $state<number | null>(null);
+
+  // When the map is wider than its column it scrolls sideways: the hidden edge fades out and the
+  // legend says so.
+  let scroller: HTMLDivElement | undefined = $state();
+  let edge = $state({ l: false, r: false });
+  function measure() {
+    if (!scroller) return;
+    const { scrollLeft, scrollWidth, clientWidth } = scroller;
+    edge = { l: scrollLeft > 1, r: scrollLeft + clientWidth < scrollWidth - 1 };
+  }
+  $effect(() => {
+    void layout.width;
+    void width;
+    measure();
+  });
   const trace = $derived(hover ?? app.ui.mapSel);
 
   function sub(id: number): { text: string; tone?: 'ok' | 'warn' } {
@@ -33,7 +49,8 @@
     const r = app.row(id);
     if (!r) return String(id);
     const s = sub(id).text;
-    return `${id} ${r.title}, ${s}, wave ${wave + 1}`;
+    // Starts with the visible text (title, then "id · state") so Voice Control can match it.
+    return `${r.title}, ${id}, ${s}, wave ${wave + 1}`;
   }
 
   function key(e: KeyboardEvent) {
@@ -51,7 +68,7 @@
   }
 </script>
 
-<div class="scroll">
+<div class="map-scroll" class:more-l={edge.l} class:more-r={edge.r} bind:this={scroller} onscroll={measure}>
   <div
     class="ro"
     class:focusing={trace !== null}
@@ -107,7 +124,7 @@
             app.open({ kind: 'context', task: s.id, at: { x: e.clientX, y: e.clientY } });
           }}
         >
-          <b title={r.title}>{r.title}</b>
+          <b use:fullTitle={r.title}>{r.title}</b>
           <small><span>{s.id} · <span class={info.tone}>{info.text}</span></span>{#each r.repos as repo (repo)}<RepoDot id={repo} name={app.tasks.repoById.get(repo)?.name} />{/each}</small>
         </button>
       {/if}
@@ -117,16 +134,26 @@
 <div class="legend">
   <span><svg width="18" height="4" aria-hidden="true"><path d="M1 2H17" stroke="var(--text-3)" stroke-width="1.75" stroke-linecap="round" /></svg>done, can follow</span>
   <span><svg width="18" height="4" aria-hidden="true"><path d="M1 2H17" stroke="var(--text-3)" stroke-width="1.75" stroke-linecap="round" stroke-dasharray="2 5" /></svg>still waiting</span>
-  <span>Hover a task to trace its lines · double-click to open</span>
+  <span>Hover a task to trace its lines · double-click to open{edge.l || edge.r ? ' · Scroll sideways for more waves' : ''}</span>
 </div>
 {#if map.tangled.length}
   <p class="tangled">These wait on each other in a loop: {map.tangled.join(', ')}.</p>
 {/if}
 
 <style>
-  .scroll {
+  .map-scroll {
     overflow-x: auto;
     scrollbar-width: thin;
+    --fade: 28px;
+  }
+  .map-scroll.more-r {
+    mask-image: linear-gradient(to right, #000 calc(100% - var(--fade)), transparent);
+  }
+  .map-scroll.more-l {
+    mask-image: linear-gradient(to left, #000 calc(100% - var(--fade)), transparent);
+  }
+  .map-scroll.more-l.more-r {
+    mask-image: linear-gradient(to right, transparent, #000 var(--fade), #000 calc(100% - var(--fade)), transparent);
   }
   .ro {
     position: relative;
@@ -215,10 +242,10 @@
     font-variant-numeric: tabular-nums;
   }
   .ok {
-    color: var(--st-review);
+    color: var(--ok-text);
   }
   .warn {
-    color: var(--st-blocked);
+    color: var(--warn-text);
   }
   .legend {
     display: flex;
@@ -236,7 +263,7 @@
   }
   .tangled {
     font-size: var(--fs-meta);
-    color: var(--st-blocked);
+    color: var(--warn-text);
     margin-top: 8px;
   }
 </style>

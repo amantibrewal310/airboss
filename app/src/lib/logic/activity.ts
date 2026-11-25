@@ -3,7 +3,8 @@
   start with its id ("143 moved to Done").
 */
 
-import type { HistoryEntry, Status, TaskId } from '../types';
+import type { HistoryEntry, LinkKind, Status, TaskId } from '../types';
+import { linkLabel } from './links';
 
 export interface Segment {
   text: string;
@@ -35,14 +36,50 @@ export function actorName(e: Pick<HistoryEntry, 'actor' | 'thread_title'>): Segm
   return [{ text: a }];
 }
 
-function verb(e: HistoryEntry, self: boolean): Segment[] {
+export interface PhraseContext {
+  /** The repo folder a thread runs in, by thread ref or title, for "Started thread X in booking-web". */
+  repoOf?: (thread: string) => string | null;
+  /** A linked item's title (the link tag's label) by kind and ref, when the task still has it. */
+  linkTitle?: (kind: LinkKind, ref: string) => string | null;
+}
+
+const LINK_KINDS = new Set<string>(['t3_thread', 'claude_session', 'pr', 'slack', 'doc', 'github_issue']);
+
+/** core writes link events as "<kind> <ref>" (links.rs); anything else is shown as it is. */
+export function parseLinkBody(body: string | null): { kind: LinkKind; ref: string } | null {
+  if (!body) return null;
+  const at = body.indexOf(' ');
+  const kind = at > 0 ? body.slice(0, at) : '';
+  return LINK_KINDS.has(kind) ? { kind: kind as LinkKind, ref: body.slice(at + 1) } : null;
+}
+
+function linkText(body: string | null, ctx: PhraseContext, fallback: string): string {
+  const l = parseLinkBody(body);
+  if (!l) return body ?? fallback;
+  return ctx.linkTitle?.(l.kind, l.ref) ?? linkLabel({ kind: l.kind, ref: l.ref, title: null, url: null });
+}
+
+/** "#143, #145" → "143, 145". */
+const ids = (s: string) => s.replace(/#(\d+)/g, '$1');
+
+const isLaunchThread = (e: HistoryEntry) => e.kind === 'linked' && e.actor === 'launch' && parseLinkBody(e.body)?.kind === 't3_thread';
+
+function edited(body: string | null, it: string): string {
+  if (body?.startsWith('branch: ')) return `set the branch to ${body.slice(8)}`;
+  if (body === 'branch cleared') return 'cleared the branch';
+  const parts = new Set((body ?? '').split(',').map((p) => p.trim()));
+  const said = [parts.has('title') ? `renamed ${it || 'it'}` : '', parts.has('body') || parts.has('notes') ? 'edited the notes' : ''].filter(Boolean);
+  return said.length ? said.join(' and ') : it ? `edited ${it}` : 'edited';
+}
+
+function verb(e: HistoryEntry, self: boolean, ctx: PhraseContext): Segment[] {
   const it = self ? 'this' : '';
   const sp = (s: string) => (it ? `${s} ${it}` : s);
   switch (e.kind) {
     case 'created':
-      return [{ text: sp('created') }];
+      return [{ text: sp('created') }, ...(e.body ? [{ text: ` · ${ids(e.body)}` }] : [])];
     case 'edited':
-      return [{ text: e.body === 'title' ? 'renamed ' + (it || 'it') : e.body === 'notes' ? 'edited the notes' : e.body === 'branch' ? 'set the branch' : sp('edited') }];
+      return [{ text: edited(e.body, it) }];
     case 'moved':
       return [{ text: sp('moved') }];
     case 'status': {
@@ -53,20 +90,28 @@ function verb(e: HistoryEntry, self: boolean): Segment[] {
     }
     case 'note':
       return [{ text: e.body ? `: ${e.body}` : 'left a note' }];
-    case 'linked':
-      return e.actor === 'launch' && e.body?.startsWith('T3 · ')
-        ? [{ text: 'started thread ' }, { text: e.body.slice(5), strong: true }]
-        : [{ text: 'linked ' }, { text: e.body ?? 'a link', strong: true }];
+    case 'linked': {
+      if (!isLaunchThread(e)) return [{ text: 'linked ' }, { text: linkText(e.body, ctx, 'a link'), strong: true }];
+      const ref = parseLinkBody(e.body)!.ref;
+      const thread = e.thread_title ?? ref;
+      const repo = ctx.repoOf?.(ref) ?? ctx.repoOf?.(thread) ?? null;
+      return [{ text: 'Started thread ' }, { text: thread, strong: true }, ...(repo ? [{ text: ' in ' }, { text: repo, strong: true }] : [])];
+    }
     case 'unlinked':
-      return [{ text: 'unlinked ' }, { text: e.body ?? 'a link', strong: true }];
-    case 'link_state':
-      return [{ text: 'saw the PR ' }, { text: e.body ?? 'change', strong: true }];
+      return [{ text: 'unlinked ' }, { text: linkText(e.body, ctx, 'a link'), strong: true }];
+    case 'link_state': {
+      // "<pr ref> <state>", e.g. "acme/booking-api#58 merged".
+      const at = e.body?.lastIndexOf(' ') ?? -1;
+      if (!e.body || at < 0) return [{ text: 'saw the PR change' }];
+      const pr = linkText(`pr ${e.body.slice(0, at)}`, ctx, 'the PR');
+      return [{ text: 'saw ' }, { text: pr, strong: true }, { text: ` ${e.body.slice(at + 1)}` }];
+    }
     case 'waits_on_added':
-      return [{ text: 'made it wait on ' }, { text: e.body ?? '', strong: true }];
+      return [{ text: `made ${it || 'it'} wait on ` }, { text: ids((e.body ?? '').replace(/^waits on /, '')), strong: true }];
     case 'waits_on_removed':
-      return [{ text: 'stopped it waiting on ' }, { text: e.body ?? '', strong: true }];
+      return [{ text: `stopped ${it || 'it'} waiting on ` }, { text: ids((e.body ?? '').replace(/^no longer waits on /, '')), strong: true }];
     case 'rejected':
-      return [{ text: sp('rejected') }];
+      return [{ text: sp('rejected') }, ...(e.body ? [{ text: ` · ${e.body}` }] : [])];
     case 'repo_linked':
       return [{ text: 'linked ' }, { text: e.body ?? 'a repo', strong: true }];
     case 'repo_unlinked':
@@ -74,11 +119,16 @@ function verb(e: HistoryEntry, self: boolean): Segment[] {
   }
 }
 
-/** The whole line, for the task `task` (its own events read "this"; a subtask's start with its id). */
-export function phrase(e: HistoryEntry, task: TaskId): Segment[] {
+/**
+ * The whole line, for the task `task` (its own events read "this"; a subtask's start with its id).
+ * A thread Launch started reads as the action, "Started thread slot-picker in booking-web"; the
+ * avatar still says it was Launch.
+ */
+export function phrase(e: HistoryEntry, task: TaskId, ctx: PhraseContext = {}): Segment[] {
   const self = e.task === task;
   const lead: Segment[] = self ? actorName(e) : [{ text: String(e.task), strong: true }];
-  const v = verb(e, self);
+  const v = verb(e, self, ctx);
+  if (isLaunchThread(e)) return self ? v : [...lead, { text: ' · ' }, ...v];
   if (!self && e.kind !== 'status' && e.kind !== 'note') return [...lead, { text: ' · ' }, ...actorName(e), { text: ' ' }, ...v];
   if (!self && e.kind === 'note') return [...lead, { text: ' · ' }, ...actorName(e), ...v];
   return e.kind === 'note' ? [...lead, ...v] : [...lead, { text: ' ' }, ...v];

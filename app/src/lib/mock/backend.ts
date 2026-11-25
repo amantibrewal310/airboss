@@ -305,7 +305,7 @@ export class MockBackend implements Transport {
         linked_by: 'launch',
         linked_at: this.now(),
       });
-      this.event(id, 'linked', { actor: 'launch', body: `T3 · ${title}` });
+      this.event(id, 'linked', { actor: 'launch', body: `t3_thread ${ref}` });
       const started: StartedThread = { key: { source: 't3', ref }, mode, repo, title, linked: true };
       report.started.push(started);
     }
@@ -419,7 +419,7 @@ export class MockBackend implements Transport {
     edit_notes: ({ id, body }) => {
       const t = this.task(id);
       t.body = body?.trim() ? body : null;
-      this.event(id, 'edited', { body: 'notes' });
+      this.event(id, 'edited', { body: 'body' });
       return this.commit();
     },
 
@@ -495,10 +495,10 @@ export class MockBackend implements Transport {
       }
       const prev = { parent: t.parent, position: t.position };
       this.place(id, parent, position);
-      this.event(id, 'moved', { body: parent === null ? 'top level' : String(parent) });
+      this.event(id, 'moved');
       const rec = this.pushUndo(`Move ${id}`, [id], () => {
         this.place(id, prev.parent, prev.position);
-        this.event(id, 'moved', { body: prev.parent === null ? 'top level' : String(prev.parent) });
+        this.event(id, 'moved');
       });
       return { patch: this.commit(), undo: this.entry(rec) };
     },
@@ -516,7 +516,7 @@ export class MockBackend implements Transport {
         [a.position, b.position] = [b.position, a.position];
       };
       swap();
-      this.event(id, 'moved', { body: direction });
+      this.event(id, 'moved');
       const rec = this.pushUndo(`Move ${id} ${direction}`, [id, other.id], swap);
       return { patch: this.commit(), undo: this.entry(rec) };
     },
@@ -560,7 +560,7 @@ export class MockBackend implements Transport {
         throw fail('invalid_target', 'Branch names can use letters, digits, `.`, `_`, `/` and `-`.');
       }
       t.branch = b || null;
-      this.event(id, 'edited', { body: 'branch' });
+      this.event(id, 'edited', { body: b ? `branch: ${b}` : 'branch cleared' });
       return this.commit();
     },
 
@@ -585,7 +585,7 @@ export class MockBackend implements Transport {
       }
       if (!this.s.edges.some(([a, b]) => a === id && b === waitsOn)) {
         this.s.edges.push([id, waitsOn]);
-        this.event(id, 'waits_on_added', { body: String(waitsOn) });
+        this.event(id, 'waits_on_added', { body: `waits on #${waitsOn}` });
       }
       return this.commit();
     },
@@ -593,7 +593,7 @@ export class MockBackend implements Transport {
     remove_dependency: ({ id, waitsOn }) => {
       this.task(id);
       this.s.edges = this.s.edges.filter(([a, b]) => !(a === id && b === waitsOn));
-      this.event(id, 'waits_on_removed', { body: String(waitsOn) });
+      this.event(id, 'waits_on_removed', { body: `no longer waits on #${waitsOn}` });
       return this.commit();
     },
 
@@ -609,7 +609,7 @@ export class MockBackend implements Transport {
       const l = this.s.links.find((x) => x.id === link);
       if (!l) throw fail('not_found', 'That link no longer exists.');
       this.s.links = this.s.links.filter((x) => x.id !== link);
-      this.event(l.task, 'unlinked', { body: l.title ?? l.ref });
+      this.event(l.task, 'unlinked', { body: `${l.kind} ${l.ref}` });
       return this.commit();
     },
 
@@ -727,7 +727,7 @@ export class MockBackend implements Transport {
     ui_ready: () => null,
     quickadd_shown: () => null,
     quickadd_hide: () => {
-      this.emit('quickadd:reset', { hotkey: this.s.settings.hotkey });
+      this.emit('quickadd:reset', { hotkey: this.s.settings.hotkey, keep_text: false });
       return null;
     },
     quickadd_resize: () => null,
@@ -762,7 +762,7 @@ export class MockBackend implements Transport {
       linked_at: this.now(),
     };
     this.s.links.push(link);
-    this.event(id, 'linked', { body: title ?? c.label });
+    this.event(id, 'linked', { body: `${c.kind} ${c.ref}` });
     if (c.kind === 'pr' && !this.s.prs.has(c.ref)) {
       // sync.lookup_pr answers in the background; the title and state fill in.
       setTimeout(() => {
@@ -790,7 +790,7 @@ export class MockBackend implements Transport {
         if (!l) return;
         l.pr_state = 'open';
         l.title = title ?? `PR #${n} · Fix double booking`;
-        this.event(id, 'link_state', { actor: 'sync:gh', body: 'open' });
+        this.event(id, 'link_state', { actor: 'sync:gh', body: `${c.ref} open` });
         this.commit();
       }, this.delays.lookup);
     }

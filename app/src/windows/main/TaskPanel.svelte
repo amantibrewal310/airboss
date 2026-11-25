@@ -58,7 +58,7 @@
         {/if}
         {#if fresh}
           <Threads links={detail!.links} />
-          <Activity task={row.id} history={detail!.history} more={detail!.history_more} />
+          <Activity task={row.id} history={detail!.history} more={detail!.history_more} links={detail!.links} />
         {/if}
       {/if}
     </div>
@@ -77,7 +77,8 @@
     outline: none;
     animation: peekin var(--dur-panel) var(--ease);
   }
-  @media (max-width: 980px) {
+  /* Up to about 1180px of window the panel takes 380px, so the list keeps 480px or more. */
+  @media (max-width: 1180px) {
     .peek {
       width: 380px;
     }

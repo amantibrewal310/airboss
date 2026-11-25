@@ -33,59 +33,63 @@ export interface Command {
   palette?: boolean;
 }
 
-export type CommandId =
-  | 'go_needs'
-  | 'go_plans'
-  | 'go_ready'
-  | 'go_all'
-  | 'go_progress'
-  | 'open_needs'
-  | 'jump'
-  | 'new_task'
-  | 'quick_add'
-  | 'settings'
-  | 'shortcuts'
-  | 'undo'
-  | 'toasts'
-  | 'up'
-  | 'down'
-  | 'first'
-  | 'last'
-  | 'page_up'
-  | 'page_down'
-  | 'open_fold'
-  | 'close_fold'
-  | 'rename'
-  | 'toggle_done'
-  | 'status'
-  | 'link_repos'
-  | 'do_it'
-  | 'plan_it'
-  | 'open_page'
-  | 'back'
-  | 'move_up'
-  | 'move_down'
-  | 'add_waits_on'
-  | 'add_link'
-  | 'mark_blocked'
-  | 'open_latest'
-  | 'drop'
-  | 'copy_number'
-  | 'escape'
-  | 'to_panel'
-  | 'needs_up'
-  | 'needs_down'
-  | 'needs_main'
-  | 'needs_dismiss'
-  | 'plans_left'
-  | 'plans_right'
-  | 'plans_up'
-  | 'plans_down'
-  | 'plans_open'
-  | 'layout_tree'
-  | 'layout_status'
-  | 'move_under'
-  | 'check_connections';
+/** Every command id; native menu items send these too (app/src-tauri/src/menu.rs). */
+export const COMMAND_IDS = [
+  'go_needs',
+  'go_plans',
+  'go_ready',
+  'go_all',
+  'go_progress',
+  'open_needs',
+  'jump',
+  'new_task',
+  'quick_add',
+  'settings',
+  'shortcuts',
+  'undo',
+  'toasts',
+  'up',
+  'down',
+  'first',
+  'last',
+  'page_up',
+  'page_down',
+  'open_fold',
+  'close_fold',
+  'rename',
+  'toggle_done',
+  'status',
+  'link_repos',
+  'do_it',
+  'plan_it',
+  'open_page',
+  'back',
+  'move_up',
+  'move_down',
+  'add_waits_on',
+  'add_link',
+  'mark_blocked',
+  'open_latest',
+  'drop',
+  'copy_number',
+  'escape',
+  'to_panel',
+  'needs_up',
+  'needs_down',
+  'needs_main',
+  'needs_dismiss',
+  'plans_left',
+  'plans_right',
+  'plans_up',
+  'plans_down',
+  'plans_open',
+  'layout_tree',
+  'layout_status',
+  'move_under',
+  'check_connections',
+] as const;
+
+export type CommandId = (typeof COMMAND_IDS)[number];
 
 const LIST: ViewKind[] = ['list'];
 const TASKS: ViewKind[] = ['list', 'page'];
@@ -187,20 +191,20 @@ export function sheetRows(hotkey: string): { label: string; keys: string }[] {
     { label: 'Do it', keys: 'mod+enter' },
     { label: 'Plan it', keys: 'shift+mod+enter' },
     { label: 'Move', keys: 'up+down' },
-    { label: 'Open / fold', keys: 'right+left' },
+    { label: 'Open or fold', keys: 'right+left' },
     { label: 'Mark done', keys: 'space' },
     { label: 'Change status', keys: 's' },
     { label: 'Plans', keys: 'g l' },
     { label: 'Rename', keys: 'enter' },
     { label: 'Open full page', keys: 'mod+down' },
-    { label: 'Close page / peek', keys: 'esc' },
+    { label: 'Close the page or panel', keys: 'esc' },
     { label: 'Open thread or PR', keys: 'mod+o' },
     { label: 'Add waits-on', keys: 'mod+d' },
     { label: 'Add link', keys: 'mod+l' },
     { label: 'Mark blocked', keys: 'mod+b' },
     { label: 'Needs me: main action', keys: 'enter' },
     { label: 'Needs me: dismiss', keys: 'mod+backspace' },
-    { label: 'Switch list / detail', keys: 'tab' },
+    { label: 'Switch between list and detail', keys: 'tab' },
     { label: 'This sheet', keys: '?' },
     { label: 'Reorder', keys: 'alt+mod+up+down' },
     { label: 'Undo', keys: 'mod+z' },

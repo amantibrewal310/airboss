@@ -8,10 +8,16 @@ import { setClockOffset } from './lib/logic/clock';
 
 async function main() {
   if (__MOCK__) {
-    const { createMockBackend, fixtureFromUrl } = await import('./lib/mock');
-    const backend = createMockBackend(fixtureFromUrl(location.search));
-    setClockOffset(backend.s.nowMs - Date.now());
-    setTransport(backend);
+    const { createMockBackend, createRecordedTransport, fixtureFromUrl, isRecorded, RECORDED_NOW } = await import('./lib/mock');
+    if (isRecorded(location.search)) {
+      // Rust's recording, taken at DESIGN's "now".
+      setClockOffset(Date.parse(RECORDED_NOW) - Date.now());
+      setTransport(createRecordedTransport());
+    } else {
+      const backend = createMockBackend(fixtureFromUrl(location.search));
+      setClockOffset(backend.s.nowMs - Date.now());
+      setTransport(backend);
+    }
   } else {
     const { tauriTransport } = await import('./lib/api/tauri');
     setTransport(tauriTransport);

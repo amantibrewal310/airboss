@@ -1,0 +1,12 @@
+[
+  {"command": "accept_proposals", "args": {"ids": [209]}},
+  {"command": "reject_proposals", "args": {"ids": [210], "reason": null}},
+  {"command": "needs_dismiss", "args": {"key": "question:slot-picker"}},
+  {"command": "undo", "args": {"entry": 2}},
+  {"command": "toggle_done", "args": {"id": 145}},
+  {"command": "set_status", "args": {"id": 146, "status": "blocked", "note": "Waiting on the mail queue"}},
+  {"command": "reorder", "args": {"id": 146, "direction": "up"}},
+  {"command": "create_task", "args": {"task": {"title": "Write the release notes", "body": "Draft for the booking launch", "parent": null, "repos": [1], "links": [], "then": "none"}}},
+  {"command": "add_note", "args": {"id": 144, "text": "Use the existing date picker."}},
+  {"command": "rename_task", "args": {"id": 152, "title": "Read prior art on agent fleets"}}
+]

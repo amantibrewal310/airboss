@@ -46,6 +46,14 @@
 
   const live = $derived(items.filter((i): i is MenuItem => i !== 'separator'));
   let hl = $state(0);
+  /**
+   * A menu opened by a key press must not be picked by that key's repeat: ↩, Space and clicks
+   * wait 300 ms after opening, and ⌘↩ never picks. Number keys are an explicit choice and act at
+   * once, so S then 4 typed quickly still works.
+   */
+  const SETTLE_MS = 300;
+  const openedAt = performance.now();
+  const settled = () => performance.now() - openedAt >= SETTLE_MS;
   let list: HTMLDivElement | undefined = $state();
 
   $effect(() => {
@@ -53,8 +61,9 @@
     el?.focus({ preventScroll: true });
   });
 
-  function pick(item: MenuItem | undefined) {
+  function pick(item: MenuItem | undefined, explicit = false) {
     if (!item || item.disabled) return;
+    if (!explicit && !settled()) return;
     if (!item.stay) onclose();
     item.run();
   }
@@ -68,11 +77,12 @@
     } else if (e.key === 'Enter' || (e.key === ' ' && checklist)) {
       e.preventDefault();
       e.stopPropagation();
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
       pick(live[hl]);
     } else if (numbered && /^[1-9]$/.test(e.key) && !e.metaKey && !e.ctrlKey) {
       e.preventDefault();
       e.stopPropagation();
-      pick(live[Number(e.key) - 1]);
+      pick(live[Number(e.key) - 1], true);
     } else if (e.key === 'Home' || e.key === 'End') {
       e.preventDefault();
       hl = e.key === 'Home' ? 0 : n - 1;
@@ -138,6 +148,9 @@
   }
   .hl {
     background: var(--bg-sel);
+  }
+  .hl .k {
+    color: var(--text-2);
   }
   .off {
     color: var(--text-3);

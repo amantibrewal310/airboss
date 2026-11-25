@@ -18,7 +18,7 @@ describe('StatusMenu', () => {
     await userEvent.keyboard('2');
     await wait(30);
     expect(app.tasks.rows.get(146)!.status).toBe('doing');
-    expect(app.toasts.list.at(-1)!.text).toBe('146 → In progress');
+    expect(app.toasts.list.at(-1)!.text).toBe('Moved 146 to In progress');
   });
 
   it('asks why for Blocked and won’t save an empty reason', async () => {
@@ -76,7 +76,10 @@ describe('StartInMenu', () => {
     await wait(20);
     const labels = [...document.querySelectorAll('[role="menuitem"]')].map((e) => e.textContent?.trim());
     expect(labels).toEqual(['Start in airboss', 'Start in booking-web', 'Start in booking-api', 'Start in dotfiles', 'No repo: research only']);
-    await userEvent.keyboard('{ArrowDown}{Enter}');
+    // ↩ waits out the 300 ms after opening, so the key that opened the menu can't pick from it.
+    await userEvent.keyboard('{ArrowDown}');
+    await wait(320);
+    await userEvent.keyboard('{Enter}');
     expect(onpick).toHaveBeenCalledWith({ repo: 1 });
   });
 });

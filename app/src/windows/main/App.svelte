@@ -31,6 +31,19 @@
     if (app.ready) app.sendContext();
   });
 
+  /**
+   * Right-click shows the app's own menus (rows, stations) and nothing elsewhere: no browser
+   * menu in a Mac app. Text fields and selected text keep the system menu (Cut, Copy, Paste).
+   */
+  function nativeMenu(e: MouseEvent) {
+    if (e.defaultPrevented) return;
+    const t = e.target as Element | null;
+    if (t?.closest('input, textarea, [contenteditable="true"]')) return;
+    const sel = window.getSelection();
+    if (sel && !sel.isCollapsed && sel.toString().trim()) return;
+    e.preventDefault();
+  }
+
   onMount(() => {
     // Rust shows the window once the bootstrap data has rendered (2 s backstop in Rust).
     const stop = $effect.root(() => {
@@ -42,7 +55,7 @@
   });
 </script>
 
-<svelte:window onkeydown={(e) => app.handleKey(e)} />
+<svelte:window onkeydown={(e) => app.handleKey(e)} oncontextmenu={nativeMenu} />
 <svelte:document onfocusin={() => app.setZone(zoneOf(document.activeElement, !!app.ui.overlay))} />
 
 {#if app.fatal}

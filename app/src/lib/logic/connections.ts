@@ -15,12 +15,18 @@ export function t3MissingReason(a: Availability): string | null {
  * first that isn't (EM decision, 26 Nov). T3 Code is also off when `launch` says it's missing.
  * Claude Code shows only when it's broken.
  */
-export function mergeConnections(rows: Connection[], availability: Availability): Connection[] {
+export function mergeConnections(rows: Connection[], availability: Availability, app: { cliInstalled?: boolean } = {}): Connection[] {
   const byName = new Map<string, Connection>();
   for (const r of rows) {
     const prev = byName.get(r.name);
     if (!prev) byName.set(r.name, { ...r });
     else if (prev.ok && !r.ok) byName.set(r.name, { ...r });
+  }
+  // Agents can't report without the command-line tool, so the row says so (and the footer agrees)
+  // until it's installed, whatever the last report was.
+  const agents = byName.get('Agents');
+  if (app.cliInstalled === false && agents?.ok) {
+    byName.set('Agents', { ...agents, ok: false, state: 'Not set up', fix: 'Install the command-line tool, then copy the agent note into each repo.' });
   }
   const missing = t3MissingReason(availability);
   const t3 = byName.get('T3 Code');

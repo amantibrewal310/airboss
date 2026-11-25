@@ -167,30 +167,30 @@ backend or a reviewer may want to know.
 
 1. **`lib/api/` instead of `lib/ipc/`.** The brief for this work names `lib/api/`; the layout is
    otherwise SPEC-app's.
-2. **The mock simulates writes until Rust records them.** SPEC-app's mock replays a script
-   recorded from Rust, which doesn't exist yet. `MockBackend` applies each write to a small model
-   and builds the patch the way the view-model table says; it throws `UnscriptedCall` for any
-   unknown command. `mock/replay.ts` is the strict, in-order replay transport, ready for
-   `tests/script.json`; `mock/fixtures/index.ts` is the one loader the generated fixtures replace.
+2. **The mock simulates writes; Rust's recording checks them.** `MockBackend` applies each write
+   to a small model for the hand-made fixtures. Rust's `recorded.json` (driven by
+   `tests/script.json`) runs through the strict replay transport in `tests/component/recorded.test.ts`
+   and in `?fixture=recorded`; the mock's event bodies and plan rule now follow core's.
 3. **Display waves put a subtask that waits outside in the last wave.** SPEC-app's text says "the
    column after its latest inside blocker, or wave 1", but its own test (DESIGN's Refunds: waves
    of 3, 2, 1 and 2) and the design put Backfill (208) in wave 4. The mock follows the test and
    the design; Rust owns this rule.
 4. **Narrow widths step at 700px and 560px of list width, not 820px and 680px.** The Paper screens
    show full repo pills in a 728px list beside the panel; DESIGN's numbers would turn them into
-   dots. Two more steps (460px, 360px) hide the actor and the quieter pills so a 288px list
-   (900px window, 380px panel) never overflows.
+   dots. At 560px chips take their short labels (Running, Waiting, Stopped) rather than going
+   bare; at 460px they lose the label, and a row waiting on you drops its second red dot. The
+   panel is 380px up to a 1180px window (SPEC says 980px), so at 1100px the list keeps 488px.
 5. **Branch shows only the task's own branch.** Screens 01 and 02 have no Branch line for a
    subtask; the branch Do it would use (`Prepared.branch`) is in Do it's tooltip instead of a
    text-3 line.
-6. **The panel has no Parent line for a top-level task, and the page rail drops "+ Link repo"
-   once a task has repos** (its repo tags open the checklist), matching screen 03. Move under…
+6. **The panel has no Parent line for a top-level task, and "+ Link repo" goes once the repos are
+   inherited from subtasks** (and on the page rail once a task has repos; its tags open the
+   checklist), matching screen 03. Move under…
    stays in ⌘K, the context menu and the Task menu.
 7. **Drop's icon in the context menu is grey.** The Paper menu draws it red; the Red Is Mine Rule
    keeps red for needs-me only.
-8. **`AlreadyStarting` gets a toast**, "Already starting — check T3 in a moment." (EM decision of
-   26 Nov), although Appendix D says no toast. A second ⌘↩ while the button says "Starting…"
-   does nothing, as the spec asks.
+8. **`AlreadyStarting` gets no toast**, as Appendix D says; the button already reads
+   "Starting…". (Phase 1 toasted it; the polish pass checked every string against Appendix D.)
 9. **Esc on the page clears a map selection first, then closes the page.** Appendix C lists
    "close page, then clear the map selection"; clearing first is the progressive reading.
 10. **In the panel, ↩ and Space press the focused button** (Appendix C, `panel` zone); with focus
@@ -199,12 +199,13 @@ backend or a reviewer may want to know.
     by the page as well as the menu (the 50 ms dedupe is Rust's).
 12. **The header's count is the open tasks the view holds, whatever is folded**, like the
     sidebar's (screen 01 shows 21 in both).
-13. **A parent whose only subtasks are proposals isn't a plan yet**: it gets no plan card and no
-    Parents entry, though its row folds and shows 0/3.
+13. **Plans follow Rust's `plan_cards`**: a top-level task with subtasks that isn't proposed, done
+    or dropped, proposals included. The sidebar's Plans count and Parents use the same rule, so
+    they match the Plans page; a proposals-only plan reads "None yet, only proposals".
 14. **Folds come from `Settings.folded`.** A task that becomes a parent later (Plan it, accepted
     proposals) starts open, so a new plan is visible.
-15. **The Plans grid is `repeat(auto-fill, minmax(min(100%, 420px), 500px))`**: two 500px cards at
-    1440px like screen 04, still at least 340px wide.
+15. **The Plans grid is `repeat(auto-fill, minmax(min(100%, 340px), 1fr))`**: three cards at 1440px,
+    two at 1100px, never under 340px.
 16. **The design fixture follows the contract where the design doesn't**: 144's thread is waiting
     on a question, so its chip reads "Waiting on you" (the design shows "Agent working"), and a
     proposal-only parent folds.
@@ -213,46 +214,54 @@ backend or a reviewer may want to know.
 18. **New task in the main window creates with `then: 'none'` and then runs Do it or Plan it
     through the normal flow** (Starting…, result toasts). Quick add sends `then`, so Rust handles
     a failure while the panel is hidden, as the spec describes.
-19. **Quick add keeps a typed title only when it was hidden by something other than Esc or
-    Create** (clicking elsewhere, the hotkey).
+19. **Quick add keeps the typed title and notes when `quickadd:reset` says `keep_text`** (Rust sets
+    it for a click elsewhere) and only refocuses; otherwise it resets.
 20. **Screen 07's baseline shows the right-click menu**; only one overlay is open at a time, so
     the status menu is covered by component tests.
 21. **List keys beyond Appendix C:** Home, End, Page Up, Page Down, ⌥↑ and ⌥↓ move by page or to
     the ends, as Mac lists do.
 22. **Connections merge by name in the UI too** (worst state wins), so it doesn't matter whether
-    Rust merges first.
+    Rust merges first. The Agents row reads "Not set up" while the command-line tool isn't
+    installed, so the row, its button and the footer agree.
+23. **One action per item per settle (400 ms).** After a Needs me item leaves, main-action keys
+    are ignored until the time passes or the selection moves; ↩↩ in New task can't open rename,
+    and ↩↩ on Finish it? runs once. Menus ignore picks for 300 ms after opening and never pick on
+    ⌘↩ (number keys still pick at once).
+24. **Tab is always handled by the page.** WebKit skips buttons on Tab unless macOS's Keyboard
+    navigation is on, so traps and the window cycle their own lists; focus never lands on `<body>`.
+25. **Contrast:** text-3 is `#80838d` dark and `#6e717a` light (the brief's `#7c7f89` fails axe on
+    the raised surfaces), with separate text tokens for red, green, orange and links; Increase
+    Contrast only ever raises them (checked by `a11y.spec.ts`).
+26. **Rows and Needs me items carry their sentence as VoiceOver-only text** and hide the terse
+    visible pieces ("6m", "1/5"), instead of an `aria-label` that axe flags as not containing
+    the visible text.
+27. **Run-map columns narrow to 120px before scrolling** (SPEC says 150px; the brief said about
+    130). Four waves then fit a 1100px window's page; wider maps fade the hidden edge and the
+    legend says to scroll.
+28. **⌘Z names the newest undo entry this window was given** (`undo { entry }`), so the UI reverses
+    exactly that entry's local changes; Rust's `UndoResult` doesn't say which entry it took. A
+    reject's Undo goes at 5 s from the request (SPEC's delay), even while the toast is hovered.
+29. **A Rust-sent toast's action runs as `api[command](...Object.values(args))`** (the args are in
+    the api function's order, dto.rs `ToastArgs`); its `tone: 'warning'` shows the orange icon.
 
 ## What the backend must match
 
-Everything is in `src/lib/api/contract.ts` and `src/lib/types/`. Fields the UI needs beyond the
-spec's text are marked EXTRA there:
-
-- `Bootstrap.cli: { installed, path, on_path }` (Settings and the Agents row).
-- `TaskDetail.history_more` (Show more) and `TaskDetail.suggested_prs` (the ⌘L popover).
-- `HistoryEntry.thread_title` (for "Agent in <thread title>").
-- Undoable writes (`set_status`, `toggle_done`, `reject_proposals`, `move_task`, `reorder`,
-  `needs_dismiss`, `needs_snooze`) return `{ patch, undo: { id, label } | null }`, so a toast's
-  Undo undoes its own entry.
-- `CreateTaskResult.link_errors` ("Created 153, but couldn't link …").
-- `AppError.code` values `db_unavailable` (`bootstrap`, `detail` = the database path) and
-  `undo_refused`.
-- `menu:action { command }` uses the ids in `src/lib/logic/commands.ts`.
-- Command arguments use Tauri's camelCase names (`historyLimit`, `waitsOn`, `needsKey`); struct
-  fields inside stay snake_case; enums are snake_case strings and data enums externally tagged.
+The types are generated from `src-tauri/src/dto.rs`; `tests/unit/menu.test.ts` checks that every
+id `menu.rs` sends is a command the UI runs, and `tests/component/recorded.test.ts` that the UI's
+writes match Rust's recording. Rust sends `seq: 0` for an empty patch, which the UI ignores.
 
 ## Results
 
-- **Tests:** 106 unit tests (Node) and 41 component tests (WebKit) in Vitest; 30 Playwright tests
-  (smoke, 60 fps, 4 accessibility, 24 screenshot baselines).
+- **Tests:** 115 unit tests (Node) and 58 component tests (WebKit) in Vitest; 135 Playwright
+  tests (smoke, 60 fps, focus, layout at 1000/1100/1440, details, accessibility, axe on 16
+  screens × 4 modes, the recorded fixtures, 24 screenshot baselines).
 - **60 fps:** Playwright WebKit, perf fixture (2,000 tasks, every parent open, 1,991 rows,
-  75,694px), whole list scrolled in 3 s: 300 frames, p50 10 ms, p95 12 ms, max 12 ms, none over
+  75,694px), whole list scrolled in 3 s: 301 frames, p50 10 ms, p95 11 ms, max 12 ms, none over
   20 ms; at most 40 rows in the DOM. (Headless WebKit runs rAF at 100 Hz.)
-- **Bundle** (`pnpm build`, minified / gzip -9): the main window loads 245 KB of JS / 80 KB
-  (its entry 148 KB / 44 KB, plus a 96 KB / 36 KB chunk it shares with quick add: the Svelte
-  runtime, New task, menus, icons and the API) and 59 KB / 11 KB of CSS. Quick add loads its own
-  2.8 KB entry plus the shared chunk: 100 KB / 38 KB of JS and 11 KB / 3.4 KB of CSS. The font is
-  48 KB (Inter variable, Latin). No mock code reaches the production build.
-- **Gap:** SPEC-app's budget asks for quick add under 40 KB minified. Its own code is 2.8 KB, but
-  the shared Svelte runtime and form components make it 100 KB minified (38 KB gzipped). Meeting
-  the letter of the budget needs a smaller form for the panel (or counting gzip); left for the
-  integration pass.
+- **Bundle** (`pnpm build`, minified / gzip): the main window loads 256 KB of JS / 86 KB (its
+  entry 157 / 48, the chunk it shares with quick add 90 / 35, the Start in menu 7 / 3) and
+  61 KB / 12 KB of CSS. Quick add loads 93 KB / 36 KB of JS (its 3 KB entry and the shared
+  chunk) and 11 KB / 3.4 KB of CSS; before the Start in menu was lazy-loaded it was 100 KB / 38 KB.
+  The font is 48 KB (Inter variable, Latin). No mock code reaches the production build.
+- **Gap:** SPEC-app's budget asks for quick add under 40 KB minified. It's 93 KB minified (36 KB
+  gzipped), most of it the Svelte runtime and the New task form it shares with the main window.

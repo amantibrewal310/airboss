@@ -1,13 +1,34 @@
 <script lang="ts">
   import Avatar from '../../../lib/components/Avatar.svelte';
-  import type { HistoryEntry, TaskId } from '../../../lib/types';
+  import type { HistoryEntry, LinkDto, TaskId } from '../../../lib/types';
   import { useApp } from '../../../lib/state/context';
-  import { phrase } from '../../../lib/logic/activity';
+  import { phrase, type PhraseContext } from '../../../lib/logic/activity';
+  import { linkLabel } from '../../../lib/logic/links';
   import { feedTime } from '../../../lib/logic/time';
 
   /** The activity feed (with subtasks' events) and the note input. ↩ adds the note, ⇧↩ adds a line. */
-  let { task, history, more }: { task: TaskId; history: HistoryEntry[]; more: boolean } = $props();
+  let { task, history, more, links = [] }: { task: TaskId; history: HistoryEntry[]; more: boolean; links?: LinkDto[] } = $props();
   const app = useApp();
+  /** Thread ref or title → the folder it runs in, for "Started thread slot-picker in booking-web". */
+  const folders = $derived.by(() => {
+    const m = new Map<string, string>();
+    for (const l of links) {
+      const path = l.thread?.project_path;
+      if (!path) continue;
+      const folder = path.replace(/\/+$/, '').split('/').pop();
+      if (!folder) continue;
+      m.set(l.ref, folder);
+      if (l.thread?.title) m.set(l.thread.title, folder);
+    }
+    return m;
+  });
+  const ctx: PhraseContext = {
+    repoOf: (thread) => folders.get(thread) ?? null,
+    linkTitle: (kind, ref) => {
+      const l = links.find((x) => x.kind === kind && x.ref === ref);
+      return l ? linkLabel(l) : null;
+    },
+  };
   let note = $state('');
   let area: HTMLTextAreaElement | undefined = $state();
 
@@ -40,7 +61,7 @@
       <li class="ev">
         <Avatar actor={e.actor} size={18} />
         <span class="tx">
-          {#each phrase(e, task) as s, i (i)}{#if s.strong}<b>{s.text}</b>{:else}{s.text}{/if}{/each}
+          {#each phrase(e, task, ctx) as s, i (i)}{#if s.strong}<b>{s.text}</b>{:else}{s.text}{/if}{/each}
         </span>
         <span class="tm">{feedTime(e.at, app.now)}</span>
       </li>
@@ -95,6 +116,10 @@
     min-width: 0;
     overflow-wrap: anywhere;
     padding: 7px 0;
+    /* Activity can be selected and copied. */
+    user-select: text;
+    -webkit-user-select: text;
+    cursor: text;
   }
   b {
     color: var(--text);

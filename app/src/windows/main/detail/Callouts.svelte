@@ -2,7 +2,7 @@
   import Icon from '../../../lib/components/Icon.svelte';
   import type { NeedsItem } from '../../../lib/types';
   import { useApp } from '../../../lib/state/context';
-  import { KIND_ICON, KIND_LABEL, mainLabel, otherLabel } from '../../../lib/logic/needs';
+  import { headlineOf, KIND_ICON, KIND_LABEL, mainLabel, otherLabel } from '../../../lib/logic/needs';
   import { relative } from '../../../lib/logic/time';
 
   /** One red-washed callout per Needs me item, with its main action and Dismiss. */
@@ -12,7 +12,7 @@
   function other(n: NeedsItem) {
     if (n.kind === 'quiet') return app.snooze(n);
     if (n.kind === 'proposed') return app.rejectProposals(n, n.proposed.map(([id]) => id));
-    return app.dismiss(n, n.kind === 'finish_it' ? 'Kept open' : 'Dismissed');
+    return app.dismiss(n);
   }
 </script>
 
@@ -21,7 +21,7 @@
     <span class="ic"><Icon name={KIND_ICON[n.kind]} size={15} /></span>
     <div class="w">
       <div class="k">{KIND_LABEL[n.kind]} · {relative(n.since, app.now)} ago{#if n.stale}<span class="st">{' · May be out of date'}</span>{/if}</div>
-      <div class="q">{n.headline}</div>
+      <div class="q">{headlineOf(n)}</div>
       <div class="acts">
         <button type="button" class="pri" onclick={() => app.mainAction(n)}>{mainLabel(n.kind)}</button>
         <button type="button" class="sec" onclick={() => other(n)}>{otherLabel(n.kind)}</button>
@@ -46,8 +46,9 @@
     opacity: 0;
     transform: translateX(-10px);
   }
+  /* Out of date: a dashed edge and the label say so; the text keeps its contrast. */
   .stale {
-    opacity: 0.7;
+    border-style: dashed;
   }
   .ic {
     color: var(--needs);
@@ -65,12 +66,12 @@
     font-size: var(--fs-label);
     font-weight: 600;
     line-height: 14px;
-    color: var(--needs);
+    color: var(--needs-text);
     font-variant-numeric: tabular-nums;
   }
   .st {
     font-weight: 500;
-    color: var(--text-3);
+    color: var(--text-2);
   }
   .q {
     color: var(--text);

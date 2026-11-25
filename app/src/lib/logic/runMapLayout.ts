@@ -8,7 +8,8 @@ import type { RunMap, TaskId } from '../types';
 
 export const MAP_MIN_WIDTH = 460;
 export const MAP_MAX_WIDTH = 780;
-export const MIN_COLUMN = 150;
+/** Columns narrow to this before the map scrolls sideways; four waves fit a 1100px window's page. */
+export const MIN_COLUMN = 120;
 export const ROW_GAP = 80;
 export const FIRST_Y = 40;
 /** Above this, the page opens on the Waves list and the Map tab says why. */

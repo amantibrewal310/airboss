@@ -38,10 +38,13 @@ describe('runMapLayout', () => {
     expect(l.paths.find((p) => p.outside)).toMatchObject({ to: 208, d: 'M547 120 H590', done: false });
   });
 
-  it('keeps columns 150px or wider, scrolling instead of squeezing', () => {
+  it('keeps columns 120px or wider, scrolling instead of squeezing', () => {
     const wide: RunMap = { ...refunds, waves: Array.from({ length: 8 }, (_, i) => [i + 1]), edges: [], outside: [] };
-    expect(layoutRunMap(wide, 780).column).toBe(150);
-    expect(layoutRunMap(wide, 780).width).toBe(1200);
+    expect(layoutRunMap(wide, 780).column).toBe(120);
+    expect(layoutRunMap(wide, 780).width).toBe(960);
+    // Four waves in a 1100px window's page column (508px) fit without scrolling.
+    expect(layoutRunMap(refunds, 508).width).toBe(508);
+    expect(layoutRunMap(refunds, 508).column).toBe(127);
   });
 
   it('falls back to the Waves list above 40 subtasks or 8 waves', () => {
@@ -78,7 +81,7 @@ describe('activity phrases', () => {
     expect(text(phrase(e({ kind: 'note', actor: 'agent:slot-picker', thread_title: 'slot-picker', body: 'Asked about the picker' }), 144))).toBe(
       'Agent in slot-picker: Asked about the picker',
     );
-    expect(text(phrase(e({ kind: 'linked', actor: 'launch', body: 'T3 · slot-picker' }), 144))).toBe('Launch started thread slot-picker');
+    expect(text(phrase(e({ kind: 'linked', actor: 'launch', body: 't3_thread slot-picker' }), 144))).toBe('Started thread slot-picker');
   });
 
   it('starts a subtask’s events with its id', () => {

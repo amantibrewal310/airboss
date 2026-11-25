@@ -81,8 +81,11 @@
     }
   });
 
+  // Read the position on the scroll event itself, so a fast fling never shows blank space, and
+  // once more on the next frame to catch where momentum scrolling settles.
   let frame = 0;
   function onscroll() {
+    if (scroller) scrollTop = scroller.scrollTop;
     if (frame) return;
     frame = requestAnimationFrame(() => {
       frame = 0;

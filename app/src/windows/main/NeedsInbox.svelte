@@ -1,9 +1,10 @@
 <script lang="ts">
+  import { fullTitle } from '../../lib/actions/fullTitle';
   import Icon from '../../lib/components/Icon.svelte';
   import Button from '../../lib/components/Button.svelte';
   import type { NeedsItem } from '../../lib/types';
   import { useApp } from '../../lib/state/context';
-  import { grouped, KIND_ICON } from '../../lib/logic/needs';
+  import { grouped, KIND_ICON, KIND_LABEL, mainLabel } from '../../lib/logic/needs';
   import { clockTime, relative } from '../../lib/logic/time';
   import NeedsCard from './NeedsCard.svelte';
 
@@ -53,10 +54,13 @@
           onclick={() => pick(n)}
           onkeydown={() => {}}
         >
-          <span class="ic"><Icon name={KIND_ICON[n.kind]} size={15} /></span>
-          <div class="w">
-            <div class="l1"><span class="id">{n.task}</span><span class="tt" title={n.task_title}>{n.task_title}</span><span class="tm">{relative(n.since, app.now)}</span></div>
-            <div class="l2" title={n.context}>{n.stale ? `May be out of date · ${n.context}` : n.context}</div>
+          <!-- The name VoiceOver reads: kind, task, what it is, and what Return does. The visible
+               lines repeat it tersely, so they are hidden from it. -->
+          <span class="sr">{`${KIND_LABEL[n.kind]}: ${n.task} ${n.task_title}. ${n.context}.${n.stale ? ' May be out of date.' : ''} Return: ${mainLabel(n.kind)}`}</span>
+          <span class="ic" aria-hidden="true"><Icon name={KIND_ICON[n.kind]} size={15} /></span>
+          <div class="w" aria-hidden="true">
+            <div class="l1"><span class="id">{n.task}</span><span class="tt" use:fullTitle={n.task_title}>{n.task_title}</span><span class="tm">{relative(n.since, app.now)}</span></div>
+            <div class="l2" use:fullTitle={n.stale ? `May be out of date · ${n.context}` : n.context}>{n.stale ? `May be out of date · ${n.context}` : n.context}</div>
           </div>
         </div>
       {/each}
@@ -103,6 +107,10 @@
   .ib.sel {
     background: var(--bg-sel);
   }
+  .ib.sel .id,
+  .ib.sel .tm {
+    color: var(--text-2);
+  }
   .ib.kb::after {
     content: '';
     position: absolute;
@@ -114,8 +122,10 @@
     opacity: 0;
     transform: translateX(-10px);
   }
-  .ib.stale .w {
-    opacity: 0.6;
+  /* Out of date: dimmed by weight and colour, not opacity, so it keeps 4.5:1. */
+  .ib.stale .tt {
+    font-weight: 400;
+    color: var(--text-2);
   }
   .ic {
     width: 18px;

@@ -69,7 +69,7 @@
   }
   .err {
     font-size: var(--fs-meta);
-    color: var(--st-blocked);
+    color: var(--warn-text);
   }
   .kind {
     font-size: var(--fs-meta);

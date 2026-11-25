@@ -171,34 +171,32 @@ export interface SidebarCounts {
   all: number;
 }
 
-/** Tasks with at least one accepted subtask (proposals alone don't make a plan yet). */
-export function plannedParents(rows: Map<TaskId, RowDto>): Set<TaskId> {
-  const out = new Set<TaskId>();
-  for (const r of rows.values()) {
-    if (r.parent !== null && r.status !== 'proposed' && r.status !== 'dropped') out.add(r.parent);
-  }
-  return out;
+/**
+ * A plan, as Rust's `plan_cards` decides it (viewmodel.rs): a top-level task with subtasks that
+ * isn't proposed, done or dropped. Proposed subtasks count, so a plan waiting on its proposals
+ * shows up (with "0 of 3 done").
+ */
+export function isPlan(r: Pick<RowDto, 'parent' | 'has_children' | 'status'>): boolean {
+  return r.parent === null && r.has_children && r.status !== 'proposed' && r.status !== 'done' && r.status !== 'dropped';
 }
 
 export function sidebarCounts(rows: Map<TaskId, RowDto>): SidebarCounts {
   const c: SidebarCounts = { ready: 0, plans: 0, progress: 0, all: 0 };
-  const planned = plannedParents(rows);
   for (const r of rows.values()) {
     if (r.ready) c.ready++;
     if (r.status === 'doing' || r.status === 'in_review') c.progress++;
     if (isOpenStatus(r.status)) c.all++;
-    if (r.parent === null && planned.has(r.id) && isOpenStatus(r.status)) c.plans++;
+    if (isPlan(r)) c.plans++;
   }
   return c;
 }
 
 /** Sidebar › Parents: open top-level tasks with (accepted) subtasks, in position order. */
 export function parentsList(rows: Map<TaskId, RowDto>, order: TaskId[]): RowDto[] {
-  const planned = plannedParents(rows);
   const out: RowDto[] = [];
   for (const id of order) {
     const r = rows.get(id)!;
-    if (r.parent === null && planned.has(r.id) && isOpenStatus(r.status)) out.push(r);
+    if (isPlan(r)) out.push(r);
   }
   return out;
 }

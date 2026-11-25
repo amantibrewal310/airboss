@@ -52,8 +52,11 @@
     color: var(--text);
   }
   .on {
-    background: var(--bg-sel);
+    background: var(--seg-on);
     color: var(--text);
-    box-shadow: 0 0 0 1px var(--line-2);
+    /* In light mode the selected segment is raised white. */
+    box-shadow:
+      0 0 0 1px var(--line-2),
+      var(--seg-lift, 0 0 transparent);
   }
 </style>

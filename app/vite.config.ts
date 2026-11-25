@@ -13,7 +13,8 @@ export default defineConfig(({ mode }) => ({
   define: {
     __MOCK__: JSON.stringify(mode === 'mock'),
   },
-  server: { port: 5173, strictPort: true },
+  // In `pnpm tauri dev` the webview's errors and warnings also print in the terminal.
+  server: { port: 5173, strictPort: true, forwardConsole: { unhandledErrors: true, logLevels: ['error', 'warn'] } },
   preview: { port: 4173, strictPort: true },
   build: {
     target: 'safari16',

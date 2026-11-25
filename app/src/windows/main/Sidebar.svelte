@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { fullTitle } from '../../lib/actions/fullTitle';
   import Icon from '../../lib/components/Icon.svelte';
   import type { IconName } from '../../lib/components/icons';
   import StatusIcon from '../../lib/components/StatusIcon.svelte';
@@ -19,7 +20,8 @@
     { view: 'all', label: 'All tasks', icon: 'list', count: () => app.counts.all },
   ];
 
-  const current = (v: View) => app.ui.view === v && !app.ui.pageOpen;
+  /** The full page keeps its view highlighted, so you can see where Esc goes back to. */
+  const current = (v: View) => app.ui.view === v;
 
   /** ↑↓ move between sidebar items (roving focus); ↩ and Space open; Esc goes to the list. */
   function keydown(e: KeyboardEvent) {
@@ -69,11 +71,11 @@
         <div class="sech">Parents</div>
         {#each app.parents as p (p.id)}
           {@const pct = percent(p.progress)}
-          <button type="button" class="nav" class:on={current(`parent:${p.id}`)} data-nav title={p.title} onclick={() => app.go(`parent:${p.id}`)}>
+          <button type="button" class="nav" class:on={current(`parent:${p.id}`)} data-nav onclick={() => app.go(`parent:${p.id}`)}>
             <StatusIcon shape={shapeOf(p)} />
-            <span class="t">{p.title}</span>
+            <span class="t" use:fullTitle={p.title}>{p.title}</span>
             <span class="c pc">{pct}%</span>
-            <ProgressRing {pct} size={13} />
+            <ProgressRing {pct} size={13} label={p.progress ? `${p.progress.done} of ${p.progress.total} done` : undefined} />
           </button>
         {/each}
       </div>
@@ -203,6 +205,9 @@
     background: var(--bg-sel);
     color: var(--text);
   }
+  .nav.on .c {
+    color: var(--text-2);
+  }
   .nav:focus-visible {
     outline: none;
     box-shadow: inset 0 0 0 var(--kb-outline) var(--focus);
@@ -226,7 +231,7 @@
     min-width: 18px;
     height: 18px;
     border-radius: 9px;
-    background: var(--needs);
+    background: var(--needs-fill);
     color: #fff;
     font-size: 11px;
     font-weight: 600;

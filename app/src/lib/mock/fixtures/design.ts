@@ -80,8 +80,8 @@ export function designBuilder(): SeedBuilder {
   b.event(144, 'note', 6 * MIN, 'agent:slot-picker', { body: 'Asked whether to reuse the date picker.' });
   b.pr(143, 'acme/booking-api#58', 'merged', { title: 'Slots endpoint', add: 214, del: 12, ago: HOUR });
   b.moved(143, 'done', HOUR, 'sync:gh', 'PR #58 merged');
-  b.event(145, 'edited', 2 * DAY, 'plan', { body: 'waits on 144' });
-  b.event(147, 'edited', 2 * DAY, 'plan', { body: 'waits on 144, 145, 146' });
+  b.event(145, 'waits_on_added', 2 * DAY, 'plan', { body: 'waits on #144' });
+  b.event(147, 'waits_on_added', 2 * DAY, 'plan', { body: 'waits on #144, #145, #146' });
   b.readySince[146] = b.at(HOUR);
 
   // Refunds

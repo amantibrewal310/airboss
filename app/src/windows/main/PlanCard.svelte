@@ -29,31 +29,51 @@
     onnext: (id: number) => void;
   } = $props();
   const pct = $derived(percent(card.progress));
+  const summary = $derived(
+    [
+      `${pct}% done, ${card.progress.done} of ${card.progress.total}`,
+      card.waves === 0 ? 'no waves yet' : card.current_wave === null ? 'all waves done' : `wave ${card.current_wave + 1} of ${card.waves}`,
+      card.next_up.length ? `next up ${card.next_up.map((n) => `${n.id} ${n.title}`).join(', ')}` : card.finish_it ? 'finish it?' : 'nothing ready',
+      card.working ? `${card.working} working` : '',
+      card.blocked ? `${card.blocked} blocked` : '',
+    ]
+      .filter(Boolean)
+      .join(', '),
+  );
 </script>
 
-<div
+<!--
+  A card is a focusable article (arrow keys move focus between cards; ↩ opens it). Its Next up
+  pills are buttons inside it, so it isn't an option or a button itself.
+-->
+<!-- Keys come from the window's one key handler (arrows, ↩), so the article needs no keydown of its own. -->
+<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+<article
   class="plan"
   class:sel={selected}
-  role="option"
-  aria-selected={selected}
-  tabindex="-1"
-  aria-label="{card.title}, {pct}% done, {card.progress.done} of {card.progress.total}"
+  tabindex={selected ? 0 : -1}
+  aria-labelledby="plan-title-{card.id}"
+  aria-describedby="plan-sum-{card.id}"
+  aria-current={selected ? 'true' : undefined}
+  data-plan={card.id}
   onclick={onselect}
   ondblclick={onopen}
-  onkeydown={() => {}}
+  onfocus={onselect}
 >
-  <h3><StatusIcon shape={shapeOf(card)} /><span class="title" title={card.title}>{card.title}</span><span class="id">{card.id}</span></h3>
+  <span id="plan-sum-{card.id}" class="sr">{summary}</span>
+  <h3><StatusIcon shape={shapeOf(card)} /><span class="title" id="plan-title-{card.id}" title={card.title}>{card.title}</span><span class="id" aria-hidden="true">{card.id}</span></h3>
   <div class="pctrow">
     <span class="pct">{pct}%</span>
     <span class="of">{card.progress.done} of {card.progress.total} done</span>
-    <ProgressRing {pct} size={22} />
+    <ProgressRing {pct} size={22} label="{card.progress.done} of {card.progress.total} done" />
   </div>
   <div class="barrow"><StackedBar p={card.progress} surface="var(--bg-raised)" /></div>
   <div class="rows">
     <div class="r">
       <span class="k">Wave</span>
       <span class="v">
-        {card.current_wave === null ? 'All waves done' : `${card.current_wave + 1} of ${card.waves}`}
+        <!-- Only proposals so far: nothing is in a wave until one is accepted. -->
+        {card.waves === 0 ? 'None yet, only proposals' : card.current_wave === null ? 'All waves done' : `${card.current_wave + 1} of ${card.waves}`}
         <span class="dots" aria-hidden="true">
           {#each { length: card.waves } as _, w (w)}
             <b class:d={card.current_wave === null || w < card.current_wave} class:c={w === card.current_wave}></b>
@@ -98,7 +118,7 @@
       <span class="faint when">{relative(card.last_at, now)}</span>
     </div>
   </div>
-</div>
+</article>
 
 <style>
   .plan {
@@ -121,6 +141,17 @@
   .plan.sel {
     border-color: var(--focus);
     box-shadow: 0 0 0 3px var(--focus-soft);
+  }
+  .plan:focus-visible {
+    outline: none;
+  }
+  .sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
   h3 {
     display: flex;
@@ -240,14 +271,14 @@
     min-width: 0;
   }
   .ok {
-    color: var(--st-review);
+    color: var(--ok-text);
     border-color: color-mix(in srgb, var(--st-review) 35%, transparent);
   }
   button.ok:hover {
     background: color-mix(in srgb, var(--st-review) 10%, transparent);
   }
   .warn {
-    color: var(--st-blocked);
+    color: var(--warn-text);
     border-color: color-mix(in srgb, var(--st-blocked) 35%, transparent);
     flex: none;
   }

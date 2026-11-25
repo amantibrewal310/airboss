@@ -19,6 +19,14 @@ describe('applyPatch', () => {
     expect(applyPatch(base(), { seq: 4, upserts: [], removed: [], order: null, repos: null, created: [] })).toBeNull();
   });
 
+  it('ignores an empty patch (seq 0), even with nothing applied yet, and keeps the seq', () => {
+    const empty = { seq: 0, upserts: [], removed: [], order: null, repos: null, created: [] };
+    expect(applyPatch(base(), empty)).toBeNull();
+    expect(applyPatch({ ...base(), seq: 0 }, empty)).toBeNull();
+    // A real patch after it still applies.
+    expect(applyPatch(base(), { ...empty, seq: 6 })!.seq).toBe(6);
+  });
+
   it('replaces only changed rows, keeping the others’ identity', () => {
     const s = base();
     const next = applyPatch(s, { seq: 6, upserts: [row(2, { title: 'changed' })], removed: [], order: null, repos: null, created: [] })!;

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { fullTitle } from '../../../lib/actions/fullTitle';
   import StatusIcon from '../../../lib/components/StatusIcon.svelte';
   import RepoDot from '../../../lib/components/RepoDot.svelte';
   import Icon from '../../../lib/components/Icon.svelte';
@@ -24,7 +25,7 @@
             <button type="button" class="sub" class:wait={r.waiting || !!out} onclick={() => (onopen ? onopen(id) : app.reveal(id))} ondblclick={() => app.openPage(id)}>
               <StatusIcon shape={shapeOf(r)} />
               <span class="id">{id}</span>
-              <span class="t" title={r.title}>{r.title}</span>
+              <span class="t" use:fullTitle={r.title}>{r.title}</span>
               {#if r.status === 'blocked'}<span class="pill warn">Blocked</span>{/if}
               {#if out}
                 <span class="pill"><Icon name="dep" size={12} />outside: {out.join(', ')}</span>
@@ -102,16 +103,16 @@
     font-variant-numeric: tabular-nums;
   }
   .warn {
-    color: var(--st-blocked);
+    color: var(--warn-text);
     border-color: color-mix(in srgb, var(--st-blocked) 35%, transparent);
   }
   .ok {
-    color: var(--st-review);
+    color: var(--ok-text);
     border-color: color-mix(in srgb, var(--st-review) 35%, transparent);
   }
   .tangled {
     font-size: var(--fs-meta);
-    color: var(--st-blocked);
+    color: var(--warn-text);
     margin-top: 4px;
   }
 </style>
