@@ -22,13 +22,21 @@ pub(crate) enum Call {
     ChangeDependency,
 }
 
+/// `Error::NotAllowed` for an agent with an empty ref: nothing it does could be traced
+/// back to it, and its name couldn't be read back from history.
+pub(crate) fn valid_actor(actor: &Actor) -> Result<()> {
+    if matches!(actor, Actor::Agent(r) if r.trim().is_empty()) {
+        Err(Error::NotAllowed)
+    } else {
+        Ok(())
+    }
+}
+
 /// `Ok` if `actor` may make `call` at all; `Error::NotAllowed` otherwise.
 pub(crate) fn allowed(call: Call, actor: &Actor) -> Result<()> {
     use Actor::*;
     use Call::*;
-    if matches!(actor, Agent(r) if r.trim().is_empty()) {
-        return Err(Error::NotAllowed);
-    }
+    valid_actor(actor)?;
     let ok = match call {
         AddRepo | EditTask | MoveTask | DeleteTask => *actor == Me,
         AddTask | Unlink => matches!(actor, Me | Agent(_)),
