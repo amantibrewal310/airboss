@@ -83,6 +83,20 @@ pub struct Tools {
     pub clock: Arc<dyn Clock>,
 }
 
+impl Tools {
+    /// The real `gh`, T3's database (read-only), the Claude sessions folder with `ps`, the
+    /// kqueue watcher and the wall clock. Never called by tests.
+    pub fn real(cfg: &SyncConfig) -> Tools {
+        Tools {
+            gh: Box::new(gh::ProcessGh::new(cfg.gh_path.clone())),
+            t3: Box::new(t3::T3Db::new(&cfg.t3_dir)),
+            claude: Box::new(claude::RealClaude::new(&cfg.claude_sessions)),
+            watch: Box::new(watch::KqueueWatch::new()),
+            clock: Arc::new(airboss_services::SystemClock),
+        }
+    }
+}
+
 /// How long `find_thread` waits for the T3 worker.
 pub const FIND_THREAD_WAIT: Duration = Duration::from_secs(2);
 /// How long `shutdown` waits for the workers.

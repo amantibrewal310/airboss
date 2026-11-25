@@ -530,6 +530,113 @@ impl GhClient {
     }
 }
 
+/// The real runner: a `gh` child process with a timeout. Never used by tests.
+pub struct ProcessGh {
+    explicit: Option<PathBuf>,
+}
+
+impl ProcessGh {
+    /// `explicit` is `SyncConfig::gh_path`; `None` searches. The search runs on every call,
+    /// so installing `gh` while the app runs is noticed on the next tick.
+    pub fn new(explicit: Option<PathBuf>) -> ProcessGh {
+        ProcessGh { explicit }
+    }
+
+    fn binary(&self) -> io::Result<PathBuf> {
+        let fixed: Vec<&Path> = GH_PLACES.iter().map(Path::new).collect();
+        let path = std::env::var_os("PATH");
+        find_gh(self.explicit.as_deref(), &fixed, path.as_deref())
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "gh isn't installed"))
+    }
+
+    fn spawn(
+        &self,
+        args: &[String],
+        token: Option<&Secret>,
+        timeout: Duration,
+    ) -> io::Result<CmdOutput> {
+        use std::io::Read;
+        use std::process::{Command, Stdio};
+        let mut cmd = Command::new(self.binary()?);
+        cmd.args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        for name in ENV_REMOVED {
+            cmd.env_remove(name);
+        }
+        cmd.envs(child_env(token));
+        let mut child = cmd.spawn()?;
+        let (done, finished) = std::sync::mpsc::channel();
+        let read = |pipe: Option<Box<dyn Read + Send>>, done: std::sync::mpsc::Sender<()>| {
+            std::thread::spawn(move || {
+                let mut text = String::new();
+                if let Some(mut p) = pipe {
+                    let _ = p.read_to_string(&mut text);
+                }
+                let _ = done.send(());
+                text
+            })
+        };
+        let out = read(
+            child
+                .stdout
+                .take()
+                .map(|p| Box::new(p) as Box<dyn Read + Send>),
+            done.clone(),
+        );
+        let err = read(
+            child
+                .stderr
+                .take()
+                .map(|p| Box::new(p) as Box<dyn Read + Send>),
+            done,
+        );
+        // Both pipes close when gh exits; past the deadline it's killed.
+        let deadline = std::time::Instant::now() + timeout;
+        let mut closed = 0;
+        let mut timed_out = false;
+        while closed < 2 {
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            match finished.recv_timeout(left) {
+                Ok(()) => closed += 1,
+                Err(_) => {
+                    timed_out = true;
+                    let _ = child.kill();
+                    break;
+                }
+            }
+        }
+        let status = child.wait()?;
+        let stdout = out.join().unwrap_or_default();
+        let stderr = err.join().unwrap_or_default();
+        Ok(CmdOutput {
+            status: if timed_out { None } else { status.code() },
+            stdout,
+            stderr,
+        })
+    }
+}
+
+impl GhRunner for ProcessGh {
+    fn run(
+        &mut self,
+        call: &GhCall,
+        token: Option<&Secret>,
+        timeout: Duration,
+    ) -> io::Result<CmdOutput> {
+        self.spawn(&args(call), token, timeout)
+    }
+
+    fn token(&mut self, login: &str) -> io::Result<Secret> {
+        let out = self.spawn(&token_args(login), None, Duration::from_secs(10))?;
+        if out.status != Some(0) {
+            return Err(io::Error::other("gh auth token failed"));
+        }
+        Ok(Secret::new(out.stdout))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]

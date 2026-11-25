@@ -673,6 +673,30 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::unwrap_used)]
+    fn the_connection_refuses_every_write() {
+        let dir = std::env::temp_dir().join(format!("airboss-sync-ro-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = T3Db::database_path(&dir);
+        {
+            let rw = Connection::open(&path).unwrap();
+            rw.pragma_update(None, "journal_mode", "WAL").unwrap();
+            rw.execute_batch(include_str!("../../tests/fixtures/t3_schema.sql"))
+                .unwrap();
+        }
+        let mut db = T3Db::new(&dir);
+        db.open().unwrap();
+        let (conn, _) = db.parts().unwrap();
+        let err = conn.execute_batch("CREATE TABLE x (a)").unwrap_err();
+        assert!(
+            err.to_string().contains("readonly") || err.to_string().contains("read-only"),
+            "{err}"
+        );
+        assert!(conn.execute("DELETE FROM projection_projects", []).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn the_deepest_project_wins() {
         let p = |id: &str, path: &str| T3Project {
             id: id.into(),
