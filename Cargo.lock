@@ -21,6 +21,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "airboss-launch"
+version = "0.1.0"
+dependencies = [
+ "airboss-core",
+ "airboss-launch",
+ "airboss-services",
+ "rusqlite",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "airboss-mcp"
 version = "0.1.0"
 dependencies = [
