@@ -30,6 +30,11 @@ impl crate::Store {
         self.write(|tx| edit(tx, id, change, actor))
     }
 
+    /// Sets or clears the branch the task's threads share (rule 25). `me` and `launch` only.
+    pub fn set_branch(&mut self, id: TaskId, branch: Option<&str>, actor: &Actor) -> Result<Task> {
+        self.write(|tx| set_branch(tx, id, branch, actor))
+    }
+
     /// Adds a note to a task's history. Anyone but `plan` may (rule 8).
     pub fn add_note(&mut self, id: TaskId, text: &str, actor: &Actor) -> Result<()> {
         self.write(|tx| add_note(tx, id, text, actor))
@@ -40,25 +45,25 @@ impl crate::Store {
 /// order. The repos come from an index lookup per row, so every reader gets them without a
 /// second query.
 pub(crate) const TASK_COLUMNS: &str = "t.id, t.parent_id, t.title, t.body, t.status, \
-     t.blocked_reason, t.position, t.origin, t.plan_key, t.created_at, \
+     t.blocked_reason, t.position, t.origin, t.plan_key, t.created_at, t.branch, \
      (SELECT group_concat(tr.repo_id, ',' ORDER BY r.name) \
       FROM task_repos tr JOIN repos r ON r.id = tr.repo_id WHERE tr.task_id = t.id)";
 
 /// How many columns [`TASK_COLUMNS`] selects, so queries can read their own columns after it.
-pub(crate) const TASK_COLUMN_COUNT: usize = 11;
+pub(crate) const TASK_COLUMN_COUNT: usize = 12;
 
 /// Reads a row selected with [`TASK_COLUMNS`] (table alias `t`).
 pub(crate) fn from_row(row: &Row<'_>) -> rusqlite::Result<Task> {
     let status: String = row.get(4)?;
     let origin: String = row.get(7)?;
-    let repos: Option<String> = row.get(10)?;
+    let repos: Option<String> = row.get(11)?;
     Ok(Task {
         id: TaskId(row.get(0)?),
         parent: row.get::<_, Option<i64>>(1)?.map(TaskId),
         repos: match repos {
             Some(list) => list
                 .split(',')
-                .map(|id| id.parse().map(RepoId).map_err(|_| bad_text(10, &list)))
+                .map(|id| id.parse().map(RepoId).map_err(|_| bad_text(11, &list)))
                 .collect::<rusqlite::Result<_>>()?,
             None => Vec::new(),
         },
@@ -69,6 +74,7 @@ pub(crate) fn from_row(row: &Row<'_>) -> rusqlite::Result<Task> {
         position: row.get(6)?,
         origin: Origin::parse(&origin).ok_or_else(|| bad_text(7, &origin))?,
         plan_key: row.get(8)?,
+        branch: row.get(10)?,
         created_at: row.get(9)?,
     })
 }
@@ -249,6 +255,33 @@ pub(crate) fn edit(tx: &mut Tx<'_>, id: TaskId, edit: TaskEdit, actor: &Actor) -
     get(tx, id)
 }
 
+/// Sets the branch and writes one `edited` event naming it. A blank name clears it, and
+/// setting the branch it already has writes nothing (rule 25).
+pub(crate) fn set_branch(
+    tx: &mut Tx<'_>,
+    id: TaskId,
+    branch: Option<&str>,
+    actor: &Actor,
+) -> Result<Task> {
+    allowed(Call::SetBranch, actor)?;
+    let before = get(tx, id)?;
+    let branch = branch.map(str::trim).filter(|b| !b.is_empty());
+    if branch == before.branch.as_deref() {
+        return Ok(before);
+    }
+    tx.execute(
+        "UPDATE tasks SET branch = ?2 WHERE id = ?1",
+        params![id.0, branch],
+    )?;
+    fault::hit(fault::BRANCH_SET)?;
+    let body = match branch {
+        Some(b) => format!("branch: {b}"),
+        None => "branch cleared".to_string(),
+    };
+    events::record(tx, id, EventKind::Edited, None, Some(&body), actor)?;
+    get(tx, id)
+}
+
 /// Writes a `note` event; rule 4 says a note has text, so a blank one is `NoteRequired`.
 pub(crate) fn add_note(tx: &mut Tx<'_>, id: TaskId, text: &str, actor: &Actor) -> Result<()> {
     allowed(Call::AddNote, actor)?;
@@ -285,6 +318,19 @@ mod tests {
         assert!(store.edit_task(t.id, edit, &Actor::Me).is_err());
         assert_eq!(counts(&store), before);
         assert_eq!(store.task(t.id).unwrap(), t);
+    }
+
+    #[test]
+    fn a_failed_set_branch_leaves_the_task_and_history_unchanged() {
+        let mut store = Store::open_in_memory().unwrap();
+        let t = store.add_task(NewTask::new("Before"), &Actor::Me).unwrap();
+        let before = counts(&store);
+        let committed = store.last_committed.clone();
+        fault::arm(fault::BRANCH_SET);
+        assert!(store.set_branch(t.id, Some("b"), &Actor::Launch).is_err());
+        assert_eq!(counts(&store), before);
+        assert_eq!(store.task(t.id).unwrap(), t);
+        assert_eq!(store.last_committed, committed);
     }
 
     #[test]

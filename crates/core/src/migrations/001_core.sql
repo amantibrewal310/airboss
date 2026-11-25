@@ -18,6 +18,7 @@ CREATE TABLE tasks (
   position       INTEGER NOT NULL CHECK (position >= 1),
   origin         TEXT NOT NULL CHECK (origin IN ('me','agent','plan')),
   plan_key       TEXT,
+  branch         TEXT,
   created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   CHECK ((status = 'blocked') = (blocked_reason IS NOT NULL)),
   CHECK (parent_id IS NULL OR parent_id <> id),

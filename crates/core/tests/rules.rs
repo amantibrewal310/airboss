@@ -649,3 +649,85 @@ fn a_parent_in_the_tree_shows_only_its_own_repos() {
         .collect();
     assert_eq!(repos, vec![vec![web], vec![api]]);
 }
+
+// Rule 25: one branch per task, set by `me` or `launch`, with an `edited` event naming it.
+
+fn last_event(s: &Store, id: TaskId) -> airboss_core::Event {
+    s.history(id).unwrap().pop().unwrap()
+}
+
+#[test]
+fn a_new_task_has_no_branch() {
+    let mut s = store();
+    let t = s.add_task(NewTask::new("x"), &Actor::Me).unwrap();
+    assert_eq!(t.branch, None);
+}
+
+#[test]
+fn a_branch_is_set_changed_and_cleared_with_one_edited_event_each() {
+    let mut s = store();
+    let t = s.add_task(NewTask::new("Booking"), &Actor::Me).unwrap();
+
+    let set = s
+        .set_branch(t.id, Some("booking-flow"), &Actor::Launch)
+        .unwrap();
+    assert_eq!(set.branch.as_deref(), Some("booking-flow"));
+    assert_eq!(s.task(t.id).unwrap(), set);
+    let e = last_event(&s, t.id);
+    assert_eq!(e.kind, EventKind::Edited);
+    assert_eq!(e.body.as_deref(), Some("branch: booking-flow"));
+    assert_eq!(e.actor, Actor::Launch);
+
+    s.set_branch(t.id, Some("  booking-v2 "), &Actor::Me)
+        .unwrap();
+    assert_eq!(s.task(t.id).unwrap().branch.as_deref(), Some("booking-v2"));
+    assert_eq!(
+        last_event(&s, t.id).body.as_deref(),
+        Some("branch: booking-v2")
+    );
+
+    let cleared = s.set_branch(t.id, None, &Actor::Me).unwrap();
+    assert_eq!(cleared.branch, None);
+    assert_eq!(last_event(&s, t.id).body.as_deref(), Some("branch cleared"));
+    assert_eq!(s.history(t.id).unwrap().len(), 4);
+}
+
+#[test]
+fn setting_the_branch_a_task_already_has_writes_nothing() {
+    let mut s = store();
+    let t = s.add_task(NewTask::new("x"), &Actor::Me).unwrap();
+    s.set_branch(t.id, None, &Actor::Me).unwrap();
+    s.set_branch(t.id, Some("b"), &Actor::Me).unwrap();
+    let rx = s.subscribe();
+    s.set_branch(t.id, Some("b"), &Actor::Launch).unwrap();
+    assert_eq!(s.history(t.id).unwrap().len(), 2);
+    assert!(rx.try_recv().is_err());
+}
+
+#[test]
+fn a_blank_branch_clears_it() {
+    let mut s = store();
+    let t = s.add_task(NewTask::new("x"), &Actor::Me).unwrap();
+    s.set_branch(t.id, Some("b"), &Actor::Me).unwrap();
+    let cleared = s.set_branch(t.id, Some("   "), &Actor::Me).unwrap();
+    assert_eq!(cleared.branch, None);
+}
+
+#[test]
+fn agents_plan_and_sync_cannot_set_a_branch() {
+    let mut s = store();
+    let t = s.add_task(NewTask::new("x"), &Actor::Me).unwrap();
+    for actor in [agent(), Actor::Plan, Actor::SyncGh, Actor::SyncT3] {
+        let err = s.set_branch(t.id, Some("b"), &actor).unwrap_err();
+        assert!(matches!(err, Error::NotAllowed), "{actor}: {err:?}");
+    }
+    assert_eq!(s.task(t.id).unwrap().branch, None);
+    assert_eq!(s.history(t.id).unwrap().len(), 1);
+}
+
+#[test]
+fn setting_the_branch_of_a_missing_task_is_not_found() {
+    let mut s = store();
+    let err = s.set_branch(TaskId(4), Some("b"), &Actor::Me).unwrap_err();
+    assert!(matches!(err, Error::NotFound), "{err:?}");
+}

@@ -14,6 +14,7 @@ pub(crate) enum Call {
     EditTask,
     /// `link_repo` and `unlink_repo`.
     ChangeRepos,
+    SetBranch,
     AddNote,
     MoveTask,
     DeleteTask,
@@ -47,6 +48,8 @@ pub(crate) fn allowed(call: Call, actor: &Actor) -> Result<()> {
         AddNote => *actor != Plan,
         Link => true,
         SetPrState => matches!(actor, Me | SyncGh),
+        // `launch` names the branch when it starts the first thread.
+        SetBranch => matches!(actor, Me | Launch),
     };
     if ok { Ok(()) } else { Err(Error::NotAllowed) }
 }
@@ -77,6 +80,7 @@ mod tests {
             (Call::AddPlan, vec![me.clone(), Actor::Plan]),
             (Call::EditTask, vec![me.clone()]),
             (Call::ChangeRepos, vec![me.clone(), Actor::Plan]),
+            (Call::SetBranch, vec![me.clone(), Actor::Launch]),
             (
                 Call::AddNote,
                 every_actor()

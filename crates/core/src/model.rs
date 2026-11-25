@@ -183,6 +183,8 @@ pub struct Task {
     pub position: u32,
     pub origin: Origin,
     pub plan_key: Option<String>,
+    /// The branch every thread for this task shares; `None` until one is chosen.
+    pub branch: Option<String>,
     pub created_at: String,
 }
 
