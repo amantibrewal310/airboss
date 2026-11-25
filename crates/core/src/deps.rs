@@ -73,27 +73,47 @@ fn add(tx: &mut Tx<'_>, task: TaskId, waits_on: TaskId, actor: &Actor) -> Result
     allowed(Call::ChangeDependency, actor)?;
     ensure_exists(tx, task)?;
     ensure_exists(tx, waits_on)?;
-    if task == waits_on {
-        return Err(Error::Loop);
-    }
-    if exists(tx, task, waits_on)? {
+    if !check_new(tx, task, waits_on)? {
         return Ok(());
     }
-    let related: bool = tx.query_row(RELATED_SQL, params![task.0, waits_on.0], |r| r.get(0))?;
-    if related {
-        return Err(Error::InvalidTarget);
-    }
-    let loops: bool = tx.query_row(REACHES_SQL, params![task.0, waits_on.0], |r| r.get(0))?;
-    if loops {
-        return Err(Error::Loop);
-    }
-    tx.execute(
-        "INSERT INTO task_deps (task_id, waits_on_id, added_by) VALUES (?1, ?2, ?3)",
-        params![task.0, waits_on.0, actor.to_string()],
-    )?;
+    insert(tx, task, waits_on, actor)?;
     let body = format!("waits on #{}", waits_on.0);
     events::record(tx, task, EventKind::WaitsOnAdded, None, Some(&body), actor)?;
     fault::hit(fault::DEP_ADDED)
+}
+
+/// Rules 14 and 15 for one new pair of existing tasks: `Ok(false)` if `task` already waits on
+/// `waits_on`, `Ok(true)` if the pair may be added, and `Loop` or `InvalidTarget` if not.
+pub(crate) fn check_new(conn: &Connection, task: TaskId, waits_on: TaskId) -> Result<bool> {
+    if task == waits_on {
+        return Err(Error::Loop);
+    }
+    if exists(conn, task, waits_on)? {
+        return Ok(false);
+    }
+    let related: bool = conn.query_row(RELATED_SQL, params![task.0, waits_on.0], |r| r.get(0))?;
+    if related {
+        return Err(Error::InvalidTarget);
+    }
+    let loops: bool = conn.query_row(REACHES_SQL, params![task.0, waits_on.0], |r| r.get(0))?;
+    if loops {
+        return Err(Error::Loop);
+    }
+    Ok(true)
+}
+
+/// Stores one pair that [`check_new`] passed. Writes no event: the caller does.
+pub(crate) fn insert(
+    conn: &Connection,
+    task: TaskId,
+    waits_on: TaskId,
+    actor: &Actor,
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO task_deps (task_id, waits_on_id, added_by) VALUES (?1, ?2, ?3)",
+        params![task.0, waits_on.0, actor.to_string()],
+    )?;
+    Ok(())
 }
 
 fn remove(tx: &mut Tx<'_>, task: TaskId, waits_on: TaskId, actor: &Actor) -> Result<()> {

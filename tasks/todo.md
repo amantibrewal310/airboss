@@ -175,7 +175,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
   - **Files:** `src/deps.rs`, `tests/deps.rs`
   - **Depends on:** T10
 
-- [ ] **T12. Plans arrive as trees** (M)
+- [x] **T12. Plans arrive as trees** (M)
   - **Description:** `add_tasks(parent, plan, actor)` for `me` and `plan`.
     - It takes a tree of `PlanTask` items, each with a `key`, children and `depends_on` entries (another key in the same plan, or an existing task id).
     - Every check runs before anything is written (rule 19).
