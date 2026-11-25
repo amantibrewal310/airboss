@@ -27,6 +27,7 @@ use rusqlite::Connection;
 
 use crate::tx::Tx;
 
+pub use db::Migration;
 pub use error::{Error, Result};
 pub use model::TaskEdit;
 pub use model::{

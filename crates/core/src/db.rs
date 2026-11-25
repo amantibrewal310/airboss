@@ -5,12 +5,36 @@ use std::time::Duration;
 
 use rusqlite::{Connection, TransactionBehavior, params};
 
-use crate::Result;
+use crate::{Error, Result};
 
-/// One schema change for one module, applied once, in its own transaction.
-pub(crate) struct Migration {
+/// One schema change for one module, applied once, in its own transaction. Another module
+/// hands its list to `Store::migrate_module` (rule 31).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Migration {
+    /// 1 for the first; each later one is higher. Never reuse or edit a shipped one.
     pub version: i64,
+    /// The statements to run, as one batch.
     pub sql: &'static str,
+}
+
+impl crate::Store {
+    /// Runs another module's pending migrations on this file, each once, in its own
+    /// transaction, recorded under `module`. `core` itself, a blank name, or versions that
+    /// aren't 1 or more and strictly increasing are `Error::InvalidTarget` (rule 31).
+    pub fn migrate_module(&mut self, module: &str, migrations: &[Migration]) -> Result<()> {
+        check_module_migrations(module, migrations)?;
+        migrate(&mut self.conn, module, migrations)
+    }
+}
+
+/// Rule 31's checks, made before anything runs.
+fn check_module_migrations(module: &str, migrations: &[Migration]) -> Result<()> {
+    let ordered = migrations.first().is_none_or(|m| m.version >= 1)
+        && migrations.windows(2).all(|w| w[0].version < w[1].version);
+    if module == "core" || module.trim().is_empty() || !ordered {
+        return Err(Error::InvalidTarget);
+    }
+    Ok(())
 }
 
 /// `core`'s migrations, oldest first. Never edit a shipped one; add a new version.

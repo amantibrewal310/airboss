@@ -3,8 +3,40 @@
 
 mod common;
 
-use airboss_core::Store;
+use airboss_core::{Error, Migration, Store};
 use common::{TempDir, store};
+
+/// A plain connection to the same file, to look at tables `core` doesn't expose.
+fn raw(s: &Store) -> rusqlite::Connection {
+    rusqlite::Connection::open(s.path().unwrap()).unwrap()
+}
+
+fn count(conn: &rusqlite::Connection, sql: &str) -> i64 {
+    conn.query_row(sql, [], |r| r.get(0)).unwrap()
+}
+
+fn recorded(conn: &rusqlite::Connection, module: &str) -> Vec<i64> {
+    let mut stmt = conn
+        .prepare("SELECT version FROM schema_migrations WHERE module = ?1 ORDER BY version")
+        .unwrap();
+    stmt.query_map([module], |r| r.get(0))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap()
+}
+
+fn file_store(dir: &TempDir) -> Store {
+    Store::open(&dir.0.join("airboss.db")).unwrap()
+}
+
+const SYNC_V1: Migration = Migration {
+    version: 1,
+    sql: "CREATE TABLE sync_prs (ref TEXT PRIMARY KEY); INSERT INTO sync_prs VALUES ('a/b#1');",
+};
+const SYNC_V2: Migration = Migration {
+    version: 2,
+    sql: "ALTER TABLE sync_prs ADD COLUMN checked_at TEXT;",
+};
 
 #[test]
 fn a_file_store_knows_its_absolute_path_and_memory_has_none() {
@@ -28,4 +60,115 @@ fn a_second_store_opened_on_the_path_sees_the_same_data() {
     .unwrap();
     let other = Store::open(&s.path().unwrap()).unwrap();
     assert_eq!(other.tree().unwrap().len(), 1);
+}
+
+// Rule 31: another module migrates only its own tables.
+
+#[test]
+fn a_modules_migrations_run_once_each_across_handles() {
+    let dir = TempDir::new();
+    let mut s = file_store(&dir);
+    s.migrate_module("sync", &[SYNC_V1]).unwrap();
+    // A second run would fail on CREATE TABLE if it applied version 1 again.
+    s.migrate_module("sync", &[SYNC_V1]).unwrap();
+
+    let mut other = Store::open(&s.path().unwrap()).unwrap();
+    other.migrate_module("sync", &[SYNC_V1, SYNC_V2]).unwrap();
+
+    let conn = raw(&s);
+    assert_eq!(recorded(&conn, "sync"), vec![1, 2]);
+    assert_eq!(recorded(&conn, "core").len(), 1, "core's own are untouched");
+    assert_eq!(count(&conn, "SELECT count(*) FROM sync_prs"), 1);
+    assert_eq!(
+        count(
+            &conn,
+            "SELECT count(*) FROM pragma_table_info('sync_prs') WHERE name = 'checked_at'"
+        ),
+        1
+    );
+}
+
+#[test]
+fn migrating_core_from_outside_is_refused() {
+    let dir = TempDir::new();
+    let mut s = file_store(&dir);
+    let sneaky = Migration {
+        version: 99,
+        sql: "DROP TABLE tasks;",
+    };
+    let err = s.migrate_module("core", &[sneaky]).unwrap_err();
+    assert!(matches!(err, Error::InvalidTarget), "{err:?}");
+    let conn = raw(&s);
+    assert_eq!(recorded(&conn, "core").len(), 1);
+    assert!(s.tree().is_ok(), "tasks is still there");
+}
+
+#[test]
+fn a_blank_module_or_versions_out_of_order_are_refused_before_anything_runs() {
+    let dir = TempDir::new();
+    let mut s = file_store(&dir);
+    let v = |version| Migration {
+        version,
+        sql: "CREATE TABLE should_not_exist (x INTEGER);",
+    };
+    let cases: Vec<(&str, Vec<Migration>)> = vec![
+        ("", vec![v(1)]),
+        ("  ", vec![v(1)]),
+        ("sync", vec![v(0)]),
+        ("sync", vec![v(-1)]),
+        ("sync", vec![v(2), v(1)]),
+        ("sync", vec![v(1), v(1)]),
+    ];
+    for (module, migrations) in cases {
+        let err = s.migrate_module(module, &migrations).unwrap_err();
+        assert!(matches!(err, Error::InvalidTarget), "{module:?}: {err:?}");
+    }
+    let conn = raw(&s);
+    assert_eq!(
+        count(
+            &conn,
+            "SELECT count(*) FROM sqlite_master WHERE name = 'should_not_exist'"
+        ),
+        0
+    );
+    assert_eq!(
+        count(
+            &conn,
+            "SELECT count(*) FROM schema_migrations WHERE module <> 'core'"
+        ),
+        0
+    );
+}
+
+#[test]
+fn a_failing_migration_leaves_nothing_of_itself_and_keeps_the_ones_before() {
+    let dir = TempDir::new();
+    let mut s = file_store(&dir);
+    let broken = Migration {
+        version: 2,
+        sql: "CREATE TABLE half_done (x INTEGER); THIS IS NOT SQL;",
+    };
+    assert!(s.migrate_module("sync", &[SYNC_V1, broken]).is_err());
+    let conn = raw(&s);
+    assert_eq!(recorded(&conn, "sync"), vec![1]);
+    assert_eq!(
+        count(
+            &conn,
+            "SELECT count(*) FROM sqlite_master WHERE name = 'half_done'"
+        ),
+        0
+    );
+    // Fixed, it goes through, and version 1 isn't run again.
+    s.migrate_module("sync", &[SYNC_V1, SYNC_V2]).unwrap();
+    assert_eq!(recorded(&conn, "sync"), vec![1, 2]);
+}
+
+#[test]
+fn migrating_writes_no_events_and_tells_nobody() {
+    let dir = TempDir::new();
+    let mut s = file_store(&dir);
+    let rx = s.subscribe();
+    s.migrate_module("sync", &[SYNC_V1]).unwrap();
+    assert!(rx.try_recv().is_err());
+    assert_eq!(s.latest_event_id().unwrap(), airboss_core::EventId(0));
 }
