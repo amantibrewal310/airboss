@@ -211,6 +211,14 @@ impl AppState {
         f(&lock(&self.catchup).vm)
     }
 
+    /// Reads the view model and the event cursor it was built at, under one lock. An undo
+    /// entry built from the view model must start at this cursor, not at the newest event:
+    /// an agent's write the app hasn't caught up with yet then counts as "changed since".
+    pub fn vm_at<T>(&self, f: impl FnOnce(&ViewModel) -> T) -> (T, airboss_core::EventId) {
+        let cu = lock(&self.catchup);
+        (f(&cu.vm), cu.cursor)
+    }
+
     /// One row as the view model has it.
     pub fn row(&self, id: TaskId) -> Option<RowDto> {
         self.vm(|vm| vm.rows.get(&id).cloned())

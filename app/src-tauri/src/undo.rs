@@ -50,6 +50,8 @@ pub struct Entry {
     pub tasks: Vec<TaskId>,
     /// The newest event id before the action; later events by others are "changed since".
     pub after: EventId,
+    /// Said after "Undid …", e.g. that a drop's proposals stay dropped.
+    pub note: Option<String>,
 }
 
 /// The stack, newest last.
@@ -67,6 +69,7 @@ impl UndoStack {
         inverse: Vec<Inverse>,
         tasks: Vec<TaskId>,
         after: EventId,
+        note: Option<String>,
     ) -> UndoEntry {
         self.next += 1;
         let id = self.next;
@@ -79,6 +82,7 @@ impl UndoStack {
             inverse,
             tasks,
             after,
+            note,
         });
         UndoEntry { id, label }
     }
@@ -261,7 +265,7 @@ mod tests {
     fn the_stack_keeps_twenty_and_drops_the_oldest() {
         let mut s = UndoStack::default();
         for i in 0..25 {
-            s.push(format!("e{i}"), vec![], vec![], EventId(0));
+            s.push(format!("e{i}"), vec![], vec![], EventId(0), None);
         }
         assert_eq!(s.len(), DEPTH);
         assert_eq!(s.top_label().unwrap(), "e24");
@@ -273,8 +277,8 @@ mod tests {
     #[test]
     fn take_without_an_id_takes_the_newest() {
         let mut s = UndoStack::default();
-        s.push("a".into(), vec![], vec![], EventId(0));
-        s.push("b".into(), vec![], vec![], EventId(0));
+        s.push("a".into(), vec![], vec![], EventId(0), None);
+        s.push("b".into(), vec![], vec![], EventId(0), None);
         assert_eq!(s.take(None).unwrap().label, "b");
         assert_eq!(s.take(None).unwrap().label, "a");
         assert!(s.take(None).is_none());

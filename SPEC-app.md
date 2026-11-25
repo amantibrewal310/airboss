@@ -349,12 +349,13 @@ The stores are classes in `lib/state/*.svelte.ts`, one exported instance each, w
   |---|---|
   | Dismiss, Keep open, Snooze | `attention.restore(key)` |
   | Status change (Space, S, ⌘B, Mark done, Finish it, Set in review) | `set_status` back to the previous status, with the previous blocked reason as the note if it was blocked |
-  | Drop | the same, for the task and every open subtask the drop took with it (previous statuses come from the view model before the change) |
-  | Move or reorder | `move_task` back to the previous parent and position |
+  | Drop | the same, for the task and every open subtask the drop took with it (previous statuses come from the view model before the change). **Not for an agent's proposals:** rule 9 drops them with their parent, but `me` can't make a proposal again (core rule 6), and putting one back as todo would accept it without me. So they stay dropped, and the undo toast says "Undid “Drop 142”. Its 2 proposals stay dropped." Dropping a proposal on its own is a reject, with no undo once written. |
+  | Move or reorder | `move_task` back to the previous parent and position. Reorder moves past siblings the tree hides (rejected proposals, dropped tasks) to the visible neighbour's position, and an end move changes nothing and pushes no entry |
   | Reject, Reject all | **deferred:** the reject is written 5 s later (or at quit). Until then the item and rows are hidden locally, and undo cancels it. `core` can't turn a task back into a proposal, so this is the only honest undo. |
 
   Accept, create, rename, notes, links, dependencies, repos, Do it and Plan it aren't undoable in v1. Text fields keep their own undo.
 - **Refused undo:** if `events_after(entry.last_event)` shows that someone else changed one of the entry's tasks, the undo is refused with "144 changed since; nothing was undone", and the entry is dropped.
+  - `entry.last_event` is the **catch-up cursor** the view model was built at, read with it under one lock (`AppState::vm_at`), not the newest event id. The inverse comes from the view model, so an agent's write the app hasn't caught up with yet (it sets in_review, I press Space within the 150 ms debounce) counts as "changed since", and ⌘Z is refused instead of overwriting it.
 - **Where undo appears:**
   - ⌘Z, when the zone isn't `field`, undoes the top entry.
   - A toast for an undoable action shows "Undo"; that button undoes *its* entry, if it's still there.
@@ -784,7 +785,9 @@ Tests come first, as in `core`.
   - A focus trigger with an unchanged `data_version` reads nothing.
 - **Undo tests** (`tests/undo.rs`):
   - each inverse in the table
-  - drop restoring the subtree's previous statuses
+  - drop restoring the subtree's previous statuses, and leaving its proposals dropped
+  - a refused undo when an agent wrote before the app caught up
+  - reorder past a rejected proposal and a dropped sibling, with no entry for an end move
   - a refused undo after an agent's change
   - a deferred reject cancelled, written after 5 s, and written at shutdown
   - depth 20

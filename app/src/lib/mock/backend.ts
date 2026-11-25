@@ -436,8 +436,9 @@ export class MockBackend implements Transport {
       if (t.status === status && status !== 'blocked') return { patch: null, undo: null };
       for (const k of touched) this.setStatusRaw(k, status, k === id ? note : null);
       const label = status === 'done' ? `Mark done ${id}` : status === 'dropped' ? `Drop ${id}` : status === 'blocked' ? `Mark blocked ${id}` : `Move ${id} to ${LABEL[status]}`;
+      // As in Rust: a dropped proposal stays dropped (me can't make a proposal again).
       const rec = this.pushUndo(label, touched, () => {
-        for (const [k, b] of before) this.setStatusRaw(k, b.status, b.reason);
+        for (const [k, b] of before) if (!(status === 'dropped' && b.status === 'proposed')) this.setStatusRaw(k, b.status, b.reason);
       });
       return { patch: this.commit(), undo: this.entry(rec) };
     },
@@ -505,7 +506,10 @@ export class MockBackend implements Transport {
 
     reorder: ({ id, direction }) => {
       const t = this.task(id);
-      const siblings = [...this.s.tasks.values()].filter((x) => x.parent === t.parent).sort((a, b) => a.position - b.position);
+      // As in Rust: past hidden siblings (dropped ones), to the visible neighbour.
+      const siblings = [...this.s.tasks.values()]
+        .filter((x) => x.parent === t.parent && (x.status !== 'dropped' || x.id === id))
+        .sort((a, b) => a.position - b.position);
       const i = siblings.findIndex((x) => x.id === id);
       const j = direction === 'up' ? i - 1 : i + 1;
       const other = siblings[j];

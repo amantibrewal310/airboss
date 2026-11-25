@@ -309,3 +309,152 @@ fn dropping_a_dropped_task_makes_no_undo_entry() {
     let again = tasks::set_status(&app.state, M, t, Status::Dropped, None).unwrap();
     assert!(again.undo.is_none());
 }
+
+/// Audit should-fix 1: rule 9 drops an agent's proposals with their parent, and `me` can't
+/// make a proposal again (rule 6). Undo used to bring them back as todo, accepting them
+/// without me; now they stay dropped, and the message says so.
+#[test]
+fn undoing_a_drop_leaves_the_agents_proposals_dropped() {
+    let app = TestApp::new();
+    let p = app.add("P", None);
+    let a = app.add("A", Some(p));
+    app.core(|s| {
+        s.set_status(p, Status::Doing, None, &Actor::Me).unwrap();
+        s.set_status(a, Status::Doing, None, &Actor::Me).unwrap();
+    });
+    let x = proposal(&app, p, "x");
+    let y = proposal(&app, p, "y");
+    app.sync_vm();
+    tasks::set_status(&app.state, M, p, Status::Dropped, None).unwrap();
+    assert_eq!(
+        status(&app, x),
+        Status::Dropped,
+        "rule 9 drops proposals too"
+    );
+    let r = tasks::undo(&app.state, M, None).unwrap();
+    assert_eq!(status(&app, p), Status::Doing);
+    assert_eq!(status(&app, a), Status::Doing);
+    for proposal in [x, y] {
+        assert_eq!(
+            status(&app, proposal),
+            Status::Dropped,
+            "a proposal never comes back accepted"
+        );
+    }
+    assert_eq!(
+        r.message,
+        format!("Undid “Drop {}”. Its 2 proposals stay dropped.", p.0)
+    );
+}
+
+/// Dropping a proposal by itself is a reject, which can't be undone once written.
+#[test]
+fn dropping_a_proposal_makes_no_undo_entry_that_would_accept_it() {
+    let app = TestApp::new();
+    let p = app.add("P", None);
+    let x = proposal(&app, p, "x");
+    app.sync_vm();
+    let w = tasks::set_status(&app.state, M, x, Status::Dropped, None).unwrap();
+    assert!(w.undo.is_none());
+    assert_eq!(
+        tasks::undo(&app.state, M, None).unwrap().message,
+        "Nothing to undo."
+    );
+    assert_eq!(status(&app, x), Status::Dropped);
+}
+
+/// Audit should-fix 2: an agent sets in_review, and I press Space before the app catches up.
+/// The view model still says doing, so ⌘Z must be refused, not put doing back over the
+/// agent's change.
+#[test]
+fn undo_is_refused_when_an_agent_wrote_before_the_app_caught_up() {
+    let app = TestApp::new();
+    let t = app.add("T", None);
+    app.core(|s| s.set_status(t, Status::Doing, None, &Actor::Me).unwrap());
+    app.sync_vm();
+    // The agent's write; no catch-up runs before my key press.
+    app.core(|s| {
+        s.set_status(t, Status::InReview, None, &Actor::Agent("t3/x".into()))
+            .unwrap()
+    });
+    tasks::toggle_done(&app.state, M, t).unwrap();
+    assert_eq!(status(&app, t), Status::Done);
+    let e = tasks::undo(&app.state, M, None).unwrap_err();
+    assert_eq!(e.code, ErrorCode::UndoRefused);
+    assert_eq!(status(&app, t), Status::Done, "nothing was undone");
+}
+
+/// The same for a move: the position came from the view model, so an agent's change to the
+/// task before the catch-up refuses the undo.
+#[test]
+fn a_move_undo_is_refused_when_an_agent_wrote_before_the_app_caught_up() {
+    let app = TestApp::new();
+    let a = app.add("A", None);
+    app.add("B", None);
+    app.sync_vm();
+    app.core(|s| {
+        s.add_note(a, "progress", &Actor::Agent("t3/x".into()))
+            .unwrap()
+    });
+    tasks::reorder(&app.state, M, a, tasks::Direction::Down).unwrap();
+    assert_eq!(
+        tasks::undo(&app.state, M, None).unwrap_err().code,
+        ErrorCode::UndoRefused
+    );
+}
+
+/// The siblings the tree shows, in order: rejected proposals are gone from the tree, and
+/// dropped tasks are hidden in tree layouts.
+fn shown_children(app: &TestApp, parent: TaskId) -> Vec<TaskId> {
+    app.core(|s| s.tree().unwrap())
+        .into_iter()
+        .filter(|n| n.task.parent == Some(parent) && n.task.status != Status::Dropped)
+        .map(|n| n.task.id)
+        .collect()
+}
+
+/// Audit should-fix 3: ⌥⌘↑/↓ next to a hidden sibling (a rejected proposal, a dropped task)
+/// moves past it to the visible neighbour, and an end move changes nothing and pushes no
+/// undo entry.
+#[test]
+fn reorder_moves_past_hidden_siblings_and_only_a_real_move_is_undoable() {
+    let app = TestApp::new();
+    let p = app.add("P", None);
+    let a = app.add("A", Some(p));
+    let x = proposal(&app, p, "x");
+    let d = app.add("D", Some(p));
+    let b = app.add("B", Some(p));
+    app.core(|s| {
+        // Rejected, so gone from the tree; and a plain drop, hidden in tree layouts.
+        s.set_status(x, Status::Dropped, None, &Actor::Me).unwrap();
+        s.set_status(d, Status::Dropped, None, &Actor::Me).unwrap();
+    });
+    app.sync_vm();
+    assert_eq!(shown_children(&app, p), vec![a, b]);
+
+    let w = tasks::reorder(&app.state, M, a, tasks::Direction::Down).unwrap();
+    assert_eq!(
+        shown_children(&app, p),
+        vec![b, a],
+        "A moved past the hidden ones"
+    );
+    assert_eq!(w.undo.unwrap().label, format!("Move {}", a.0));
+
+    // At either end nothing happens, and nothing joins the undo stack.
+    for (id, dir) in [(a, tasks::Direction::Down), (b, tasks::Direction::Up)] {
+        let w = tasks::reorder(&app.state, M, id, dir).unwrap();
+        assert!(w.undo.is_none() && w.patch.is_none(), "{id:?} {dir:?}");
+    }
+    assert_eq!(shown_children(&app, p), vec![b, a]);
+
+    tasks::reorder(&app.state, M, a, tasks::Direction::Up).unwrap();
+    assert_eq!(shown_children(&app, p), vec![a, b]);
+    tasks::undo(&app.state, M, None).unwrap();
+    assert_eq!(shown_children(&app, p), vec![b, a]);
+    tasks::undo(&app.state, M, None).unwrap();
+    assert_eq!(shown_children(&app, p), vec![a, b]);
+    assert_eq!(
+        tasks::undo(&app.state, M, None).unwrap().message,
+        "Nothing to undo."
+    );
+}
