@@ -265,7 +265,6 @@
     color: var(--text);
     white-space: nowrap;
     max-width: 100%;
-    font-variant-numeric: tabular-nums;
   }
   button.tag:hover,
   .dep:hover {

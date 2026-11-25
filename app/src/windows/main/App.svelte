@@ -9,6 +9,8 @@
   import TaskList from './TaskList.svelte';
   import TaskPanel from './TaskPanel.svelte';
   import TaskPage from './TaskPage.svelte';
+  import NeedsInbox from './NeedsInbox.svelte';
+  import PlansGrid from './PlansGrid.svelte';
 
   let { app }: { app: App } = $props();
   // svelte-ignore state_referenced_locally
@@ -39,6 +41,10 @@
         {#if app.viewKind === 'list'}
           <TaskList />
           {#if app.ui.panelOpen && app.ui.selected !== null}<TaskPanel />{/if}
+        {:else if app.viewKind === 'needs'}
+          <NeedsInbox />
+        {:else}
+          <PlansGrid />
         {/if}
       </div>
     {/if}
