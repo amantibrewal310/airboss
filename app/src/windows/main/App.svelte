@@ -5,6 +5,7 @@
   import { provideApp } from '../../lib/state/context';
   import Sidebar from './Sidebar.svelte';
   import Header from './Header.svelte';
+  import TaskList from './TaskList.svelte';
 
   let { app }: { app: App } = $props();
   // svelte-ignore state_referenced_locally
@@ -26,6 +27,7 @@
   <main class="main">
     <Header />
     <div class="body">
+      <TaskList />
     </div>
   </main>
 </div>

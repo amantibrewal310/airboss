@@ -13,7 +13,7 @@ booking email sms webhook token session profile settings onboarding audit metric
 schema index migration retry backoff limit dashboard sidebar panel modal toast menu hotkey
 picker calendar timezone locale theme contrast keyboard focus scroll list tree map wave plan`.split(/\s+/);
 const VERBS = ['Add', 'Fix', 'Refactor', 'Test', 'Document', 'Speed up', 'Clean up', 'Split', 'Wire', 'Review'];
-const STATUSES: Status[] = ['todo', 'todo', 'todo', 'todo', 'doing', 'in_review', 'blocked', 'done', 'done', 'done', 'proposed', 'dropped'];
+const STATUSES: Status[] = ['todo', 'todo', 'todo', 'todo', 'doing', 'in_review', 'blocked', 'done', 'done', 'done', 'proposed'];
 
 function rng(seed: number) {
   let s = seed >>> 0;
@@ -57,6 +57,10 @@ export function perfSeed(count = 2000): MockSeed {
     if (status !== 'todo' && status !== 'proposed') b.moved(id, status, Math.floor(r() * 10 * DAY) + MIN, pick(['me', 'agent:worker', 'sync:gh', 'launch']));
     ids.push(id);
     if (depth < 4 && r() < 0.35) parents.push(id);
+  }
+  // A few dropped leaves, so the list leaves something out.
+  for (const t of b.tasks.filter((x) => x.parent !== null).slice(0, 400).filter((_, i) => i % 40 === 0)) {
+    if (!b.tasks.some((x) => x.parent === t.id)) t.status = 'dropped';
   }
   // About 1,000 dependencies, always on an earlier task, never on an ancestor.
   const ancestorsOf = (id: TaskId) => {
