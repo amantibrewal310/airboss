@@ -234,6 +234,7 @@ struct FakeT3State {
     fail: std::collections::VecDeque<crate::t3::T3Error>,
     reads: u32,
     opens: u32,
+    panic: bool,
 }
 
 /// Controls a [`FakeT3`] after it was handed to a worker.
@@ -267,6 +268,11 @@ impl FakeT3Handle {
         lock(&self.0).fail.push_back(e);
     }
 
+    /// The next `read` panics, as a bug would.
+    pub fn panic_next(&self) {
+        lock(&self.0).panic = true;
+    }
+
     /// How many times `read` ran.
     pub fn reads(&self) -> u32 {
         lock(&self.0).reads
@@ -295,7 +301,14 @@ impl crate::t3::T3Source for FakeT3 {
     }
 
     fn read(&mut self, q: &crate::t3::T3Query) -> Result<crate::t3::T3Read, crate::t3::T3Error> {
-        lock(&self.state).reads += 1;
+        let panic = {
+            let mut s = lock(&self.state);
+            s.reads += 1;
+            std::mem::take(&mut s.panic)
+        };
+        if panic {
+            panic!("FakeT3: an injected panic");
+        }
         match self.take_failure() {
             Some(e) => Err(e),
             None => self.db.read(q),

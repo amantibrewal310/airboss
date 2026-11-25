@@ -68,6 +68,11 @@ impl Health {
         self.state == HealthState::Ok
     }
 
+    /// Ok, and read since the app started.
+    pub(crate) fn is_live(&self) -> bool {
+        self.is_ok() && !self.stale
+    }
+
     /// A good read at `now`.
     pub(crate) fn ok(&mut self, now: SystemTime) {
         if self.state != HealthState::Ok {

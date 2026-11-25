@@ -115,12 +115,13 @@ impl GhWorker {
             saved_health: HashMap::new(),
         };
         w.reload_links();
+        // What was seen before shows at once, stale until the first pass.
+        w.publish(now);
         Ok(w)
     }
 
     /// Publishes what was loaded and checks held finishes; the first pass is 3 s later.
     pub fn start(&mut self, now: SystemTime) -> Step {
-        self.timer_at = now + FIRST_PASS;
         finish::recheck_held(&self.env.store, &self.db, now);
         self.publish(now);
         self.step(true, now)

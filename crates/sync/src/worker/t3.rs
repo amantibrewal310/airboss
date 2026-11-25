@@ -149,6 +149,8 @@ impl T3Worker {
         };
         worker.reload_links(&[LinkKind::T3Thread, LinkKind::ClaudeSession]);
         worker.rebuild_tasks();
+        // What was seen before shows at once, stale until the first pass.
+        worker.publish();
         Ok(worker)
     }
 

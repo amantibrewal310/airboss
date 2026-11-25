@@ -365,6 +365,7 @@ impl SyncDb {
     }
 
     /// A thread's `pr_seen`.
+    #[cfg(test)]
     pub(crate) fn seen(&self, thread: &str) -> DbResult<Vec<String>> {
         let json: Option<String> = self
             .conn

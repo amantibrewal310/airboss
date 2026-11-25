@@ -137,17 +137,12 @@ impl Hub {
         self.rebuild(&parts)
     }
 
-    /// The thread half as last published, e.g. for the finish check's thread states.
-    pub(crate) fn thread_states(&self) -> HashMap<ThreadKey, ThreadView> {
-        lock(&self.parts).threads.threads.clone()
-    }
-
     fn rebuild(&self, parts: &Parts) -> bool {
         let t = &parts.threads;
         let p = &parts.prs;
         let source_ok = |s: Source| match s {
-            Source::T3 => t.t3.is_ok(),
-            Source::Claude => t.claude.is_ok(),
+            Source::T3 => t.t3.is_live(),
+            Source::Claude => t.claude.is_live(),
         };
         let threads = t
             .threads
@@ -165,19 +160,19 @@ impl Hub {
             .iter()
             .map(|(k, v)| {
                 let mut v = v.clone();
-                v.stale = v.stale || !p.gh.is_ok();
+                v.stale = v.stale || !p.gh.is_live();
                 (k.clone(), v)
             })
             .collect();
         let mut oks: Vec<SystemTime> = Vec::new();
         for h in [&t.t3, &t.claude] {
-            if h.is_ok() {
+            if h.is_live() {
                 oks.extend(h.last_ok_at);
             }
         }
-        if p.gh.is_ok() {
+        if p.gh.is_live() {
             for (_, h) in &p.accounts {
-                if h.is_ok() {
+                if h.is_live() {
                     oks.extend(h.last_ok_at);
                 }
             }
