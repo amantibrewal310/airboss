@@ -1,19 +1,18 @@
 //! Rule 6 (who may move a task where), rule 1 (blocked needs a reason) and rule 7.
 #![allow(clippy::unwrap_used)]
 
+mod common;
+
 use airboss_core::{
     Actor, Error, EventKind, LinkKind, NewLink, NewTask, PrState, Status, Store, TaskId,
 };
+use common::agent;
 
 use Status::*;
 
 const ALL: [Status; 7] = [Proposed, Todo, Doing, InReview, Blocked, Done, Dropped];
 const OPEN: [Status; 4] = [Todo, Doing, InReview, Blocked];
 const CLOSED: [Status; 3] = [Proposed, Done, Dropped];
-
-fn agent() -> Actor {
-    Actor::Agent("t3/abc".into())
-}
 
 /// A fresh store holding one task in `from`, with one PR link per entry of `prs`.
 fn task_in(from: Status, prs: &[PrState]) -> (Store, TaskId) {

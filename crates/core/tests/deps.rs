@@ -1,11 +1,10 @@
 //! Dependencies, loops, waiting and run order (rules 14–18).
 #![allow(clippy::unwrap_used)]
 
-use airboss_core::{Actor, Error, EventKind, NewTask, RunOrder, Status, Store, Task, TaskId};
+mod common;
 
-fn store() -> Store {
-    Store::open_in_memory().unwrap()
-}
+use airboss_core::{Actor, Error, EventKind, NewTask, RunOrder, Status, Store, Task, TaskId};
+use common::store;
 
 fn top(store: &mut Store, title: &str) -> TaskId {
     store.add_task(NewTask::new(title), &Actor::Me).unwrap().id

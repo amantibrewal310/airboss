@@ -5,45 +5,12 @@
 //! and asserts the 95th percentile, printing the machine next to the numbers.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
+mod common;
+
 use airboss_core::{Actor, NewTask, Status, Store, TaskId};
-
-struct TempDir(PathBuf);
-
-impl TempDir {
-    fn new() -> TempDir {
-        static N: AtomicU32 = AtomicU32::new(0);
-        let p = std::env::temp_dir().join(format!(
-            "airboss-perf-{}-{}",
-            std::process::id(),
-            N.fetch_add(1, Ordering::Relaxed)
-        ));
-        std::fs::create_dir_all(&p).unwrap();
-        TempDir(p)
-    }
-}
-
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
-}
-
-/// Tiny deterministic generator, so runs are repeatable without the rand crate.
-struct Lcg(u64);
-
-impl Lcg {
-    fn below(&mut self, n: usize) -> usize {
-        self.0 = self
-            .0
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1442695040888963407);
-        ((self.0 >> 33) as usize) % n
-    }
-}
+use common::{Lcg, TempDir};
 
 fn machine() -> String {
     let run = |cmd: &str, args: &[&str]| {

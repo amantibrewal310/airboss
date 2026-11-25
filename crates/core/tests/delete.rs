@@ -1,15 +1,10 @@
 //! Dropping and deleting subtrees: rules 5, 9, 13 and 17.
 #![allow(clippy::unwrap_used)]
 
+mod common;
+
 use airboss_core::{Actor, Error, EventKind, LinkKind, NewLink, NewTask, Status, Store, TaskId};
-
-fn store() -> Store {
-    Store::open_in_memory().unwrap()
-}
-
-fn agent() -> Actor {
-    Actor::Agent("t3/abc".into())
-}
+use common::{agent, store};
 
 fn top(s: &mut Store, title: &str) -> TaskId {
     s.add_task(NewTask::new(title), &Actor::Me).unwrap().id

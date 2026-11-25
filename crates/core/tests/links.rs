@@ -1,11 +1,10 @@
 //! Links to outside things, and PR state.
 #![allow(clippy::unwrap_used)]
 
-use airboss_core::{Actor, Error, EventKind, LinkKind, NewLink, NewTask, PrState, Store, TaskId};
+mod common;
 
-fn store() -> Store {
-    Store::open_in_memory().unwrap()
-}
+use airboss_core::{Actor, Error, EventKind, LinkKind, NewLink, NewTask, PrState, Store, TaskId};
+use common::store;
 
 fn agent(r: &str) -> Actor {
     Actor::Agent(r.into())

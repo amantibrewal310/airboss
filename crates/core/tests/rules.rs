@@ -3,18 +3,13 @@
 
 use std::path::Path;
 
+mod common;
+
 use airboss_core::{
     Actor, Error, EventKind, LinkKind, NewLink, NewTask, Origin, PrState, RepoId, Status, Store,
     TaskEdit, TaskId,
 };
-
-fn store() -> Store {
-    Store::open_in_memory().unwrap()
-}
-
-fn agent() -> Actor {
-    Actor::Agent("t3/abc".into())
-}
+use common::{agent, store};
 
 // Rule 2: a title can't be blank, and a parent must exist.
 
