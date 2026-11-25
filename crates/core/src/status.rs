@@ -104,7 +104,32 @@ pub(crate) fn set_status(
     let note = note.filter(|n| !n.trim().is_empty());
     check_status_change(actor, &facts(tx, id)?, to, note)?;
     apply(tx, id, to, note, actor)?;
+    if to == Status::Dropped {
+        drop_subtree(tx, id, actor)?;
+    }
     tasks::get(tx, id)
+}
+
+/// Rule 9: drops every open task under `id`, with one event each. `done` ones stay `done`.
+fn drop_subtree(tx: &mut Tx<'_>, id: TaskId, actor: &Actor) -> Result<()> {
+    let open: Vec<TaskId> = {
+        let mut stmt = tx.prepare(
+            "WITH RECURSIVE sub(id) AS (
+                 SELECT id FROM tasks WHERE parent_id = ?1
+                 UNION ALL
+                 SELECT t.id FROM tasks t JOIN sub ON t.parent_id = sub.id
+             )
+             SELECT t.id FROM tasks t JOIN sub ON t.id = sub.id
+             WHERE t.status NOT IN ('done', 'dropped') ORDER BY t.id",
+        )?;
+        let rows = stmt.query_map(params![id.0], |r| r.get(0).map(TaskId))?;
+        rows.collect::<rusqlite::Result<_>>()?
+    };
+    let body = format!("dropped with #{}", id.0);
+    for task in open {
+        apply(tx, task, Status::Dropped, Some(&body), actor)?;
+    }
+    fault::hit(fault::SUBTREE_DROPPED)
 }
 
 impl crate::Store {
