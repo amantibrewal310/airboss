@@ -25,7 +25,7 @@ describe('mock view model (SPEC-app "The view model and patches")', () => {
 
   it('shows a parent with no repos the union of its subtasks, flagged', () => {
     const rows = rowsOf();
-    expect(rows.get(142)!.repos).toEqual([1, 2]);
+    expect(rows.get(142)!.repos).toEqual([2, 1]); // the union, by name
     expect(rows.get(142)!.repos_from_subtasks).toBe(true);
     expect(rows.get(144)!.repos).toEqual([1]);
     expect(rows.get(144)!.repos_from_subtasks).toBe(false);

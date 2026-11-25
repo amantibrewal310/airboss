@@ -107,9 +107,8 @@ export function designBuilder(): SeedBuilder {
 
   // Top-level work
   b.task({ id: 128, title: 'MCP server', status: 'in_review', repos: [AIRBOSS], created: 6 * DAY });
-  b.thread(128, 'mcp-server', 'settled', { repo: 'airboss', launchedAgo: 3 * DAY, ago: 45 * MIN });
   b.pr(128, 'acme/airboss#31', 'open', { title: 'list_tasks and get_task', add: 412, del: 38, checks: 'passing', review: 'required', ago: 40 * MIN });
-  b.moved(128, 'in_review', 40 * MIN, 'agent:mcp-server');
+  b.moved(128, 'in_review', 39 * MIN, 'agent:mcp-server');
 
   b.task({ id: 150, title: 'Worktree cleanup research', repos: [AIRBOSS], created: 2 * DAY });
   b.task({ id: 153, title: 'List stale worktrees older than 14 days', status: 'proposed', parent: 150, repos: [AIRBOSS], origin: 'agent', created: 3 * HOUR });
@@ -140,6 +139,7 @@ export function designBuilder(): SeedBuilder {
     ask: { id: 'r-tray-1', kind: 'approval', text: 'cargo add tray-icon', ago: 12 * MIN },
   });
   b.moved(133, 'doing', DAY, 'launch');
+  b.event(133, 'note', 12 * MIN, 'agent:tray-count', { body: 'Needs approval to add the tray-icon crate.' });
 
   b.task({ id: 131, title: 'Fix flaky login test', status: 'doing', repos: [WEB], created: 2 * DAY });
   b.thread(131, 'fix-flaky-login', 'errored', { repo: 'booking-web', launchedAgo: 5 * HOUR, ago: HOUR, error: '3 tests failed' });

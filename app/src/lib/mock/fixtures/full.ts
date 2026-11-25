@@ -29,6 +29,8 @@ export function fullSeed(): MockSeed {
   b.moved(163, 'doing', 3 * HOUR, 'launch');
   b.readySince[165] = b.at(2 * DAY);
 
+  b.thread(128, 'mcp-server', 'settled', { repo: 'airboss', launchedAgo: 3 * DAY, ago: 45 * MIN });
+
   // dotfiles
   b.task({ id: 175, title: 'Shell prompt speed-up', status: 'done', repos: [DOTFILES], created: 12 * DAY });
   b.moved(175, 'done', 9 * DAY, 'me');

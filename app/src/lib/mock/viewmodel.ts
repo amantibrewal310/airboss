@@ -133,7 +133,10 @@ export function reposOf(s: MockState, ix: TreeIndex, id: TaskId): { repos: RepoI
     if (t.status === 'dropped') continue;
     for (const r of t.repos) seen.add(r);
   }
-  const ordered = s.repos.map((r) => r.id).filter((r) => seen.has(r));
+  const ordered = s.repos
+    .filter((r) => seen.has(r.id))
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((r) => r.id);
   return { repos: ordered, fromSubtasks: ordered.length > 0 };
 }
 
@@ -452,7 +455,8 @@ export function buildPlans(s: MockState): PlanCard[] {
   for (const id of kids(ix, null)) {
     const t = s.tasks.get(id)!;
     const row = rows.get(id)!;
-    if (!isOpen(t.status) || !row.progress) continue;
+    const accepted = liveKids(s, ix, id).some((k) => s.tasks.get(k)!.status !== 'proposed');
+    if (!isOpen(t.status) || !row.progress || !accepted) continue;
     const map = buildRunMap(s, ix, id);
     const current = map.waves.findIndex((w) => w.some((n) => s.tasks.get(n)!.status !== 'done'));
     const under = subtree(ix, id);
