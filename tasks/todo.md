@@ -127,7 +127,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
   - **Files:** `src/tasks.rs`, `src/positions.rs`, `tests/tree.rs`
   - **Depends on:** T3 (and T6 for the parent-status checks)
 
-- [ ] **T9. Drop a subtree, delete a task** (S)
+- [x] **T9. Drop a subtree, delete a task** (S)
   - **Description:**
     - Dropping a task (`me` only) also drops its open subtasks, with one event each; `done` subtasks stay `done` (rule 9).
     - `delete_task` is `me` only: it cascades (rule 5) and renumbers the siblings.

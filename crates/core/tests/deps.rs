@@ -1,7 +1,7 @@
 //! Dependencies, loops, waiting and run order (rules 14–18).
 #![allow(clippy::unwrap_used)]
 
-use airboss_core::{Actor, Error, EventKind, NewTask, RunOrder, Store, Task, TaskId};
+use airboss_core::{Actor, Error, EventKind, NewTask, RunOrder, Status, Store, Task, TaskId};
 
 fn store() -> Store {
     Store::open_in_memory().unwrap()
@@ -279,6 +279,55 @@ fn ready_lists_unblocked_todo_tasks_in_tree_order() {
     assert!(!ready.contains(&proposal), "proposals are not ready");
 }
 
+fn set_status(store: &mut Store, id: TaskId, to: Status) {
+    store.set_status(id, to, None, &Actor::Me).unwrap();
+}
+
+#[test]
+fn a_waiting_task_becomes_ready_when_its_blocker_finishes() {
+    for finished in [Status::Done, Status::Dropped] {
+        let mut s = store();
+        let a = top(&mut s, "A");
+        let b = top(&mut s, "B");
+        let c = top(&mut s, "C");
+        s.add_dependency(c, a, &Actor::Me).unwrap();
+        s.add_dependency(c, b, &Actor::Me).unwrap();
+        assert!(waiting(&s, c));
+        assert_eq!(ids(&s.ready().unwrap()), vec![a, b]);
+
+        set_status(&mut s, a, finished);
+        assert!(waiting(&s, c), "still waits on B");
+        assert_eq!(ids(&s.waits_on(c).unwrap()), vec![b]);
+
+        set_status(&mut s, b, finished);
+        assert!(!waiting(&s, c));
+        assert!(s.waits_on(c).unwrap().is_empty());
+        assert_eq!(ids(&s.ready().unwrap()), vec![c], "{finished:?}");
+    }
+}
+
+#[test]
+fn ready_leaves_out_tasks_that_are_not_todo() {
+    let mut s = store();
+    let a = top(&mut s, "A");
+    let b = top(&mut s, "B");
+    set_status(&mut s, a, Status::Doing);
+    assert_eq!(ids(&s.ready().unwrap()), vec![b]);
+}
+
+#[test]
+fn a_loop_through_finished_tasks_is_still_a_loop() {
+    let mut s = store();
+    let a = top(&mut s, "A");
+    let b = top(&mut s, "B");
+    s.add_dependency(b, a, &Actor::Me).unwrap();
+    set_status(&mut s, b, Status::Done);
+    assert!(matches!(
+        s.add_dependency(a, b, &Actor::Me),
+        Err(Error::Loop)
+    ));
+}
+
 // ---- T11: run order ----
 
 fn wave_ids(order: &RunOrder) -> Vec<Vec<TaskId>> {
@@ -360,6 +409,51 @@ fn a_loop_made_only_by_lifting_is_rejected() {
     s.add_dependency(x1, y1, &Actor::Me).unwrap();
     s.add_dependency(y2, x2, &Actor::Me).unwrap();
     assert!(matches!(s.run_order(p), Err(Error::Loop)));
+}
+
+#[test]
+fn run_order_leaves_out_finished_subtasks_and_what_they_held_up() {
+    let mut s = store();
+    let p = top(&mut s, "Project");
+    let [a, b, c, d] = ["A", "B", "C", "D"].map(|t| under(&mut s, p, t));
+    s.add_dependency(c, a, &Actor::Me).unwrap();
+    s.add_dependency(d, b, &Actor::Me).unwrap();
+    set_status(&mut s, a, Status::Done);
+    set_status(&mut s, b, Status::Dropped);
+
+    let order = s.run_order(p).unwrap();
+    assert_eq!(wave_ids(&order), vec![vec![c, d]]);
+    assert!(order.waiting_outside.is_empty());
+}
+
+#[test]
+fn a_finished_blocker_outside_does_not_hold_a_subtask() {
+    let mut s = store();
+    let elsewhere = top(&mut s, "Elsewhere");
+    let p = top(&mut s, "Project");
+    let a = under(&mut s, p, "A");
+    s.add_dependency(a, elsewhere, &Actor::Me).unwrap();
+    set_status(&mut s, elsewhere, Status::Done);
+
+    let order = s.run_order(p).unwrap();
+    assert_eq!(wave_ids(&order), vec![vec![a]]);
+    assert!(order.waiting_outside.is_empty());
+}
+
+#[test]
+fn a_finished_step_no_longer_orders_its_phase() {
+    let mut s = store();
+    let p = top(&mut s, "Project");
+    let p1 = under(&mut s, p, "Phase 1");
+    let p2 = under(&mut s, p, "Phase 2");
+    let s1 = under(&mut s, p1, "Step 1");
+    under(&mut s, p1, "Step 1b");
+    let s2 = under(&mut s, p2, "Step 2");
+    s.add_dependency(s2, s1, &Actor::Me).unwrap();
+    assert_eq!(wave_ids(&s.run_order(p).unwrap()), vec![vec![p1], vec![p2]]);
+
+    set_status(&mut s, s1, Status::Done);
+    assert_eq!(wave_ids(&s.run_order(p).unwrap()), vec![vec![p1, p2]]);
 }
 
 #[test]
