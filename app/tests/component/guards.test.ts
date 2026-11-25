@@ -121,8 +121,12 @@ describe('P0-4: ⌘Z while a reject is pending', () => {
 describe('P0-5: the reject toast after the reject is written', () => {
   it('drops Undo at the deadline even while hovered', async () => {
     const { app } = await startApp();
+    // Rust writes a reject 5 s after it's made (SPEC-app); the test shortens that.
+    const { App } = await import('../../src/lib/state/app.svelte');
+    App.rejectDelayMs = 200;
     const item = app.needs.visible.find((n) => n.kind === 'proposed')!;
     await app.rejectProposals(item, [153]);
+    App.rejectDelayMs = 5000;
     const toast = app.toasts.list.at(-1)!;
     expect(toast.actions.map((a) => a.label)).toEqual(['Undo']);
     app.toasts.pause(toast.id);

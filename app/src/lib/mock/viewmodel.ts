@@ -455,8 +455,8 @@ export function buildPlans(s: MockState): PlanCard[] {
   for (const id of kids(ix, null)) {
     const t = s.tasks.get(id)!;
     const row = rows.get(id)!;
-    const accepted = liveKids(s, ix, id).some((k) => s.tasks.get(k)!.status !== 'proposed');
-    if (!isOpen(t.status) || !row.progress || !accepted) continue;
+    // Rust's plan_cards: top-level, has subtasks, and not proposed, done or dropped.
+    if (!row.has_children || t.status === 'proposed' || t.status === 'done' || t.status === 'dropped' || !row.progress) continue;
     const map = buildRunMap(s, ix, id);
     const current = map.waves.findIndex((w) => w.some((n) => s.tasks.get(n)!.status !== 'done'));
     const under = subtree(ix, id);

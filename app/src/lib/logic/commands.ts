@@ -33,59 +33,63 @@ export interface Command {
   palette?: boolean;
 }
 
-export type CommandId =
-  | 'go_needs'
-  | 'go_plans'
-  | 'go_ready'
-  | 'go_all'
-  | 'go_progress'
-  | 'open_needs'
-  | 'jump'
-  | 'new_task'
-  | 'quick_add'
-  | 'settings'
-  | 'shortcuts'
-  | 'undo'
-  | 'toasts'
-  | 'up'
-  | 'down'
-  | 'first'
-  | 'last'
-  | 'page_up'
-  | 'page_down'
-  | 'open_fold'
-  | 'close_fold'
-  | 'rename'
-  | 'toggle_done'
-  | 'status'
-  | 'link_repos'
-  | 'do_it'
-  | 'plan_it'
-  | 'open_page'
-  | 'back'
-  | 'move_up'
-  | 'move_down'
-  | 'add_waits_on'
-  | 'add_link'
-  | 'mark_blocked'
-  | 'open_latest'
-  | 'drop'
-  | 'copy_number'
-  | 'escape'
-  | 'to_panel'
-  | 'needs_up'
-  | 'needs_down'
-  | 'needs_main'
-  | 'needs_dismiss'
-  | 'plans_left'
-  | 'plans_right'
-  | 'plans_up'
-  | 'plans_down'
-  | 'plans_open'
-  | 'layout_tree'
-  | 'layout_status'
-  | 'move_under'
-  | 'check_connections';
+/** Every command id; native menu items send these too (app/src-tauri/src/menu.rs). */
+export const COMMAND_IDS = [
+  'go_needs',
+  'go_plans',
+  'go_ready',
+  'go_all',
+  'go_progress',
+  'open_needs',
+  'jump',
+  'new_task',
+  'quick_add',
+  'settings',
+  'shortcuts',
+  'undo',
+  'toasts',
+  'up',
+  'down',
+  'first',
+  'last',
+  'page_up',
+  'page_down',
+  'open_fold',
+  'close_fold',
+  'rename',
+  'toggle_done',
+  'status',
+  'link_repos',
+  'do_it',
+  'plan_it',
+  'open_page',
+  'back',
+  'move_up',
+  'move_down',
+  'add_waits_on',
+  'add_link',
+  'mark_blocked',
+  'open_latest',
+  'drop',
+  'copy_number',
+  'escape',
+  'to_panel',
+  'needs_up',
+  'needs_down',
+  'needs_main',
+  'needs_dismiss',
+  'plans_left',
+  'plans_right',
+  'plans_up',
+  'plans_down',
+  'plans_open',
+  'layout_tree',
+  'layout_status',
+  'move_under',
+  'check_connections',
+] as const;
+
+export type CommandId = (typeof COMMAND_IDS)[number];
 
 const LIST: ViewKind[] = ['list'];
 const TASKS: ViewKind[] = ['list', 'page'];

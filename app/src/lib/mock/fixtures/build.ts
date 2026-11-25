@@ -130,7 +130,8 @@ export class SeedBuilder {
       linked_by: opts.by ?? 'me',
       linked_at: this.at(ago),
     });
-    this.event(task, 'linked', ago, opts.by ?? 'me', { body: opts.title ?? ref });
+    // core writes "<kind> <ref>" (links.rs).
+    this.event(task, 'linked', ago, opts.by ?? 'me', { body: `${kind} ${ref}` });
     return this;
   }
 

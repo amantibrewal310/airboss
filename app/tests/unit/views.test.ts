@@ -71,8 +71,9 @@ describe('views (SPEC-app "List views")', () => {
   it('counts the sidebar: ready leaves, plans, in progress, open tasks', () => {
     const c = sidebarCounts(rows);
     expect(c.ready).toBe([...rows.values()].filter((r) => r.ready).length);
-    expect(c.plans).toBe(5); // Booking flow, Refunds, Dark mode tokens, Menu-bar app v1, Accessibility audit
-    expect(parentsList(rows, order).map((r) => r.id)).toEqual([142, 200, 110, 160, 190]);
+    // Rust's rule: a top-level task with subtasks that isn't proposed, done or dropped (150 has only proposals).
+    expect(c.plans).toBe(6);
+    expect(parentsList(rows, order).map((r) => r.id)).toEqual([142, 200, 150, 110, 160, 190]);
     expect(viewCount(rows, order, 'parent:142')).toBe(4);
     expect(viewTitle('repo:2', rows, [{ id: 2, name: 'booking-api', path: '', remote_url: null }])).toBe('booking-api');
   });

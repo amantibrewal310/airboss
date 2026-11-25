@@ -120,6 +120,15 @@ export class App {
   private undoLocal = new Map<number, { key?: string; rows?: TaskId[] }>();
   /** Undo entry → the tasks to select again once it's undone. */
   private undoTasks = new Map<number, TaskId[]>();
+  /**
+   * The undo entries this window was given, oldest first. ⌘Z names the newest one to Rust, so the
+   * UI always knows exactly which entry was undone and reverses only its local changes.
+   */
+  private undoOrder: number[] = [];
+  /** SPEC-app: a reject is written 5 s after it’s made, and can be undone until then (tests shorten it). */
+  static rejectDelayMs = 5000;
+  /** Rust keeps 20 entries; older ones drop off. */
+  static readonly UNDO_DEPTH = 20;
   private stopTheme: () => void = () => {};
   private unlisten: (() => void)[] = [];
   focusTargets: Partial<Record<'list' | 'panel' | 'sidebar' | 'page', HTMLElement>> = $state({});
@@ -537,16 +546,21 @@ export class App {
    * A toast for an undoable write. `local` is what this window hid for the write (rows, a Needs
    * me item) and must bring back on undo; `tasks` is what to select again once it's undone.
    */
-  private undoToast(text: string, write: UndoableWrite, local?: { key?: string; rows?: TaskId[] }, tasks?: TaskId[]): void {
+  private undoToast(
+    text: string,
+    write: UndoableWrite,
+    local?: { key?: string; rows?: TaskId[] },
+    tasks?: TaskId[],
+    deadline?: number,
+  ): void {
     const undo = write.undo;
+    if (undo) this.rememberUndo(undo.id);
     if (undo && local) this.undoLocal.set(undo.id, local);
     if (undo && tasks?.length) this.undoTasks.set(undo.id, tasks);
-    const deadline = undo?.expires_at ? Date.parse(undo.expires_at) : undefined;
     if (undo && deadline !== undefined) {
       // A deferred reject is written at its deadline: its local fix-up and Undo stop being true.
       setTimeout(() => {
-        this.undoLocal.delete(undo.id);
-        this.undoTasks.delete(undo.id);
+        this.forgetUndo(undo.id);
         if (local?.rows) setTimeout(() => this.tasks.hide(local.rows!, false), 2000);
       }, Math.max(0, deadline - Date.now()));
     }
@@ -561,18 +575,38 @@ export class App {
     );
   }
 
+  /**
+   * A toast Rust sent. Each action names a command and its args in the api function's order
+   * (dto.rs `ToastArgs`), so it runs as `api[command](...Object.values(args))`.
+   */
   private toastEvent(t: ToastEvent): void {
+    const fns = api as unknown as Record<string, ((...x: unknown[]) => Promise<unknown>) | undefined>;
     this.toasts.push({
       text: t.text,
-      tone: 'info',
+      tone: t.tone === 'warning' ? 'warn' : 'info',
       actions: [
         ...t.actions.map((a) => ({
           label: a.label,
-          run: () => void (api as unknown as Record<string, (...x: unknown[]) => Promise<unknown>>)[camel(a.command)]?.(...Object.values(a.args)),
+          run: () => {
+            const fn = fns[camel(a.command)];
+            if (!fn) return console.error(`toast action: no api function for ${a.command}`);
+            fn(...Object.values(a.args)).catch((e: unknown) => this.fail(e));
+          },
         })),
         ...(t.undo ? [{ label: 'Undo', run: () => this.undo(t.undo!.id) }] : []),
       ],
     });
+    if (t.undo) this.rememberUndo(t.undo.id);
+  }
+
+  private rememberUndo(id: number): void {
+    this.undoOrder = [...this.undoOrder.filter((x) => x !== id), id].slice(-App.UNDO_DEPTH);
+  }
+
+  private forgetUndo(id: number): void {
+    this.undoOrder = this.undoOrder.filter((x) => x !== id);
+    this.undoLocal.delete(id);
+    this.undoTasks.delete(id);
   }
 
   // ================================================================== writes
@@ -1017,12 +1051,17 @@ export class App {
     if (all && !this.actOnce(item)) return;
     this.tasks.hide(ids, true);
     if (all) this.leave(item, 7000);
+    // Rust starts its 5 s once the call arrives, so counting from here never outlives it.
+    const deadline = Date.now() + App.rejectDelayMs;
     try {
       const w = await api.rejectProposals(ids, null);
-      this.undoToast(ids.length === 1 ? `Rejected ${ids[0]}` : `Rejected ${ids.length} subtasks`, w, {
-        rows: ids,
-        ...(all ? { key: item.key } : {}),
-      });
+      this.undoToast(
+        ids.length === 1 ? `Rejected ${ids[0]}` : `Rejected ${ids.length} subtasks`,
+        w,
+        { rows: ids, ...(all ? { key: item.key } : {}) },
+        undefined,
+        deadline,
+      );
     } catch (e) {
       this.tasks.hide(ids, false);
       if (all) this.needs.unhide(item.key);
@@ -1046,9 +1085,10 @@ export class App {
     const item = this.needs.visible.find((n) => n.kind === 'proposed' && n.proposed.some(([p]) => p === id));
     if (item) return this.rejectProposals(item, [id]);
     this.tasks.hide([id], true);
+    const deadline = Date.now() + App.rejectDelayMs;
     try {
       const w = await api.rejectProposals([id], null);
-      this.undoToast(`Rejected ${id}`, w, { rows: [id] });
+      this.undoToast(`Rejected ${id}`, w, { rows: [id] }, undefined, deadline);
     } catch (e) {
       this.tasks.hide([id], false);
       this.fail(e);
@@ -1057,18 +1097,18 @@ export class App {
 
   // ================================================================== undo
 
+  /**
+   * ⌘Z (no entry) undoes the newest entry this window knows, named explicitly, so the local
+   * fix-up below is for exactly the entry Rust undid. A toast's Undo names its own entry.
+   */
   async undo(entry: number | null = null): Promise<void> {
+    const id = entry ?? this.undoOrder.at(-1) ?? null;
     try {
-      const res = await api.undo(entry);
+      const res = await api.undo(id);
       this.applyWrite(res.patch);
-      // Only the entry Rust actually undid has its local changes reversed.
-      const id = res.entry ?? entry;
       const local = id !== null ? this.undoLocal.get(id) : undefined;
       const tasks = id !== null ? this.undoTasks.get(id) : undefined;
-      if (id !== null) {
-        this.undoLocal.delete(id);
-        this.undoTasks.delete(id);
-      }
+      if (id !== null) this.forgetUndo(id);
       if (local?.key) this.needs.unhide(local.key);
       if (local?.rows) this.tasks.hide(local.rows, false);
       // The task comes back where it was: select it again if this view shows it.

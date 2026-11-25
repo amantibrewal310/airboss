@@ -18,11 +18,32 @@ describe('copy', () => {
   });
 
   it('a launch reads as the thread it started, and where', () => {
-    const e: HistoryEntry = { id: 1, task: 144, kind: 'linked', to_status: null, body: 'T3 · slot-picker', actor: 'launch', at: '', thread_title: null };
+    // core writes a link event's body as "<kind> <ref>" (links.rs).
+    const e: HistoryEntry = { id: 1, task: 144, kind: 'linked', to_status: null, body: 't3_thread slot-picker', actor: 'launch', at: '', thread_title: null };
     const text = (segs: { text: string }[]) => segs.map((s) => s.text).join('');
     expect(text(phrase(e, 144, { repoOf: (t) => (t === 'slot-picker' ? 'booking-web' : null) }))).toBe('Started thread slot-picker in booking-web');
     expect(text(phrase(e, 144))).toBe('Started thread slot-picker');
     expect(text(phrase({ ...e, task: 202 }, 200, { repoOf: () => 'booking-api' }))).toBe('202 · Started thread slot-picker in booking-api');
+  });
+
+  it('reads core’s event bodies in plain words', () => {
+    const e = (x: Partial<HistoryEntry>): HistoryEntry => ({ id: 1, task: 144, kind: 'created', to_status: null, body: null, actor: 'me', at: '', thread_title: null, ...x });
+    const text = (h: HistoryEntry, ctx = {}) => phrase(h, 144, ctx).map((s) => s.text).join('');
+    expect(text(e({ kind: 'linked', body: 'pr acme/booking-api#58' }))).toBe('You linked PR #58');
+    expect(text(e({ kind: 'linked', body: 'slack /archives/C0BOOKING/p1764000000' }), { linkTitle: () => '#booking thread' })).toBe('You linked #booking thread');
+    expect(text(e({ kind: 'linked', body: 'doc ~/plans/booking-flow.md' }))).toBe('You linked booking-flow.md');
+    expect(text(e({ kind: 'unlinked', body: 'slack /archives/C0BOOKING/p1764000000' }))).toBe('You unlinked Slack thread');
+    expect(text(e({ kind: 'link_state', actor: 'sync:gh', body: 'acme/booking-api#58 merged' }))).toBe('GitHub saw PR #58 merged');
+    expect(text(e({ kind: 'edited', body: 'title' }))).toBe('You renamed this');
+    expect(text(e({ kind: 'edited', body: 'body' }))).toBe('You edited the notes');
+    expect(text(e({ kind: 'edited', body: 'title, body' }))).toBe('You renamed this and edited the notes');
+    expect(text(e({ kind: 'edited', body: 'branch: task-144-slot-picker' }))).toBe('You set the branch to task-144-slot-picker');
+    expect(text(e({ kind: 'edited', body: 'branch cleared' }))).toBe('You cleared the branch');
+    expect(text(e({ kind: 'waits_on_added', actor: 'plan', body: 'waits on #143, #145' }))).toBe('Plan made this wait on 143, 145');
+    expect(text(e({ kind: 'waits_on_removed', body: 'no longer waits on #146' }))).toBe('You stopped this waiting on 146');
+    expect(text(e({ kind: 'created', actor: 'plan', body: 'waits on #143' }))).toBe('Plan created this · waits on 143');
+    expect(text(e({ kind: 'moved' }))).toBe('You moved this');
+    expect(text(e({ kind: 'repo_linked', body: 'booking-web' }))).toBe('You linked booking-web');
   });
 
   it('the Agents row and the footer agree with the command-line tool', () => {

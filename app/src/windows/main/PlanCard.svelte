@@ -32,7 +32,7 @@
   const summary = $derived(
     [
       `${pct}% done, ${card.progress.done} of ${card.progress.total}`,
-      card.current_wave === null ? 'all waves done' : `wave ${card.current_wave + 1} of ${card.waves}`,
+      card.waves === 0 ? 'no waves yet' : card.current_wave === null ? 'all waves done' : `wave ${card.current_wave + 1} of ${card.waves}`,
       card.next_up.length ? `next up ${card.next_up.map((n) => `${n.id} ${n.title}`).join(', ')}` : card.finish_it ? 'finish it?' : 'nothing ready',
       card.working ? `${card.working} working` : '',
       card.blocked ? `${card.blocked} blocked` : '',
@@ -72,7 +72,8 @@
     <div class="r">
       <span class="k">Wave</span>
       <span class="v">
-        {card.current_wave === null ? 'All waves done' : `${card.current_wave + 1} of ${card.waves}`}
+        <!-- Only proposals so far: nothing is in a wave until one is accepted. -->
+        {card.waves === 0 ? 'None yet, only proposals' : card.current_wave === null ? 'All waves done' : `${card.current_wave + 1} of ${card.waves}`}
         <span class="dots" aria-hidden="true">
           {#each { length: card.waves } as _, w (w)}
             <b class:d={card.current_wave === null || w < card.current_wave} class:c={w === card.current_wave}></b>

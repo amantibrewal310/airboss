@@ -2092,7 +2092,7 @@
     },
     {
       "args": {
-        "entry": null
+        "entry": 2
       },
       "command": "undo",
       "events": [],
