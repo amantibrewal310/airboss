@@ -53,6 +53,14 @@ pub fn accent_hex() -> Option<String> {
     ))
 }
 
+/// Turns off AppKit's window restoration for this app. Airboss restores its window's size
+/// and position itself (window-state), and an unclean quit would otherwise make the next
+/// launch stop on a modal "reopen windows?" alert before any window shows.
+pub fn disable_state_restoration() {
+    NSUserDefaults::standardUserDefaults()
+        .setBool_forKey(true, &NSString::from_str("ApplePersistenceIgnoreState"));
+}
+
 /// The local time zone's offset from UTC at `secs` since the epoch, in seconds.
 pub fn local_offset(secs: f64) -> i64 {
     let date = NSDate::dateWithTimeIntervalSince1970(secs);

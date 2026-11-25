@@ -8,6 +8,7 @@ use tauri_plugin_log::{Target, TargetKind, log::LevelFilter};
 
 fn main() {
     let started = Instant::now();
+    airboss_app::macos::disable_state_restoration();
     let hidden = std::env::args().any(|a| a == "--hidden");
     let logs = std::env::var_os("HOME")
         .map(std::path::PathBuf::from)
