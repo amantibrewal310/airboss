@@ -6,6 +6,7 @@
 // The crate is built bottom up; this goes once `Sync` uses every layer (task T8).
 #![allow(dead_code)]
 
+pub mod claude;
 mod db;
 mod health;
 mod secret;

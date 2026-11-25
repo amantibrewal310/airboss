@@ -153,3 +153,71 @@ impl T3Fixture {
         ));
     }
 }
+
+/// Claude sessions from real files in a temp folder, with liveness set by the test instead
+/// of `ps`. Clones share one state, so a test keeps one and gives the other away.
+#[derive(Clone, Default)]
+pub struct FakeClaude {
+    inner: std::sync::Arc<std::sync::Mutex<FakeClaudeState>>,
+}
+
+#[derive(Default)]
+struct FakeClaudeState {
+    dir: PathBuf,
+    dead: std::collections::HashSet<u32>,
+    alive_calls: u32,
+}
+
+impl FakeClaude {
+    /// Sessions read from `dir`; every pid alive until [`kill`](FakeClaude::kill).
+    pub fn new(dir: &Path) -> FakeClaude {
+        let fake = FakeClaude::default();
+        fake.state().dir = dir.to_path_buf();
+        fake
+    }
+
+    fn state(&self) -> std::sync::MutexGuard<'_, FakeClaudeState> {
+        self.inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Marks a pid's process as ended (or its pid reused).
+    pub fn kill(&self, pid: u32) {
+        self.state().dead.insert(pid);
+    }
+
+    /// How many times liveness was checked.
+    pub fn alive_calls(&self) -> u32 {
+        self.state().alive_calls
+    }
+
+    /// Writes `<pid>.json` the way Claude Code does.
+    #[allow(clippy::expect_used)]
+    pub fn write(&self, pid: u32, session_id: &str, status: &str, entrypoint: &str) {
+        let dir = self.state().dir.clone();
+        let json = serde_json::json!({
+            "pid": pid, "sessionId": session_id, "cwd": "/work/web", "startedAt": 1,
+            "procStart": "Wed Nov 25 17:19:03 2026", "kind": "interactive",
+            "entrypoint": entrypoint, "name": format!("session {pid}"), "status": status,
+            "updatedAt": 1_795_600_000_000_i64, "statusUpdatedAt": 1_795_600_001_000_i64,
+        });
+        std::fs::write(dir.join(format!("{pid}.json")), json.to_string()).expect("a session file");
+    }
+}
+
+impl crate::claude::ClaudeSource for FakeClaude {
+    fn sessions(&mut self) -> std::io::Result<Vec<crate::claude::ClaudeSession>> {
+        let dir = self.state().dir.clone();
+        crate::claude::read_sessions(&dir)
+    }
+
+    fn alive(&mut self, sessions: &[crate::claude::ClaudeSession]) -> std::io::Result<Vec<bool>> {
+        let mut state = self.state();
+        state.alive_calls += 1;
+        Ok(sessions
+            .iter()
+            .map(|s| !state.dead.contains(&s.pid))
+            .collect())
+    }
+}
