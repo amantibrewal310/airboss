@@ -24,8 +24,8 @@ Then, for the whole product:
 |---|---|---|
 | 0 | `core` v1 | Done (PR #1) |
 | 0 | App design | Done (merged e63a45b) |
-| 1 | `core` v2: what the design needs (see SPEC-core "v2") | Next |
-| 1 | Specs: `app`, `sync`, `launch`, `attention` | Next |
+| 1 | `core` v2: what the design needs (see SPEC-core "v2") | Done (262 tests) |
+| 1 | Specs: `app`, `sync`, `launch`, `attention` | Drafted; under fresh review |
 | 1→2 | `mcp`: spec drafted; build after `core` v2 lands | Next |
 | 2 | Build `app`, `sync`, `launch`, `attention` in parallel | |
 | 3 | Integration: one app process hosts sync, launch and attention; the CLI and `airboss mcp` share the database | |
@@ -38,6 +38,17 @@ Then, for the whole product:
 - **Migrations:** `001_core.sql` may still be edited, because no real database exists yet. Once `mcp` ships, migrations are append-only.
 - **`mcp` connects over stdio, one process per thread** (SPEC-mcp). The app watches the database file to pick up writes from other processes.
 - **Sync, launch and attention run inside the app process.** The CLI gets `--once` commands where that's useful.
+
+## EM answers to the spec leads' open questions (25 Nov 2026)
+
+- **Launch at login:** offered on the first-run screen, ticked by default. It's also in Settings.
+- **Appearance:** follows the system by default. Settings has Dark / Light / System. Dark is the design's first-class mode.
+- **`gh` accounts:** sync reads PRs with every account logged in to `gh` (`gh auth token --user <login>`). Tokens are held in memory only and never written to disk.
+- **PRs that T3 lists on a linked thread** are linked to the task as `sync:t3`, so a PR the agent forgot to link still counts.
+- **History notes from sync:** only a failed run writes a history note. Questions and approvals are live state shown in Needs me, not history.
+- **"Add to T3"** is offered when a linked repo isn't a T3 project yet.
+- **Thresholds:** "became ready" shows for 7 days. A PR isn't listed as needing review while an agent on its task is still running. Quiet means 5 days.
+- **Small core additions** for the services: `Store::migrate_module(module, &[Migration])` (making the runner public), and `links_of_kind(kind)`.
 
 ## Done means
 
