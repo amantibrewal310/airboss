@@ -32,7 +32,8 @@ Then, for the whole product:
 | 2 | Build `app` UI | Done (merged; 147 unit/component + 30 Playwright tests) |
 | 2 | Build `app` backend + wire real services | Done (merged; 941 Rust tests; 5.7 MB dmg, 457 ms cold start) |
 | 3 | UI polish pass from design QA (24 findings) + integration fixes | Done (merged; 173 unit/component + 135 Playwright incl. axe) |
-| 3 | Integration QA on the real app | In progress |
+| 3 | Integration QA on the real app | Done (merged; 7 bugs fixed; real agent + real Do it verified; 958 Rust tests) |
+| 4 | Fixes from integration QA (R1, R2, R5) + final full-repo review | In progress |
 | 3 | Integration: one app process hosts sync, launch and attention; the CLI and `airboss mcp` share the database | |
 | 3 | QA: real-user flows, performance targets, light and dark, keyboard-only | |
 | 4 | Polish and bug-fix iterations; README and install instructions | |
@@ -105,6 +106,15 @@ Then, for the whole product:
 
 - The spec's JS limits (main window under 150 KB and quick add under 40 KB, both minified) were a means to the real targets: a small download and a fast quick add. Both are met with room to spare: the `.dmg` is 5.7 MB and quick add opens in 9 ms.
 - So the limits are now **main window under 300 KB, quick add under 100 KB minified**. Measured: 256 KB and 93 KB.
+
+## EM decisions on integration QA findings (26 Nov 2026)
+
+- **R1** (sync and launch log messages lost when the app opens from Finder): fix. All service logs go to the app's log file.
+- **R2** (deleting the live WAL loses writes): this is SQLite's behaviour, not a bug. Detect it and show a clear "database problem" state where cheap, and document it in troubleshooting.
+- **R3** (catch-up costs 17–21 ms per outside write at 2,000 tasks): accepted, within the 25 ms write budget.
+- **R4** (131 MB idle at 2,000 tasks): accepted. The target is under 130 MB typically and under 140 MB at 2,000 tasks.
+- **R5** (a run that ends without a PR leaves the task `doing`, with nothing in Needs me): fix. A new Needs me kind, **"Agent stopped"**, appears when every linked thread of a `doing` task has stopped (idle, settled or gone; errored is covered by Failed run), there's no open PR, and nothing has changed for 10 minutes. Its actions are Open thread, Mark done, Set in review and Dismiss.
+- **Clean-up done:** the stray login item from the measurement runs, plus the QA throwaway T3 project, thread and worktree.
 
 ## Done means
 
