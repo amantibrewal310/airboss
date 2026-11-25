@@ -1,12 +1,12 @@
 # Spec: app
 
-Module `app` from [CAPABILITIES.md](CAPABILITIES.md). State: **draft 1, waiting for review**.
+Module `app` from [CAPABILITIES.md](CAPABILITIES.md). State: **draft 2, waiting for review**. Draft 2 folds in the staff review and the EM's decisions of 26 Nov 2026 ([tasks/program.md](tasks/program.md)); see [Changes in draft 2](#changes-in-draft-2).
 
-It builds on [`core`](SPEC-core.md) v2 for every rule and on [DESIGN.md](DESIGN.md) for every pixel. `app` adds no rules about tasks. It shows them, and it hosts `sync`, `launch` and `attention` in one process.
+It builds on [`core`](SPEC-core.md) v3 for every rule and on [DESIGN.md](DESIGN.md) for every pixel. `app` adds no rules about tasks. It shows them, and it hosts [`sync`](SPEC-sync.md), [`launch`](SPEC-launch.md) and [`attention`](SPEC-attention.md) in one process through the contract in `crates/services`.
 
 ## Objective
 
-A native-feeling Mac app that answers two questions in a glance: what is waiting on me, and where does every task stand. It also makes the two main actions one keystroke away: capture a task, and hand it to an agent.
+A native-feeling Mac app that answers two questions at a glance: what is waiting on me, and where does every task stand. It also puts the two main actions one keystroke away: capture a task, and hand it to an agent.
 
 **User stories** (one per design screen)
 
@@ -14,20 +14,33 @@ A native-feeling Mac app that answers two questions in a glance: what is waiting
 - As me, I scan **All tasks** as a tree of 2,000 tasks. Each row shows status, progress, live agent state, repos and when it last changed, and I can move through it without a mouse.
 - As me, I select a task and see its **panel**: what needs me, its properties, notes, threads and activity. ⌘↓ opens it as a **full page**, with the run-order **map** for a parent.
 - As me, I see every **plan** as a card with its progress, current wave and what's next.
-- As me, I press ⌃⌥Space in any app, type a title, and the task exists (**quick add**). ⌘↩ also starts it.
+- As me, I press ⌃⌥N in any app, type a title, and the task exists (**quick add**). ⌘↩ also starts it.
 - As me, I press ⌘K to **jump** to any task or run any command.
-- As me, I change status with S then 1–6, or Space for done, and right-click for everything else.
+- As me, I change status with S then 1–6, or Space for done, right-click for everything else, and ⌘Z undoes a slip.
 - As me, I glance at the **menu bar** for the "waiting on you" count and open an item from there.
 - As me, I press ? to see **every shortcut**.
-- As me, on **first run** I see what is set up and what isn't. Without T3 Code, Do it and Plan it switch off and everything else works. When **nothing needs me**, the app says so and offers the ready tasks.
+- As me, on **first run** I add my repos from T3's projects and see what else is set up. Without T3 Code, Do it and Plan it switch off and everything else works. When **nothing needs me**, the app says so and offers the ready tasks.
 
 ## Decisions (settled in this spec)
 
-1. **Rust owns the view model; the UI renders it.** The Rust side keeps a snapshot of every row (progress, repo union, live state, needs-me flag) and sends **patches**. Svelte never recomputes tree facts. One code path, tested in Rust, serves both our own writes and other processes' writes.
-2. **One catch-up path.** `Store::subscribe()`, the file watcher, window focus and wake from sleep all call `catch_up()`, which reads `events_after(cursor)` and, only if something changed, rebuilds the snapshot and emits one patch. Every write command runs `catch_up()` before returning and returns the patch, so the UI updates without waiting for the watcher.
-3. **The service contract lives in a types-only crate,** `crates/services` (`airboss-services`). `sync`, `launch` and `attention` implement its traits. `app/src-tauri` is the only place that builds them and wires them together. All trait methods are synchronous; the app calls them off the main thread.
-4. **Three surfaces, two web views.** The main window and the quick-add panel are web views. The menu-bar dropdown is a **native menu**, so it costs no memory and feels native. The quick-add panel is created hidden at start-up and is a non-activating `NSPanel`, so the hotkey only has to show it.
-5. **The mock backend serves real Rust output.** The browser build of the UI (for component and end-to-end tests) reads fixtures that a Rust test generates from a seeded `Store`, and TypeScript types are generated from the Rust DTOs. The UI and the mock can't drift from the real contract.
+1. **Rust owns the view model; the UI draws it.**
+   - The Rust side keeps a snapshot of every row (progress, repo union, live state, needs-me flags) and sends **patches**. Svelte never works out tree facts.
+   - Each patch has its own increasing `seq`, which is separate from core event ids.
+2. **One rebuild path.** These all lead to `catch_up()`, which rebuilds from one `core.snapshot()` and emits a patch only if something changed:
+   - core's `subscribe()` (writes in this process)
+   - kqueue on `airboss.db-wal` (writes from other processes)
+   - `data_version()` when the window gains focus and when the Mac wakes
+   - any service's `Changes` bump (which reuses the last core snapshot)
+3. **Locking:** the store lock is taken once per `core` call. It is never held while a service is called or while `t3` or `gh` runs. Services hear about a change only after the lock is released.
+4. **The service contract is the std-only `crates/services`.** The app binary is the only place that builds the services and wires them together.
+5. **Three surfaces, two web views.**
+   - The main window and the quick-add panel are web views. The quick-add panel is a non-activating `NSPanel`, created hidden at start-up and reset whenever it hides.
+   - The menu-bar dropdown is a native menu.
+6. **The mock backend replays real Rust output.**
+   - Read fixtures and every scripted write's request and patch are recorded from a seeded `Store` by a Rust test.
+   - TypeScript types are generated from the Rust DTOs, with ids as `number`.
+   - The mock fails on any call it doesn't know.
+7. **Undo lives in Rust:** a stack of inverse calls, 20 entries deep.
 
 ## Tech stack
 
@@ -35,22 +48,22 @@ Versions are the latest stable on crates.io and npm on 25 Nov 2026, pinned exact
 
 | Rust crate | Version | Why |
 |---|---|---|
-| `tauri` | 2.12.7, features `tray-icon`, `macos-private-api`, `image-png` | The shell. Private API is needed for the transparent quick-add panel. |
+| `tauri` | 2.12.7, features `tray-icon`, `macos-private-api`, `image-png` | The shell. The private API is needed for the transparent quick-add panel. |
 | `tauri-build` | 2.7.6 | Build script |
-| `tauri-plugin-global-shortcut` | 2.4.1 | ⌃⌥Space from any app |
-| `tauri-plugin-autostart` | 2.7.0 | Launch at login |
+| `tauri-plugin-global-shortcut` | 2.4.1 | The quick-add hotkey from any app |
+| `tauri-plugin-autostart` | 2.7.0 | Open at login (LaunchAgent, with `--hidden`) |
 | `tauri-plugin-single-instance` | 2.5.5 | A second launch focuses the first |
-| `tauri-plugin-window-state` | 2.5.0 | Main window size and position |
-| `tauri-plugin-opener` | 2.7.3 | Open PRs, docs and Slack in their apps |
+| `tauri-plugin-window-state` | 2.5.0 | Main window size and position only |
+| `tauri-plugin-opener` | 2.7.3 | PRs, docs, Slack and `t3code://` links |
 | `tauri-plugin-clipboard-manager` | 2.5.0 | Copy task number, agent note, setup command |
-| `tauri-plugin-dialog` | 2.8.4 | Folder picker for "Add repo…" |
+| `tauri-plugin-dialog` | 2.8.4 | Folder picker for "Add another folder…" |
 | `tauri-plugin-log` | 2.10.2 | `~/Library/Logs/Airboss/app.log` |
 | `tauri-nspanel` | 2.1.1 | Quick add as a non-activating panel over full-screen apps |
-| `notify` | 9.0.0 | FSEvents file watcher |
-| `tokio` | 1.54.1 | Comes with Tauri; `sync::watch` channels and timers |
+| `notify` | 9.0.0, `default-features = false`, feature `macos_kqueue` | kqueue on the WAL file and its folder. FSEvents is not used. |
+| `objc2` 0.6.5, `objc2-foundation` 0.3.2, `objc2-app-kit` 0.3.2 | the versions Tauri already links | System accent colour and the wake notification, in one module, `src/macos.rs` |
 | `serde` 1.0.229, `serde_json` 1.0.154, `thiserror` 2.0.21 | | As in `core` |
 | `ts-rs` | 12.0.1 | TypeScript types from the DTOs |
-| `airboss-core`, `airboss-services`, `airboss-sync`, `airboss-launch`, `airboss-attention`, `airboss-mcp` (binary only) | path | |
+| `airboss-core`, `airboss-services`, `airboss-sync`, `airboss-launch`, `airboss-attention` | path | |
 
 | npm package | Version | Use |
 |---|---|---|
@@ -58,32 +71,36 @@ Versions are the latest stable on crates.io and npm on 25 Nov 2026, pinned exact
 | `vite` | 8.3.8 | Build, two entry pages |
 | `@sveltejs/vite-plugin-svelte` | 7.3.2 | |
 | `@tauri-apps/api` | 2.12.5 | `invoke`, `listen`, window calls. The only runtime dependency besides Svelte. |
-| `@tauri-apps/cli` | 2.12.6 | `tauri dev` / `tauri build` |
+| `@tauri-apps/cli` | 2.12.6 | `tauri dev` and `tauri build` |
 | `typescript` | 6.0.3 | 7.0 isn't supported by `svelte-check` yet |
 | `svelte-check` | 4.7.8 | Type checks |
-| `vitest`, `@vitest/browser-playwright` | 5.1.2 | Unit tests in Node, component tests in WebKit |
+| `vitest`, `@vitest/browser-playwright` | 5.1.2 | Unit tests in Node; component tests in WebKit |
 | `vitest-browser-svelte` | 3.1.0 | Rendering components in Vitest browser mode |
-| `@playwright/test`, `playwright` | 1.65.1 | WebKit engine for component and smoke tests |
+| `@playwright/test`, `playwright` | 1.65.1 | WebKit engine, the smoke test and screenshot baselines |
 
 - **Node 24** is needed to build and test only. Nothing Node runs in the shipped app.
-- **No component library, no CSS framework, no state library, no virtual-list library.**
-- **Inter** ships as one local variable `woff2`, Latin subset (about 110 KB). No font is fetched from the network.
-- **Release profile** (workspace `Cargo.toml`): `lto = "fat"`, `codegen-units = 1`, `opt-level = "s"`, `strip = true`, `panic = "abort"`.
-- **Apple silicon only** (`aarch64-apple-darwin`), signed ad hoc. No notarisation for a personal build.
+- **None of these:** a component library, a CSS framework, a state library, a virtual-list library, or tokio as a direct dependency. Commands use `tauri::async_runtime::spawn_blocking`, and the app's own workers are std threads.
+- **Inter** ships as one local variable `woff2`, Latin subset (about 110 KB).
+- **The `airboss` CLI** is a sidecar, not a Cargo dependency.
+  - `beforeBuildCommand` builds `airboss-mcp` in release.
+  - It copies the result to `src-tauri/binaries/airboss-aarch64-apple-darwin` for `bundle.externalBin`.
+- **Release profile:** `lto = "fat"`, `codegen-units = 1`, `opt-level = "s"`, `strip = true`, `panic = "unwind"` (see [Locking and panics](#locking-and-panics)).
+- **Unsafe code:** the app crate overrides the workspace's `forbid` with `deny`, and allows unsafe only in `src/macos.rs`, with a `SAFETY:` comment on each block.
+- **Platform:** Apple silicon only (`aarch64-apple-darwin`), signed ad hoc.
 
 ## Commands
 
 ```
 cd app && npm ci
-npm run tauri dev                          # the app; set AIRBOSS_DB to use a throwaway database
+npm run tauri dev                          # the app; set AIRBOSS_DB for a throwaway database
 npm run dev:mock                           # the UI in a browser, mock backend, http://localhost:5173
-npm run tauri build -- --bundles dmg       # release .dmg (builds the `airboss` CLI first)
+npm run tauri build -- --bundles dmg       # release .dmg (builds the airboss sidecar first)
 npm run check                              # svelte-check and tsc
 npm test                                   # Vitest: unit (Node) and component (WebKit)
-npm run test:e2e                           # Playwright smoke test against the mock build
+npm run test:e2e                           # Playwright smoke test and screenshot baselines on the mock build
 cargo test -p airboss-app -p airboss-services
-cargo test -p airboss-app -- --ignored perf             # snapshot and patch timings
-cargo test -p airboss-app --test fixtures               # regenerates mock fixtures and TS types
+cargo test -p airboss-app -- --ignored perf             # rebuild, diff and write timings
+cargo test -p airboss-app --test fixtures               # regenerates mock fixtures, scripted writes, TS types
 cargo run -p airboss-app --example seed -- --tasks 2000 --db /tmp/ab.db
 cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --check
 scripts/measure.sh                         # size, memory, CPU, start-up, hotkey; prints the machine
@@ -92,43 +109,49 @@ scripts/measure.sh                         # size, memory, CPU, start-up, hotkey
 ## Project structure
 
 ```
-crates/services/                 airboss-services: the traits and shared types in "Interfaces", no logic
+crates/services/                 airboss-services: the contract in "Interfaces"; core and serde only
 app/
   package.json  vite.config.ts  vitest.config.ts  playwright.config.ts  svelte.config.js  tsconfig.json
-  index.html                     main window entry
-  quickadd.html                  quick-add entry (its own small bundle)
+  index.html  quickadd.html      the two entry pages; quick add has its own small bundle
+  QA.md                          the manual checklist for what automated tests can't reach
   src/
     main.ts  quickadd.ts
-    styles/tokens.css            tokens copied from docs/design/airboss.css, dark and light
+    styles/tokens.css            tokens from docs/design/airboss.css, dark and light
     styles/base.css              reset, fonts, focus ring, reduced motion, increased contrast
-    lib/ipc/                     transport.ts (interface), tauri.ts, mock.ts, api.ts (one typed function per command)
+    lib/ipc/                     transport.ts (interface), tauri.ts, mock.ts, api.ts (one function per command)
     lib/types/                   generated by ts-rs; never edited by hand
     lib/state/                   tasks, needs, connections, ui, detail, toasts, settings (*.svelte.ts)
-    lib/logic/                   views.ts, search.ts, runMapLayout.ts, time.ts, links.ts, keymap.ts, commands.ts
+    lib/logic/                   views.ts, selection.ts, search.ts, runMapLayout.ts, time.ts, links.ts,
+                                 keymap.ts, focus.ts, commands.ts
     lib/components/              StatusIcon, ProgressRing, StackedBar, Pill, Tag, LiveChip, Avatar, Kbd,
                                  Button, Menu, Popover, Modal, Toast, VirtualList
     lib/mock/fixtures/           generated by the Rust fixtures test
     windows/main/                App, Sidebar, Header, TaskList, TaskRow, TaskPanel, TaskPage, RunMap,
                                  WavesList, NeedsInbox, NeedsCard, PlansGrid, PlanCard, Jump, NewTask,
-                                 StatusMenu, ContextMenu, ShortcutSheet, Settings, FirstRun, Connections
+                                 StatusMenu, ContextMenu, StartInMenu, ShortcutSheet, Settings, FirstRun,
+                                 AddRepos, Connections
     windows/quickadd/QuickAdd.svelte
-  tests/unit/  tests/component/  tests/e2e/
+  tests/unit/  tests/component/  tests/e2e/  tests/script.json (the scripted writes)
   src-tauri/
     Cargo.toml                   airboss-app
     tauri.conf.json  capabilities/main.json  capabilities/quickadd.json
     icons/  tray/                app icon, menu-bar template icon, one red icon per Needs me kind
-    resources/agent-note.md      the note "Copy agent note" puts on the clipboard
+    binaries/                    the airboss sidecar, copied at build time (git-ignored)
+    resources/agent-note.md      what "Copy agent note" copies
     src/main.rs                  builder, plugins, windows, run loop
-    src/state.rs                 AppState: store, services, snapshot, settings
-    src/snapshot.rs              rows, progress, repo union, diff → Patch
-    src/runmap.rs                display waves and lifted edges for the map
-    src/watcher.rs               file watcher and catch_up()
-    src/commands/                tasks.rs, detail.rs, needs.rs, launch.rs, app.rs
-    src/tray.rs  src/menu.rs  src/quickadd.rs  src/settings.rs
-    src/dto.rs                   every type the UI sees, with #[derive(Serialize, TS)]
+    src/state.rs                 AppState: store, services, view model, undo, settings
+    src/viewmodel.rs             rows, progress, repo union, plan cards, diff → Patch
+    src/runmap.rs                display waves and lifted edges
+    src/catchup.rs               triggers, debounce, catch_up(), service listeners
+    src/watcher.rs               kqueue on the WAL and its folder, re-arming
+    src/undo.rs                  the undo stack and deferred rejects
+    src/commands/                tasks.rs, detail.rs, needs.rs, launch.rs, repos.rs, app.rs
+    src/tray.rs  src/menu.rs  src/quickadd.rs  src/settings.rs  src/macos.rs
+    src/dto.rs                   every type the UI sees, mirroring core and service types, with ts-rs
     src/errors.rs                AppError and the message table
     examples/seed.rs
-    tests/commands.rs  tests/snapshot.rs  tests/watcher.rs  tests/fixtures.rs  tests/ipc.rs  tests/perf.rs
+    tests/commands.rs  tests/viewmodel.rs  tests/catchup.rs  tests/undo.rs  tests/fixtures.rs
+    tests/ipc.rs  tests/perf.rs
 scripts/measure.sh
 ```
 
@@ -138,615 +161,869 @@ Both new crates join the workspace `members`.
 
 ### Processes and windows
 
-One process, `Airboss.app`, with a Dock icon (activation policy Regular). It holds:
+There is one process, `Airboss.app`, with a Dock icon (activation policy Regular).
 
 | Part | What it is |
 |---|---|
-| `AppState` | `Arc<Mutex<Store>>` (one `core` connection), the three services as `Arc<dyn …Service>`, the current `Snapshot`, the event cursor and the settings |
-| Background tasks | the file watcher, the catch-up loop, a listener per service `changes()` channel, and the services' own tasks |
-| Main window `main` | 1100 × 720 by default, minimum 900 × 560. Overlay title bar with hidden title; traffic lights at x 18, y 20; the sidebar top and the 44px header are drag regions. Created hidden and shown after the UI's first paint (`ui_ready`), so there's no white flash. |
-| Quick-add panel `quickadd` | 680px wide, frameless, transparent, always on top, on every Space and over full-screen apps. Created hidden at start-up; height follows its content. A non-activating `NSPanel`, so showing it doesn't bring the main window forward. |
-| Menu-bar item | a template icon plus the Needs me count as its title (no number at 0), with a native menu |
-| Bundled CLI | `airboss` (from `crates/mcp`) as a Tauri sidecar in `Contents/MacOS/`. "Install command-line tool" links it to `~/.local/bin/airboss`. |
+| `AppState` | `SharedStore` (one `core` connection), the three services as `Arc<dyn …Service>`, the view model (with the last `Arc<CoreSnapshot>`), `seq`, the undo stack, the in-flight launch set and the settings |
+| App threads | the catch-up worker, the WAL watcher, and one listener per service waiting on `changes().wait_past(seen, 15 min)`. All are std threads, wrapped in `catch_unwind`. |
+| Main window `main` | 1100 × 720 by default, minimum 900 × 560. Overlay title bar with the title hidden; traffic lights at x 18, y 20; the sidebar top and the 44px header are drag regions. The native `backgroundColor` is the theme's `--bg` (`#0f1012` dark, `#ffffff` light), set at creation and on every theme change, so no white shows before the first paint. Created hidden. |
+| Quick-add panel `quickadd` | 680px wide, frameless, transparent window and web view (the card paints `--bg-raised`), always on top, on every Space and over full-screen apps. Created hidden at start-up; its height follows its content. A non-activating `NSPanel`, so showing it doesn't bring the main window forward. |
+| Menu-bar item | a template icon, with the Needs me count as its title (nothing at 0), and a native menu |
+| Bundled CLI | the `airboss` sidecar in `Contents/MacOS/`. "Install command-line tool" links it to `~/.local/bin/airboss`. |
 
-- **Closing** the main window (⌘W or the red button) hides it; the app keeps running in the menu bar. ⌘Q quits. Clicking the Dock icon, ⌘0 in the menu-bar menu, or launching again (single instance) shows it.
-- **Launch at login** is turned on at first run, with a switch in Settings (see Open questions).
-- **No network.** The CSP is `default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'`. `withGlobalTauri` is off. Each window's capability file allows only the commands it uses.
-- **Native menu bar:** Airboss (About, Settings… ⌘,, Install Command-Line Tool, Quit ⌘Q), File (New Task ⌘N, Quick Add ⌃⌥Space, Close Window ⌘W), Edit (the standard items, which text fields need), Task, View, Window, Help. Task and View list every command; items whose key is a single letter show it in their title rather than as a key equivalent, because a bare-letter key equivalent would swallow typing.
+- **Showing the main window:**
+  - The UI calls `ui_ready` from `onMount`, once the bootstrap data has rendered, and Rust then shows the window.
+  - If `ui_ready` hasn't arrived 2 s after the window was created, Rust shows it anyway and logs a warning, so a UI failure never leaves an invisible app.
+  - Started by autostart with `--hidden`, Rust doesn't show it; only the menu-bar item appears.
+- **Closing:** ⌘W or the red button hides the main window. ⌘Q quits (see Shutdown). The Dock icon, "Open Airboss" in the menu-bar menu, and a second launch show it again.
+- **Open at login:** autostart uses the LaunchAgent launcher with args `["--hidden"]`. First run turns it on and shows the ticked box (see First run). Settings can turn it off.
+- **window-state:** restores the main window's size and position only (`StateFlags::SIZE | StateFlags::POSITION`). `quickadd` is on its denylist.
+- **No network:**
+  - The CSP is `default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'`.
+  - `withGlobalTauri` is off.
+  - Each window's capability file allows only the commands that window uses.
+- **The native menu bar:**
+  - Airboss: About, Settings… ⌘,, Install Command-Line Tool, Quit ⌘Q.
+  - File: New Task ⌘N, Quick Add, Close Window ⌘W.
+  - Edit: the predefined Undo, Redo, Cut, Copy, Paste and Select All, which text fields need.
+  - Task, View, Window, Help.
+  - Task and View list every command. Items whose key is a single letter show it in their title, not as a key equivalent, because a bare-letter key equivalent would swallow typing.
+- **Shutdown** (⌘Q or the menu-bar Quit):
+  1. Pending deferred rejects are written.
+  2. Each service's `shutdown()` is called on a thread. The app waits at most 1 s in total.
+  3. The app exits.
 
 ### The command layer
 
-- Every command is an `async` Tauri command that runs its work in `spawn_blocking`, holds the store lock only for its `core` calls, and returns `Result<T, AppError>`. Commands never run on the main thread.
-- Each command body is a plain function `fn(&AppState, Args) -> Result<T, AppError>` in `src/commands/`, so tests call it without Tauri.
-- **Write commands return `Patch`** (or a struct containing it). They run `catch_up()` after their `core` calls, inside the same lock, so the returned patch already holds every derived change (parent progress, waiting flags, the Ready pill).
-- `core` calls are made as `Actor::Me`. The app never acts as anyone else.
-- The full list, each mapped to its `core`, `sync`, `launch` or `attention` call, is in [Appendix A](#appendix-a-commands). Events are in [Appendix B](#appendix-b-events).
-- DTOs live in `dto.rs` with `#[derive(Serialize, Deserialize, TS)]`. `cargo test --test fixtures` writes `app/src/lib/types/*.ts`; CI fails if they differ from the committed files.
+- Every command is an `async` Tauri command that runs its body in `spawn_blocking`, so commands never run on the main thread. The body is a plain function, `fn(&AppState, Args) -> Result<T, AppError>`, in `src/commands/`, so tests call it without Tauri.
+- **Write commands** do four things, in order:
+  1. Make their `core` calls (one lock per call).
+  2. Release the lock.
+  3. Run `catch_up()`, which tells the services and rebuilds.
+  4. Return `Patch` (or a struct holding it).
+- All `core` calls act as `Actor::Me`.
+- **Which needs fields a write's patch carries:** the patch returns as soon as `core` is written and the services have been *told*. The app doesn't wait for `attention` to recompute (it settles for 150 ms).
+  - The needs-derived fields in that patch (the needs-me dot, Ready and Quiet pills, Needs me list) still hold `attention`'s previous values.
+  - A follow-up patch and `needs:changed` arrive when `attention` bumps its `Changes`, usually within 250 ms.
+  - A Needs me item the user acted on is hidden locally at once, with its 180 ms exit. It stays hidden until `attention` drops it, or for 2 s at most; if `attention` still lists it after that, it comes back.
+- **In-flight guard:** `do_it` and `plan_it` hold a per-task entry in `AppState.launching` until `start` returns. A second request for the same task gets `AppError::AlreadyStarting` and the UI ignores it.
+- The full command list, each mapped to its `core` and service calls, is in [Appendix A](#appendix-a-commands). Events are in [Appendix B](#appendix-b-events).
+- **DTOs** (`dto.rs`) mirror the `core` and service types the UI sees (`TaskDto`, `RowDto`, `LinkDto`, `ThreadDto`, `NeedsItemDto` …), with `From` conversions. `core` and `services` don't depend on `ts-rs`.
+  - Every id newtype and `seq` is annotated `#[ts(type = "number")]`. Ids stay well under 2⁵³.
+  - `cargo test --test fixtures` writes `app/src/lib/types/*.ts`, and CI fails if they differ from the committed files.
 
-### Snapshot and patches
+### The view model and patches
 
-`Snapshot` is the whole list's view model, rebuilt in Rust from:
+`catch_up()` builds from one `core.snapshot()` (`CoreSnapshot { tree, edges, ready, latest_event_id }`) plus `repos()`, `sync.snapshot()` and `attention.needs_me()` (both `Arc` clones). It makes no per-row `core` calls:
 
-- `tree()` (v2: with `last_event_at`, `last_actor`, `subtree_last_event_at`)
-- `repos()` and `ready()`
-- `dependencies(id)` for each node that is `waiting` (for the "waits on 144, 145" pill; usually a few dozen calls)
-- `sync.threads()` for live chips
-- `attention.needs_me()` for the needs-me dot, the Ready pill and the Quiet pill
-
-Each row is a `RowDto`:
-
-| Field | Meaning |
+| Field of `RowDto` | Source |
 |---|---|
-| `id`, `parent`, `depth`, `position`, `title`, `status`, `origin` | From `core` |
-| `waiting`, `waits_on` | Open blockers' ids, only when waiting |
-| `blocked_reason` | Shown on hover of the Blocked pill and in the panel |
-| `has_children`, `progress` | `{done, total, in_review, doing, blocked}` over leaf subtasks at any depth. Dropped left out, proposed counted as todo (DESIGN "Progress"). `None` for a leaf. |
-| `repos`, `repos_from_subtasks` | Own repos; for a parent with none, the union of its subtasks' repos, flagged |
-| `branch` | `tasks.branch`, or the nearest ancestor's |
-| `ready` | In `core::ready()` and a leaf |
-| `ready_pill`, `quiet_days`, `needs` | From attention: a Ready item, a Quiet item, any item |
-| `live` | Strongest thread state of its linked threads: waiting on you, then running, then stopped. Only while the task is open. |
-| `last_at`, `last_actor` | `subtree_last_event_at` for a parent, `last_event_at` for a leaf, and who did it |
+| `id`, `parent`, `depth`, `position`, `title`, `status`, `origin`, `blocked_reason` | `tree` |
+| `waiting`, `waits_on` | `tree.waiting`, and `edges` whose blocker is open (only when waiting) |
+| `has_children`, `progress` | `{done, total, in_review, doing, blocked}` over leaf subtasks at any depth. Dropped subtasks are left out and proposed ones count as todo (DESIGN "Progress"). `None` for a leaf. |
+| `repos`, `repos_from_subtasks` | `Task.repos`; for a parent with none, the union over its subtree, flagged |
+| `branch` | `Task.branch`, or the nearest ancestor's (display only) |
+| `ready` | in `ready` and a leaf; `ready_since` from it |
+| `ready_pill`, `quiet_days`, `needs`, `needs_stale` | from `attention`: a Ready item, a Quiet item, any item, any stale item |
+| `live` | the strongest `chip()` of the task's threads in `sync.snapshot().threads_for(id)`: Waiting on you, then Working, then Stopped. Only while the task is open. |
+| `last_at`, `last_actor` | `subtree_last_event_at` for a parent, `last_event_at` for a leaf, and `last_actor` |
 
-`diff(old, new)` gives `Patch { cursor, upserts: Vec<RowDto>, removed: Vec<TaskId>, order: Option<Vec<TaskId>>, repos: Option<Vec<RepoDto>>, created: Vec<TaskId> }`. `order` (ids in tree order) is sent only when it changed. `created` drives the new-row highlight. The UI drops any patch whose cursor is not newer than its own, so a returned patch and the same patch arriving as an event apply once.
+- **Plan cards, display waves and the dependency lists** in the panel are built from the same `tree` and `edges`.
+- **`diff(old, new)`** gives `Patch { seq, upserts, removed, order, repos, created }`:
+  - `upserts` are whole `RowDto`s; `removed` are task ids.
+  - `order` (ids in tree order) and `repos` are sent only when they changed.
+  - `created` drives the new-row highlight.
+- **The UI** applies a patch only if its `seq` is greater than the last one applied. A write's returned patch and the same patch arriving as an event therefore apply once.
+- **Repo colours** are fixed by id: `repo-((id − 1) mod 4) + 1`. A repo keeps its colour for ever, as the Owned Colour Rule asks; a fifth repo shares repo-1's colour.
 
-Repo colours are fixed by id: `repo-((id − 1) mod 4) + 1`. A repo keeps its colour for ever, as the Owned Colour Rule asks. A fifth repo shares repo-1's colour.
+**Budget** at 2,000 tasks and 1,000 dependencies, on the Mac where `core` v2 measured `tree()` at 4.3 ms (95th percentile, Apple M4):
 
-### Seeing other processes' writes
+| Step | Budget |
+|---|---|
+| `core.snapshot()` (tree, edges, ready in one read) | 6 ms |
+| Build rows and diff | 3 ms |
+| `catch_up()` in total, including `events_after` and `repos()` | under 10 ms |
+| A write command, returned to the UI | under 15 ms |
+| A rebuild on a service bump (no `core` read) | under 4 ms |
 
-- **Watch** `~/Library/Application Support/Airboss/` (or the folder of `AIRBOSS_DB`) with `notify` (FSEvents), non-recursive, keeping only `airboss.db` and `airboss.db-wal`.
-- **Debounce:** 30 ms after the last change, and never more than 150 ms after the first. Then `catch_up()`.
-- **`catch_up()`** locks the store, reads `events_after(cursor)` and re-reads `repos()` (the CLI's `repo add` writes no event). If neither changed, it stops: our own writes and WAL checkpoints cost one indexed query. Otherwise it rebuilds the snapshot, emits `tree:patch`, and passes the new events to `sync.store_changed` and `attention.store_changed`.
-- **Cursor on start:** read the newest event id before calling `tree()`. A write landing in between is applied twice, which is harmless because patches are diffs.
-- **Insurance, not polling:** `catch_up()` also runs when the main window gains focus and when the Mac wakes. No timer reads the database.
+### Seeing writes from other processes
+
+- **Why kqueue:** FSEvents doesn't report writes to a WAL file that a connection keeps open (checked on this Mac by the reviewer). So `watcher.rs` uses `notify`'s kqueue watcher on two paths:
+  - **`<db>-wal`** (from `Store::path()`): every write by any process fires a vnode write event.
+  - **The database's folder** (non-recursive): an entry created or deleted there re-arms the WAL watch. That covers a WAL deleted when the last connection closes and created again, and a rename or revoke of the WAL.
+- **Debounce:** a trigger waits 30 ms after the last event, and never more than 150 ms after the first. Then it runs `catch_up()`.
+- **Every trigger goes to one std `mpsc` channel** read by the catch-up worker:
+  - the kqueue callback
+  - a small thread forwarding core's `subscribe()`
+  - the main window gaining focus
+  - the wake notification from `macos.rs`
+  - the service listeners
+- **On focus and on wake,** the worker compares `data_version()` with the last value seen. It skips the rebuild if nothing changed. On wake it also calls `woke()` on every service.
+- **`catch_up()` for a `core` trigger:**
+  1. `events_after(cursor)` and `repos()`, one lock each. The CLI's `repo add` writes no event, so `repos()` is compared too.
+  2. If both are unchanged, stop. Our own writes, the services' writes to their own tables and WAL checkpoints cost two small reads.
+  3. `snapshot()`, one lock.
+  4. Release the lock. Call `store_changed(&StoreChange { events, snapshot })` on sync, launch and attention. Each must only queue the change and return.
+  5. Rebuild, diff, increment `seq` and emit `tree:patch`.
+- **For a service trigger,** `catch_up()` skips `core`: it rebuilds from the last snapshot and the services' new snapshots. A bump from `attention` also emits `needs:changed`; a change in any `connections()` or `availability()` emits `connections:changed`.
+- **Inline and background runs share one lock.** A write's inline `catch_up()` and the worker's are serialised by a `catchup` mutex, which is separate from the store lock and owns the cursor, `seq` and the view model.
+- **Cursor at start:** `latest_event_id` from the first snapshot.
 - **The file disappears or is replaced:** the footer goes orange with "Database moved", and the popover says to quit and reopen.
 - **Target:** an agent's `update_task` shows in an open window within 300 ms.
 
+### Locking and panics
+
+- **The store lock:**
+  - `SharedStore` is `Arc<Mutex<Store>>`.
+  - The app locks once per `core` call and drops the guard before the next call.
+  - It never calls a service, emits an event or touches the UI while holding it.
+  - `launch.start` and `sync.lookup_pr` (which run `t3` and `gh`) are always called with no lock held.
+- **A poisoned store lock** is recovered with `into_inner()` (rusqlite rolls back the open transaction when it's dropped) and logged once.
+- **Panics:**
+  - The release build unwinds.
+  - Each command body runs in `catch_unwind` and turns a panic into `AppError::Internal`.
+  - Each app thread restarts its loop once after a panic. A second panic stops it, and the footer shows "Live updates stopped after an internal error. Restart Airboss."
+  - Service threads catch their own panics (EM decision) and report through `connections()`.
+
 ### UI state (Svelte 5 runes)
 
-Stores are classes in `lib/state/*.svelte.ts`, one exported instance each, with `$state` fields and `$derived` getters. Components read them; only store methods write them.
+The stores are classes in `lib/state/*.svelte.ts`, one exported instance each, with `$state` fields and `$derived` getters. Components read them; only store methods write them.
 
 | Store | Holds |
 |---|---|
-| `tasks` | `rows: Map<TaskId, RowDto>` and `order: TaskId[]` as `$state.raw` (no deep proxies over 2,000 objects; a patch swaps in a new `Map` and replaces only changed row objects), `repos`, `cursor`, `fresh` (ids to highlight), `applyPatch()` |
-| `needs` | items, count, `lastChecked`, the selected item |
-| `connections` | the three services' states, and whether `launch` is available |
-| `ui` | view (`needs`, `ready`, `plans`, `progress`, `all`, `repo:<id>`, `parent:<id>`), layout (`tree` or `status`), selection, map selection, folded ids, panel open, page open, focus zone (`sidebar`, `list`, `panel`), open overlay, rename target |
-| `detail` | the `TaskDetail` for the selection, refetched when a patch upserts that id (a parent's id is upserted whenever a subtask changes, because its `last_at` moves) |
+| `tasks` | `rows: Map<number, RowDto>` and `order: number[]` as `$state.raw` (no deep proxies over 2,000 objects; a patch swaps in a new `Map` and replaces only changed row objects); `repos`, `seq`, `fresh` (ids to highlight); `applyPatch()` |
+| `needs` | items, count, `checkedAt`, the selected key, `hiddenLocally` (key → expiry) |
+| `connections` | the connection rows, and `launch` availability |
+| `ui` | view (`needs`, `ready`, `plans`, `progress`, `all`, `repo:<id>`, `parent:<id>`), layout (`tree` or `status`), selection and its index, map selection, folded ids, panel open, page open, focus zone, open overlay, rename target, `starting: Set<number>` |
+| `detail` | the `TaskDetail` for the selection, with the request number it answers |
 | `toasts`, `settings` | |
 
-- **Visible rows** come from pure functions in `logic/views.ts`, `(rows, order, view, folded, layout) → VisibleItem[]`, wrapped in one `$derived`. They are unit-tested without Svelte.
-- **Folds** are saved in settings, debounced 1 s. Parents start folded, except the ancestors of whatever is selected.
+- **Visible rows** come from pure functions in `logic/views.ts`, `(rows, order, view, folded, layout) → VisibleItem[]`, wrapped in one `$derived`.
+- **Selection rules** (`logic/selection.ts`, pure and unit-tested):
+  - When a patch, a view change or a fold removes the selected row from the visible list, the row now at the same index is selected, clamped to the last row. If the list is empty, nothing is selected and the panel closes.
+  - Folding a parent that holds the selection selects that parent.
+  - Revealing a task (Jump, menu bar, toasts) unfolds its ancestors, and switches to All tasks if the current view doesn't show it.
+  - In Needs me, when the selected item leaves, the item at the same index is selected.
+  - A map selection clears when its station disappears.
+- **Stale responses:** every `task_detail`, `run_map` and `plans` request carries a request number. The store ignores a response that isn't the latest for the current selection or view.
+- **Detail refetch:** `detail` refetches when a patch upserts the selected id. A parent's id is upserted whenever a subtask changes, because its `last_at` moves.
+- **Folds** are saved in settings, debounced 1 s. Parents start folded, except the ancestors of the selection.
 - **Times** ("6m", "2d") read a `now` value that ticks once a minute, only while the window is visible.
-- The quick-add window has its own tiny state: the form, plus `repos` and open parents fetched with `quickadd_data` each time it opens.
 
 ### Virtualised list
 
 `VirtualList` is our own component, about 150 lines:
 
-- Items have two fixed heights: task rows 38px, and group headers 34px (By status layout only). Offsets are a prefix-sum array rebuilt when the visible list changes; the first visible item is a binary search.
-- Rows render inside a `contain: strict` scroller, absolutely positioned with `transform: translateY`, keyed by task id, with 8 rows of overscan.
-- Group headers stick to the top with one extra header element that mirrors the current group, not CSS `sticky` inside the absolute layer.
-- Moving the selection scrolls just enough to keep the row visible (`nearest`), with no smooth scrolling.
-- `TaskRow` takes one `RowDto` and the selection and focus flags. It has no `$effect`, no store subscriptions and no per-row listeners; the list handles clicks by delegation.
-- Narrow widths follow DESIGN's two steps through a container query on the list.
+- **Heights:** task rows are 38px and group headers 34px (By status layout only). Offsets are a prefix-sum array rebuilt when the visible list changes, and the first visible item is a binary search.
+- **Rendering:** rows sit in a `contain: strict` scroller, positioned with `transform: translateY` and keyed by task id, with 8 rows of overscan.
+- **The sticky group header** is one extra element mirroring the current group, not CSS `sticky` inside the absolute layer.
+- **Scrolling:** moving the selection scrolls just enough to keep it visible (`nearest`), with no smooth scrolling.
+- **`TaskRow`** takes one `RowDto` plus selection and focus flags. It has no `$effect` and no per-row listeners; the list handles clicks by delegation.
+- **Narrow widths** follow DESIGN's two steps, through a container query on the list.
 
-### Keyboard and menus
+### Keyboard, focus and menus
 
-- `logic/commands.ts` is the one registry: id, label, keys, the contexts it works in, and `run()`. The keymap, the Task and View menus, the context menu, ⌘K's command list and the shortcut sheet are all built from it.
-- One `keydown` listener on `window`:
-  - Single-letter and Space keys are ignored while focus is in an input, a textarea or rename.
-  - `G` waits 900 ms for its second key.
-  - Every handled key calls `preventDefault()`.
-- Native menu items send `menu:action {command}` to the same `run()`. If a key and its menu item both fire for one press, the second call within 50 ms is ignored (see Not verified yet).
-- Open overlays (menus, Jump, New task, the sheet) take the keys first. Esc closes the top one.
+- **One registry:** `logic/commands.ts` lists every command with its id, label, keys, the focus zones it works in and `run()`. The keymap, the native Task and View menus, the context menu, ⌘K's command list and the shortcut sheet are all built from it.
+- **Focus zones** (`logic/focus.ts`): `list`, `panel` (the panel or page, outside any field), `sidebar`, `field` (any input, textarea or rename), `overlay` (a menu, popover, Jump, New task, the sheet, Settings) and `quickadd`. The rules per command are in [Appendix C](#appendix-c-keyboard-map-and-focus-rules). In short:
+  - In a `field`, only ⌘K, ⌘N, ⌘,, ⌘W, Esc and the Edit menu act. Every other key belongs to the field: ⌘↩ saves the field, ⌘Z undoes typing, ⌘⌫ and ⌘↑↓ edit text.
+  - Single letters, Space and arrows act only in `list`, `panel` and `sidebar`.
+  - An open `overlay` takes every key first, and Esc closes the top one.
+- **The page handles keys first.** One `keydown` listener on `window` handles every shortcut it owns and calls `preventDefault()`. Native menu items with key equivalents fire only for keys the page left alone, and when clicked.
+- **Menus follow focus.** The UI sends `set_focus_context { zone, selection, view }` whenever these change (once per animation frame at most). Rust then:
+  - disables every Task-menu item while the zone is `field` or `overlay`, so their key equivalents can't fire through a text field
+  - disables items that need a selection when there's none
+  - relabels "Undo <action>"
+- **While quick add is the key window,** the main window's menu commands don't act: Rust's menu handler checks `quickadd.is_focused()` first. Only the Edit items and ⌘W (which closes quick add) work.
+- **A safety net:** if a key and its menu item both fire for one press, the second call within 50 ms is ignored.
+
+### Undo
+
+- **Stack:**
+  - `undo.rs` keeps up to **20 entries**. The oldest drops off.
+  - Each entry has a label ("Mark done 144"), the inverse calls, the affected task ids, and the newest event id the action wrote.
+  - The stack is cleared on quit. An entry is dropped when one of its tasks is deleted.
+- **What's undoable, and how:**
+
+  | Action | Inverse |
+  |---|---|
+  | Dismiss, Keep open, Snooze | `attention.restore(key)` |
+  | Status change (Space, S, ⌘B, Mark done, Finish it) | `set_status` back to the previous status, with the previous blocked reason as the note if it was blocked |
+  | Drop | the same, for the task and every open subtask the drop took with it (previous statuses come from the view model before the change) |
+  | Move or reorder | `move_task` back to the previous parent and position |
+  | Reject, Reject all | **deferred:** the reject is written 5 s later (or at quit). Until then the item and rows are hidden locally, and undo cancels it. `core` can't turn a task back into a proposal, so this is the only honest undo. |
+
+  Accept, create, rename, notes, links, dependencies, repos, Do it and Plan it aren't undoable in v1. Text fields keep their own undo.
+- **Refused undo:** if `events_after(entry.last_event)` shows that someone else changed one of the entry's tasks, the undo is refused with "144 changed since; nothing was undone", and the entry is dropped.
+- **Where undo appears:**
+  - ⌘Z, when the zone isn't `field`, undoes the top entry.
+  - A toast for an undoable action shows "Undo"; that button undoes *its* entry, if it's still there.
+  - Task › "Undo <label>" does the same as ⌘Z, without its own key equivalent; Edit's predefined Undo stays for text fields.
+- **Toasts:** a toast with an action stays 5 s instead of DESIGN's 2.8 s, and pauses while hovered. F6 moves focus to the newest toast and back.
 
 ### Errors
 
-`AppError { code, message, detail? }`. `message` is one plain sentence for the UI; `detail` goes to the log. The table is in [Appendix D](#appendix-d-error-messages).
+`AppError { code, message, detail? }` is what commands return. `ServiceError { code, message }` from a service passes through with its own message, which the service specs write. The app branches on a few codes only: `NeedsChoice`, `NotAProject`, `TaskClosed`, `T3Missing` and `T3NotRunning`. Every other code shows its message. The app's own messages are in [Appendix D](#appendix-d-error-messages).
 
 | Where it fails | How it shows |
 |---|---|
-| An action I took (status, rename, link…) | A toast with an orange warning icon and the message. The row keeps its real state, because the UI only ever shows what Rust returned. |
-| A form (New task, link, blocked reason) | Inline under the field. The confirm button stays enabled, except Create with an empty title. |
-| A service (`gh` signed out, T3 missing, watcher failed) | The connections footer turns orange and names it; the popover gives the fix. Never a toast loop. |
-| The database won't open at start | A full-window state: "Airboss can't open its database", the path, the reason, and buttons "Show in Finder" and "Try again". |
-| A Rust panic | `panic = "abort"`: the app quits and the log keeps the message. Commands never `unwrap`. |
+| An action I took | A toast with an orange warning icon and the message. The row keeps its real state, because the UI only ever shows what Rust returned. |
+| A form (New task, link, blocked reason) | Inline under the field. Create is disabled only for an empty title. |
+| A service (`gh` signed out, T3 missing, watcher failed) | The connections footer turns orange and names it, and the popover gives the fix. Never a stream of toasts. |
+| Do it, when the main window is hidden (from quick add) | On any failure or partial failure, Rust shows the main window, selects the task and shows the toast. A success shows nothing. |
+| The database won't open at start | A full-window state: "Airboss can't open its database", the path, the reason, "Show in Finder" and "Try again". |
 
 Red is never used for errors (The Red Is Mine Rule).
 
 ## Screens
 
-Every screen keeps DESIGN.md's layout, sizes and motion. This section adds the data, the behaviour and the states. The keyboard map per context is in [Appendix C](#appendix-c-keyboard-map).
+Every screen keeps DESIGN.md's layout, sizes and motion. This section adds data, behaviour and states. Keys per context are in [Appendix C](#appendix-c-keyboard-map-and-focus-rules).
 
 ### Sidebar and connections footer
 
-- **Data:** `tasks` (counts), `needs.count`, `connections`.
-- **Counts:** Needs me is the attention count as a red badge, hidden at 0. Ready to start: ready leaves. Plans: plan cards. In progress: `doing` + `in_review`. All tasks: open tasks.
-- **Parents:** open top-level tasks with subtasks, in position order, with status icon, percentage and ring. Clicking one opens the per-parent view.
-- **Repos:** every repo with its colour dot. Clicking one opens the per-repo view. A "+" on the section header runs Add repo.
+- **Data:** `tasks` (counts), `needs.count` and `connections`.
+- **Counts:** Needs me is the attention count, as a red badge hidden at 0. Ready to start counts ready leaves. Plans counts plan cards. In progress counts `doing` and `in_review`. All tasks counts open tasks.
+- **Parents:** open top-level tasks with subtasks, in position order. Each shows its status icon, percentage and ring, and opens the per-parent view.
+- **Repos:** each repo with its colour dot, opening the per-repo view. A "+" on the section header opens Add repos.
 - **Footer:**
-  - "All connected" in text-3 with a green dot, or the first problem in orange, or "N connections need setup".
-  - Clicking opens the 300px popover: one line per service with its state, what it does or how to fix it, and a "Check again" button (`recheck_connections`).
+  - It reads "All connected" with a green dot, or names the first problem in orange, or says "N connections need setup".
+  - Clicking it opens the 300px popover, with one line per row below and a "Check again" button (`recheck_connections`).
+
+  | Row | From |
+  |---|---|
+  | T3 Code | `launch.availability()` and the T3 connection from `sync`. OK only if both are OK; otherwise the first one that's off. |
+  | GitHub | `sync`'s GitHub connection |
+  | Agents | the app: whether the CLI is installed, and the time of the newest `agent:*` event |
+  | Claude Code | `sync`'s Claude connection, shown only when it's broken |
+
 - The search and pencil icons at the top open Jump and New task.
 
-### List views: Needs me aside, every view is a list
+### List views
 
 | View | Rows | Layout |
 |---|---|---|
-| Ready to start | ready leaves, tree order; time shows when it became ready (`since`) | flat |
+| Ready to start | ready leaves in tree order; the time column shows when each became ready | flat |
 | In progress | `doing` and `in_review`, tree order | flat |
 | All tasks | the whole tree minus dropped; done rows dimmed | Tree or By status |
 | Per repo | tasks whose own or inherited repos include it | flat, tree order |
 | Per parent | the parent's subtree, its children at depth 0 | tree |
 
 - **Header:** title, row count, the Tree / By status switch (All tasks only), Jump ⌘K and New task.
-- **By status** groups, in order: In progress, In review, Blocked, Todo, Waiting, Proposed, Done. The header shows the group's status icon, name and count.
-- **Rows:** exactly DESIGN "Task rows". Click selects and opens the panel; double-click opens the page; right-click opens the context menu; the status icon opens the status menu; the arrow folds.
-- **Empty view:** "Nothing here" with "No tasks match this view." Ready's empty state adds "Tasks show here when nothing they wait on is open."
-- **Loading:** none. Data is in memory before the window shows.
-- **New rows** get the indigo wash and fade it out over 600 ms. A status change pops the icon.
+- **By status** groups, in order: In progress, In review, Blocked, Todo, Waiting, Proposed, Done.
+- **Rows:** exactly DESIGN "Task rows".
+  - Click selects and opens the panel; double-click opens the page; right-click opens the context menu.
+  - The status icon opens the status menu, and the arrow folds.
+  - A row with `needs_stale` dims its needs-me dot and gets the tooltip "May be out of date".
+- **Reorder:** ⌥⌘↑ / ⌥⌘↓ move the selected task one place among its siblings (`reorder`), only in tree layouts. At either end nothing happens. In flat views it shows "Reorder in All tasks or a parent's view".
+- **Empty view:** "Nothing here" and "No tasks match this view." Ready adds "Tasks show here when nothing they wait on is open."
+- **Loading:** none. The data is in memory before the window shows.
+- **Motion:** new rows fade the indigo wash out over 600 ms, and a status change pops the icon.
 
-### Task panel (480px, 380px when the window is 980px or less)
+### Task panel (480px, or 380px when the window is 980px or less)
 
-- **Data:** `task_detail(id)`, which returns the task, its links with PR info and live thread state, `history_with_subtasks(id, 30)`, `dependencies(id)`, its display waves if it has subtasks, its Needs me items, the branch and `launch.availability()`.
-- **Header:** the breadcrumb ("Booking flow › 144"; clicking the parent selects it), Plan it (⇧⌘↩), Do it (primary, ⌘↩), open page (⌘↓) and close (Esc).
-- **T3 missing banner:** when `launch` isn't available, an orange-iconed line under the header: "Do it and Plan it need T3 Code. Install it, then choose Check again." Do it and Plan it stay focusable but read as disabled (`aria-disabled`); pressing them repeats the line as a toast.
-- **Title:** click or ↩ to rename in place. ↩ or blur saves (`rename_task`); Esc cancels.
-- **Needs me callouts:** one red-washed callout per item, with the item's main action and Dismiss. These are the same items Needs me shows.
+- **Data:**
+  - `task_detail(id)`: the task, its links (with `PrView` and the threads' live state), `history_with_subtasks(id, 30)`, `waits_on` and `blocks` from `edges`, display waves if it has subtasks, `attention.for_task(id)`, and `launch.prepare(id, DoIt)` for the branch preview and repo choices (skipped for proposed, done and dropped tasks).
+  - Opening a task with an open PR also calls `sync.refresh(Refresh::PrsOf(id))`, which `sync` rate-limits.
+- **Header:**
+  - The breadcrumb ("Booking flow › 144"); clicking the parent selects it.
+  - Plan it (⇧⌘↩), Do it (primary, ⌘↩), open page (⌘↓) and close (Esc).
+- **Do it states:**
+  - While the task is in `ui.starting`, the button reads "Starting…" with a small spinner and is disabled. A second ⌘↩ does nothing.
+  - On a task with no repo (`prepare` says `needs_choice`), Do it opens the **Start in menu** under the button. It lists "Start in <repo>" for each repo (this links the repo as me, then starts) and "No repo: research only". ↑↓ and ↩ pick, Esc closes.
+  - On a done or dropped task (`TaskClosed`), the toast offers "Reopen and start". That sets the task to `todo`, then starts it.
+- **T3 missing:**
+  - An orange-iconed line sits under the header: "Do it and Plan it need T3 Code. Install it, then choose Check again."
+  - Do it and Plan it stay focusable but read as disabled (`aria-disabled`). Pressing them repeats the line as a toast.
+- **Title:** click it or press ↩ to rename in place. ↩ or blur saves; Esc cancels.
+- **Needs me callouts:** one red-washed callout per item, with the item's main action and Dismiss.
 - **Properties:**
-  - Status opens the status menu.
-  - Repos are tags, plus "Link repo", which opens the repo checklist; its last line is "Add repo…". "· from subtasks" shows when the repos are inherited.
-  - Branch (mono): shown when set, or as the name Do it would use, in text-3. Click to edit (`set_branch`).
-  - Parent opens the Jump picker in "Move under…" mode (`move_task`, last position).
-  - Waits on lists every dependency, finished ones too, each with its status icon. "Nothing · ⌘D to add". Hovering a tag shows ✕ (`remove_dependency`).
-  - Blocks: the same, read-only.
-  - Links: tags titled by link title, or by kind and ref. Click opens the link; ✕ unlinks. "None · ⌘L to add".
-- **Notes:** the body in Notes type. Click to edit in an auto-growing textarea; ⌘↩ or blur saves (`edit_notes`), Esc cancels. Empty notes read "Add notes…".
-- **Subtasks:** the Waves list (DESIGN "Waves list") when the task has subtasks. A row click selects that subtask.
-- **Threads:** one 8px-rounded row per linked thread: live chip (Running, Waiting, Stopped), name, summary and "Open ↗" (`open_thread`).
-- **Activity:** one line per event:
-  - The actor's avatar and name: You, Agent (or "Agent in <thread name>" when `sync` knows the name), GitHub, T3, Plan, Launch.
-  - A verb phrase per event kind.
-  - For a subtask's event, its id first: "143 moved to Done".
+  - **Status** opens the status menu.
+  - **Repos** are tags, plus "Link repo", which opens the repo checklist; its last line is "Add repos…". The tags carry "· from subtasks" when the repos are inherited.
+  - **Branch** (mono) shows the task's branch, or in text-3 the one Do it would use (`Prepared.branch`). Click it to edit (`set_branch`); `core` refuses characters outside `[A-Za-z0-9._/-]` and the message shows inline.
+  - **Parent** opens Jump in "Move under…" mode (`move_task`, last position).
+  - **Waits on** lists every dependency, finished ones too, each with its status icon, or "Nothing · ⌘D to add". Hovering a tag shows ✕.
+  - **Blocks:** the same, read-only.
+  - **Links:** tags titled by the link title, or by kind and ref. Clicking opens it; ✕ unlinks. Otherwise "None · ⌘L to add".
+- **Adding a link (⌘L):**
+  - A popover with "Paste a link or path" and an optional title.
+  - Below the fields it lists `sync.snapshot().suggested_prs(branch)`: my open PRs from this task's branch, one click each.
+  - A PR link is checked with `sync.lookup_pr` in the background. Its title and state fill in when the lookup answers.
+- **Notes:** the body in Notes type. Click to edit in an auto-growing textarea; ⌘↩ or blur saves, and Esc cancels.
+- **Subtasks:** the Waves list, when the task has subtasks.
+- **Threads:** one row per linked thread: live chip (Running, Waiting, Stopped), title, request or error summary, and "Open ↗" (`open_thread`). Open shows only when `sync.thread_url` returns a URL. Claude Code sessions have none, so they show their folder instead.
+- **Activity:**
+  - One line per event: the actor's avatar and name (You, Agent or "Agent in <thread title>", GitHub, T3, Plan, Launch), then a verb phrase per event kind.
+  - A subtask's events start with its id: "143 moved to Done".
   - "Show more" refetches with a limit of 200.
-- **Note input:** "Leave a note for the agent…". ↩ adds a note (`add_note`); ⇧↩ adds a new line.
-- **Loading:** the previous task stays on screen until the new detail arrives. Only if that takes over 150 ms do the sections show 3 grey skeleton lines.
-- **Error:** if the task was deleted elsewhere, the panel shows "Task 144 no longer exists" and closes on the next key.
+- **Note input:** "Leave a note for the agent…". ↩ adds the note, ⇧↩ adds a line.
+- **Loading:** the previous task stays until the new detail arrives. Only after 150 ms do the sections show grey skeleton lines.
+- **Error:** a task deleted elsewhere shows "Task 144 no longer exists", and the selection rule picks the next row.
 
 ### Full task page
 
-- ⌘↓ or double-click opens it; ⌘↑ or Esc goes back to the list with the same selection. It shows the same data as the panel: a centred document column (max 860px) and a 280px properties rail.
-- The rail adds Progress: the bar, "13% · 1 of 8".
-- **Subtasks:**
-  - "N waves", the 8px stacked bar with its legend.
-  - The Waves / Map switch, opening on Map.
-  - The line "Nothing starts by itself. Select a ready task and press ⌘↩."
-- A leaf task's page is the panel's content in the document layout, with no subtasks section.
+- ⌘↓ or double-click opens it; ⌘↑ or Esc goes back to the list with the same selection.
+- The layout is a centred document column (max 860px) and a 280px properties rail, with the panel's data. The rail adds Progress ("13% · 1 of 8").
+- **Subtasks:** "N waves", the 8px stacked bar with its legend, the Waves / Map switch (opening on Map), and "Nothing starts by itself. Select a ready task and press ⌘↩."
+- A leaf task's page has no subtasks section.
 
 ### Run-order map
 
-- **Data:** `run_map(id)`, computed in `runmap.rs`:
-  - **Nodes** are the parent's direct subtasks that are neither dropped nor proposed. Done ones are included.
-  - **Edges** are dependencies lifted to those subtasks (any descendant's dependency counts for its top-level subtask under the parent, as in rule 18). Each edge is marked done when its blocker is done.
+- **Data:** `run_map(id)`, built in `runmap.rs` from the view model's snapshot and one `run_order(id)` call:
+  - **Nodes** are the parent's direct subtasks that aren't dropped or proposed. Done ones are included.
+  - **Edges** are dependencies lifted to those subtasks: a descendant's edge counts for its top-level subtask under the parent, as in rule 18. An edge is marked done when its blocker is done.
   - **Display waves:** Kahn layering over all the nodes, done ones included, in sibling order.
-  - **Outside blockers:** from `run_order(id).waiting_outside`. Such a task sits in the column after its latest inside blocker, or in wave 1.
-  - **Tangled tasks** (`run_order(id).tangled`) are listed under the map, with "These wait on each other in a loop."
-- **Drawing:** `runMapLayout.ts` turns the graph and the width into station positions and SVG paths, following DESIGN's curve and wave-skip rules. It is a pure function with unit tests.
-  - Columns are 150px or wider. Stations in a wave are 80px apart.
-  - The station state line reads ready, blocked, "waits on 202, 204" or "waits outside: 128", then the station's repo dots.
-- **Controls:** hover traces a station; click selects it (indigo wash) so ⌘↩ starts that subtask; double-click opens it. With the map focused, ←→ move between waves, ↑↓ within one, ↩ opens and Esc clears.
-- **Fallback:** above 40 subtasks or 8 waves, the page opens on the Waves list and the Map tab says "Map shows up to 40 subtasks".
+  - **Outside blockers** come from `run_order(id).waiting_outside`. Such a task sits in the column after its latest inside blocker, or in wave 1.
+  - **Tangled** tasks are listed under the map with "These wait on each other in a loop."
+- **Drawing:** `runMapLayout.ts` (pure, unit-tested) turns the graph and the width into station positions and SVG paths, following DESIGN's curve and wave-skip rules. Columns are 150px or wider, and stations in a wave are 80px apart.
+- **Controls:**
+  - Hovering a station traces its lines.
+  - Click selects it, and then ⌘↩ starts that subtask. Double-click opens it.
+  - With the map focused, ←→ move between waves, ↑↓ within a wave, ↩ opens and Esc clears.
+- **Fallback:** above 40 subtasks or 8 waves, the page opens on Waves, and the Map tab says "Map shows up to 40 subtasks".
 
 ### Needs me
 
-- **Data:** `needs` (from `attention.needs_me()`, pushed with `needs:changed`), and `task_detail` for the selected item's task.
-- **Inbox:** the 420px list, grouped in DESIGN's fixed order. Questions holds both Question and Approval items. ↑↓ move, and the selection starts on the first item.
-- **Detail:** the card (kind, time, task, the question at 17px, actions), then the task's properties, notes and activity, as in the panel.
-- **Actions** (the main action is ↩ or ⌘↩, Dismiss is ⌘⌫):
+- **Data:**
+  - `needs`, from `attention.needs_me()` and pushed with `needs:changed`.
+  - `task_detail` for the selected item's task.
+- **Inbox:** the 420px list, grouped in DESIGN's fixed order. ↑↓ move, and the first item starts selected. A stale item is dimmed and says "May be out of date".
+- **Detail:** the card (kind, time, task, headline at 17px, actions), then the task's properties, notes and activity.
+- **Actions** (the main action is ↩ or ⌘↩; Dismiss is ⌘⌫):
 
   | Kind | Main action | Others |
   |---|---|---|
-  | Question, Approval, Failed run | Open thread (`open_thread`) | Dismiss |
+  | Question, Approval, Failed run | Open thread (`open_thread` on the item's `ThreadKey`) | Dismiss |
   | Review | Open PR (`open_url`) | Dismiss |
-  | Proposed | Accept all (`accept_proposals`) | Accept, Edit (inline rename, then accept) or Reject each; Reject all |
+  | Proposed | Accept all (`accept_proposals`) | Accept, Edit (rename in place, then accept), or Reject each; Reject all |
   | Ready | Do it (`do_it`) | Dismiss |
   | Finish it? | Mark done (`set_status` done) | Keep open (`needs_dismiss`) |
-  | Quiet | Open (selects the task in All tasks) | Snooze 3 days (`needs_snooze`) |
+  | Quiet | Open (reveals the task in All tasks) | Snooze 3 days (`needs_snooze` with no date, so `attention` adds its default) |
 
-- **Clearing:** an item resolved by an action, or by an agent elsewhere, slides 10px left and fades over 180 ms. The selection moves to the next item.
-- **Header:** "Needs me N", and "checked 10:44" from `last_checked`.
-- **Empty:** DESIGN "Nothing needs you": a check, "Checked 10:44 · 10 in progress · 5 ready to start", and "Show ready tasks", which opens Ready.
+- **Clearing:**
+  - An acted-on item leaves at once: it slides 10px left and fades over 180 ms (see "Which needs fields a write's patch carries").
+  - An item resolved elsewhere leaves when `needs:changed` drops it.
+  - The selection rule picks the next item.
+  - Toasts for Dismiss, Snooze and Reject offer Undo.
+- **Header:** "Needs me N", and "checked 10:44" from `checked_at`.
+- **Empty:** DESIGN "Nothing needs you": a check, "Checked 10:44 · 10 in progress · 5 ready to start", and "Show ready tasks".
 
 ### Plans
 
-- **Data:** `plans()` returns one `PlanCard` per open top-level parent:
+- **Data:** `plans()` returns one `PlanCard` per open top-level parent, built from the view model:
   - progress
-  - display waves: the count, the current wave (the lowest with an open task) and one dot per wave
-  - Next up: up to two ready subtasks, or "Finish it?" at 100%, or "Nothing ready"
-  - the number of working agents (subtasks with a running thread) and of blocked subtasks
+  - display waves: the count, the current one (the lowest with an open task) and one dot per wave
+  - Next up: up to two ready subtasks, "Finish it?" at 100%, or "Nothing ready"
+  - working agents and blocked subtasks
   - the repo union and `last_at`
 
-  It is refetched when a patch upserts any parent.
-- **Header:** "Plans N", "35% of all planned work done · 6 of 17", and "Plan something", which opens New task in plan mode (↩ creates it, then runs Plan it).
-- **Grid:** cards at least 340px wide, 12px apart. ←→↑↓ move by card and by row; ↩ opens the page.
-- **Empty:** "No plans yet". "Plan it on any task turns its plan into subtasks here." and the Plan something button.
+  It is refetched when a patch upserts a parent while Plans is open, debounced 100 ms.
+- **Header:**
+  - "Plans N", and "35% of all planned work done · 6 of 17".
+  - "Plan something" opens New task in plan mode: ↩ creates the task, then runs Plan it.
+- **Grid:** cards at least 340px wide, 12px apart. ←→↑↓ move by card and by row, and ↩ opens the page.
+- **Empty:** "No plans yet", "Plan it on any task turns its plan into subtasks here.", and Plan something.
 
 ### New task (in the app) and quick add (from anywhere)
 
-One `NewTask.svelte` component serves both. In the app it is a modal on the scrim; in the panel it is the whole window.
+One `NewTask.svelte` component serves both: as a modal on the scrim in the app, and as the whole quick-add window.
 
 - **Opening:**
-  - In the app: C, ⌘N or ⌥N. In a per-parent view the parent is preset; in a per-repo view the repo is.
-  - From anywhere: ⌃⌥Space. Rust positions the panel at 22% from the top of the screen with the mouse, shows it, focuses it and emits `quickadd:open`. The UI focuses the title. No data fetch blocks showing it: repos and parents arrive with `quickadd_data` afterwards.
+  - **In the app:** C, ⌘N or ⌥N. A per-parent view presets the parent, and a per-repo view presets the repo.
+  - **From anywhere:** the global hotkey, by default **⌃⌥N**.
+    - The handler acts on `ShortcutState::Pressed` only, so holding or releasing the keys does nothing more.
+    - Rust positions the panel 22% from the top of the screen with the mouse, then shows and focuses it.
+    - Pressing the hotkey while the panel is the key window hides it.
+- **Ready before it opens:**
+  - Every time the panel hides, the UI resets the form, refetches `quickadd_data` (repos and open parents) and focuses the title. Opening therefore does no I/O and no rendering.
+  - The one exception: a hide caused by clicking elsewhere keeps a non-empty title and notes, with the cursor at the end.
+  - Esc and Create always reset.
 - **Fields:**
-  - The title (18px).
+  - The title (18px). ↓ in the title moves to notes, and ↑ on the first line of notes moves back.
   - Notes ("Add notes, or paste a Slack link…").
-  - The property pills: status (Todo, fixed), "Repos · optional" (a multi-select checklist; ↩ or click toggles a repo; the last line is "Add repo…" in the app), and Parent (a filterable list of open tasks plus "Top level").
-  - Tab opens repos and Shift-Tab opens parent; ↑↓ move and Esc closes the dropdown.
-- **Pasting** a link into the title or notes attaches it as a link pill (with ✕) and keeps the rest of the text. Links are classified by `links.ts`: GitHub PR, GitHub issue, Slack permalink, `t3://` thread, a file path as a doc, anything else as a doc with its URL.
-- **↩ Create task:** `create_task`, which runs `add_task`, then `link_repo` and `link` for each, under one lock. The panel hides at once, and in the app the new row is highlighted and selected.
-- **⌘↩ Create and Do it:** the same, then `do_it`.
-- **Esc** closes. In the panel, a draft survives a hide by blur for 10 minutes; Esc clears it.
-- **Errors:**
-  - An empty title disables Create.
-  - If a link step fails after the task exists, the task stays and a toast says "Created 153, but couldn't link booking-api".
-- The header line shows "⌃⌥Space from any app", or the hotkey chosen in Settings.
+  - Property pills: status (Todo, fixed), "Repos · optional" (a checklist: ↩ or click toggles a repo; in the app its last line is "Add repos…"), and Parent (a filterable list of open tasks plus "Top level"). Tab opens repos and Shift-Tab opens parent. Inside a dropdown, ↑↓ move and Esc closes it.
+- **Pasting** a link into the title or notes attaches it as a link pill (with ✕) and keeps the rest of the text. `links.ts` sorts each link by its form:
+
+  | Form | Kind |
+  |---|---|
+  | `github.com/<o>/<r>/pull/<n>` | PR, ref `o/r#n` |
+  | `github.com/<o>/<r>/issues/<n>` | GitHub issue |
+  | `*.slack.com/archives/…` | Slack |
+  | `t3code://threads/<environment>/<thread>` | T3 thread, ref `<thread>` |
+  | an absolute or `~` path | doc |
+  | any other `http(s)` URL | doc, with its URL |
+
+- **↩ Create task:** `create_task`. The repos go in `NewTask.repos`, so `add_task` links them in the same change, and then each link is added.
+  - The panel hides at once. In the app, the new row is highlighted and selected.
+  - If a link fails after the task exists, the task stays, and a toast says "Created 153, but couldn't link <title>". From quick add, that shows the main window.
+- **⌘↩ Create and Do it:** the same, then the Do it flow, including the Start in menu if there's no repo. From quick add, the menu opens in the panel and the panel stays open until a choice is made.
+- **Errors:** an empty title disables Create.
+- **Header:** "⌃⌥N from any app", or the hotkey set in Settings.
 
 ### ⌘K Jump
 
 - **Data:** in memory. `search.ts` fuzzy-matches id and title over `tasks.rows` (dropped left out), plus the command registry.
-- **Results:** with no query, the 5 most recently changed open tasks and 4 commands; with a query, 8 tasks and 5 commands. A number puts that id first.
-- ↩ on a task reveals it: switch to All tasks if needed, unfold its ancestors, select it and open the panel. ↩ on a command runs it.
-- With no match, the only row is "Create task “…”", and ↩ creates it.
-- **Picker mode** reuses the palette for Add waits-on (⌘D) and Move under. Invalid targets (itself, its ancestors and descendants) are shown greyed with the reason.
+- **Results:** with no query, the 5 most recently changed open tasks and 4 commands. With a query, 8 tasks and 5 commands. A number puts that id first.
+- **↩** on a task reveals it and opens the panel; ↩ on a command runs it. With no match, the only row is "Create task “…”".
+- **Picker mode** serves Add waits-on (⌘D) and Move under. Invalid targets (itself, its ancestors and descendants) are greyed, with the reason.
 
 ### Status menu and context menu
 
 - **Status menu** (S, or click a status icon): 1 Todo, 2 In progress, 3 In review, 4 Blocked, 5 Done, 6 Dropped. Number keys, ↑↓ and ↩ pick.
-  - **Blocked** opens a one-line popover, "Why is it blocked?". ↩ saves, and an empty reason can't be saved.
-  - **Dropped** opens a confirm dialog: "Drop 142 and its 3 open subtasks?". Drop is the default button; Esc cancels.
-  - On a proposed task the menu shows Accept and Reject instead.
-- **Context menu** (right-click a row or a map station): Do it, Plan it, Status… S, Mark done Space, Rename ↩, Link repos… R, Add waits-on… ⌘D, Open page ⌘↓, Copy task number ⇧⌘C, Drop ⌘⌫. Commands that can't run show greyed, with the reason as a tooltip.
-- **Do it with no repo** opens a small menu: "Start in <repo>" for each repo (this links the repo as me, then starts) and "No repo: research only".
+  - **Blocked** asks "Why is it blocked?" in a one-line popover. ↩ saves; an empty reason can't be saved.
+  - **Dropped** confirms first: "Drop 142 and its 3 open subtasks?". Drop is the default button, and Esc cancels.
+  - **On a proposed task,** the menu shows Accept and Reject instead.
+  - Every status change toasts with Undo.
+- **Context menu** (right-click a row or station): Do it, Plan it, Status… S, Mark done Space, Rename ↩, Link repos… R, Add waits-on… ⌘D, Move up ⌥⌘↑, Move down ⌥⌘↓, Open page ⌘↓, Copy task number ⇧⌘C, Drop ⌘⌫. Commands that can't run are greyed, with the reason as a tooltip.
+
+### Do it and Plan it results
+
+Toasts are built from `LaunchReport`. Each names the task and offers what can be done next:
+
+| Report | Toast | Actions |
+|---|---|---|
+| one thread started | "Started a thread for 142 in booking-web" | Open thread |
+| several, all started | "Started 2 threads for 142 on `task-142-booking-flow`" | |
+| research only | "Started a research thread for 142" | Open thread |
+| Plan it | "Started a planning thread for 142. Its steps become subtasks when you settle the plan." | Open thread |
+| some started, some failed | "Started in booking-web. booking-api failed: <message>" | Retry, or "Add to T3 and retry" when the code is `NotAProject` (`add_to_t3`, then `start` again) |
+| none started, all `skipped` | "142 already has threads in booking-web and booking-api" | Start again (`again: true`) |
+| none started, failed | "Couldn't start 142: <message>" | Retry |
+| `warnings` not empty | the first warning is added as a second line | |
+
+- **Retry** sends the same request. `launch` skips the repos that already started.
+- When nothing started because T3 is missing or not running, the connections footer updates as well.
 
 ### Menu bar
 
-- **Title:** the count, or nothing at 0. The template icon follows the menu-bar appearance.
-- **Native menu**, rebuilt on `needs:changed` (debounced 250 ms):
-  - "Needs me 8" (disabled).
-  - Up to six items, "144  Agent in slot-picker asks · 6m", each with its kind's red icon. Choosing one opens the main window on Needs me with that item selected.
-  - A separator, then "Open Airboss ⌘0" and "Quick Add… ⌃⌥Space".
+- **Title:** the count, or nothing at 0. The template icon follows the menu bar's appearance. Its accessibility label is "Airboss, 8 waiting on you".
+- **Native menu,** rebuilt on `needs:changed` (debounced 250 ms):
+  - "Needs me 8", disabled.
+  - Up to six items, such as "144  Agent in slot-picker asks · 10:32", each with its kind's red icon.
+    - Times are **clock times**, because a native menu isn't redrawn as time passes: "10:32" today, "Mon 10:32" this week, "25 Nov" before that.
+    - Choosing an item opens the main window on Needs me with that item selected.
+  - A separator, then "Open Airboss ⌘0" and "Quick Add… ⌃⌥N".
   - A separator, then "Quit Airboss".
-- **Empty:** "Nothing needs you" (disabled), then the same items below it.
+- **Empty:** "Nothing needs you", disabled, with the same items below it.
 
 ### Shortcut sheet
 
-- ? opens the sheet, built from the command registry, in DESIGN's two-column layout. The hotkey shown is the one in Settings.
+- ? opens it, built from the command registry in DESIGN's two-column layout. It shows the hotkey from Settings, plus ⌥⌘↑↓, ⌘Z and F6.
 - Esc or ? closes it.
 
 ### Settings (⌘,)
 
 A modal in the main window, built from the design's components:
 
-- **Quick-add hotkey:** a recorder. If the key is taken: "That key is in use by another app. Pick another."
-- **Launch at login:** a switch.
-- **Appearance:** System, Dark or Light.
-- **Command-line tool:** Install, with its path.
-- **Agent setup:** "Copy agent note" and "Copy setup command" (`claude mcp add --scope user airboss -- ~/.local/bin/airboss mcp`).
+- **Quick-add hotkey:** a recorder.
+  - Registration is tried at once. If it fails: "That key is in use by another app. Pick another."
+  - Keys macOS uses by default are refused, with the reason: ⌃Space, ⌃⌥Space, ⌘Space, ⌥⌘Space and ⌃⌘Space.
+- **Open at login:** a switch.
+- **Appearance:** System (the default), Dark or Light.
+- **Command-line tool:** Install, with its path, and whether `~/.local/bin` is on `PATH`.
+- **Agent setup:** "Copy agent note", and "Copy setup command" (`claude mcp add --scope user airboss -- ~/.local/bin/airboss mcp`).
 
-### First run, T3 missing, nothing needs you
+### First run, Add repos, T3 missing, nothing needs you
 
-- **First run** is any start with no tasks. All tasks shows DESIGN screen 10: "Nothing here yet", New task ⌘N, "Change hotkey…" (which opens Settings), and the Connections card:
+- **First run** is any start with no tasks. All tasks shows DESIGN screen 10, extended:
+  - "Nothing here yet", with New task ⌘N and "Change hotkey…".
+  - **"Open Airboss at login"**, a checkbox ticked by default. First run turns autostart on; unticking turns it off at once.
+  - **Repos:** the Add repos list (below), when no repo is added yet.
+  - **Connections:**
 
-  | Row | OK | Off | Button |
-  |---|---|---|---|
-  | Agents | "Agents · Ready": the CLI is installed, and the time of the last agent report if there is one | "Agents · Not set up" | Install command-line tool, then Copy agent note |
-  | T3 Code | "T3 Code · Found" | "T3 Code · Not found": Do it and Plan it are off until T3 Code is installed | Check again |
-  | GitHub | "GitHub · Signed in" | "GitHub · Not signed in": PRs won't sync. Run `gh auth login`. | Check again |
+    | Row | OK | Off | Button |
+    |---|---|---|---|
+    | Agents | "Agents · Ready": the CLI is installed, and the time of the last agent report if any | "Agents · Not set up" | Install command-line tool, then Copy agent note |
+    | T3 Code | "T3 Code · Found" | "T3 Code · Not found": Do it and Plan it are off until T3 Code is installed | Check again |
+    | GitHub | "GitHub · Signed in" | "GitHub · Not signed in": PRs won't sync. Run `gh auth login`. | Check again |
 
-- **T3 missing** anywhere: as in the panel above, plus "T3 Code not found" in the footer. ⌘↩ shows the toast.
-- **Nothing needs you:** as in Needs me above. The menu bar shows no number.
+- **Add repos** (from first run, the sidebar's "+", and "Add repos…"):
+  - **The list:** `t3_projects()` lists T3's projects from `sync.snapshot().projects`; `sync` reads them from T3's database on each pass.
+    - Each row shows its folder name and path, and a checkbox, unticked.
+    - Rows whose folder isn't a git repo, or is already added, are shown greyed with the reason.
+  - **"Add N repos"** runs `add_repos`. Each name is the folder's name, and each remote comes from the folder's `.git/config`.
+  - **"Add another folder…"** opens the folder picker.
+  - **Without T3,** only the folder picker shows, with "T3 Code's projects show here once it's installed."
+  - ↑↓ move, Space ticks and ⌘↩ adds.
+- **T3 missing:** as in the panel above, with "T3 Code not found" in the footer.
+- **Nothing needs you:** as in Needs me. The menu bar shows no number.
 
-## Interfaces: sync, launch, attention
+## Interfaces: the `crates/services` contract
 
-In `crates/services` (`airboss-services`), types only. The app holds each service as `Arc<dyn …>`.
+The reconciled contract (EM decision, 26 Nov 2026), word for word. The services specs build to the same text. `airboss-services` depends on `airboss-core` (for ids, `Event` and `CoreSnapshot`) and `serde`. It has no tokio, no threads and no logic beyond `Changes`.
 
 ```rust
-pub type SharedStore = Arc<std::sync::Mutex<airboss_core::Store>>;
-pub type Timestamp = String;                 // UTC, as core writes it
-
-/// Every service: may block briefly, never on the main thread; cheap reads come from memory.
-pub trait Service: Send + Sync {
-    fn connection(&self) -> Vec<Connection>;           // one per outside dependency it has
-    fn recheck(&self);                                 // schedule a check now; returns at once
-    fn changes(&self) -> tokio::sync::watch::Receiver<u64>;  // bumps when anything it reports changed
-    fn store_changed(&self, events: &[airboss_core::Event]); // called by the app after every catch-up
-}
-
-pub struct Connection { pub service: ServiceId, pub ok: bool, pub state: String /* "Signed in" */,
-                        pub what: String, pub fix: Option<String> }
-pub enum ServiceId { T3, GitHub, Agents }
-
-// ---------- sync ----------
-pub trait SyncService: Service {
-    fn threads(&self) -> HashMap<TaskId, Vec<ThreadLive>>;   // only tasks with linked threads
-    fn prs(&self) -> HashMap<LinkId, PrInfo>;                // only PR links it has seen
-    fn last_checked(&self) -> Option<Timestamp>;
-}
-pub struct ThreadLive { pub link: LinkId, pub thread_ref: String, pub name: String,   // "slot-picker"
-                        pub repo: Option<RepoId>, pub state: LiveState, pub since: Timestamp,
-                        pub summary: Option<String> }                              // "asked a question"
-pub enum LiveState { Running, WaitingOnYou, Stopped }
-pub struct PrInfo { pub link: LinkId, pub state: PrState, pub checks: Checks, pub additions: u32,
-                    pub deletions: u32, pub title: Option<String>, pub url: String }
-pub enum Checks { Passing, Failing, Pending, None }
-
-// ---------- launch ----------
-pub trait LaunchService: Service {
-    fn availability(&self) -> Availability;
-    fn branch_for(&self, task: TaskId) -> Result<String, LaunchError>;  // stored branch, or the one Do it would set
-    fn do_it(&self, task: TaskId, start: StartIn) -> Result<Launched, LaunchError>;
-    fn plan_it(&self, task: TaskId) -> Result<Launched, LaunchError>;
-    fn open_thread(&self, link: LinkId) -> Result<(), LaunchError>;     // brings the thread up in T3
-}
-pub enum Availability { Ready, T3Missing, T3Unusable { reason: String } }
-pub enum StartIn { LinkedRepos, NoRepo }      // "Start in <repo>": the app links the repo first
-pub struct Launched { pub threads: Vec<StartedThread>, pub branch: Option<String> }
-pub struct StartedThread { pub link: LinkId, pub repo: Option<RepoId>, pub name: String }
-pub enum LaunchError { T3Missing, NeedsRepoChoice, Waiting { on: Vec<TaskId> }, AlreadyDone,
-                       Failed { message: String }, Core(airboss_core::Error) }
-
-// ---------- attention ----------
-pub trait AttentionService: Service {
-    fn needs_me(&self) -> NeedsList;
-    fn count(&self) -> u32;                                   // the menu-bar number: items not dismissed or snoozed
-    fn dismiss(&self, key: &NeedsKey) -> Result<(), AttentionError>;
-    fn snooze(&self, key: &NeedsKey, until: Timestamp) -> Result<(), AttentionError>;
-}
-pub struct NeedsList { pub items: Vec<NeedsItem>, pub last_checked: Option<Timestamp> }
-pub struct NeedsKey(pub String);              // stable across restarts, e.g. "question:t3/97b5:req-12"
-pub struct NeedsItem { pub key: NeedsKey, pub kind: NeedsKind, pub task: TaskId, pub at: Timestamp,
-                       pub headline: String,   // the question, or "+412 −38 · checks passed"
-                       pub context: String,    // one line, e.g. "Agent in slot-picker asks"
-                       pub link: Option<LinkId>, pub url: Option<String>,
-                       pub proposed: Vec<TaskId> }                // Proposed kind only
-pub enum NeedsKind { Question, Approval, Review, FailedRun, Proposed, Ready, FinishIt, Quiet }
-pub enum AttentionError { NotFound, Core(airboss_core::Error) }
+#[derive(Clone)] pub struct Changes(Arc<(Mutex<u64>, Condvar)>);  // bump / wait_past(seen, timeout)
+pub struct StoreChange { pub events: Vec<Event>, pub snapshot: Arc<CoreSnapshot> }
+pub trait Service: Send + Sync { fn connections(&self) -> Vec<Connection>; fn recheck(&self); fn changes(&self) -> Changes; fn store_changed(&self, c: &StoreChange); fn woke(&self); fn shutdown(&self); }
+pub trait SyncService: Service { fn snapshot(&self) -> Arc<SyncSnapshot>; fn refresh(&self, what: Refresh); fn lookup_pr(&self, pr: &PrRef) -> Result<PrView, ServiceError>; fn find_thread(&self, project: &Path, branch: &str) -> Option<ThreadKey>; fn thread_url(&self, key: &ThreadKey) -> Option<String>; }
+pub trait LaunchService: Service { fn availability(&self) -> Availability; fn prepare(&self, task: TaskId, mode: Mode) -> Result<Prepared, ServiceError>; fn start(&self, req: &StartRequest) -> Result<LaunchReport, ServiceError>; fn add_to_t3(&self, repo: RepoId) -> Result<(), ServiceError>; }
+pub struct StartRequest { pub task: TaskId, pub mode: Mode, pub place: Place /* TaskRepos | NoRepo(PathBuf) */, pub again: bool }
+pub struct LaunchReport { pub started: Vec<StartedThread>, pub skipped: Vec<RepoId>, pub failed: Vec<(Option<RepoId>, ServiceError)>, pub branch: Option<String>, pub moved_to_doing: bool }
+pub trait AttentionService: Service { fn needs_me(&self) -> Arc<NeedsList>; fn for_task(&self, task: TaskId) -> Vec<NeedsItem>; fn dismiss(&self, k: &NeedsKey) -> Result<(), ServiceError>; fn snooze(&self, k: &NeedsKey, until: Option<Timestamp>) -> Result<(), ServiceError>; fn restore(&self, k: &NeedsKey) -> Result<(), ServiceError>; }
+#[derive(Clone, Serialize)] pub struct ServiceError { pub code: ErrorCode, pub message: String }
 ```
 
-- **The app** decides whether Do it may run before calling it: not done, not waiting, and a repo choice made. `launch` checks again and returns the matching `LaunchError`.
-- **The Agents row** of the connections belongs to the app: whether the CLI is installed, and the time of the newest `agent:*` event.
-- **Items vanish when their cause does.** `attention` recomputes from `core` and `sync` on `store_changed` and on `sync.changes()`. Accepting proposals or starting a ready task clears the item without a dismiss.
-- All these types derive `Serialize` and `Clone`; the app wraps them in DTOs for the UI.
+**How the app uses it:**
+
+- **Timing:**
+  - `store_changed`, `recheck`, `refresh` and `woke` must return at once (they queue work).
+  - `needs_me`, `snapshot`, `for_task`, `availability`, `connections` and `thread_url` read memory only.
+  - `prepare`, `dismiss`, `snooze`, `restore` and `add_to_t3` may block briefly. `start` and `lookup_pr` may block for seconds.
+  - The app calls every one of them from a background thread with no lock held.
+- **Listening:** one app thread per service loops on `changes().wait_past(seen, 15 min)`, so no wait is longer than 15 minutes, and sends a service trigger to the catch-up worker.
+- **"Start in <repo>"** is `link_repo` as me, then `Place::TaskRepos`. "No repo: research only" is `Place::NoRepo(prepared.research_dir)`.
+- **Open thread** is `opener` on `sync.thread_url(key)`, which gives `t3code://threads/<environment>/<thread>`. The T3 bundle registers `t3code`.
+- **On wake,** `woke()` is called on each service; on quit, `shutdown()`.
+
+**Supporting types: the fields the app reads.** The services specs own the full definitions. The app reads only these fields, and each must exist under these names:
+
+| Type | Fields the app reads |
+|---|---|
+| `Connection` | `name` ("GitHub", "T3 Code"…), `ok: bool`, `state` ("Signed in"), `detail` (what it does), `fix: Option<String>` |
+| `ErrorCode` | variants `NeedsChoice`, `NotAProject`, `TaskClosed`, `T3Missing`, `T3NotRunning`; the rest only pass through |
+| `SyncSnapshot` | `threads_for(task) -> Vec<&ThreadView>`, `prs_for(task) -> Vec<&PrView>`, `suggested_prs(branch)`, `projects: Vec<T3Project { path, name }>`, `checked_at: Option<Timestamp>` |
+| `ThreadView` | `key: ThreadKey`, `state: ThreadState`, `title`, `request: Option<Request { kind, text, at }>`, `error`, `project_path`, `last_activity_at`, `stale` |
+| `ThreadState` | `Running, NeedsMe, Errored, Idle, Settled, Gone`, with `chip() -> Option<Chip>`: Running is Working; NeedsMe is WaitingOnYou; Errored, Idle and Settled are Stopped; Gone has no chip |
+| `PrRef` / `PrView` | `PrRef::parse(&str)` (`owner/repo#n` or a URL, canonical lowercase as in `core` v3); `ref`, `url`, `title`, `state`, `draft`, `review`, `checks`, `additions`, `deletions`, `stale` |
+| `Refresh` | `PrsOf(TaskId)` |
+| `Availability` | `Unknown`, `Ready { version }`, `Missing { reason }` |
+| `Mode` / `Prepared` | `DoIt`, `PlanIt`; `repos`, `from_subtasks`, `needs_choice`, `choices: Vec<Repo>`, `branch: Option<String>`, `research_dir: PathBuf` |
+| `StartedThread` | `key: ThreadKey`, `repo: Option<RepoId>`, `title` |
+| `NeedsList` / `NeedsItem` | `items`, `count`, `checked_at`, `version: u64`; `key`, `kind`, `group`, `task`, `task_title`, `since`, `headline`, `context`, `target` (`Thread(ThreadKey)`, `Pr { ref, url }`, `Task(TaskId)`), `proposed: Vec<(TaskId, String)>`, `stale` |
+| `Timestamp` | UTC text in `core`'s format |
 
 ## Performance
 
-Targets from CAPABILITIES, measured by `scripts/measure.sh` on this Mac, release build, with a 2,000-task seeded database (`examples/seed.rs`: 2,000 tasks, 5 levels, 1,000 dependencies, 40 linked threads). The machine is printed next to the numbers.
+Targets from CAPABILITIES, measured by `scripts/measure.sh` on this Mac, in a release build. The seeded database (`examples/seed.rs`) has 2,000 tasks, 5 levels, 1,000 dependencies and 40 linked threads. The machine is printed next to the numbers.
 
 | Target | How it's met | How it's measured |
 |---|---|---|
-| Download under 15 MB | Release profile above; one Inter subset; no JS libraries; main bundle under 150 KB and quick-add under 40 KB (minified) | Size of the `.dmg` from `tauri build --bundles dmg`, `airboss` sidecar included |
-| Idle memory under 80 MB | Two web views, a native tray menu, `$state.raw` rows | 60 s after start, window visible on All tasks: the sum of `footprint` for the app process and its WebKit WebContent, Networking and GPU processes |
-| Idle CPU near 0% | No polling and no timers except the minute tick while visible; the live pulse animates only `transform` and `opacity` | `top -l 31 -s 2` over 60 s: average under 0.5% with no working chip on screen and under 1% with one; 0% with the window hidden |
-| Cold start under 1 s | Window created hidden; one `bootstrap` call; shown on first paint | Rust logs from process start (`sysctl kern.proc` start time) to `ui_ready` after two animation frames; median of 10 cold starts after `purge` |
-| Hotkey to quick add under 100 ms | The panel exists from start-up; showing it does no I/O | Rust logs from the shortcut callback to `quickadd_shown` (sent after one animation frame); 95th percentile of 20 presses |
-| 2,000 rows at 60 fps | Virtual list, fixed heights, flat rows | Playwright WebKit on the mock build with 2,000 fixture rows: scroll the whole list in 3 s; 95th-percentile frame time under 16.7 ms and no task over 50 ms. Checked once by hand with the Web Inspector timeline in the real app. |
-| Agent write visible under 300 ms | Watcher debounce plus `catch_up()` | `tests/watcher.rs`: a second `Store` writes; time until the patch arrives |
-| Snapshot rebuild and diff under 15 ms; any write command under 25 ms | | `tests/perf.rs` (`#[ignore]`), 95th percentile of 200 runs |
+| Download under 15 MB | release profile; one Inter subset; no JS libraries; main bundle under 150 KB and quick add under 40 KB minified | size of the `.dmg` from `tauri build --bundles dmg`, sidecar included |
+| Idle memory under 80 MB | two web views, a native tray menu, `$state.raw` rows | see below |
+| Idle CPU near 0% | no polling; app threads block on channels and condvars; a minute tick only while visible; the live pulse animates only `transform` and `opacity` | `top -l 31 -s 2` over 60 s: average under 0.5% with no working chip on screen, under 1% with one, 0% with the window hidden |
+| Cold start under 1 s | window created hidden; one `bootstrap`; shown on `ui_ready` | Rust logs from process start (`sysctl kern.proc` start time) to `ui_ready`; median of 10 cold starts after `purge` |
+| Hotkey to quick add under 100 ms | panel created and reset ahead of time; showing it does no I/O | Rust logs from the `Pressed` callback to `quickadd_shown`, which the UI sends on the window's `focus` event; 95th percentile of 20 presses |
+| 2,000 rows at 60 fps | virtual list, fixed heights, flat rows | Playwright WebKit on the mock build with 2,000 fixture rows: scroll the whole list in 3 s; 95th-percentile frame time under 16.7 ms and no task over 50 ms. Checked once by hand with Web Inspector in the real app. |
+| Agent write visible under 300 ms | kqueue, debounce, `catch_up()` | `tests/catchup.rs`: a second `Store` writes; time until the patch arrives |
+| Rebuild under 10 ms, write under 15 ms | one `snapshot()`, no per-row calls | `tests/perf.rs` (`#[ignore]`), 95th percentile of 200 runs |
+
+**Memory, with both web views alive.**
+
+- **Setup:** start the app, open quick add once with the hotkey, then hide it. Show the main window on All tasks with 2,000 rows, and wait 60 s.
+- **Sum:** the `footprint` (phys_footprint) of the app process and every `com.apple.WebKit.*` process whose responsible process is the app (`launchctl procinfo <pid>`), which covers both WebContent processes, Networking and GPU.
+- **Also recorded:** with the main window hidden.
+- **If the visible total is over 72 MB** (90% of the target):
+  - Turn on `quickadd_release_after = 10 min`. A panel hidden that long is destroyed, and the next press recreates it.
+  - Record that first press's time separately. It's expected to miss 100 ms, and the trade-off is noted next to the numbers.
 
 ## Accessibility
 
 - **Keyboard only:** every action has a key or is reachable by Tab.
-  - Tab order: sidebar, then the list (one stop with roving selection), then the panel's controls. Tab from the list goes to the panel and Shift-Tab comes back.
+  - Tab order: sidebar, then the list (one stop with roving selection), then the panel's controls. Tab from the list goes to the panel, and Shift-Tab comes back. F6 reaches toasts.
   - Menus, popovers and modals trap focus and give it back on close.
-- **Focus:** a 1px inset accent outline on the focused row or inbox item. Other controls get a 2px accent ring with a 2px offset on `:focus-visible`.
-- **Reduce Motion:** `prefers-reduced-motion` turns off every animation and transition, the live pulse included. The pulse becomes a static ring.
-- **Increase Contrast** (`prefers-contrast: more`): hairlines go to 20% and 30%, text-3 takes text-2's value, hover and selected washes double, and the keyboard outline becomes 2px.
-- **System accent:** Rust reads `NSColor.controlAccentColor` at start and on `NSSystemColorsDidChangeNotification`, and sends it as `appearance:changed`. It replaces the accent in focus rings, the keyboard outline and text selection only. Done, progress and the primary button stay Signal Indigo, and the Multicolor setting keeps indigo everywhere.
-- **Never colour alone:** status always has its shape; live chips have a label (at narrow widths, a tooltip and accessible name); repo dots carry the repo name; the needs-me dot is named "Needs you".
+- **Focus:** the focused row or inbox item gets a 1px inset accent outline. Other controls get a 2px accent ring on `:focus-visible`.
+- **Reduce Motion:** `prefers-reduced-motion` turns off every animation and transition. The live pulse becomes a static ring.
+- **Increase Contrast** (`prefers-contrast: more`): hairlines go to 20% and 30%, text-3 takes text-2's value, the washes double, and the keyboard outline becomes 2px.
+- **System accent:** `macos.rs` reads `NSColor.controlAccentColor` at start and on `NSSystemColorsDidChangeNotification`.
+  - It replaces the accent in focus rings, the keyboard outline and text selection only.
+  - Done, progress and the primary button stay Signal Indigo.
+  - The Multicolor setting keeps indigo everywhere.
+- **Never colour alone:** status always has its shape; live chips have a label, or a tooltip and an accessible name at narrow widths; repo dots carry the repo name; the needs-me dot is named "Needs you".
 - **VoiceOver:**
-  - Tree layout is `role="tree"`, with rows as `treeitem` and `aria-level`, `aria-expanded`, `aria-setsize`, `aria-posinset`. Flat views are a `listbox`.
-  - The list uses `aria-activedescendant`. The active row is always rendered, because selection scrolls it into view.
-  - A row's label reads "144, Web: slot picker, In progress, agent working, needs you, booking-web, 6 minutes ago".
-  - Map stations are buttons labelled "203 Payment webhook, blocked, wave 2, waits on 201".
-  - Toasts sit in a `role="status"` live region.
-  - The menu-bar item's accessibility label is "Airboss, 8 waiting on you".
-- **Text:** nothing below 11.5px except key caps and initials (The 11.5 Floor Rule). The UI is laid out at 100% zoom; ⌘+ is not offered in v1.
+  - **The list:** tree layout is `role="tree"`, with rows as `treeitem` carrying `aria-level`, `aria-expanded`, `aria-setsize` and `aria-posinset`. Flat views are a `listbox`. The list uses `aria-activedescendant`, and the active row is always rendered.
+  - **Labels:** a row reads "144, Web: slot picker, In progress, agent working, needs you, booking-web, 6 minutes ago". Map stations are buttons: "203 Payment webhook, blocked, wave 2, waits on 201".
+  - **Live regions:** toasts sit in a `role="status"` region.
+- **Text:** nothing below 11.5px except key caps and initials.
 
 ## Testing
 
 Tests come first, as in `core`.
 
 - **Rust command tests** (`tests/commands.rs`):
-  - Every command, called as a plain function against `AppState` built on `Store::open_in_memory()` and fake services. The fakes implement the traits with settable data and record their calls.
-  - Each write checks the `core` result and the returned patch.
-  - Each `core::Error` checks its message from Appendix D.
-  - The quick-add sequence, with a forced link failure, leaves the task and reports the failure.
-- **Snapshot tests** (`tests/snapshot.rs`): progress (leaves only, dropped left out, proposed as todo); the repo union and its flag; branch inheritance; `live` precedence; `diff` (upserts, removals, order only when changed); an ancestor upserted when a subtask changes.
-- **Run-map tests:** the DESIGN example (Refunds: waves of 3, 2, 1 and 2 with one outside blocker), a phase-level lifted edge, done subtasks kept, a tangled pair, and the fallback threshold.
-- **Watcher tests** (`tests/watcher.rs`), on a temporary file database:
+  - **Setup:** every command, called as a plain function against `AppState` built on `Store::open_in_memory()` and fake services. The fakes implement the traits with settable snapshots and record their calls.
+  - **Locking:** a fake service that asserts the store lock is free whenever it's called.
+  - **Writes:** each write checks its `core` result, its returned patch, and that `store_changed` was called after the lock was released.
+  - **Do it:** the in-flight guard; `NeedsChoice`, then a choice; a partial `LaunchReport`; Add to T3 and retry.
+  - **Errors:** each error message in Appendix D.
+- **View model tests** (`tests/viewmodel.rs`):
+  - progress: leaves only, dropped left out, proposed counted as todo
+  - repo union, its flag, and branch inheritance
+  - `chip()` precedence
+  - waits-on from `edges`
+  - `diff`: upserts, removals, and order only when it changed
+  - an ancestor upserted when a subtask changes
+  - `seq` always increasing
+  - a service bump rebuilding without a `core` read
+- **Run-map tests:** DESIGN's Refunds example (waves of 3, 2, 1 and 2 with one outside blocker), a lifted phase edge, done subtasks kept, a tangled pair, and the fallback threshold.
+- **Catch-up tests** (`tests/catchup.rs`), on a temporary file database:
   - A second `Store` handle (standing in for `airboss mcp`) writes, and one patch arrives within 300 ms.
   - A burst of 50 writes gives at most 3 patches.
   - Our own write gives no second patch.
   - `repo add` from another handle updates `repos`.
-- **IPC test** (`tests/ipc.rs`): `tauri::test::mock_builder` with the real command handlers. One read and one write go through `invoke`, proving serialisation and capability wiring.
+  - The WAL is deleted and recreated, and the watch re-arms.
+  - A focus trigger with an unchanged `data_version` reads nothing.
+- **Undo tests** (`tests/undo.rs`):
+  - each inverse in the table
+  - drop restoring the subtree's previous statuses
+  - a refused undo after an agent's change
+  - a deferred reject cancelled, written after 5 s, and written at shutdown
+  - depth 20
+- **IPC test** (`tests/ipc.rs`): `tauri::test::mock_builder` with the real handlers. One read and one write go through `invoke`, proving serialisation and the capability files.
 - **Fixtures** (`tests/fixtures.rs`):
-  - Seeds the DESIGN sample data and a 2,000-task tree.
-  - Writes every read command's output as JSON to `app/src/lib/mock/fixtures/`.
-  - Writes the TS types.
-  - CI fails if the generated files changed.
-- **UI unit tests** (Vitest 5.1.2, Node): `views.ts`, `search.ts`, `runMapLayout.ts`, `time.ts`, `links.ts`, `keymap.ts`, and the patch logic in `tasks.svelte.ts`.
-- **Component tests** (Vitest 5.1.2 browser mode with `@vitest/browser-playwright` 5.1.2 on WebKit, `vitest-browser-svelte` 3.1.0), on the mock transport:
-  - `TaskRow` at each status and width.
-  - `VirtualList`: 2,000 rows render under 60 DOM rows, and the selection stays visible.
-  - `StatusMenu` (keys 1–6, blocked reason, drop confirm).
-  - `NewTask` (Tab and Shift-Tab dropdowns, paste a Slack link, ⌘↩).
-  - `Jump`, `NeedsInbox` (actions per kind), `TaskPanel` (rename, notes, T3 missing banner).
-  - The keyboard map per context, and the reduced-motion class.
-- **End-to-end smoke test:** Playwright 1.65.1, WebKit, against `vite build --mode mock`, keyboard only, in dark and then light:
-  1. Open on Needs me and accept a proposal with ↩.
-  2. G A, then ↓↓, Space, and S 4 with a reason.
-  3. ⌘K, type an id, ↩, and ⌘↓ for the page with the map.
-  4. C, type a title, Tab to a repo, ↩.
+  - It seeds DESIGN's sample data and a 2,000-task tree.
+  - It writes every read command's output.
+  - It runs each scripted write in `app/tests/script.json` in order and records `{command, args, response, emitted events}`.
+  - It writes the TS types.
+  - CI fails if any generated file changed.
+- **The mock transport:**
+  - Reads come from the read fixtures.
+  - Writes are matched **in order** against the recorded script by exact `command` and `args`, then answered with the recorded response and events.
+  - A call it doesn't know, or one out of order, throws `UnscriptedCall`, which fails the test.
+- **UI unit tests** (Vitest 5.1.2, Node): `views.ts`, `selection.ts` (every selection rule above), `search.ts`, `runMapLayout.ts`, `time.ts` (relative and clock times), `links.ts` (every row of the paste table, `t3code://` included), `keymap.ts` and `focus.ts` (every row of Appendix C's focus table), and `applyPatch`.
+- **Component tests** (Vitest browser mode, `@vitest/browser-playwright` 5.1.2 on WebKit, `vitest-browser-svelte` 3.1.0):
+  - `TaskRow` at each status and width
+  - `VirtualList`: 2,000 rows render under 60 DOM rows, and the selection stays visible
+  - `StatusMenu`: keys 1–6, the blocked reason, the drop confirmation
+  - `NewTask`: ↓ to notes, Tab and Shift-Tab dropdowns, pasting a Slack link and a `t3code://` link, ⌘↩
+  - `StartInMenu`, `Jump`, `NeedsInbox` (each kind's actions, local hiding), `TaskPanel` (rename, notes, the T3 missing banner, "Starting…"), `AddRepos`
+  - reduced motion
+- **End-to-end smoke test:** Playwright 1.65.1 on WebKit against `vite build --mode mock`, keyboard only:
+  1. Open on Needs me, accept a proposal with ↩, then dismiss an item and press ⌘Z.
+  2. G A, then ↓↓, Space, and S 4 with a reason, then ⌥⌘↑.
+  3. ⌘K, type an id, ↩, then ⌘↓ for the page and map.
+  4. C, type a title, ↓ into notes, Tab to a repo, ↩.
   5. ? for the sheet.
-
-  It also saves screenshots for review. Tauri's WebDriver (`tauri-driver`) doesn't support macOS, so this is the honest choice: the real UI code on WebKit with a contract-true mock, plus the Rust integration tests above.
-- **What that leaves unchecked:** the real WKWebView inside Tauri (as opposed to Playwright's WebKit), native windows and chrome, the quick-add panel over a full-screen app, the global hotkey and its timing, the native menus and menu-bar item, launch at login, single instance, focus moving between windows, the real watcher with a real `airboss mcp` process, VoiceOver and the system accent. A manual checklist, `app/QA.md`, covers these before each merge to main.
+- **Screenshot baselines:**
+  - Playwright `toHaveScreenshot` at 1440 × 900 with animations off covers the twelve web screens in `docs/design/screens/` (01–07 and 09–13), each in dark and in light: 24 baselines. They were compared once by a person with the design PNGs, and guard against regressions after that.
+  - Screen 08, the native menu-bar menu, is captured with `screencapture` in both menu-bar appearances, as part of `app/QA.md`.
+- **What automated tests leave unchecked** (`app/QA.md`, run before each merge to main): the real WKWebView inside Tauri, native windows and chrome, the panel over a full-screen app, the hotkey and its timing, the native menus and their enabling, `t3code://` opening the right thread, open at login with `--hidden`, single instance, focus moving between windows, the real watcher with a real `airboss mcp`, VoiceOver and the system accent. Tauri's WebDriver doesn't support macOS, which is why these are manual.
 
 ## Code style
 
-- Rust: as in `core`. Rustfmt, clippy `-D warnings`, no `unwrap` or `expect` outside tests, wrapper id types, a short "why" doc comment on every public item. No SQL in the app; everything goes through `Store`.
-- TypeScript in strict mode. Svelte 5 runes only (no `export let`, no stores from `svelte/store`).
-- Components get props and callbacks and call no IPC; stores and `lib/ipc/api.ts` do. Styles are scoped in each component, with no bare global classes (DESIGN Do's). Colours, sizes and motion come only from `tokens.css` variables.
+- **Rust:**
+  - Formatting and lints as in `core`: rustfmt, clippy `-D warnings`, no `unwrap` or `expect` outside tests.
+  - Wrapper id types, and a short "why" doc comment on every public item.
+  - No SQL in the app. Unsafe code only in `src/macos.rs`.
+- **TypeScript and Svelte:**
+  - TypeScript in strict mode, and Svelte 5 runes only.
+  - Components get props and callbacks and never call IPC; stores and `lib/ipc/api.ts` do.
+  - Styles are scoped per component, with no bare global classes. Colours, sizes and motion come only from `tokens.css`.
 
 ```ts
-/** Patches can arrive twice (returned and as an event); apply each cursor once. */
+/** A write's patch arrives twice (returned and as an event); apply each seq once. */
 applyPatch(p: Patch) {
-  if (p.cursor <= this.cursor) return;
+  if (p.seq <= this.seq) return;
   const rows = new Map(this.rows);
   for (const r of p.upserts) rows.set(r.id, r);
   for (const id of p.removed) rows.delete(id);
   this.rows = rows;
   if (p.order) this.order = p.order;
-  this.cursor = p.cursor;
+  if (p.repos) this.repos = p.repos;
+  this.seq = p.seq;
 }
 ```
 
 ## Boundaries
 
-- **Always:** act as `me` through `Store` or a service trait; return the patch from every write; keep rows at 38px; take colours from tokens; add every shortcut to the command registry (it feeds the keymap, menus and sheet); run fmt, clippy, `npm run check` and every test before each commit.
-- **Ask first:** adding any crate or npm package; adding a window or web view; changing a trait in `crates/services`; anything needing network access; changing a DESIGN.md rule.
-- **Never:** poll the database or a service on a timer; open a port; write SQL; call `t3` or `gh` (that's `launch` and `sync`); use red for anything but needs-me; load remote content; show ports, protocols or acronyms in the main UI.
+- **Always:**
+  - Act as `me`, through `Store` or a service trait.
+  - Lock once per `core` call, and never call a service while holding the lock.
+  - Return the patch from every write.
+  - Keep task rows at 38px, and take colours from tokens.
+  - Add every shortcut to the command registry, with its focus rule.
+  - Run fmt, clippy, `npm run check` and every test before each commit.
+- **Ask first:**
+  - Adding any crate or npm package.
+  - Adding a window or web view.
+  - Changing `crates/services`.
+  - Anything that needs network access.
+  - Changing a DESIGN.md rule.
+- **Never:**
+  - Poll the database or a service on a timer.
+  - Use FSEvents for the database.
+  - Open a port, or write SQL.
+  - Call `t3` or `gh` (that's `launch` and `sync`).
+  - Use red for anything but needs-me.
+  - Load remote content.
+  - Show ports, protocols or acronyms in the main UI.
 
 ## Success criteria
 
-- [ ] Every screen in `docs/design/screens/` is matched in the real app, in dark and in light, checked side by side.
+- [ ] Every web screen in `docs/design/screens/` has a reviewed baseline in dark and light, and screen 08 is checked in `QA.md`.
 - [ ] The QA flow in program.md works keyboard only: capture, plan, Do it, an agent reports, a PR merges, Needs me clears.
-- [ ] A write from `airboss mcp` or the CLI shows in the open window within 300 ms, with no polling.
-- [ ] Every command in Appendix A has a Rust test; every view function, the layout and the keymap have unit tests; the listed components have component tests; the smoke test passes.
-- [ ] Every performance target is measured with `scripts/measure.sh` and met, with the machine recorded.
-- [ ] Without T3 Code, Do it and Plan it are off with the DESIGN wording, and everything else works. Without `gh`, the footer says so.
+- [ ] A write from `airboss mcp` or the CLI shows in the open window within 300 ms, with no polling and no FSEvents.
+- [ ] No service is called while the store lock is held, which the fake service checks.
+- [ ] ⌘Z undoes dismiss, snooze, reject, status changes and moves, and refuses after someone else's change.
+- [ ] Every command in Appendix A has a Rust test. Every view, selection and focus rule, the layout and the keymap have unit tests. The listed components have component tests. The smoke test passes, and the mock reports no unscripted calls.
+- [ ] Every performance target is measured with `scripts/measure.sh` and met, memory with both web views alive, with the machine recorded.
+- [ ] Without T3 Code, Do it and Plan it are off with the DESIGN wording, and everything else works. A partial Do it failure offers Retry and Add to T3.
 - [ ] VoiceOver reads a row, a needs-me item and a map station correctly. Reduce Motion and Increase Contrast visibly apply.
 - [ ] No AI attribution anywhere. Clippy, fmt, `svelte-check` and every test are clean.
 
 ## Not verified yet
 
-- **Key-equivalent order in WKWebView:** whether a native menu accelerator (⌘K, ⌘↩) fires as well as, or instead of, the page's `keydown`. The 50 ms dedupe covers both cases; the first build task checks which one happens.
-- **`tauri-nspanel` 2.1.1 with Tauri 2.12.7:** converting a web-view window to a non-activating panel that takes key focus. If it fails, the fallback is a normal always-on-top window, which brings the main window forward when the app is in the background.
-- **Memory with two web views:** whether WebKit shares one WebContent process between them. If the total is over 80 MB, quick add is created on first use and kept, which costs the first press its 100 ms.
-- **`notify` 9.0.0** came out on 21 Nov 2026. If it misbehaves, pin 8.x.
-- **Partial `tree()` refresh:** a full rebuild at 2,000 tasks is about 10 ms. If the profile shows the snapshot dominating, ask `core` for a `nodes(ids)` call.
-- **`core` v2 names:** this spec uses the names in the brief (`link_repo`, `set_branch`, `history_with_subtasks`, `dependencies`, `ready() -> [{task, since}]`). If `core` v2 lands with other names, the app follows `core`.
-- **Bundled `airboss` size:** the sidecar adds roughly 2 MB to the `.dmg`; to be measured.
+- **Key-equivalent order in WKWebView:** the design assumes the page sees ⌘-keys before the native menu, so `preventDefault()` keeps a menu item from firing. The first build task checks this.
+  - If the menu goes first, the Task items lose their key equivalents and rely on the page.
+  - ⌘Z then goes through a custom Edit › Undo that calls the page, which runs `document.execCommand('undo')` in a field, or the app's undo otherwise.
+- **`tauri-nspanel` 2.1.1 with Tauri 2.12.7:** a web-view window as a non-activating panel that takes key focus. If it doesn't work, the fallback is an always-on-top normal window, which brings the main window forward when the app is in the background.
+- **kqueue on the WAL through `notify` 9.0.0's `KqueueWatcher`** (released 21 Nov 2026), including the folder watch that re-arms it. If the crate misbehaves, a 60-line `kqueue` module replaces it; that needs the `libc` crate, which Tauri already links.
+- **Memory with two web views:** whether WebKit shares one WebContent process between them, and whether the 10-minute release is needed.
+- **⌃⌥N** isn't a macOS default shortcut (checked against the defaults in Keyboard Shortcuts settings). Whether another app on this Mac already uses it is found when it's registered; Settings handles a clash.
+- **`t3code://threads/<environment>/<thread>`** opening the thread in T3 Code, and `sync` being able to give the environment id.
+- **Supporting-type names:** the table in "Interfaces" (for example `Prepared.research_dir`, `SyncSnapshot.projects`, `NeedsList.version`) follows the services specs' draft 1 and the reconciled contract. If the revised service specs name a field differently, the app follows them in `dto.rs`, and the behaviour doesn't change.
+- **`core` v3 names:** `snapshot`, `CoreSnapshot.edges` as `(task, waits_on)`, `data_version` and `path` are taken from the EM's list. The app follows `core` if they land differently.
+- **LaunchAgent autostart passing `--hidden`** through to the app on login.
+- **Bundled `airboss` size:** the stripped binary is 5.4 MB, likely about 2 MB compressed in the `.dmg`; to be measured.
 
 ## Conflicts resolved
 
 | Where | DESIGN / prototype says | Spec / rule says | Resolution |
 |---|---|---|---|
-| Agents connection | "Agents · Listening" | SPEC-mcp: stdio per thread, nothing listens | Read as "Agents · Ready" (CLI installed, last report time) or "Not set up" |
-| New task key | C or ⌥N; first-run screen shows ⌘N | Mac convention | C, ⌘N and ⌥N all open it; menus show ⌘N |
+| Quick-add hotkey | ⌃⌥Space | macOS uses ⌃⌥Space for "Select next source in Input menu"; idea.md rules out ⌥Space (Raycast), and ⌘Space, ⌃Space and ⌥⌘Space are taken too | **⌃⌥N**: N for New, the same letter as ⌘N and ⌥N in the app, and not a macOS default. It can be changed in Settings. |
+| Agents connection | "Agents · Listening" | SPEC-mcp: stdio per thread, nothing listens | "Agents · Ready" (CLI installed, last report time) or "Not set up" |
+| New task key | C or ⌥N; the first-run screen shows ⌘N | Mac convention | C, ⌘N and ⌥N all open it; menus show ⌘N |
 | Waves | Done subtasks shown in their wave; "4 waves" counts them | Rule 18: `run_order` leaves done out | The map, Waves list and Plans use display waves that include done (`runmap.rs`); `core` still decides what's ready |
-| Menu-bar dropdown | A 360px custom popover | "Must feel like a real Mac app"; memory target | A native menu with the same content; times sit in the item text |
-| Every shortcut in the menus | Single letters listed in menus | Bare-letter key equivalents would swallow typing | Single-letter keys appear in item titles, not as key equivalents |
+| Menu-bar dropdown | A 360px custom popover with relative times ("6m") | Native feel; the memory target | A native menu with the same content and clock times |
+| Every shortcut in menus | Single letters listed in menus | Bare-letter key equivalents would swallow typing | Single letters appear in item titles, not as key equivalents |
 | System accent | One accent, indigo, for done, selection, focus and primary | PRODUCT: respect the system accent where it fits | The system accent drives focus and selection outlines only |
-| Capability map | `launch` depends on `app`; `sync` on `core` only | One-way dependencies | The traits live in a types-only crate, `crates/services`; the services depend on it, and the app binary wires them |
+| Capability map | `launch` depends on `app`; `sync` on `core` only | One-way dependencies | The contract lives in `crates/services`; the services depend on it, and the app binary wires them |
 | Ready pill | On a task that just became ready | `ready()` lists every ready task | The pill shows only with an attention Ready item; the Ready view lists every ready leaf |
-| ⌘0 | "Open Airboss on Needs me" | Not a global hotkey | ⌘0 is a Window-menu item and is shown in the menu-bar menu; only quick add is global |
+| ⌘0 | "Open Airboss on Needs me" | Not a global hotkey | ⌘0 is a Window-menu item, shown in the menu-bar menu; only quick add is global |
+| Toast duration | Toasts leave after 2.8 s | Undo and Retry need time to reach | Toasts with an action stay 5 s and pause on hover |
+| Undo of Reject | (not designed) | Rule 6: `me` can't set `proposed` | Reject is written 5 s later; until then it can be undone. Accept isn't undoable, for the same reason. |
 
 ## Open questions
 
-1. **Launch at login:** on by default at first run (this spec), or off until I turn it on?
-2. **Appearance:** follow the system (this spec, with dark designed first), or always open dark unless I choose light?
+None. Launch at login and appearance were answered in tasks/program.md (25 Nov 2026).
+
+## Changes in draft 2
+
+1. Interfaces and Appendix A now use the reconciled std-only `crates/services` contract word for word, including six-state `ThreadState` with `chip()`.
+2. Open thread uses `sync.thread_url(key)` (`t3code://threads/<environment>/<thread>`). `links.ts` and the opener allowlist accept `t3code://`.
+3. Patches carry their own `seq`, and services' `Changes` bumps trigger a rebuild. Writes return before `attention` recomputes; needs fields follow in a second patch, and acted-on items hide locally.
+4. Everything is built from one `core.snapshot()` per change, with no per-row `dependencies()`. The budget is restated from the measured 4.3 ms `tree()`.
+5. kqueue on `-wal`, re-armed from a folder watch, plus `data_version()` on focus and wake. FSEvents is removed.
+6. Focus zones with a rule per command (Appendix C). Task-menu items are disabled in fields and overlays, and quick add's focus blocks the main window's menu commands.
+7. Quick add resets and focuses on every hide. `ui_ready` is sent from `onMount` with a 2 s Rust backstop, and each window's background colour follows the theme.
+8. `window-state` restores size and position only and skips `quickadd`. Autostart passes `--hidden`. The hotkey acts on Pressed only, and the default is ⌃⌥N. First run has "Open Airboss at login" ticked.
+9. Do it has a per-task "Starting…" state with a Rust in-flight guard, `LaunchReport` toasts with Retry and Add to T3, the Start in menu in the panel, and the main window shown on a failure from quick add.
+10. Undo: a Rust stack 20 deep, cleared on quit; ⌘Z and toast Undo; refused after outside changes; reject deferred 5 s.
+11. ts-rs ids are `number`, and `dto.rs` mirrors the `core` and service types.
+12. Locking: one lock per `core` call, services called only after it's released, never held while `t3` or `gh` runs. Panics unwind and are caught in commands and threads.
+13. Tests: the mock replays scripted writes recorded from Rust and fails on unknown calls; 24 screenshot baselines plus screen 08 by hand; selection-rule tests.
+14. Selection moves to the row at the same index when the selected row leaves, and stale responses are ignored by request number.
+15. Week-1 gaps: reorder with ⌥⌘↑/↓; first-run Add repos from `sync`'s T3 project list; ↓ from the quick-add title to notes.
+16. Memory is measured with both web views alive, and quick add is released after 10 idle minutes if the total passes 72 MB.
+17. `create_task` passes repos in `NewTask`. The native menu uses clock times. The two open questions are removed (answered in program.md). `airboss-mcp` is a sidecar, not a Cargo dependency.
 
 ## Appendix A: Commands
 
-Writes return `Patch` (shown as `→ P`). `S` is `Store`; all `core` calls act as `me`.
+Writes return `Patch` (shown as → P). All `core` calls act as `me`, with one lock per call. "VM" is the view model's cached `CoreSnapshot` and rows.
 
 | Command | Arguments | Returns | Calls |
 |---|---|---|---|
-| `bootstrap` | | `{rows, order, repos, cursor, needs, connections, launch, settings}` | `S.tree`, `S.repos`, `S.ready`, `S.dependencies` (waiting rows), `sync.threads`, `attention.needs_me`, every `connection()`, `launch.availability` |
-| `task_detail` | `id`, `history_limit` (30 or 200) | `TaskDetail` | `S.task`, `S.links`, `S.history_with_subtasks`, `S.dependencies`, `sync.threads`/`prs`, `launch.branch_for`, attention items for `id` |
-| `run_map` | `id` | `RunMap {nodes, edges, waves, outside, tangled}` | `S.tree` (from the snapshot), `S.dependencies` per descendant, `S.run_order` |
-| `plans` | | `Vec<PlanCard>` | the snapshot, `run_map` per parent, `sync.threads` |
-| `quickadd_data` | | `{repos, parents}` | the snapshot |
-| `create_task` | `{title, body?, parent?, repos[], links[], then: none / do_it / plan_it}` | `{id, patch, launched?}` | `S.add_task`, `S.link_repo` ×n, `S.link` ×n, then `launch.do_it` or `plan_it` |
-| `rename_task` | `id, title` | → P | `S.edit_task` (title) |
-| `edit_notes` | `id, body?` | → P | `S.edit_task` (body) |
-| `set_status` | `id, status, note?` | → P | `S.set_status` (blocked needs `note`) |
-| `toggle_done` | `id` | → P | `S.set_status` done, or todo when reopening |
-| `accept_proposals` | `ids[]` | → P | `S.set_status` todo, each |
-| `reject_proposals` | `ids[], reason?` | → P | `S.set_status` dropped (writes `rejected`) |
-| `move_task` | `id, parent?, position?` | → P | `S.move_task` |
-| `link_repo` / `unlink_repo` | `id, repo` | → P | `S.link_repo` / `S.unlink_repo` |
-| `add_repo` | `path?` (none: open the folder picker) | `{repo, patch}` | dialog plugin, read `.git/config` for the remote, `S.add_repo` |
-| `set_branch` | `id, branch` | → P | `S.set_branch` |
-| `add_dependency` / `remove_dependency` | `id, waits_on` | → P | `S.add_dependency` / `S.remove_dependency` |
-| `add_link` | `id, text, title?` | → P | classify, then `S.link` |
-| `remove_link` | `link` | → P | `S.unlink` |
-| `add_note` | `id, text` | → P | `S.add_note` |
-| `do_it` | `id, start: linked_repos / repo(id) / no_repo` | `{launched, patch}` | `S.link_repo` for `repo(id)`, then `launch.do_it` |
-| `plan_it` | `id` | `{launched, patch}` | `launch.plan_it` |
-| `open_thread` | `link` | | `launch.open_thread` |
-| `open_url` | `url` or `link` | | opener plugin (http, https, file and `t3://` only) |
-| `needs_dismiss` | `key` | | `attention.dismiss` |
-| `needs_snooze` | `key, days` | | `attention.snooze(now + days)` |
+| `bootstrap` | | `{seq, rows, order, repos, needs, connections, availability, settings, accent}` | `snapshot`, `repos`, `sync.snapshot`, `attention.needs_me`, every `connections`, `launch.availability` |
+| `task_detail` | `id, req, history_limit` (30 or 200) | `TaskDetail` (echoes `req`) | `task`, `links`, `history_with_subtasks`; deps from VM `edges`; `sync.snapshot` threads and PRs; `attention.for_task`; `launch.prepare(id, DoIt)`; `sync.refresh(PrsOf(id))` if an open PR |
+| `run_map` | `id, req` | `RunMap {nodes, edges, waves, outside, tangled}` | VM, `run_order(id)` |
+| `plans` | `req` | `Vec<PlanCard>` | VM, `sync.snapshot` |
+| `quickadd_data` | | `{repos, parents}` | VM |
+| `t3_projects` | | `Vec<{path, name, is_git, added}>` | `sync.snapshot().projects`, a `.git` check per folder |
+| `create_task` | `{title, body?, parent?, repos[], links[], then: none / do_it / plan_it}` | `{id, patch, launch?}` | `add_task(NewTask { repos, … })`, `link` per link, then the `do_it` / `plan_it` flow |
+| `rename_task` / `edit_notes` | `id, title` / `id, body?` | → P | `edit_task` |
+| `set_status` | `id, status, note?` | → P, undo entry | `set_status` (blocked needs `note`) |
+| `toggle_done` | `id` | → P, undo entry | `set_status` done, or the previous status when reopening |
+| `accept_proposals` | `ids[]` | → P | `set_status` todo, each |
+| `reject_proposals` | `ids[], reason?` | undo entry | deferred 5 s, then `set_status` dropped (writes `rejected`) |
+| `move_task` | `id, parent?, position?` | → P, undo entry | `move_task` |
+| `reorder` | `id, up / down` | → P, undo entry | `move_task(id, same parent, position ∓ 1)` |
+| `link_repo` / `unlink_repo` | `id, repo` | → P | `link_repo` / `unlink_repo` |
+| `add_repos` | `paths[]` | `{repos, patch}` | `add_repo` each; name from the folder, remote from `.git/config` |
+| `pick_folder` | | `path?` | dialog plugin |
+| `set_branch` | `id, branch` | → P | `set_branch` |
+| `add_dependency` / `remove_dependency` | `id, waits_on` | → P | `add_dependency` / `remove_dependency` |
+| `add_link` | `id, text, title?` | → P | classify, `link`; for a PR, `sync.lookup_pr` afterwards, then `link` again with the title |
+| `remove_link` | `link` | → P | `unlink` |
+| `add_note` | `id, text` | → P | `add_note` |
+| `do_it` | `id, place?: linked / repo(id) / no_repo, again` | `NeedsChoice {choices, research_dir}` or `Started {report, patch}` | in-flight guard; `link_repo` for `repo(id)`; `launch.prepare`; `launch.start` (no lock held) |
+| `plan_it` | `id, again` | `Started {report, patch}` | in-flight guard; `launch.start(PlanIt, TaskRepos)` |
+| `add_to_t3` | `repo` | | `launch.add_to_t3` |
+| `reopen_and_start` | `id` | as `do_it` | `set_status` todo, then `do_it` |
+| `open_thread` | `ThreadKey` | | `sync.thread_url`, then opener |
+| `open_url` | `url` or `link` | | opener; only `http`, `https`, `file` and `t3code` |
+| `needs_dismiss` / `needs_snooze` | `key` / `key, until?` | undo entry | `attention.dismiss` / `attention.snooze` |
+| `needs_restore` | `key` | | `attention.restore` |
+| `undo` | `entry?` (none: the top) | `{patch?, message}` | the entry's inverse calls, after the `events_after` check |
 | `recheck_connections` | | | `recheck()` on every service |
-| `copy_text` | `what: task_number(id) / agent_note / setup_command` | | clipboard plugin |
-| `install_cli` | | `{path, on_path}` | symlink `~/.local/bin/airboss` to the bundled sidecar |
-| `get_settings` / `set_settings` | `Settings` | `Settings` | `app-settings.json`; re-registers the hotkey; autostart plugin |
+| `copy_text` | `task_number(id) / agent_note / setup_command` | | clipboard plugin |
+| `install_cli` | | `{path, on_path}` | symlink `~/.local/bin/airboss` to the sidecar |
+| `get_settings` / `set_settings` | `Settings` | `Settings` | `app-settings.json`; re-registers the hotkey; autostart plugin; window backgrounds |
 | `set_folded` | `ids[], folded` | | settings, debounced |
-| `ui_ready` | `window` | | shows the window; records the start-up time |
-| `quickadd_shown` / `quickadd_hide` / `quickadd_resize` | `height` | | panel show timing, hide, size |
+| `set_focus_context` | `{window, zone, selection?, view}` | | enables, disables and relabels menu items |
+| `ui_ready` | `window` | | shows the main window (2 s backstop) |
+| `quickadd_shown` / `quickadd_hide` / `quickadd_resize` | `height` | | timing, hide (then the UI resets), size |
 | `show_main` | `view?, task?, needs_key?` | | shows and focuses the main window, emits `nav:open` |
 
 ## Appendix B: Events
 
 | Event | Payload | Sent when |
 |---|---|---|
-| `tree:patch` | `Patch` | `catch_up()` found a change, or `sync`/`attention` changed a row field |
-| `needs:changed` | `{items, count, last_checked}` | `attention.changes()` bumped |
-| `connections:changed` | `{connections, launch}` | any service's `changes()` bumped and its connection differs |
+| `tree:patch` | `Patch` | `catch_up()` produced a change from `core` or a service |
+| `needs:changed` | `{version, items, count, checked_at}` | `attention`'s `Changes` bumped |
+| `connections:changed` | `{connections, availability}` | a service's connections or `availability()` changed |
 | `menu:action` | `{command}` | a native menu item was chosen |
-| `nav:open` | `{view?, task?, needs_key?}` | the menu-bar menu, the Dock or a second launch |
-| `quickadd:open` | `{hotkey}` | the hotkey showed the panel |
-| `appearance:changed` | `{accent?: string}` | the system accent changed |
-| `error:background` | `{source, message}` | the watcher or a service failed; also moves the footer |
+| `nav:open` | `{view?, task?, needs_key?}` | the menu-bar menu, the Dock, a second launch, or a failed Do it from quick add |
+| `quickadd:reset` | `{hotkey}` | the panel was hidden; the UI resets and refetches |
+| `toast` | `{text, actions, undo?}` | Rust needs a toast the UI didn't ask for (a Do it result after the panel closed) |
+| `appearance:changed` | `{accent?, theme}` | the system accent or appearance changed |
+| `error:background` | `{source, message}` | the watcher or an app thread failed; also updates the footer |
 
-## Appendix C: Keyboard map
+## Appendix C: Keyboard map and focus rules
 
-Single letters work only when no field has focus. DESIGN's table is the source; this adds where each key works.
+Single letters, Space and arrows act only in `list`, `panel` and `sidebar` (see Keyboard, focus and menus).
 
-| Key | List views | Needs me | Plans | Page / map | Anywhere in the app |
-|---|---|---|---|---|---|
-| ↑ ↓ | move | move | move by row of cards | map: within a wave | |
-| → ← | open or fold; into first child or up to parent | | move by card | map: across waves | |
-| ↩ | rename | main action | open page | map: open station | |
-| Space | done / not done | | | | |
-| S, 1–6 | status | | | | |
-| R | link repos | | | | |
-| ⌘↩ / ⇧⌘↩ | Do it / Plan it | main action | | on the page or the selected station | |
-| ⌘↓ / ⌘↑ | open page | | | back | |
-| Esc | close panel | | | close page, then clear the map selection, then close the panel | close the top overlay |
-| ⌘D / ⌘L / ⌘B / ⌘O | waits-on / link / blocked / latest thread or PR | | | same | |
-| ⌘⌫ | drop (confirms) | dismiss | | drop | |
-| ⇧⌘C | copy task number | | | same | |
-| Tab | to the panel | to the card | | | |
-| C, ⌘N, ⌥N | | | | | new task |
-| ⌘K, ?, ⌘, | | | | | Jump, shortcut sheet, Settings |
-| G then N, L, R, A, P | | | | | Needs me, Plans, Ready, All tasks, In progress |
-| ⌃⌥Space | | | | | quick add (global, from any app) |
+| Key | List views | Needs me | Plans | Page / map |
+|---|---|---|---|---|
+| ↑ ↓ | move | move | move by row of cards | map: within a wave |
+| → ← | open or fold; into the first child or up to the parent | | move by card | map: across waves |
+| ↩ | rename | main action | open page | map: open station |
+| Space | done / not done | | | |
+| S, 1–6 | status | | | |
+| R | link repos | | | |
+| ⌘↩ / ⇧⌘↩ | Do it / Plan it | main action | | the page's task or the selected station |
+| ⌘↓ / ⌘↑ | open page | | | back |
+| ⌥⌘↑ / ⌥⌘↓ | reorder (tree layouts) | | | |
+| Esc | close panel | | | close page, then clear the map selection, then close the panel |
+| ⌘D / ⌘L / ⌘B / ⌘O | waits-on / link / blocked / latest thread or PR | | | same |
+| ⌘⌫ | drop (confirms) | dismiss | | drop |
+| ⇧⌘C | copy task number | | | same |
+| Tab | to the panel | to the card | | |
+
+| Command group | `list` | `panel` | `sidebar` | `field` | `overlay` | `quickadd` focused |
+|---|---|---|---|---|---|---|
+| ⌘K, ⌘N, ⌘,, ⌘W | yes | yes | yes | yes | ⌘K and ⌘N replace the overlay | ⌘W closes quick add; the rest do nothing |
+| ⌘Q, ⌘0 (menu) | yes | yes | yes | yes | yes | ⌘Q only |
+| ⌘↩, ⇧⌘↩, ⌘D, ⌘L, ⌘B, ⌘O, ⇧⌘C, ⌘⌫, ⌘↓, ⌘↑, ⌥⌘↑↓ | yes | yes | no | no (the field's: ⌘↩ saves, ⌘⌫ and ⌘↑↓ edit text) | no | no |
+| ⌘Z | app undo | app undo | app undo | text undo | no | text undo |
+| Single letters (C, S, R, G…, ?), Space | yes | yes (on the selected task) | yes | no | no | no |
+| ↑ ↓ → ← ↩ | the list | the focused control; ↩ and Space press buttons | the sidebar | the field | the overlay | the form (↓ title → notes) |
+| Esc | close panel | to the list | to the list | cancel the edit, then leave the field | close it | hide quick add |
+| F6 | toast | toast | toast | toast | no | no |
+| Native Task menu items | enabled | enabled | enabled | disabled | disabled | ignored |
+
+Global, from any app: the quick-add hotkey (⌃⌥N by default), on Pressed only.
 
 ## Appendix D: Error messages
 
-| `core::Error` (as me) | Message |
+| Case | Message |
 |---|---|
 | `EmptyTitle` | "A task needs a title." |
 | `NotFound` | "Task 144 no longer exists." (or "That link no longer exists.") |
-| `InvalidTarget` | Moving: "Tasks can't go under a proposed, done or dropped task." Dependency: "A task can't wait on its own parent or subtask." |
-| `Loop` | "That would make a loop: 145 already waits on 144." (ids from the request) |
+| `InvalidTarget` | Moving: "Tasks can't go under a proposed, done or dropped task." Dependency: "A task can't wait on its own parent or subtask." Branch: "Branch names can use letters, digits, `.`, `_`, `/` and `-`." |
+| `Loop` | "That would make a loop: 145 already waits on 144." |
 | `AlreadyExists` | "A repo with that name or folder is already added." |
 | `NotAllowed`, `InvalidTransition` | "That change isn't allowed." (shouldn't happen as me; logged with detail) |
 | `Db` | "Couldn't save. The database is busy or unreadable; details are in the log." |
-| `LaunchError::Failed` | "T3 Code couldn't start the thread: <first line of its message>." |
-| `LaunchError::Waiting` | "144 still waits on 143, 146." |
+| `AlreadyStarting` | (no toast; the button already says "Starting…") |
+| Undo refused | "144 changed since; nothing was undone." |
+| `Internal` | "Something went wrong inside Airboss; details are in the log." |
+| A `ServiceError` | its own `message`, from the service's spec |
