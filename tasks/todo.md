@@ -145,7 +145,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
 
 ## Phase 4: Dependencies and plans
 
-- [ ] **T10. Dependencies, loops and waiting** (M)
+- [x] **T10. Dependencies, loops and waiting** (M)
   - **Description:**
     - `add_dependency` and `remove_dependency` (`me` and `plan` only), each writing an event on the waiting task.
     - Rule 14: a recursive query checks for loops across the whole tree.
@@ -160,7 +160,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
   - **Files:** `src/deps.rs`, `src/tasks.rs`, `tests/deps.rs`
   - **Depends on:** T3 (and T9 for the delete case)
 
-- [ ] **T11. Run order** (S)
+- [x] **T11. Run order** (S)
   - **Description:** `run_order(parent)` returns `{ waves, waiting_outside }` (rule 18).
     - Dependencies between deeper tasks count as dependencies between the parent's direct subtasks.
     - Kahn's algorithm makes the waves, and tasks keep their sibling order within a wave.
