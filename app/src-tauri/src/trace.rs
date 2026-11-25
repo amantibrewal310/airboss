@@ -100,6 +100,14 @@ fn describe_patch(p: &Patch) -> String {
             if r.needs {
                 s.push_str(":needs");
             }
+            if let Some(chip) = r
+                .live
+                .and_then(|c| serde_json::to_value(c).ok())
+                .and_then(|v| v.as_str().map(str::to_string))
+            {
+                s.push(':');
+                s.push_str(&chip);
+            }
             s
         })),
         task_ids(&p.removed),
@@ -149,7 +157,16 @@ pub fn describe_tray(m: &TrayModel) -> String {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used)]
+
     use std::ffi::OsString;
+    use std::sync::Arc;
+    use std::time::SystemTime;
+
+    use airboss_core::{Actor, NewTask, Store};
+    use airboss_services::Chip;
+
+    use crate::viewmodel::ViewModel;
 
     use airboss_services::{
         Availability, Connection, NeedsGroup, NeedsItem, NeedsKey, NeedsKind, NeedsList, Target,
@@ -179,6 +196,30 @@ mod tests {
         assert_eq!(
             describe(&UiEvent::TreePatch(p)),
             "tree:patch seq=7 upserts=[] removed=[3] created=[9] order=2 repos=same"
+        );
+    }
+
+    #[test]
+    fn an_upserted_row_shows_its_status_flags_and_live_chip() {
+        let mut store = Store::open_in_memory().unwrap();
+        store.add_task(NewTask::new("t"), &Actor::Me).unwrap();
+        let vm = ViewModel::build(
+            Arc::new(store.snapshot().unwrap()),
+            Vec::new(),
+            Arc::default(),
+            Arc::default(),
+            SystemTime::now(),
+        );
+        let mut row = vm.rows.values().next().unwrap().clone();
+        row.live = Some(Chip::Working);
+        let p = Patch {
+            seq: 2,
+            upserts: vec![row],
+            ..Patch::default()
+        };
+        assert_eq!(
+            describe(&UiEvent::TreePatch(p)),
+            "tree:patch seq=2 upserts=[1:todo:working] removed=[] created=[] order=same repos=same"
         );
     }
 
