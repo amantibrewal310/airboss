@@ -15,6 +15,7 @@ dependencies = [
 name = "airboss-mcp"
 version = "0.1.0"
 dependencies = [
+ "airboss-core",
  "clap",
 ]
 

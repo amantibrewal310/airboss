@@ -11,6 +11,7 @@ name = "airboss"
 path = "src/main.rs"
 
 [dependencies]
+airboss-core = { path = "../core" }
 clap = { version = "4.6.10", features = ["derive"] }
 
 [lints]
