@@ -3,7 +3,9 @@
 
 use std::path::Path;
 
-use airboss_core::{Actor, Error, EventKind, NewTask, Origin, RepoId, Status, Store, TaskId};
+use airboss_core::{
+    Actor, Error, EventKind, NewTask, Origin, RepoId, Status, Store, TaskEdit, TaskId,
+};
 
 fn store() -> Store {
     Store::open_in_memory().unwrap()
@@ -178,4 +180,149 @@ fn every_status_reads_back_as_written() {
     ] {
         assert_eq!(status.to_string().parse::<Status>(), Ok(status));
     }
+}
+
+// Rule 8, `edit_task`: only `me` edits title, notes and repo; one `edited` event.
+
+#[test]
+fn me_edits_title_body_and_repo_with_one_edited_event() {
+    let mut s = store();
+    let repo = s
+        .add_repo("web", Path::new("/w/web"), None, &Actor::Me)
+        .unwrap();
+    let t = s.add_task(NewTask::new("Fix typo"), &Actor::Me).unwrap();
+    let edit = TaskEdit::default()
+        .title("  Fix the typo  ")
+        .body(Some("in the footer"))
+        .repo(Some(repo.id));
+    let edited = s.edit_task(t.id, edit, &Actor::Me).unwrap();
+    assert_eq!(edited.title, "Fix the typo");
+    assert_eq!(edited.body.as_deref(), Some("in the footer"));
+    assert_eq!(edited.repo, Some(repo.id));
+    assert_eq!(s.task(t.id).unwrap(), edited);
+
+    let history = s.history(t.id).unwrap();
+    assert_eq!(history.len(), 2);
+    assert_eq!(history[1].kind, EventKind::Edited);
+    assert_eq!(history[1].actor, Actor::Me);
+}
+
+#[test]
+fn editing_can_clear_body_and_repo() {
+    let mut s = store();
+    let repo = s
+        .add_repo("web", Path::new("/w/web"), None, &Actor::Me)
+        .unwrap();
+    let t = s
+        .add_task(
+            NewTask::new("x").with_body("notes").in_repo(repo.id),
+            &Actor::Me,
+        )
+        .unwrap();
+    let edited = s
+        .edit_task(t.id, TaskEdit::default().body(None).repo(None), &Actor::Me)
+        .unwrap();
+    assert_eq!((edited.body, edited.repo), (None, None));
+}
+
+#[test]
+fn an_edit_that_changes_nothing_writes_no_event() {
+    let mut s = store();
+    let t = s.add_task(NewTask::new("Same"), &Actor::Me).unwrap();
+    s.edit_task(t.id, TaskEdit::default().title("Same"), &Actor::Me)
+        .unwrap();
+    s.edit_task(t.id, TaskEdit::default(), &Actor::Me).unwrap();
+    assert_eq!(s.history(t.id).unwrap().len(), 1);
+}
+
+#[test]
+fn editing_to_a_blank_title_is_rejected() {
+    let mut s = store();
+    let t = s.add_task(NewTask::new("Keep"), &Actor::Me).unwrap();
+    let err = s
+        .edit_task(t.id, TaskEdit::default().title("  "), &Actor::Me)
+        .unwrap_err();
+    assert!(matches!(err, Error::EmptyTitle), "{err:?}");
+    assert_eq!(s.task(t.id).unwrap().title, "Keep");
+}
+
+#[test]
+fn editing_a_missing_task_or_to_a_missing_repo_is_not_found() {
+    let mut s = store();
+    let err = s
+        .edit_task(TaskId(9), TaskEdit::default().title("x"), &Actor::Me)
+        .unwrap_err();
+    assert!(matches!(err, Error::NotFound), "{err:?}");
+    let t = s.add_task(NewTask::new("x"), &Actor::Me).unwrap();
+    let err = s
+        .edit_task(t.id, TaskEdit::default().repo(Some(RepoId(4))), &Actor::Me)
+        .unwrap_err();
+    assert!(matches!(err, Error::NotFound), "{err:?}");
+}
+
+#[test]
+fn only_me_edits_tasks() {
+    let mut s = store();
+    let t = s.add_task(NewTask::new("Mine"), &Actor::Me).unwrap();
+    for actor in [
+        agent(),
+        Actor::Plan,
+        Actor::SyncGh,
+        Actor::SyncT3,
+        Actor::Launch,
+    ] {
+        let err = s
+            .edit_task(t.id, TaskEdit::default().title("Theirs"), &actor)
+            .unwrap_err();
+        assert!(matches!(err, Error::NotAllowed), "{actor}: {err:?}");
+    }
+    assert_eq!(s.task(t.id).unwrap().title, "Mine");
+    assert_eq!(s.history(t.id).unwrap().len(), 1);
+}
+
+// Rule 8, `add_note`: every actor adds notes (as `permissions.rs` has it). Rule 4: a note has text.
+
+#[test]
+fn every_actor_adds_a_note_event_with_its_text() {
+    let mut s = store();
+    let t = s.add_task(NewTask::new("x"), &Actor::Me).unwrap();
+    let actors = [
+        Actor::Me,
+        agent(),
+        Actor::Plan,
+        Actor::SyncGh,
+        Actor::SyncT3,
+        Actor::Launch,
+    ];
+    for actor in &actors {
+        s.add_note(t.id, &format!("from {actor}"), actor).unwrap();
+    }
+    let notes: Vec<_> = s
+        .history(t.id)
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.kind == EventKind::Note)
+        .map(|e| (e.actor, e.body))
+        .collect();
+    let expected: Vec<_> = actors
+        .iter()
+        .map(|a| (a.clone(), Some(format!("from {a}"))))
+        .collect();
+    assert_eq!(notes, expected);
+}
+
+#[test]
+fn a_blank_note_is_rejected() {
+    let mut s = store();
+    let t = s.add_task(NewTask::new("x"), &Actor::Me).unwrap();
+    let err = s.add_note(t.id, "  ", &Actor::Me).unwrap_err();
+    assert!(matches!(err, Error::NoteRequired), "{err:?}");
+    assert_eq!(s.history(t.id).unwrap().len(), 1);
+}
+
+#[test]
+fn a_note_on_a_missing_task_is_not_found() {
+    let mut s = store();
+    let err = s.add_note(TaskId(3), "hi", &Actor::Me).unwrap_err();
+    assert!(matches!(err, Error::NotFound), "{err:?}");
 }

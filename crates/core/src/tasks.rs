@@ -5,7 +5,7 @@ use std::path::Path;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use crate::events::{self, bad_text};
-use crate::model::{Actor, EventKind, NewTask, Origin, Repo, Status, Task, TaskNode};
+use crate::model::{Actor, EventKind, NewTask, Origin, Repo, Status, Task, TaskEdit, TaskNode};
 use crate::permissions::{Call, allowed};
 use crate::tx::Tx;
 use crate::{Error, RepoId, Result, TaskId, fault};
@@ -178,4 +178,106 @@ pub(crate) fn repos(conn: &Connection) -> Result<Vec<Repo>> {
     })?;
     rows.collect::<rusqlite::Result<Vec<_>>>()
         .map_err(Error::from)
+}
+
+/// Applies `me`'s edit and writes one `edited` event naming the fields that changed.
+/// An edit that changes nothing writes nothing.
+pub(crate) fn edit(tx: &mut Tx<'_>, id: TaskId, edit: TaskEdit, actor: &Actor) -> Result<Task> {
+    allowed(Call::EditTask, actor)?;
+    let before = get(tx, id)?;
+    let title = match &edit.title {
+        Some(t) => clean_title(t)?.to_string(),
+        None => before.title.clone(),
+    };
+    let body = edit.body.unwrap_or_else(|| before.body.clone());
+    let repo = edit.repo.unwrap_or(before.repo);
+    if let Some(r) = repo {
+        ensure_repo_exists(tx, r)?;
+    }
+    let changed: Vec<&str> = [
+        (title != before.title, "title"),
+        (body != before.body, "body"),
+        (repo != before.repo, "repo"),
+    ]
+    .into_iter()
+    .filter_map(|(c, name)| c.then_some(name))
+    .collect();
+    if changed.is_empty() {
+        return Ok(before);
+    }
+    tx.execute(
+        "UPDATE tasks SET title = ?2, body = ?3, repo_id = ?4 WHERE id = ?1",
+        params![id.0, title, body, repo.map(|r| r.0)],
+    )?;
+    fault::hit(fault::TASK_EDITED)?;
+    events::record(
+        tx,
+        id,
+        EventKind::Edited,
+        None,
+        Some(&changed.join(", ")),
+        actor,
+    )?;
+    get(tx, id)
+}
+
+/// Writes a `note` event; rule 4 says a note has text, so a blank one is `NoteRequired`.
+pub(crate) fn add_note(tx: &mut Tx<'_>, id: TaskId, text: &str, actor: &Actor) -> Result<()> {
+    allowed(Call::AddNote, actor)?;
+    if text.trim().is_empty() {
+        return Err(Error::NoteRequired);
+    }
+    ensure_exists(tx, id)?;
+    events::record(tx, id, EventKind::Note, None, Some(text), actor)?;
+    fault::hit(fault::NOTE_RECORDED)
+}
+
+impl crate::Store {
+    /// Changes a task's title, notes or repo. Only `me` does this (rule 8).
+    pub fn edit_task(&mut self, id: TaskId, change: TaskEdit, actor: &Actor) -> Result<Task> {
+        self.write(|tx| edit(tx, id, change, actor))
+    }
+
+    /// Adds a note to a task's history. Anyone but `plan` may (rule 8).
+    pub fn add_note(&mut self, id: TaskId, text: &str, actor: &Actor) -> Result<()> {
+        self.write(|tx| add_note(tx, id, text, actor))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use super::*;
+    use crate::{Store, fault};
+
+    fn counts(store: &Store) -> (i64, i64) {
+        let n = |sql: &str| store.conn.query_row(sql, [], |r| r.get(0)).unwrap();
+        (
+            n("SELECT count(*) FROM task_events"),
+            n("SELECT count(*) FROM tasks WHERE title = 'Before'"),
+        )
+    }
+
+    #[test]
+    fn a_failed_edit_leaves_the_task_and_history_unchanged() {
+        let mut store = Store::open_in_memory().unwrap();
+        let t = store.add_task(NewTask::new("Before"), &Actor::Me).unwrap();
+        let before = counts(&store);
+        fault::arm(fault::TASK_EDITED);
+        let edit = TaskEdit::default().title("After");
+        assert!(store.edit_task(t.id, edit, &Actor::Me).is_err());
+        assert_eq!(counts(&store), before);
+        assert_eq!(store.task(t.id).unwrap(), t);
+    }
+
+    #[test]
+    fn a_failed_note_leaves_no_event() {
+        let mut store = Store::open_in_memory().unwrap();
+        let t = store.add_task(NewTask::new("Before"), &Actor::Me).unwrap();
+        let before = counts(&store);
+        fault::arm(fault::NOTE_RECORDED);
+        assert!(store.add_note(t.id, "lost", &Actor::Me).is_err());
+        assert_eq!(counts(&store), before);
+    }
 }

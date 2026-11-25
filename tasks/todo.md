@@ -60,7 +60,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
 
 ## Phase 2: Status that stays honest
 
-- [ ] **T4. Edit tasks and add notes** (S)
+- [x] **T4. Edit tasks and add notes** (S)
   - **Description:** `edit_task` (title, notes, repo) for `me` only. `add_note` for every actor, writing a `note` event.
   - **Acceptance:**
     - Rule 8, the `edit_task` and `add_note` rows: an agent editing gets `NotAllowed`.

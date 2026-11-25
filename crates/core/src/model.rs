@@ -301,3 +301,32 @@ pub struct Event {
     pub actor: Actor,
     pub at: String,
 }
+
+/// What `me` changes about a task. `None` leaves a field as it is; for body and repo,
+/// `Some(None)` clears it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskEdit {
+    pub title: Option<String>,
+    pub body: Option<Option<String>>,
+    pub repo: Option<Option<RepoId>>,
+}
+
+impl TaskEdit {
+    /// Renames the task.
+    pub fn title(mut self, title: impl Into<String>) -> TaskEdit {
+        self.title = Some(title.into());
+        self
+    }
+
+    /// Replaces the notes; `None` clears them.
+    pub fn body(mut self, body: Option<&str>) -> TaskEdit {
+        self.body = Some(body.map(str::to_string));
+        self
+    }
+
+    /// Points the task at a repo; `None` unties it.
+    pub fn repo(mut self, repo: Option<RepoId>) -> TaskEdit {
+        self.repo = Some(repo);
+        self
+    }
+}
