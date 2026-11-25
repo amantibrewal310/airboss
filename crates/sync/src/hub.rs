@@ -242,7 +242,7 @@ fn github_row(p: &PrsPart) -> Connection {
                 "{login} is rate-limited by GitHub until {}; its PRs wait until then.",
                 h.next_try_at.map(clock_time).unwrap_or_default()
             ),
-            _ if state.contains("sign") => {
+            _ if state.to_ascii_lowercase().contains("signed out") => {
                 format!("{login} needs `gh auth login` again. Run `gh auth login` in a terminal.")
             }
             _ => format!("{login}'s PRs are tried again in a few minutes."),

@@ -579,8 +579,10 @@ impl T3Worker {
         }
     }
 
-    /// A linked thread's state changed: holds are checked again (the finish check).
-    fn threads_changed(&mut self, _now: SystemTime) {}
+    /// A linked thread's state changed: held finishes are checked again.
+    fn threads_changed(&mut self, now: SystemTime) {
+        crate::finish::recheck_held(&self.env.store, &self.db, now);
+    }
 
     // ---- Claude ----
 

@@ -8,9 +8,11 @@
 
 pub mod claude;
 mod db;
+mod finish;
 pub mod gh;
 mod health;
 mod hub;
+mod prs;
 mod secret;
 pub mod t3;
 pub mod threads;
@@ -20,7 +22,7 @@ pub use db::{MIGRATIONS, MODULE, SyncDb};
 pub use hub::Hub;
 pub use secret::Secret;
 pub use worker::{
-    Env, GhMsg, MAX_WAIT, Step, StoreSummary, T3Msg, T3Worker, WalWatch, WatchTarget,
+    Env, GhMsg, GhWorker, MAX_WAIT, Step, StoreSummary, T3Msg, T3Worker, WalWatch, WatchTarget,
 };
 
 use std::path::{Path, PathBuf};

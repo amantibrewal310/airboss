@@ -4,9 +4,10 @@
 //! it (in `lib.rs`) only waits and forwards, so tests drive the machines directly with
 //! chosen times.
 
+pub mod gh;
 pub mod t3;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, MutexGuard, PoisonError};
@@ -18,6 +19,7 @@ use airboss_services::{PrRef, Refresh, ServiceError, SharedStore, StoreChange};
 use crate::SyncConfig;
 use crate::hub::Hub;
 
+pub use gh::GhWorker;
 pub use t3::T3Worker;
 
 /// The longest any worker waits before looking at the clock again.
@@ -48,6 +50,9 @@ impl Step {
 pub struct StoreSummary {
     /// Tasks that are `todo`, `doing`, `in_review` or `blocked`.
     pub open: HashSet<TaskId>,
+    /// Tasks that are `done`, with their newest event's time (when they finished, or
+    /// later), so PRs of recently finished tasks stay in `pr_tasks`.
+    pub done: HashMap<TaskId, String>,
     /// The `linked`, `unlinked` and `link_state` events.
     pub link_events: Vec<Event>,
 }
@@ -70,6 +75,13 @@ impl StoreSummary {
                 .iter()
                 .filter(|n| is_open(n.task.status))
                 .map(|n| n.task.id)
+                .collect(),
+            done: c
+                .snapshot
+                .tree
+                .iter()
+                .filter(|n| n.task.status == Status::Done)
+                .map(|n| (n.task.id, n.last_event_at.clone()))
                 .collect(),
             link_events: c
                 .events

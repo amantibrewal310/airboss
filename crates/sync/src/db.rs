@@ -8,11 +8,11 @@ use std::path::Path;
 use std::sync::PoisonError;
 use std::time::{Duration, SystemTime};
 
-use airboss_core::Migration;
+use airboss_core::{Migration, PrState, TaskId};
 use airboss_services::time::{from_ts, to_ts};
 use airboss_services::{
-    ErrorCode, Request, RequestKind, ServiceError, SharedStore, Source, ThreadKey, ThreadState,
-    ThreadView,
+    Checks, ErrorCode, Request, RequestKind, Review, ServiceError, SharedStore, Source, ThreadKey,
+    ThreadState, ThreadView,
 };
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::{Deserialize, Serialize};
@@ -377,6 +377,250 @@ impl SyncDb {
         Ok(json
             .and_then(|j| serde_json::from_str(&j).ok())
             .unwrap_or_default())
+    }
+}
+
+/// Why GitHub couldn't read a PR (`observed_prs.error`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PrError {
+    NotFound,
+    NoAccess,
+    Failed,
+}
+
+/// One `observed_prs` row: what GitHub last said about a PR.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PrRow {
+    pub pr: String,
+    pub linked: bool,
+    pub url: Option<String>,
+    pub title: Option<String>,
+    pub state: Option<PrState>,
+    pub draft: bool,
+    pub review: Option<Review>,
+    pub checks: Option<Checks>,
+    pub additions: Option<u32>,
+    pub deletions: Option<u32>,
+    pub head_ref: Option<String>,
+    pub author: Option<String>,
+    pub gh_updated_at: Option<String>,
+    pub merged_at: Option<String>,
+    pub ready_since: Option<String>,
+    pub account: Option<String>,
+    pub error: Option<PrError>,
+    pub error_detail: Option<String>,
+    pub checked_at: String,
+}
+
+impl PrRow {
+    /// Equal apart from when it was checked.
+    pub(crate) fn same(&self, other: &PrRow) -> bool {
+        PrRow {
+            checked_at: String::new(),
+            ..self.clone()
+        } == PrRow {
+            checked_at: String::new(),
+            ..other.clone()
+        }
+    }
+}
+
+fn pr_state_text(s: PrState) -> &'static str {
+    s.as_str()
+}
+
+fn parse_pr_state(t: &str) -> Option<PrState> {
+    Some(match t {
+        "open" => PrState::Open,
+        "merged" => PrState::Merged,
+        "closed" => PrState::Closed,
+        _ => return None,
+    })
+}
+
+fn review_text(r: Review) -> &'static str {
+    match r {
+        Review::Approved => "approved",
+        Review::ChangesRequested => "changes_requested",
+        Review::Required => "review_required",
+        Review::None => "none",
+    }
+}
+
+fn parse_review(t: &str) -> Option<Review> {
+    Some(match t {
+        "approved" => Review::Approved,
+        "changes_requested" => Review::ChangesRequested,
+        "review_required" => Review::Required,
+        "none" => Review::None,
+        _ => return None,
+    })
+}
+
+fn checks_text(c: Checks) -> &'static str {
+    match c {
+        Checks::Passing => "passing",
+        Checks::Failing => "failing",
+        Checks::Pending => "pending",
+        Checks::None => "none",
+    }
+}
+
+fn parse_checks(t: &str) -> Option<Checks> {
+    Some(match t {
+        "passing" => Checks::Passing,
+        "failing" => Checks::Failing,
+        "pending" => Checks::Pending,
+        "none" => Checks::None,
+        _ => return None,
+    })
+}
+
+fn error_text(e: PrError) -> &'static str {
+    match e {
+        PrError::NotFound => "not_found",
+        PrError::NoAccess => "no_access",
+        PrError::Failed => "failed",
+    }
+}
+
+fn parse_error(t: &str) -> Option<PrError> {
+    Some(match t {
+        "not_found" => PrError::NotFound,
+        "no_access" => PrError::NoAccess,
+        "failed" => PrError::Failed,
+        _ => return None,
+    })
+}
+
+const PR_COLUMNS: &str = "ref, linked, url, title, state, draft, review, checks, additions,
+    deletions, head_ref, author, gh_updated_at, merged_at, ready_since, account, error,
+    error_detail, checked_at";
+
+fn pr_row(r: &Row<'_>) -> rusqlite::Result<PrRow> {
+    let text = |i: usize| -> rusqlite::Result<Option<String>> { r.get(i) };
+    let count = |i: usize| -> rusqlite::Result<Option<u32>> {
+        Ok(r.get::<_, Option<i64>>(i)?
+            .and_then(|n| u32::try_from(n).ok()))
+    };
+    Ok(PrRow {
+        pr: r.get(0)?,
+        linked: r.get::<_, i64>(1)? == 1,
+        url: text(2)?,
+        title: text(3)?,
+        state: text(4)?.as_deref().and_then(parse_pr_state),
+        draft: r.get::<_, i64>(5)? == 1,
+        review: text(6)?.as_deref().and_then(parse_review),
+        checks: text(7)?.as_deref().and_then(parse_checks),
+        additions: count(8)?,
+        deletions: count(9)?,
+        head_ref: text(10)?,
+        author: text(11)?,
+        gh_updated_at: text(12)?,
+        merged_at: text(13)?,
+        ready_since: text(14)?,
+        account: text(15)?,
+        error: text(16)?.as_deref().and_then(parse_error),
+        error_detail: text(17)?,
+        checked_at: r.get(18)?,
+    })
+}
+
+impl SyncDb {
+    pub(crate) fn load_prs(&self) -> DbResult<Vec<PrRow>> {
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT {PR_COLUMNS} FROM observed_prs ORDER BY ref"
+        ))?;
+        let rows = stmt.query_map([], pr_row)?;
+        rows.collect()
+    }
+
+    pub(crate) fn save_pr(&self, p: &PrRow) -> DbResult<()> {
+        self.conn.execute(
+            &format!(
+                "INSERT OR REPLACE INTO observed_prs ({PR_COLUMNS})
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)"
+            ),
+            params![
+                p.pr,
+                i64::from(p.linked),
+                p.url,
+                p.title,
+                p.state.map(pr_state_text),
+                i64::from(p.draft),
+                p.review.map(review_text),
+                p.checks.map(checks_text),
+                p.additions,
+                p.deletions,
+                p.head_ref,
+                p.author,
+                p.gh_updated_at,
+                p.merged_at,
+                p.ready_since,
+                p.account,
+                p.error.map(error_text),
+                p.error_detail,
+                p.checked_at
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub(crate) fn delete_pr(&self, pr: &str) -> DbResult<()> {
+        self.conn
+            .execute("DELETE FROM observed_prs WHERE ref = ?1", params![pr])?;
+        Ok(())
+    }
+
+    /// What GitHub last said about a PR's state; `None` if it hasn't been read.
+    pub(crate) fn pr_state(&self, pr: &str) -> DbResult<Option<PrState>> {
+        let state: Option<Option<String>> = self
+            .conn
+            .query_row(
+                "SELECT state FROM observed_prs WHERE ref = ?1",
+                params![pr],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(state.flatten().as_deref().and_then(parse_pr_state))
+    }
+
+    /// A thread's last known state.
+    pub(crate) fn thread_state(&self, key: &ThreadKey) -> DbResult<Option<ThreadState>> {
+        let state: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT state FROM observed_threads WHERE source = ?1 AND ref = ?2",
+                params![source_text(key.source), key.r#ref],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(state.as_deref().and_then(parse_state))
+    }
+
+    /// Tasks whose finish is held.
+    pub(crate) fn holds(&self) -> DbResult<Vec<TaskId>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT task_id FROM sync_finish_held ORDER BY task_id")?;
+        let rows = stmt.query_map([], |r| r.get(0).map(TaskId))?;
+        rows.collect()
+    }
+
+    pub(crate) fn hold(&self, task: TaskId, now: SystemTime) -> DbResult<()> {
+        self.conn.execute(
+            "INSERT OR IGNORE INTO sync_finish_held (task_id, since) VALUES (?1, ?2)",
+            params![task.0, to_ts(now)],
+        )?;
+        Ok(())
+    }
+
+    pub(crate) fn release(&self, task: TaskId) -> DbResult<()> {
+        self.conn.execute(
+            "DELETE FROM sync_finish_held WHERE task_id = ?1",
+            params![task.0],
+        )?;
+        Ok(())
     }
 }
 

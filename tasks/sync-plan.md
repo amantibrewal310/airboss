@@ -37,6 +37,10 @@ Each worker is a plain state machine, `handle(msg, now) -> Step`, so every timin
 14. **The 10 s grace for a request with no item** applies to requests on linked threads. Kind and status values are still checked on every pending request.
 15. **The store must be a file.** `start` refuses an in-memory `Store` with `ErrorCode::Storage`, since `sync` opens its own connection on `path()`.
 16. **Wake-ups are counted per thread.** Each worker loop counts the times it wakes (`Sync::wakeups()`); the idle measurement reports those and the process's CPU time.
+18. **`pr_tasks` also lists tasks finished in the last 7 days** (attention's request on 26 Nov 2026, so a Ready item can say "143 merged"). "Finished" is read from `core`'s tree as a `done` task whose newest event is at most 7 days old, the same window as "became ready". Everything `sync` decides (what to read, the finish check) still uses open tasks only.
+19. **The finish check uses this pass's GitHub states** before `observed_prs` is written (it's written last, decision above), so it doesn't wait a pass for its own row.
+20. **Times in connection rows say "UTC"** ("Live state broken since 14:02 UTC"): `sync` has no time-zone data and no dependency for it.
+21. **After its own `core` writes, the GitHub worker reads the PR links again** at once, instead of waiting for the app to hand the change back, so the next comparison isn't against a stale `pr_state`.
 17. **A request on a child thread** marks its root thread `needs_me` (the spec's root rule), using the child's `$.lineage.rootThreadId`. A root thread's `rootThreadId` is its own id, as on this Mac.
 
 ## Dependency graph
