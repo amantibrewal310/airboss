@@ -2,8 +2,8 @@
   import { onMount, tick } from 'svelte';
   import { api, on } from '../../lib/api';
   import type { CreateTaskInput, DoItPlace, QuickaddData, Repo, TaskId } from '../../lib/types';
+  import type { Component } from 'svelte';
   import NewTask from '../shared/NewTask.svelte';
-  import StartInMenu from '../main/overlays/StartInMenu.svelte';
 
   /**
    * The quick-add panel: the whole window is New task. It is reset ahead of time (on every hide),
@@ -18,6 +18,9 @@
   let wrap: HTMLDivElement | undefined = $state();
   let startIn = $state<{ task: TaskId; choices: Repo[]; x: number; y: number } | null>(null);
   let busy = $state(false);
+  /** The Start in menu is loaded only when a Do it needs a repo choice, keeping the panel small. */
+  let StartInMenu = $state<Component<{ task: TaskId; x: number; y: number; choices: Repo[]; onpick: (p: DoItPlace) => void; onclose: () => void }> | null>(null);
+  const loadStartIn = () => import('../main/overlays/StartInMenu.svelte').then((m) => (StartInMenu = m.default as never));
 
   async function refresh() {
     try {
@@ -50,6 +53,7 @@
     try {
       const res = await api.createTask(input);
       if (res.launch && 'needs_choice' in res.launch) {
+        if (!StartInMenu) await loadStartIn();
         // The Start in menu opens in the panel; the panel stays until a choice is made.
         const btn = wrap?.querySelector('.go')?.getBoundingClientRect();
         startIn = { task: res.id, choices: res.launch.needs_choice.choices, x: btn ? btn.left - 100 : 300, y: btn ? btn.bottom + 6 : 200 };
@@ -106,7 +110,7 @@
       oncancel={() => hide()}
     />
   </div>
-  {#if startIn}
+  {#if startIn && StartInMenu}
     <StartInMenu task={startIn.task} x={startIn.x} y={startIn.y} choices={startIn.choices} onpick={pick} onclose={() => hide()} />
   {/if}
 </div>
