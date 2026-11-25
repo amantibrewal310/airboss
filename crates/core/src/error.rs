@@ -1,0 +1,33 @@
+//! The one error type every `core` call returns.
+
+/// Why a `core` call was refused or failed.
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    /// The task, link or repo doesn't exist.
+    #[error("not found")]
+    NotFound,
+    /// This actor may never make this kind of change.
+    #[error("not allowed")]
+    NotAllowed,
+    /// This actor may make this change in general, but not from the task's current status.
+    #[error("not allowed from the current status")]
+    InvalidTransition,
+    /// An agent finishing a task must say what it did.
+    #[error("a note saying what was done is required")]
+    NoteRequired,
+    /// The target can't take this change, e.g. moving under a finished parent.
+    #[error("invalid target")]
+    InvalidTarget,
+    /// The change would create a loop in the tree or in the dependencies.
+    #[error("this would create a loop")]
+    Loop,
+    /// A plan used the same key twice.
+    #[error("duplicate plan key: {0}")]
+    DuplicateKey(String),
+    /// The database itself failed.
+    #[error(transparent)]
+    Db(#[from] rusqlite::Error),
+}
+
+/// Shorthand used across the crate.
+pub type Result<T> = std::result::Result<T, Error>;
