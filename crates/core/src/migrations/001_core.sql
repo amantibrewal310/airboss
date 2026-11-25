@@ -30,7 +30,7 @@ CREATE UNIQUE INDEX tasks_plan_key_idx ON tasks(ifnull(parent_id, 0), plan_key) 
 CREATE TABLE task_events (
   id         INTEGER PRIMARY KEY,
   task_id    INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-  kind       TEXT NOT NULL CHECK (kind IN ('created','edited','moved','status','note','linked','unlinked','link_state','waits_on_added','waits_on_removed')),
+  kind       TEXT NOT NULL CHECK (kind IN ('created','edited','moved','status','note','linked','unlinked','link_state','waits_on_added','waits_on_removed','rejected')),
   to_status  TEXT CHECK (to_status IN ('proposed','todo','doing','in_review','blocked','done','dropped')),
   body       TEXT,
   actor      TEXT NOT NULL,

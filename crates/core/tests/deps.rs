@@ -475,3 +475,43 @@ fn a_task_with_no_subtasks_has_an_empty_run_order() {
     let p = top(&mut s, "Leaf");
     assert_eq!(s.run_order(p).unwrap(), RunOrder::default());
 }
+
+#[test]
+fn run_order_leaves_out_proposals_until_they_are_accepted() {
+    let mut s = Store::open_in_memory().unwrap();
+    let phase = s
+        .add_task(NewTask::new("Booking phase"), &Actor::Me)
+        .unwrap();
+    let api = s
+        .add_task(NewTask::new("API").under(phase.id), &Actor::Me)
+        .unwrap();
+    let idea = s
+        .add_task(
+            NewTask::new("Add retry").under(phase.id),
+            &Actor::Agent("t3/a".into()),
+        )
+        .unwrap();
+    let page = s
+        .add_task(NewTask::new("Page").under(phase.id), &Actor::Me)
+        .unwrap();
+    // Even a dependency on the proposal doesn't hold the page back while it's unaccepted.
+    s.add_dependency(page.id, idea.id, &Actor::Me).unwrap();
+
+    let order = s.run_order(phase.id).unwrap();
+    let waves: Vec<Vec<_>> = order
+        .waves
+        .iter()
+        .map(|w| w.iter().map(|t| t.id).collect())
+        .collect();
+    assert_eq!(waves, vec![vec![api.id, page.id]]);
+
+    s.set_status(idea.id, Status::Todo, None, &Actor::Me)
+        .unwrap();
+    let order = s.run_order(phase.id).unwrap();
+    let waves: Vec<Vec<_>> = order
+        .waves
+        .iter()
+        .map(|w| w.iter().map(|t| t.id).collect())
+        .collect();
+    assert_eq!(waves, vec![vec![api.id, idea.id], vec![page.id]]);
+}

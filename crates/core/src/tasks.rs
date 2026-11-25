@@ -8,7 +8,6 @@ use crate::events::{self, bad_text};
 use crate::model::{Actor, EventKind, NewTask, Origin, Repo, Status, Task, TaskEdit, TaskNode};
 use crate::permissions::{Call, allowed};
 use crate::sql::query_all;
-use crate::status::DROPPED_WITH;
 use crate::tx::Tx;
 use crate::{Error, RepoId, Result, TaskId, fault};
 
@@ -184,8 +183,8 @@ pub(crate) fn add(tx: &mut Tx<'_>, new: NewTask, actor: &Actor) -> Result<Task> 
     get(tx, id)
 }
 
-/// The whole tree, depth-first, siblings in position order. Hides proposals I rejected:
-/// agent tasks dropped without ever being accepted, other than by dropping their parent.
+/// The whole tree, depth-first, siblings in position order. Hides proposals I rejected: tasks
+/// still `dropped` whose latest status change was a `rejected` event.
 pub(crate) fn tree(conn: &Connection) -> Result<Vec<TaskNode>> {
     let sql = format!(
         "WITH RECURSIVE walk(id, depth, path) AS (
@@ -198,11 +197,10 @@ pub(crate) fn tree(conn: &Connection) -> Result<Vec<TaskNode>> {
                 EXISTS (SELECT 1 FROM task_deps d JOIN tasks b ON b.id = d.waits_on_id
                         WHERE d.task_id = t.id AND b.status NOT IN ('done', 'dropped'))
          FROM walk w JOIN tasks t ON t.id = w.id
-         WHERE NOT (t.origin = 'agent' AND t.status = 'dropped'
-                    AND NOT EXISTS (SELECT 1 FROM task_events e
-                                    WHERE e.task_id = t.id AND e.kind = 'status'
-                                      AND (e.to_status NOT IN ('proposed', 'dropped')
-                                           OR e.body LIKE '{DROPPED_WITH}%')))
+         WHERE NOT (t.status = 'dropped'
+                    AND (SELECT e.kind FROM task_events e
+                         WHERE e.task_id = t.id AND e.kind IN ('status', 'rejected')
+                         ORDER BY e.id DESC LIMIT 1) = 'rejected')
          ORDER BY w.path"
     );
     query_all(conn, &sql, [], |row| {

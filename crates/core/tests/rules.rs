@@ -421,15 +421,11 @@ fn a_rejected_proposal_is_gone_from_the_tree_but_still_in_history() {
     assert_eq!(titles(&s), vec!["Kept"]);
     assert!(s.proposed().unwrap().is_empty());
     assert_eq!(s.task(p.id).unwrap().status, Status::Dropped);
+    // A rejection is its own kind of event, so nothing depends on the wording of a note.
     let last = s.history(p.id).unwrap().pop().unwrap();
     assert_eq!(
         (last.kind, last.to_status, last.body.as_deref(), last.actor),
-        (
-            EventKind::Status,
-            Some(Status::Dropped),
-            Some("out of scope"),
-            Actor::Me
-        )
+        (EventKind::Rejected, None, Some("out of scope"), Actor::Me)
     );
 
     // A task of mine that I drop stays visible; only rejected proposals are hidden.
@@ -464,6 +460,35 @@ fn an_open_proposal_dropped_with_its_parent_stays_in_the_tree() {
     assert_eq!(titles(&s), vec!["Parent", "Idea"]);
     assert!(s.proposed().unwrap().is_empty());
     assert!(s.ready().unwrap().is_empty());
+}
+
+#[test]
+fn a_rejected_proposal_i_reopen_comes_back_into_the_tree() {
+    let mut s = store();
+    let p = s
+        .add_task(NewTask::new("Second thoughts"), &agent())
+        .unwrap();
+    s.set_status(p.id, Status::Dropped, None, &Actor::Me)
+        .unwrap();
+    assert!(titles(&s).is_empty());
+
+    s.set_status(p.id, Status::Todo, None, &Actor::Me).unwrap();
+    assert_eq!(titles(&s), vec!["Second thoughts"]);
+}
+
+#[test]
+fn rejecting_writes_exactly_one_event() {
+    let mut s = store();
+    let p = s.add_task(NewTask::new("Idea"), &agent()).unwrap();
+    s.set_status(p.id, Status::Dropped, Some("no"), &Actor::Me)
+        .unwrap();
+    let kinds: Vec<_> = s
+        .history(p.id)
+        .unwrap()
+        .into_iter()
+        .map(|e| e.kind)
+        .collect();
+    assert_eq!(kinds, vec![EventKind::Created, EventKind::Rejected]);
 }
 
 #[test]

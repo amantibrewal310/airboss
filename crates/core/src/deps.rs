@@ -209,7 +209,8 @@ JOIN tasks st ON st.id = s.id
 JOIN task_deps d ON d.task_id = s.id
 JOIN tasks bt ON bt.id = d.waits_on_id
 LEFT JOIN sub b ON b.id = d.waits_on_id
-WHERE st.status NOT IN ('done', 'dropped') AND bt.status NOT IN ('done', 'dropped')";
+WHERE st.status NOT IN ('proposed', 'done', 'dropped')
+  AND bt.status NOT IN ('proposed', 'done', 'dropped')";
 
 fn run_order(conn: &Connection, parent: TaskId) -> Result<RunOrder> {
     ensure_exists(conn, parent)?;
@@ -217,7 +218,7 @@ fn run_order(conn: &Connection, parent: TaskId) -> Result<RunOrder> {
         conn,
         &format!(
             "SELECT {TASK_COLUMNS} FROM tasks t
-             WHERE t.parent_id = ?1 AND t.status NOT IN ('done', 'dropped')
+             WHERE t.parent_id = ?1 AND t.status NOT IN ('proposed', 'done', 'dropped')
              ORDER BY t.position"
         ),
         params![parent.0],

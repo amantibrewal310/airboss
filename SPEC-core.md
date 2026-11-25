@@ -117,7 +117,8 @@ CREATE TABLE task_events (               -- one change to one task
   id         INTEGER PRIMARY KEY,        -- also the change cursor
   task_id    INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
   kind       TEXT NOT NULL CHECK (kind IN ('created','edited','moved','status','note','linked',
-                                           'unlinked','link_state','waits_on_added','waits_on_removed')),
+                                           'unlinked','link_state','waits_on_added','waits_on_removed',
+                                           'rejected')),
   to_status  TEXT CHECK (to_status IN ('proposed','todo','doing','in_review','blocked','done','dropped')),
   body       TEXT,                       -- the note, or why; null when nothing to say
   actor      TEXT NOT NULL,
@@ -185,7 +186,7 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
    | `launch` | `todo`, `blocked` | `doing` | When it starts a thread for the task |
    | `sync:t3`, `plan` | (none) | (none) | They never change status |
 
-   `proposed` is left only by `me`: accepting moves it to `todo`, and rejecting moves it to `dropped` with an optional reason. Rejected proposals stay in history and are hidden from the tree. Only a true rejection is hidden: a proposal I accepted and later dropped stays visible, and so does an open proposal dropped along with its parent (rule 9).
+   `proposed` is left only by `me`: accepting moves it to `todo`, and rejecting moves it to `dropped` with an optional reason. A rejection writes a single `rejected` event (with the reason as its body) instead of a `status` event. The tree hides a task that is `dropped` and whose latest status change was a `rejected` event, so it depends on the event kind, never on the wording of a note. A proposal I accepted and later dropped stays visible, and so does an open proposal dropped along with its parent (rule 9). If I reopen a rejected proposal, it comes back.
 7. **An open PR reopens a done task.** If an actor other than `me` links an `open` PR to a `done` task, the task moves to `in_review` in the same change. A PR linked already `merged` or `closed` reopens nothing. And when `set_pr_state` records a PR as `open` again, every `done` task linked to it moves to `in_review`, with a `status` event after the `link_state` event, by the same actor. Code can't stay done while its PR is unmerged.
 
 ### Who may do everything else (enforced by code)
@@ -227,7 +228,7 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
     - Kahn's algorithm makes the waves: wave 1 is every open subtask that waits on nothing under the parent, wave 2 is everything that waits only on wave 1, and so on. Within a wave, tasks keep their sibling order.
     - A subtask that also waits on an open task outside the parent goes in a separate `waiting_outside` group at the end, not in a wave.
     - Lifting can make subtasks wait on each other in a loop even when their steps don't, for example when Phase 1 and Phase 2 each have a step waiting on the other phase. Kahn's algorithm can't place those subtasks, or anything waiting on them; these go in a `tangled` group, so the rest of the order still shows. They keep their sibling order.
-    - `done` and `dropped` subtasks are left out.
+    - `done` and `dropped` subtasks are left out, and so are `proposed` ones until I accept them. A dependency on an unaccepted proposal doesn't hold anything back in run order.
     - Run order is only shown. Nothing starts by itself.
 
 ### Plans (enforced by code)

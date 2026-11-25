@@ -119,6 +119,17 @@ pub(crate) fn apply(
     events::record(tx, id, EventKind::Status, Some(to), note, actor)
 }
 
+/// Turning down a proposal: the task becomes `dropped` with a `rejected` event, which is what
+/// hides it from the tree. Its own event kind, so nothing depends on the wording of a note.
+fn reject(tx: &mut Tx<'_>, id: TaskId, note: Option<&str>, actor: &Actor) -> Result<()> {
+    tx.execute(
+        "UPDATE tasks SET status = 'dropped', blocked_reason = NULL WHERE id = ?1",
+        params![id.0],
+    )?;
+    fault::hit(fault::STATUS_UPDATED)?;
+    events::record(tx, id, EventKind::Rejected, None, note, actor)
+}
+
 pub(crate) fn set_status(
     tx: &mut Tx<'_>,
     id: TaskId,
@@ -131,7 +142,9 @@ pub(crate) fn set_status(
     // A change that changes nothing writes nothing, like an empty edit.
     let before = tasks::get(tx, id)?;
     let reason = if to == Status::Blocked { note } else { None };
-    if before.status != to || before.blocked_reason.as_deref() != reason {
+    if before.status == Status::Proposed && to == Status::Dropped {
+        reject(tx, id, note, actor)?;
+    } else if before.status != to || before.blocked_reason.as_deref() != reason {
         apply(tx, id, to, note, actor)?;
     }
     // Still runs when the task was already dropped, to catch anything reopened under it.
@@ -143,7 +156,7 @@ pub(crate) fn set_status(
 
 /// How rule 9's events start, so `tree()` can tell a task dropped with its parent from a
 /// proposal I rejected.
-pub(crate) const DROPPED_WITH: &str = "dropped with #";
+const DROPPED_WITH: &str = "dropped with #";
 
 /// Rule 9: drops every open task under `id`, with one event each. `done` ones stay `done`.
 fn drop_subtree(tx: &mut Tx<'_>, id: TaskId, actor: &Actor) -> Result<()> {

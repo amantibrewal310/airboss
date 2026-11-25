@@ -61,9 +61,15 @@ fn case(
             }
             assert_eq!(history.len(), before.1.len() + 1, "{label}");
             let last = history.last().unwrap();
+            // Dropping a proposal is a rejection, recorded as its own event kind.
+            let expected_event = if from == Proposed && to == Dropped {
+                (EventKind::Rejected, None, actor.clone())
+            } else {
+                (EventKind::Status, Some(to), actor.clone())
+            };
             assert_eq!(
                 (last.kind, last.to_status, last.actor.clone()),
-                (EventKind::Status, Some(to), actor.clone()),
+                expected_event,
                 "{label}"
             );
         }

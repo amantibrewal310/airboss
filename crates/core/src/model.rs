@@ -255,6 +255,8 @@ pub enum EventKind {
     LinkState,
     WaitsOnAdded,
     WaitsOnRemoved,
+    /// I turned down an agent's proposal. The task is `dropped` and hidden from the tree.
+    Rejected,
 }
 
 impl EventKind {
@@ -270,6 +272,7 @@ impl EventKind {
             EventKind::LinkState => "link_state",
             EventKind::WaitsOnAdded => "waits_on_added",
             EventKind::WaitsOnRemoved => "waits_on_removed",
+            EventKind::Rejected => "rejected",
         }
     }
 
@@ -285,6 +288,7 @@ impl EventKind {
             "link_state" => EventKind::LinkState,
             "waits_on_added" => EventKind::WaitsOnAdded,
             "waits_on_removed" => EventKind::WaitsOnRemoved,
+            "rejected" => EventKind::Rejected,
             _ => return None,
         })
     }
