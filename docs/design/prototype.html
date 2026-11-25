@@ -1,0 +1,937 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Airboss prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ================= tokens: dark first ================= */
+:root{
+  --font: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --desk:#050506;
+  --bg:#0f1012;          /* main surface */
+  --bg-side:#0a0b0c;     /* sidebar, darkest */
+  --bg-raised:#16171a;   /* panels, peek, cards */
+  --bg-input:#1b1c20;
+  --bg-hover:rgba(255,255,255,.045);
+  --bg-sel:rgba(255,255,255,.075);
+  --line:rgba(255,255,255,.07);
+  --line-2:rgba(255,255,255,.11);
+  --text:#ededf0; --text-2:#9a9ca5; --text-3:#6b6e78;
+  --accent:#7b7ff5; --accent-fill:#5e63e6; --accent-soft:rgba(123,127,245,.14);
+  --needs:#f2555a; --needs-soft:rgba(242,85,90,.12);
+  --st-todo:#8a8d96; --st-doing:#e6b450; --st-review:#4cc38a; --st-done:#7b7ff5; --st-blocked:#f08c3a;
+  --repo-1:#5b9cff; --repo-2:#e66aa6; --repo-3:#3fc79a; --repo-4:#f0a04a;
+  --shadow:0 16px 48px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.08);
+  --r:6px; --r-lg:10px;
+  --ease:cubic-bezier(.2,.8,.2,1);
+}
+:root[data-theme="light"]{
+  --desk:#e4e5e9; --bg:#ffffff; --bg-side:#f7f7f8; --bg-raised:#ffffff; --bg-input:#f3f3f5;
+  --bg-hover:rgba(0,0,0,.04); --bg-sel:rgba(0,0,0,.06); --line:rgba(0,0,0,.07); --line-2:rgba(0,0,0,.11);
+  --text:#1b1c1f; --text-2:#62656e; --text-3:#8e919a;
+  --accent:#5e63e6; --accent-fill:#5e63e6; --accent-soft:rgba(94,99,230,.1);
+  --needs:#e03e44; --needs-soft:rgba(224,62,68,.09);
+  --st-todo:#9a9da5; --st-doing:#d39a1d; --st-review:#2a9f68; --st-done:#5e63e6; --st-blocked:#e0751f;
+  --repo-1:#2f73e0; --repo-2:#cc4386; --repo-3:#1f9e74; --repo-4:#d07a12;
+  --shadow:0 16px 48px rgba(0,0,0,.16),0 0 0 1px rgba(0,0,0,.08);
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font:13px/1.45 var(--font);letter-spacing:-.006em;color:var(--text);background:var(--desk);-webkit-font-smoothing:antialiased;font-feature-settings:"cv11","ss01";display:flex;flex-direction:column;overflow:hidden;cursor:default;user-select:none}
+::selection{background:var(--accent-soft)}
+button{font:inherit;color:inherit;background:none;border:0;cursor:default}
+input,textarea{font:inherit;color:inherit}
+svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.num{color:var(--text-3);font-variant-numeric:tabular-nums;font-size:12px}
+.mono{font-family:var(--mono);font-size:12px}
+.muted{color:var(--text-2)} .faint{color:var(--text-3)}
+kbd{font:500 11px var(--font);color:var(--text-2);background:var(--bg-input);border:1px solid var(--line-2);border-radius:4px;padding:0 5px;min-width:18px;height:18px;display:inline-grid;place-items:center}
+
+/* ================= desk + window ================= */
+.topbar{height:30px;flex:none;display:flex;align-items:center;gap:6px;padding:0 12px;font-size:12px;color:var(--text-2)}
+.topbar .sp{flex:1}
+.tb{display:flex;align-items:center;gap:6px;height:22px;padding:0 8px;border-radius:5px}
+.tb.btnish:hover,.tb.on{background:var(--bg-hover);color:var(--text)}
+.tb b{color:var(--text);font-weight:600}
+.seg{display:inline-flex;gap:2px;padding:2px;border-radius:6px;background:var(--bg-input);border:1px solid var(--line)}
+.seg span{padding:1px 9px;border-radius:4px;color:var(--text-2);font-size:12px}
+.seg span.on{background:var(--bg-sel);color:var(--text);box-shadow:0 0 0 1px var(--line-2)}
+.stage{flex:1;display:grid;place-items:center;padding:4px 18px 14px;min-height:0}
+.win{width:min(1320px,100%);height:min(800px,100%);display:grid;grid-template-columns:232px 1fr;border-radius:12px;overflow:hidden;background:var(--bg);box-shadow:var(--shadow);position:relative}
+
+/* ================= sidebar ================= */
+.side{background:var(--bg-side);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;padding:0 8px}
+.lights{display:flex;gap:8px;height:40px;align-items:center;padding:0 6px}
+.lights i{width:12px;height:12px;border-radius:50%;background:#ff5f57}.lights i:nth-child(2){background:#febc2e}.lights i:nth-child(3){background:#28c840}
+.ws{display:flex;align-items:center;gap:8px;padding:2px 6px 10px}
+.logo{width:20px;height:20px;border-radius:5px;background:linear-gradient(135deg,var(--accent),#a678f2);display:grid;place-items:center;color:#fff}
+.ws b{font-weight:600;flex:1}
+.iconbtn{width:26px;height:26px;border-radius:6px;display:grid;place-items:center;color:var(--text-2)}
+.iconbtn:hover{background:var(--bg-hover);color:var(--text)}
+.nav{display:flex;align-items:center;gap:9px;height:28px;padding:0 8px;border-radius:6px;color:var(--text-2);white-space:nowrap}
+.nav:hover{background:var(--bg-hover);color:var(--text)}
+.nav.on{background:var(--bg-sel);color:var(--text)}
+.nav .t{flex:1;overflow:hidden;text-overflow:ellipsis}
+.nav .c{font-size:12px;color:var(--text-3)}
+.nav .badge{min-width:18px;height:18px;border-radius:9px;background:var(--needs);color:#fff;font-size:11px;font-weight:600;display:grid;place-items:center;padding:0 5px}
+.sech{font-size:11.5px;font-weight:500;color:var(--text-3);padding:16px 8px 4px;display:flex;align-items:center}
+.rdot{display:inline-block;width:8px;height:8px;border-radius:50%;flex:none;background:var(--c)}
+.conn{margin-top:auto;padding:8px 0 10px;border-top:1px solid var(--line);position:relative}
+.conn-btn{display:flex;align-items:center;gap:8px;height:28px;padding:0 8px;border-radius:6px;font-size:12px;color:var(--text-3);cursor:pointer}
+.conn-btn:hover{background:var(--bg-hover);color:var(--text-2)}
+.conn-btn i{width:7px;height:7px;border-radius:50%;background:var(--st-review);flex:none}
+.conn-btn.warn{color:var(--st-blocked)} .conn-btn.warn i{background:var(--st-blocked)}
+.conn-pop{position:absolute;left:0;bottom:44px;width:300px;background:var(--bg-raised);border:1px solid var(--line-2);border-radius:10px;box-shadow:var(--shadow);padding:6px;z-index:20;animation:mod2 .12s var(--ease)}
+.conn-pop .ci{display:flex;gap:10px;padding:8px;border-radius:6px}
+.conn-pop .ci i{width:7px;height:7px;border-radius:50%;margin-top:6px;flex:none;background:var(--st-review)}
+.conn-pop .ci.off i{background:var(--st-blocked)}
+.conn-pop .ci b{display:block;font-weight:500;font-size:12.5px}
+.conn-pop .ci span{display:block;font-size:12px;color:var(--text-2);margin-top:1px}
+
+/* ================= main ================= */
+.main{display:flex;flex-direction:column;min-width:0;min-height:0}
+.head{height:44px;flex:none;display:flex;align-items:center;gap:10px;padding:0 14px 0 18px;border-bottom:1px solid var(--line)}
+.head .title{font-weight:600}
+.head .cnt{color:var(--text-3)}
+.head .sp{flex:1}
+.chipbtn{height:26px;display:inline-flex;align-items:center;gap:6px;padding:0 9px;border-radius:6px;border:1px solid var(--line-2);color:var(--text-2);font-size:12px}
+.chipbtn:hover{background:var(--bg-hover);color:var(--text)}
+.btn{height:28px;display:inline-flex;align-items:center;gap:7px;padding:0 11px;border-radius:6px;border:1px solid var(--line-2);background:var(--bg-input);font-weight:500;font-size:12.5px;white-space:nowrap}
+.btn:hover{background:var(--bg-sel)}
+.btn.pri{background:var(--accent-fill);border-color:transparent;color:#fff}
+.btn.pri:hover{filter:brightness(1.1)}
+.btn.ghost{background:none;border-color:transparent;color:var(--text-2)}
+.btn.ghost:hover{background:var(--bg-hover);color:var(--text)}
+.btn kbd{background:rgba(255,255,255,.12);border-color:transparent;color:inherit;opacity:.85}
+.body{flex:1;display:flex;min-height:0}
+.list{flex:1;overflow-y:auto;min-width:0;padding:6px 0 30px;scrollbar-width:thin;outline:none}
+.peek{width:480px;flex:none;border-left:1px solid var(--line);background:var(--bg);overflow-y:auto;scrollbar-width:thin;display:none}
+.body.peeking .peek{display:block;animation:peekin .18s var(--ease)}
+@keyframes peekin{from{opacity:0;transform:translateX(10px)}}
+
+/* rows */
+.grp{display:flex;align-items:center;gap:8px;height:34px;padding:0 18px;font-size:12px;color:var(--text-2);background:var(--bg-raised);border-bottom:1px solid var(--line);border-top:1px solid var(--line);margin-top:-1px;position:sticky;top:-6px;z-index:2}
+.grp b{color:var(--text);font-weight:500}
+.row{display:flex;align-items:center;gap:10px;height:38px;padding:0 16px 0 calc(14px + var(--d,0)*22px);border-bottom:1px solid var(--line);white-space:nowrap;position:relative}
+.row:hover{background:var(--bg-hover)}
+.row.sel{background:var(--bg-sel)}
+.row.sel.kb::after{content:"";position:absolute;inset:0;box-shadow:inset 0 0 0 1px var(--accent);border-radius:2px;pointer-events:none}
+.row .disc{width:14px;height:14px;display:grid;place-items:center;color:var(--text-3);flex:none}
+.row .disc svg{width:10px;height:10px;transition:transform .15s var(--ease)}
+.row.open .disc svg{transform:rotate(90deg)}
+.row .id{width:34px;flex:none;color:var(--text-3);font-size:12px;font-variant-numeric:tabular-nums}
+.row .t{overflow:hidden;text-overflow:ellipsis;font-weight:500;flex:0 1 auto;min-width:96px}
+.row .meta{flex-shrink:0}
+.row .meta .short{display:none}
+.row .rd{display:none}
+.list{container-type:inline-size;container-name:list}
+@container list (max-width:820px){ .row .meta .rn{display:none} .row .rd{display:flex;align-items:center} .row .when{width:32px} }
+@container list (max-width:680px){ .row .meta .long{display:none} .row .meta .short{display:inline} .row .prog .pc{display:none} .row .live .lt{display:none} .row .live{padding:0 6px} }
+.row.done .t{color:var(--text-2)}
+.row .prog{font-size:11.5px;color:var(--text-3);display:flex;align-items:center;gap:4px}
+.row .sp{flex:1;min-width:8px}
+.row .meta{display:flex;align-items:center;gap:8px;color:var(--text-2);font-size:12px}
+.pill{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 8px;border-radius:11px;border:1px solid var(--line-2);font-size:11.5px;color:var(--text-2);white-space:nowrap}
+.pill.warn{color:var(--st-blocked);border-color:color-mix(in srgb,var(--st-blocked) 35%,transparent)}
+.pill.need{color:var(--needs);border-color:color-mix(in srgb,var(--needs) 35%,transparent);background:var(--needs-soft)}
+.pill.ok{color:var(--st-review);border-color:color-mix(in srgb,var(--st-review) 35%,transparent)}
+.av{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:10px;font-weight:600;color:#fff;flex:none}
+.av-agent{background:#4b4fc4}.av-me{background:#2c7a5a}.av-sync{background:#555a66}.av-plan{background:#8a5a2c}.av-launch{background:#3f6aa8}
+.when{width:44px;text-align:right;color:var(--text-3);font-size:12px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--needs);flex:none}
+.st{width:16px;height:16px;flex:none}
+.st.pop{animation:pop .3s var(--ease)}
+@keyframes pop{0%{transform:scale(.5)}60%{transform:scale(1.18)}100%{transform:scale(1)}}
+.row.enter{animation:rowin .6s var(--ease)}
+@keyframes rowin{from{background:var(--accent-soft)}}
+.row input.rename{flex:1;min-width:0;background:var(--bg-input);border:1px solid var(--accent);border-radius:5px;padding:3px 6px;outline:none;font-weight:500}
+
+/* ================= peek / page ================= */
+.pk-head{height:44px;display:flex;align-items:center;gap:6px;padding:0 12px 0 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:3}
+.pk-head .crumb{color:var(--text-3);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pk-head .crumb b{color:var(--text-2);font-weight:500}
+.pk{padding:20px 24px 40px}
+.pk h1{font-size:21px;font-weight:600;letter-spacing:-.018em;line-height:1.25;margin-bottom:14px}
+.call{display:flex;align-items:flex-start;gap:10px;padding:11px 12px;border-radius:8px;background:var(--needs-soft);border:1px solid color-mix(in srgb,var(--needs) 22%,transparent);margin-bottom:8px}
+.call .k{font-size:11.5px;font-weight:600;color:var(--needs);text-transform:none}
+.call .w{flex:1;min-width:0}
+.call .q{color:var(--text);margin-top:2px}
+.call .acts{display:flex;gap:6px;margin-top:9px}
+.call.info{background:var(--bg-raised);border-color:var(--line)}
+.call.info .k{color:var(--text-2)}
+.props{display:grid;grid-template-columns:104px 1fr;row-gap:2px;margin:16px 0 18px;font-size:12.5px}
+.props .l{color:var(--text-3);height:30px;display:flex;align-items:center}
+.props .v{min-height:30px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:0 6px;margin-left:-6px;border-radius:5px}
+.props .v:hover{background:var(--bg-hover)}
+.tag{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 7px;border-radius:5px;background:var(--bg-input);border:1px solid var(--line);font-size:12px}
+.tag.link{cursor:pointer}
+.tag.link:hover{border-color:var(--line-2)}
+.sec{margin-top:26px}
+.sec-h{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:10px}
+.sec-h .sp{flex:1}
+.doc{line-height:1.65;color:var(--text);font-size:13.5px}
+.doc p+p{margin-top:8px}
+.doc.empty{color:var(--text-3);padding:0;text-align:left}
+.feed{position:relative;padding-left:4px}
+.ev{display:flex;gap:10px;align-items:flex-start;padding:6px 0;font-size:12.5px;color:var(--text-2)}
+.ev .av{width:18px;height:18px;font-size:9px;margin-top:1px}
+.ev b{color:var(--text);font-weight:500}
+.ev .tm{color:var(--text-3);margin-left:auto;white-space:nowrap;padding-left:10px}
+.comment{display:flex;align-items:center;gap:8px;margin-top:10px;border:1px solid var(--line-2);border-radius:8px;padding:9px 11px;color:var(--text-3);background:var(--bg-raised)}
+
+/* live agents */
+.live{display:inline-flex;align-items:center;gap:6px;height:20px;padding:0 7px 0 6px;border-radius:10px;font-size:11.5px;color:var(--text-2);background:var(--bg-input);border:1px solid var(--line)}
+.live i{width:6px;height:6px;border-radius:50%;background:var(--st-review);position:relative}
+.live.l-run i::after{content:"";position:absolute;inset:-3px;border-radius:50%;border:1.5px solid var(--st-review);animation:pulse 1.6s ease-out infinite}
+.live.l-wait i{background:var(--needs)} .live.l-stop i{background:var(--text-3)}
+@keyframes pulse{from{opacity:.9;transform:scale(.6)}to{opacity:0;transform:scale(1.8)}}
+.thr{display:flex;align-items:center;gap:10px;height:40px;padding:0 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:6px;background:var(--bg-raised)}
+.thr .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* plans overview */
+.plans{padding:18px 22px 40px;display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px;overflow-y:auto;flex:1;align-content:start}
+.plan{border:1px solid var(--line);border-radius:12px;padding:16px 16px 14px;background:var(--bg-raised);cursor:pointer;transition:border-color .15s,transform .15s var(--ease)}
+.plan:hover{border-color:var(--line-2);transform:translateY(-1px)}
+.plan.sel{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.plan h3{font-size:14.5px;font-weight:600;letter-spacing:-.01em;display:flex;align-items:center;gap:8px}
+.plan .pct{font-size:26px;font-weight:600;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.plan .rowx{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-2);min-height:24px}
+.plan .rowx .k{width:62px;color:var(--text-3)}
+.plan .rowx .v{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;gap:6px;align-items:center}
+.wdots{display:flex;gap:4px}.wdots b{width:18px;height:5px;border-radius:3px;background:var(--bg-input)}.wdots b.d{background:var(--st-done)}.wdots b.c{background:var(--st-doing)}
+/* menus */
+.ctx{position:fixed;z-index:70;min-width:220px;background:var(--bg-raised);border:1px solid var(--line-2);border-radius:9px;box-shadow:var(--shadow);padding:5px;animation:mod2 .1s var(--ease)}
+.ctx .o{display:flex;align-items:center;gap:9px;height:30px;padding:0 9px;border-radius:6px}
+.ctx .o:hover,.ctx .o.hl{background:var(--bg-sel)}
+.ctx .o .t{flex:1}
+.ctx .o .k{color:var(--text-3);font-size:11.5px}
+.ctx hr{border:0;height:1px;background:var(--line);margin:4px 2px}
+.ctx .o.danger .t{color:var(--text)}
+.stbtn{display:grid;place-items:center;border-radius:5px;cursor:pointer}
+.stbtn:hover{background:var(--bg-hover);box-shadow:0 0 0 3px var(--bg-hover)}
+/* progress */
+.ring{flex:none}
+.ring .fg{transition:stroke-dasharray .4s var(--ease)}
+.bar{display:flex;height:6px;border-radius:3px;overflow:hidden;background:var(--bg-input);flex:1;min-width:80px}
+.bar i{display:block;height:100%;transition:width .4s var(--ease)}
+.bar i+i{box-shadow:-1px 0 0 var(--bg)}
+.pbig{display:flex;align-items:center;gap:14px;margin:4px 0 14px}
+.pbig .pct{font-size:22px;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums;min-width:58px}
+.pbig .bar{height:8px;border-radius:4px}
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:11.5px;color:var(--text-2);margin:-6px 0 12px}
+.legend span{display:flex;align-items:center;gap:6px}
+.legend i{width:8px;height:8px;border-radius:2px}
+/* waves (compact list) */
+.wv{margin-bottom:10px}
+.wv-h{font-size:11.5px;color:var(--text-3);font-weight:500;margin:10px 0 4px;display:flex;gap:6px}
+.sub{display:flex;align-items:center;gap:9px;height:32px;padding:0 8px;margin:0 -8px;border-radius:6px}
+.sub:hover{background:var(--bg-hover)}
+.sub .t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sub.wait .t{color:var(--text-2)}
+
+/* page (full) */
+.page{flex:1;display:grid;grid-template-columns:1fr 280px;min-height:0}
+.page .content{overflow-y:auto;scrollbar-width:thin}
+.page .content .pk{max-width:860px;margin:0 auto;padding:30px 40px 60px}
+.page .content h1{font-size:26px}
+.page aside{border-left:1px solid var(--line);padding:16px 18px;overflow-y:auto;background:var(--bg)}
+.page aside .props{grid-template-columns:86px 1fr;margin-top:4px}
+
+/* run order diagram */
+.ro{position:relative}
+.ro svg{position:absolute;inset:0;overflow:visible}
+.ro-colh{position:absolute;top:0;font-size:11.5px;font-weight:500;color:var(--text-3)}
+.lane{position:absolute;left:0;display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text-2)}
+.ro-st{position:absolute;width:16px;height:16px;border-radius:50%;background:var(--bg);box-shadow:0 0 0 3px var(--bg);z-index:2;cursor:pointer}
+.stop{position:absolute;z-index:1;cursor:pointer;padding:2px 4px;margin-left:-4px;border-radius:5px}
+.stop:hover{background:var(--bg-hover)}
+.stop b{display:block;font-weight:500;font-size:12.5px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stop small{display:block;color:var(--text-3);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stop.wait b{color:var(--text-2)}
+.stop.sel{background:var(--accent-soft)}
+.ro svg path{transition:opacity .15s}
+.ro.focusing svg path:not(.hl){opacity:.18}
+.ro svg path.hl{stroke-width:2.5}
+
+/* needs me inbox */
+.inbox{width:420px;flex:none;border-right:1px solid var(--line);overflow-y:auto;scrollbar-width:thin;outline:none}
+.ib-h{font-size:11.5px;font-weight:500;color:var(--text-3);padding:14px 16px 6px;display:flex;gap:6px}
+.ib{display:grid;grid-template-columns:18px 1fr auto;gap:2px 10px;padding:10px 14px 10px 16px;border-bottom:1px solid var(--line);position:relative}
+.ib:hover{background:var(--bg-hover)}
+.ib.sel{background:var(--bg-sel)}
+.ib.sel.kb::after{content:"";position:absolute;inset:0;box-shadow:inset 0 0 0 1px var(--accent);pointer-events:none}
+.ib .ic{color:var(--text-2);padding-top:2px}
+.ib .l1{display:flex;gap:7px;align-items:center;min-width:0}
+.ib .l1 .tt{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ib .l2{grid-column:2/4;color:var(--text-2);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ib .tm{font-size:11.5px;color:var(--text-3)}
+.ib.gone{opacity:0;transform:translateX(-10px);transition:.18s}
+.detail{flex:1;overflow-y:auto;min-width:0;scrollbar-width:thin}
+.big{margin:24px 28px 0;padding:18px 20px;border:1px solid var(--line-2);border-radius:12px;background:var(--bg-raised)}
+.big .k{font-size:12px;color:var(--text-2);display:flex;gap:8px;align-items:center}
+.big .q{font-size:17px;font-weight:500;letter-spacing:-.01em;line-height:1.4;margin:10px 0 4px}
+.big .acts{display:flex;gap:8px;margin-top:16px;align-items:center}
+.big .acts .sp{flex:1}
+.prop-row{display:flex;align-items:center;gap:10px;height:36px;border-top:1px solid var(--line)}
+.prop-row:first-of-type{border-top:0}
+.prop-row .t{flex:1}
+.empty{color:var(--text-2);text-align:center;padding:90px 20px}
+.empty h2{font-size:17px;font-weight:600;color:var(--text);margin:10px 0 4px}
+
+/* overlays */
+.scrim{position:fixed;inset:0;z-index:50;display:none;background:rgba(0,0,0,.35)}
+:root[data-theme="light"] .scrim{background:rgba(0,0,0,.12)}
+.scrim.open{display:block}
+.modal{position:absolute;left:50%;transform:translateX(-50%);background:var(--bg-raised);border-radius:12px;box-shadow:var(--shadow);overflow:hidden;animation:mod .14s var(--ease)}
+@keyframes mod{from{opacity:0;transform:translateX(-50%) scale(.985) translateY(-4px)}}
+.pal{top:13%;width:min(640px,calc(100% - 32px))}
+.pal .in{display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid var(--line)}
+.pal input{flex:1;height:52px;background:none;border:0;outline:none;font-size:15px}
+.pal input::placeholder{color:var(--text-3)}
+.pal .res{max-height:380px;overflow:auto;padding:6px}
+.pal .grp-l{font-size:11.5px;color:var(--text-3);padding:8px 10px 4px}
+.pal .it{display:flex;align-items:center;gap:10px;height:38px;padding:0 10px;border-radius:7px}
+.pal .it.hl{background:var(--bg-sel)}
+.pal .it .t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pal .ft{display:flex;gap:14px;padding:8px 14px;border-top:1px solid var(--line);font-size:11.5px;color:var(--text-3)}
+.qa{top:16%;width:min(680px,calc(100% - 32px))}
+.qa .top{display:flex;align-items:center;gap:8px;padding:12px 16px 0;font-size:12px;color:var(--text-3)}
+.qa .ttl{width:100%;background:none;border:0;outline:none;font-size:18px;font-weight:500;padding:10px 18px 2px;letter-spacing:-.01em}
+.qa .ttl::placeholder,.qa .desc::placeholder{color:var(--text-3)}
+.qa .desc{width:100%;background:none;border:0;outline:none;resize:none;font-size:13.5px;padding:4px 18px;height:56px;color:var(--text-2)}
+.qa .pills{display:flex;gap:6px;padding:4px 16px 14px;flex-wrap:wrap;align-items:center}
+.qa .pp{height:26px;display:inline-flex;align-items:center;gap:6px;padding:0 9px;border-radius:6px;border:1px solid var(--line-2);font-size:12px;color:var(--text-2);position:relative}
+.qa .pp:hover{background:var(--bg-hover);color:var(--text)}
+.qa .pp.set{color:var(--text)}
+.qa .pp.focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.qa .ft{display:flex;align-items:center;gap:12px;padding:10px 14px;border-top:1px solid var(--line);font-size:11.5px;color:var(--text-3)}
+.qa .ft .sp{flex:1}
+.dd{position:absolute;top:30px;left:0;z-index:5;width:220px;background:var(--bg-raised);border:1px solid var(--line-2);border-radius:8px;box-shadow:var(--shadow);padding:4px}
+.dd input{width:100%;height:30px;background:none;border:0;border-bottom:1px solid var(--line);outline:none;padding:0 8px;margin-bottom:4px}
+.dd .o{display:flex;align-items:center;gap:8px;height:30px;padding:0 8px;border-radius:5px;color:var(--text)}
+.dd .o.hl{background:var(--bg-sel)}
+.sheet{top:8%;width:min(760px,calc(100% - 32px));padding:20px 24px 18px;max-height:84%;overflow:auto}
+.sheet h2{font-size:15px;font-weight:600;margin-bottom:12px}
+.sheet .cols{display:grid;grid-template-columns:1fr 1fr;gap:0 32px}
+.sheet .k{display:flex;justify-content:space-between;align-items:center;height:32px;border-bottom:1px solid var(--line)}
+.sheet .k span:last-child{display:flex;gap:3px}
+.tray{position:absolute;top:30px;right:120px;width:360px;z-index:60;display:none;background:var(--bg-raised);border-radius:10px;box-shadow:var(--shadow);padding:6px}
+.tray.open{display:block;animation:mod2 .12s var(--ease)}
+@keyframes mod2{from{opacity:0;transform:translateY(-4px)}}
+.tray .h{display:flex;justify-content:space-between;font-size:11.5px;color:var(--text-3);padding:6px 10px 4px}
+.tray .mi{display:flex;align-items:center;gap:9px;height:32px;padding:0 10px;border-radius:6px}
+.tray .mi:hover{background:var(--bg-sel)}
+.tray .mi .t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tray hr{border:0;height:1px;background:var(--line);margin:5px 4px}
+.toasts{position:absolute;right:18px;bottom:18px;display:flex;flex-direction:column;gap:8px;align-items:flex-end;z-index:30;pointer-events:none}
+.toast{display:flex;align-items:center;gap:9px;background:var(--bg-raised);border:1px solid var(--line-2);color:var(--text);font-size:12.5px;padding:9px 13px;border-radius:8px;box-shadow:var(--shadow);animation:toast .2s var(--ease);max-width:420px}
+.toast svg{color:var(--accent)}
+@keyframes toast{from{opacity:0;transform:translateY(6px)}}
+.hint{font-size:11.5px;color:var(--text-3);text-align:center;padding:0 0 10px;flex:none;display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
+.hint span{display:flex;gap:5px;align-items:center}
+@media (max-width:980px){.peek{width:380px}.row .meta .rn{display:none}}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <span class="tb"><b>Airboss</b></span><span class="tb">File</span><span class="tb">Edit</span><span class="tb">Task</span><span class="tb">View</span>
+  <span class="sp"></span>
+  <span>Prototype</span><span class="seg" id="themeSeg"><span data-t="dark" class="on">Dark</span><span data-t="light">Light</span></span>
+  <span class="tb btnish" id="trayBtn" title="Menu-bar icon"><svg viewBox="0 0 16 16" width="15" height="15"><circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 8V4a4 4 0 0 1 0 8Z" fill="currentColor"/></svg><b id="trayCount"></b></span>
+  <span class="tb">Wed 25 Nov 10:44</span>
+  <div class="tray" id="tray"></div>
+</div>
+<div class="stage"><div class="win" id="win">
+  <aside class="side" id="side"></aside>
+  <main class="main" id="main"></main>
+  <div class="toasts" id="toasts"></div>
+</div></div>
+<div class="hint"><span><kbd>↑</kbd><kbd>↓</kbd> move</span><span><kbd>→</kbd><kbd>←</kbd> open / fold</span><span><kbd>Space</kbd> done</span><span><kbd>S</kbd> status</span><span><kbd>↩</kbd> rename</span><span><kbd>⌘</kbd><kbd>↓</kbd> open page</span><span><kbd>⌘</kbd><kbd>↩</kbd> Do it</span><span><kbd>⌘</kbd><kbd>K</kbd> jump</span><span><kbd>C</kbd> or <kbd>⌥</kbd><kbd>N</kbd> new task</span><span><kbd>G</kbd> then <kbd>N</kbd> Needs me</span><span><kbd>?</kbd> all</span></div>
+
+<div class="scrim" id="palS"><div class="modal pal"><div class="in"><svg class="i" viewBox="0 0 16 16" style="color:var(--text-3)"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg><input id="palIn" placeholder="Jump to a task, or type a command…" autocomplete="off" spellcheck="false"></div><div class="res" id="palRes"></div><div class="ft"><span><kbd>↑</kbd><kbd>↓</kbd> move</span><span><kbd>↩</kbd> open</span><span><kbd>esc</kbd> close</span></div></div></div>
+<div class="scrim" id="qaS"><div class="modal qa" id="qa"></div></div>
+<div class="scrim" id="shS"><div class="modal sheet" id="sheet"></div></div>
+
+<script>
+/* =========================================================== data (sample) */
+const REPOS={"airboss":"var(--repo-3)","booking-web":"var(--repo-1)","booking-api":"var(--repo-2)","dotfiles":"var(--repo-4)"};
+const T={};
+function add(id,title,status,parent,repo,x={}){T[id]=Object.assign({id,title,status,parent,repo,notes:"",links:[],waits:[],open:false,updated:"3d",by:"me",blocked:"",branch:""},x);}
+add(142,"Booking flow","doing",null,null,{open:true,branch:"task-142-booking-flow",notes:"Let people pick a slot and get a confirmation. Split across the API and the web app. The Slack thread has the product asks; the plan has the phases.",links:[["slack","#booking thread"],["doc","booking-flow.md"]],updated:"6m",by:"agent"});
+add(143,"API: slots endpoint","done",142,"booking-api",{links:[["pr","PR #58 · merged"]],updated:"1h",by:"sync"});
+add(144,"Web: slot picker","doing",142,"booking-web",{links:[["thread","slot-picker"]],updated:"6m",by:"agent",notes:"Keyboard support is a must: arrows move between slots, Return books."});
+add(145,"Web: confirm screen","todo",142,"booking-web",{waits:[144],updated:"2d",by:"plan"});
+add(146,"Confirmation email","todo",142,"booking-api",{waits:[143],updated:"1h",by:"sync",notes:"Send the confirmation once a slot is held. Use the existing mail queue, not a new provider. Include the .ics file and a cancel link.",links:[["slack","#booking thread"]]});
+add(147,"End-to-end tests","todo",142,"booking-web",{waits:[144,145,146],updated:"2d",by:"plan"});
+add(200,"Refunds","doing",null,null,{branch:"task-200-refunds",updated:"20m",by:"agent",notes:"Refunds from the booking page, end to end."});
+add(201,"Schema: refunds table","done",200,"booking-api",{updated:"1d",by:"sync"});
+add(202,"Refund service","doing",200,"booking-api",{waits:[201],links:[["thread","refund-service"]],updated:"20m",by:"agent"});
+add(203,"Payment webhook","blocked",200,"booking-api",{waits:[201],blocked:"Needs test keys from the payments dashboard",updated:"5h",by:"agent"});
+add(204,"Refund button","in_review",200,"booking-web",{links:[["pr","PR #61 · checks passed"]],updated:"2h",by:"agent"});
+add(205,"Refund status page","todo",200,"booking-web",{waits:[202,204],updated:"1d",by:"plan"});
+add(206,"Write refund policy copy","todo",200,null,{updated:"1d",by:"plan"});
+add(207,"Announce to support","todo",200,null,{waits:[205],updated:"1d",by:"plan"});
+add(208,"Backfill old refunds","todo",200,"booking-api",{waits:[128],updated:"1d",by:"plan"});
+add(128,"MCP server","in_review",null,"airboss",{links:[["pr","PR #31 · +412 −38"]],updated:"40m",by:"agent"});
+add(133,"Menu-bar count","doing",null,"airboss",{links:[["thread","tray-count"]],updated:"12m",by:"agent"});
+add(131,"Fix flaky login test","doing",null,"booking-web",{links:[["thread","fix-flaky-login"]],updated:"1h",by:"agent"});
+add(120,"Payments refactor stack","in_review",null,"booking-api",{updated:"6d",by:"agent",links:[["pr","10 open PRs"]]});
+add(150,"Worktree cleanup research","todo",null,"airboss",{updated:"3h",by:"agent"});
+add(110,"Dark mode tokens","doing",null,"booking-web",{updated:"1h",by:"sync"});
+add(111,"Colour tokens","done",110,"booking-web");add(112,"Swap hard-coded colours","done",110,"booking-web");add(113,"Dark screenshots","done",110,"booking-web");add(114,"Contrast check","done",110,"booking-web");
+add(151,"Rotate local MCP token","todo",null,"airboss",{updated:"2d"});
+add(152,"Read sortie prior art","todo",null,null,{updated:"4d"});
+add(98,"New laptop setup","done",null,"dotfiles",{updated:"2w"});
+const LIVE={144:["run","slot-picker","Agent working · asked a question 6m ago"],202:["run","refund-service","Agent working · 20m"],133:["wait","tray-count","Waiting for your approval"],131:["stop","fix-flaky-login","Stopped · 3 tests failed"],128:["stop","mcp-server","Finished · PR #31 open"]};
+const ORDER={null:[142,200,128,133,131,120,150,110,151,152,98],142:[143,144,145,146,147],200:[201,202,203,204,205,206,207,208],110:[111,112,113,114],150:[]};
+let nextId=153;
+let NEEDS=[
+ {id:"n1",kind:"ask",group:"Questions",task:144,tm:"6m",q:"Use the existing date picker or build one? It needs full keyboard support.",l2:"Agent in slot-picker asks",acts:[["Open thread","open",1]]},
+ {id:"n2",kind:"shield",group:"Questions",task:133,tm:"12m",q:"Allow running cargo add tray-icon?",l2:"Agent in tray-count wants approval",acts:[["Open thread","open",1]]},
+ {id:"n3",kind:"pr",group:"Reviews",task:128,tm:"40m",q:"PR #31 · list_tasks and get_task",l2:"+412 −38 · checks passed",acts:[["Open PR","open",1]]},
+ {id:"n4",kind:"fail",group:"Failed runs",task:131,tm:"1h",q:"fix-flaky-login stopped: 3 tests failed",l2:"Thread stopped · 3 tests failed",acts:[["Open thread","open",1]]},
+ {id:"n5",kind:"plus",group:"Proposed",task:150,tm:"3h",q:"The agent proposed 3 subtasks",l2:"3 proposed subtasks",proposed:["List stale worktrees older than 14 days","Find worktrees whose branch has merged","Write a dry-run cleanup command"],acts:[["Reject all","rejectall"],["Accept all","acceptall",1]]},
+ {id:"n6",kind:"play",group:"Ready",task:146,tm:"1h",q:"Ready to start: 143 is done (PR #58 merged)",l2:"143 merged · ready to start",acts:[["Do it","doit",1]]},
+ {id:"n7",kind:"flag",group:"Finish it?",task:110,tm:"1h",q:"All 4 subtasks are done. Mark the parent done?",l2:"All 4 subtasks done",acts:[["Keep open","keep"],["Mark done","finish",1]]},
+ {id:"n8",kind:"moon",group:"Quiet",task:120,tm:"6d",q:"No activity for 6 days. 10 open PRs, the oldest from 4 Nov.",l2:"Quiet for 6 days",acts:[["Snooze 3 days","snooze"],["Open","goto",1]]},
+];
+const GROUPS=["Questions","Reviews","Failed runs","Proposed","Ready","Finish it?","Quiet"];
+const KIND={ask:"Question",shield:"Approval",pr:"Review",fail:"Failed run",plus:"Proposed subtasks",play:"Ready to start",flag:"Finish it?",moon:"Quiet 5+ days"};
+const HIST={142:[["agent","Agent in <b>slot-picker</b> asked a question","6m"],["sync","<b>143</b> moved to Done · PR #58 merged","1h"],["launch","Started thread <b>slot-picker</b> for 144 in booking-web","Mon"],["plan","Plan added <b>5 subtasks</b> and 5 waits-on","Mon"],["me","You moved this to <b>Doing</b>","Mon"],["me","You created this from a Slack link","Sun"]]};
+
+/* =========================================================== state */
+let view="needs", filter="all", sel=null, peek=true, page=false, needSel=0, kbFocus="list", renaming=null, roFocus=null, layout="tree", gPending=false;
+
+/* =========================================================== helpers */
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const kids=id=>ORDER[id]||[];
+const isOpen=s=>s!=="done"&&s!=="dropped";
+const waitingOn=t=>t.waits.filter(w=>T[w]&&isOpen(T[w].status));
+const gk=t=>t.status==="todo"&&waitingOn(t).length?"waiting":t.status;
+const LABEL={todo:"Todo",doing:"In progress",in_review:"In review",blocked:"Blocked",done:"Done",dropped:"Dropped",waiting:"Waiting",proposed:"Proposed"};
+function st(k,cls=""){
+  const ring=(c,ex="")=>`<circle cx="8" cy="8" r="6.25" fill="none" stroke="${c}" stroke-width="1.6" ${ex}/>`;
+  const b={
+    todo:ring("var(--st-todo)"),
+    waiting:ring("var(--st-todo)",'stroke-dasharray="2.4 2.2"'),
+    proposed:ring("var(--st-todo)",'stroke-dasharray="1.2 2.2"'),
+    doing:ring("var(--st-doing)")+'<path d="M8 8V4.2a3.8 3.8 0 0 1 0 7.6Z" fill="var(--st-doing)"/>',
+    in_review:ring("var(--st-review)")+'<path d="M8 8V4.2a3.8 3.8 0 1 1-3.8 3.8Z" fill="var(--st-review)"/>',
+    blocked:ring("var(--st-blocked)")+'<path d="M5.5 8h5" stroke="var(--st-blocked)" stroke-width="2" stroke-linecap="round"/>',
+    done:'<circle cx="8" cy="8" r="7" fill="var(--st-done)"/><path d="M5 8.2l2 2 4-4.3" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>',
+    dropped:ring("var(--st-todo)")+'<path d="M5.6 5.6l4.8 4.8M10.4 5.6l-4.8 4.8" stroke="var(--st-todo)" stroke-width="1.4" stroke-linecap="round"/>',
+  }[k];
+  return `<svg class="st ${cls}" viewBox="0 0 16 16" aria-label="${LABEL[k]}">${b}</svg>`;
+}
+const I={
+ chev:'<path d="M4 2.5 7.5 6 4 9.5"/>',search:'<circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/>',edit:'<path d="M10.5 2.8 13.2 5.5 6 12.7l-3.3.6.6-3.3Z"/>',
+ inbox:'<path d="M2.5 9.5 4 3.5h8l1.5 6v3h-11Z"/><path d="M2.5 9.5h3l1 1.5h3l1-1.5h3"/>',play:'<circle cx="8" cy="8" r="5.75"/><path d="M6.8 5.8 10.2 8l-3.4 2.2Z"/>',
+ prog:'<circle cx="8" cy="8" r="5.75"/><path d="M8 4.5V8l2.4 1.5"/>',list:'<path d="M5.5 4h8M5.5 8h8M5.5 12h8M2.5 4h.01M2.5 8h.01M2.5 12h.01"/>',
+ ask:'<path d="M2.5 4.5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2H7l-3 2.5v-2.5h.5a2 2 0 0 1-2-2Z"/>',shield:'<path d="M8 1.8 13 3.8v4c0 3-2.2 5.2-5 6.4-2.8-1.2-5-3.4-5-6.4v-4Z"/><path d="m5.8 8 1.5 1.5 3-3"/>',
+ pr:'<circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="12.5" r="1.5"/><path d="M4.5 5v6M11.5 11V6.5a2 2 0 0 0-2-2H7.5"/>',
+ fail:'<circle cx="8" cy="8" r="5.75"/><path d="M8 5v3.4M8 10.8v.1"/>',plus:'<rect x="2.5" y="2.5" width="11" height="11" rx="2.5"/><path d="M8 5.5v5M5.5 8h5"/>',
+ flag:'<path d="M3.5 14V2.5M3.5 3h8l-1.6 2.7L11.5 8.5h-8"/>',moon:'<path d="M12.5 9.5A5 5 0 0 1 6.5 3.5a5 5 0 1 0 6 6Z"/>',check:'<path d="m3.5 8.3 3 3 6-6.6"/>',x:'<path d="m4.5 4.5 7 7M11.5 4.5l-7 7"/>',
+ thread:'<rect x="2" y="3" width="12" height="10" rx="2"/><path d="M5 6.5h6M5 9.5h4"/>',slack:'<path d="M6 2.5v11M10 2.5v11M2.5 6h11M2.5 10h11"/>',doc:'<path d="M4 1.8h5l3 3v9.4H4Z"/><path d="M9 1.8v3h3"/>',
+ branch:'<circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="5.5" r="1.5"/><path d="M4.5 5v6M11.5 7c0 2.5-3 2.5-7 4"/>',
+ expand:'<path d="M9.5 2.5h4v4M6.5 13.5h-4v-4M13.5 2.5 9 7M2.5 13.5 7 9"/>',close:'<path d="m4.5 4.5 7 7M11.5 4.5l-7 7"/>',
+ waves:'<path d="M2.5 4h3M2.5 8h3M7 6h3M7 10h3M11.5 8h2"/>',tree:'<path d="M3 3.5h4M5 3.5v8.5h3M5 8h3"/>',repo:'<path d="M3.5 3a1.5 1.5 0 0 1 1.5-1.5h7.5v10H5a1.5 1.5 0 0 0-1.5 1.5Z"/><path d="M3.5 13A1.5 1.5 0 0 1 5 11.5h7.5v3H5A1.5 1.5 0 0 1 3.5 13Z"/>',
+ link:'<path d="M7 9a2.5 2.5 0 0 0 3.5 0l2-2A2.5 2.5 0 0 0 9 3.5l-.7.7M9 7a2.5 2.5 0 0 0-3.5 0l-2 2A2.5 2.5 0 0 0 7 12.5l.7-.7"/>',dep:'<circle cx="4" cy="8" r="2"/><circle cx="12" cy="8" r="2"/><path d="M6 8h4"/>',
+ cmd:'<path d="M5.5 5.5h5v5h-5Z"/><path d="M5.5 5.5V4a1.5 1.5 0 1 0-1.5 1.5ZM10.5 5.5V4A1.5 1.5 0 1 1 12 5.5ZM5.5 10.5V12A1.5 1.5 0 1 1 4 10.5ZM10.5 10.5V12a1.5 1.5 0 1 0 1.5-1.5Z"/>',
+ spark:'<path d="M8 2v3M8 11v3M2 8h3M11 8h3M4 4l2 2M10 10l2 2M12 4l-2 2M6 10l-2 2"/>',
+};
+const ic=(n,s=16)=>`<svg class="i" viewBox="0 0 16 16" style="width:${s}px;height:${s}px">${I[n]}</svg>`;
+const rdot=r=>r?`<span class="rdot" style="--c:${REPOS[r]}"></span>`:"";
+const av=w=>`<span class="av av-${w}" title="${w}">${{agent:"A",me:"Y",sync:"S",plan:"P",launch:"L"}[w]||"?"}</span>`;
+const needsFor=id=>NEEDS.filter(n=>n.task===id);
+/* progress: share of leaf subtasks (any depth) that are done; dropped ones don't count */
+function progress(id){
+  const c={done:0,in_review:0,doing:0,blocked:0,todo:0,total:0};
+  const walk=p=>kids(p).forEach(k=>{const t=T[k]; if(t.status==="dropped") return; if(kids(k).length) walk(k); else {c.total++; c[t.status==="proposed"?"todo":t.status]++;}});
+  walk(id); c.pct=c.total?Math.round(c.done/c.total*100):0; return c;
+}
+function ring(pct,size=14){const r=size/2-1.6,C=2*Math.PI*r;return `<svg class="ring" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="var(--line-2)" stroke-width="2"/><circle class="fg" cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="${pct===100?"var(--st-review)":"var(--st-done)"}" stroke-width="2" stroke-linecap="round" stroke-dasharray="${C*pct/100} ${C}" transform="rotate(-90 ${size/2} ${size/2})"/></svg>`;}
+const SEG=[["done","var(--st-done)","Done"],["in_review","var(--st-review)","In review"],["doing","var(--st-doing)","In progress"],["blocked","var(--st-blocked)","Blocked"]];
+function bar(c){return `<span class="bar">${SEG.map(([k,col])=>c[k]?`<i style="width:${c[k]/c.total*100}%;background:${col}"></i>`:"").join("")}</span>`;}
+const ancestors=id=>{const a=[];let p=T[id]?.parent;while(p!=null){a.push(p);p=T[p].parent;}return a;};
+function toast(m){const e=document.createElement("div");e.className="toast";e.innerHTML=ic("spark",14)+`<span>${m}</span>`;$("#toasts").appendChild(e);setTimeout(()=>e.remove(),2800);}
+const linkIc={slack:"slack",doc:"doc",pr:"pr",thread:"thread"};
+
+/* =========================================================== connections (plain words) */
+let connOpen=false;
+const CONN=[
+ {name:"T3 Code",ok:true,okText:"Connected",offText:"Not found",what:"Do it and Plan it start agent threads here.",fix:"Install T3 Code to turn on Do it and Plan it. Everything else works."},
+ {name:"GitHub",ok:true,okText:"Signed in",offText:"Not signed in",what:"Pull requests sync every 5 minutes. A merged PR finishes its task.",fix:"Run “gh auth login” in a terminal to sync pull requests."},
+ {name:"Agents",ok:true,okText:"Listening",offText:"Off",what:"Agents report progress and ask questions through Airboss.",fix:"Restart Airboss to turn the agent link back on."},
+];
+document.addEventListener("mousedown",e=>{if(connOpen&&!e.target.closest(".conn")){connOpen=false;renderSide();}});
+/* =========================================================== sidebar */
+function counts(){
+  const all=Object.values(T).filter(t=>isOpen(t.status));
+  return {ready:all.filter(t=>t.status==="todo"&&!waitingOn(t).length&&!kids(t.id).length).length, prog:all.filter(t=>t.status==="doing"||t.status==="in_review").length, all:all.length};
+}
+function renderSide(){
+  const c=counts(), on=(v,f)=>view===v&&(f==null||filter===f)?" on":"";
+  const parents=ORDER[null].filter(id=>kids(id).length&&isOpen(T[id].status));
+  $("#side").innerHTML=`<div class="lights"><i></i><i></i><i></i></div>
+  <div class="ws"><span class="logo">${ic("check",12)}</span><b>Airboss</b><button class="iconbtn" id="sSearch" title="Jump (⌘K)">${ic("search",15)}</button><button class="iconbtn" id="sNew" title="New task (C)">${ic("edit",15)}</button></div>
+  <div class="nav${on("needs")}" data-v="needs">${ic("inbox")}<span class="t">Needs me</span>${NEEDS.length?`<span class="badge">${NEEDS.length}</span>`:""}</div>
+  <div class="nav${on("list","ready")}" data-v="list" data-f="ready">${ic("play")}<span class="t">Ready to start</span><span class="c">${c.ready}</span></div>
+  <div class="nav${on("plans")}" data-v="plans">${ic("waves")}<span class="t">Plans</span><span class="c">${ORDER[null].filter(id=>kids(id).length&&isOpen(T[id].status)).length}</span></div>
+  <div class="nav${on("list","prog")}" data-v="list" data-f="prog">${ic("prog")}<span class="t">In progress</span><span class="c">${c.prog}</span></div>
+  <div class="nav${on("list","all")}" data-v="list" data-f="all">${ic("list")}<span class="t">All tasks</span><span class="c">${c.all}</span></div>
+  <div class="sech">Parents</div>${parents.map(p=>`<div class="nav${on("list","p"+p)}" data-v="list" data-f="p${p}">${st(gk(T[p]))}<span class="t">${esc(T[p].title)}</span><span class="c" style="display:flex;align-items:center;gap:6px">${progress(p).pct}%${ring(progress(p).pct,13)}</span></div>`).join("")}
+  <div class="sech">Repos</div>${Object.keys(REPOS).map(r=>`<div class="nav${on("list","r:"+r)}" data-v="list" data-f="r:${r}"><span style="width:16px;display:grid;place-items:center">${rdot(r)}</span><span class="t">${r}</span></div>`).join("")}
+  <div class="conn">${connOpen?`<div class="conn-pop">${CONN.map(c=>`<div class="ci${c.ok?"":" off"}"><i></i><div><b>${c.name} · ${c.ok?c.okText:c.offText}</b><span>${c.ok?c.what:c.fix}</span></div></div>`).join("")}</div>`:""}
+  ${CONN.every(c=>c.ok)?`<div class="conn-btn" id="connBtn"><i></i>All connected</div>`:`<div class="conn-btn warn" id="connBtn"><i></i>${CONN.filter(c=>!c.ok).map(c=>c.name+" "+c.offText.toLowerCase()).join(" · ")}</div>`}</div>`;
+  $("#side").querySelectorAll(".nav").forEach(n=>n.onclick=()=>{ if(n.dataset.v==="needs") openNeeds(); else if(n.dataset.v==="plans") openPlans(); else openList(n.dataset.f); });
+  $("#connBtn").onclick=e=>{e.stopPropagation(); connOpen=!connOpen; renderSide();};
+  $("#sSearch").onclick=openPal; $("#sNew").onclick=openQA;
+  $("#trayCount").textContent=NEEDS.length||"";
+}
+
+/* =========================================================== list view */
+function filterFn(){
+  if(filter==="ready") return t=>t.status==="todo"&&!waitingOn(t).length&&!kids(t.id).length;
+  if(filter==="prog") return t=>t.status==="doing"||t.status==="in_review";
+  if(filter.startsWith("r:")) {const r=filter.slice(2); return t=>t.repo===r;}
+  return null;
+}
+function rows(){
+  const out=[];
+  if(filter.startsWith("p")){ const p=+filter.slice(1); const walk=(pid,d)=>{for(const id of kids(pid)){out.push([id,d]); if(T[id].open) walk(id,d+1);}}; walk(p,0); return out; }
+  const f=filterFn();
+  if(f){ return Object.values(T).filter(f).filter(t=>t.status!=="dropped").map(t=>[t.id,0]); }
+  const walk=(pid,d)=>{for(const id of kids(pid)){const t=T[id]; if(t.status==="dropped") continue; out.push([id,d]); if(t.open&&kids(id).length) walk(id,d+1);}}; walk(null,0); return out;
+}
+function listTitle(){
+  if(filter==="ready") return "Ready to start"; if(filter==="prog") return "In progress";
+  if(filter.startsWith("r:")) return filter.slice(2); if(filter.startsWith("p")) return T[+filter.slice(1)].title; return "All tasks";
+}
+function rowHtml(id,d){
+  const t=T[id],k=kids(id),g=gk(t),w=waitingOn(t),s=sel===id;
+  const cls=["row"]; if(t.open)cls.push("open"); if(s)cls.push("sel"); if(s&&kbFocus==="list")cls.push("kb"); if(t.status==="done")cls.push("done");
+  const title=renaming===id?`<input class="rename" id="rn" value="${esc(t.title)}">`:`<span class="t">${esc(t.title)}</span>`;
+  const pr=k.length?progress(id):null; const prog=pr?`<span class="prog" title="${pr.pct}% done">${ring(pr.pct,13)}<span class="pc">${pr.done}/${pr.total}</span></span>`:"";
+  let meta="";
+  if(t.status==="blocked") meta+=`<span class="pill warn">Blocked</span>`;
+  if(g==="waiting") meta+=`<span class="pill" title="waits on ${w.join(", ")}">${ic("dep",12)}<span class="long">waits on ${w.join(", ")}</span><span class="short">${w.length}</span></span>`;
+  if(t.status==="todo"&&!w.length&&!k.length&&needsFor(id).some(n=>n.kind==="play")) meta+=`<span class="pill ok">Ready</span>`;
+  const repos=t.repo?[t.repo]:[...new Set(k.map(c=>T[c].repo).filter(Boolean))];
+  meta+=repos.map(r=>`<span class="pill rn">${rdot(r)}${r}</span>`).join("");
+  const lv=LIVE[id]; const live=lv&&isOpen(t.status)?`<span class="live l-${lv[0]}" title="${esc(lv[2])}"><i></i><span class="lt">${{run:"Agent working",wait:"Waiting on you",stop:"Stopped"}[lv[0]]}</span></span>`:"";
+  return `<div class="${cls.join(" ")}" data-id="${id}" style="--d:${d}">${k.length?`<span class="disc" data-disc="${id}"><svg viewBox="0 0 12 12" class="i">${I.chev}</svg></span>`:'<span class="disc"></span>'}<span class="stbtn" data-stp="${id}" title="Change status (S)">${st(g)}</span><span class="id">${id}</span>${title}${prog}${live}${needsFor(id).length?'<span class="dot" title="Needs you"></span>':""}<span class="sp"></span><span class="meta">${meta}</span>${repos.map(r=>`<span class="rd" title="${r}">${rdot(r)}</span>`).join("")}${av(t.by)}<span class="when">${t.updated}</span></div>`;
+}
+function renderList(flash){
+  const r=rows();
+  const body=r.length?r.map(([id,d])=>rowHtml(id,d)).join(""):`<div class="empty">${ic("check",22)}<h2>Nothing here</h2><div>No tasks match this view.</div></div>`;
+  const pk = peek&&sel&&T[sel];
+  $("#main").innerHTML=`<div class="head"><span class="title">${esc(listTitle())}</span><span class="cnt">${r.length}</span><span class="sp"></span>
+  <span class="seg" id="layoutSeg"><span data-l="tree" class="${layout==="tree"?"on":""}">Tree</span><span data-l="status" class="${layout==="status"?"on":""}">By status</span></span>
+  <button class="chipbtn" id="hSearch">${ic("search",13)}Jump <kbd>⌘K</kbd></button><button class="btn pri" id="hNew">${ic("edit",13)}New task</button></div>
+  <div class="body${pk?" peeking":""}"><div class="list" id="list" tabindex="-1">${layout==="status"?byStatus(r):body}</div><div class="peek" id="peek">${pk?peekHtml(sel):""}</div></div>`;
+  $("#hSearch").onclick=openPal; $("#hNew").onclick=openQA;
+  $("#layoutSeg").querySelectorAll("span").forEach(s=>s.onclick=()=>{layout=s.dataset.l;renderList();});
+  wireList(); if(pk) wirePeek();
+  if(flash){const e=document.querySelector(`.row[data-id="${flash}"]`); if(e){e.classList.add("enter");e.scrollIntoView({block:"nearest"});}}
+  if(renaming){const i=$("#rn");i.focus();i.select();i.onkeydown=e=>{e.stopPropagation();if(e.key==="Enter"){T[renaming].title=i.value.trim()||T[renaming].title;renaming=null;renderAll();}if(e.key==="Escape"){renaming=null;renderAll();}};i.onblur=()=>{if(renaming){renaming=null;renderAll();}};}
+  const s=document.querySelector(".row.sel"); if(s) s.scrollIntoView({block:"nearest"});
+}
+function byStatus(r){
+  const order=["doing","in_review","blocked","todo","waiting","done"];
+  return order.map(k=>{const ids=r.map(x=>x[0]).filter(id=>gk(T[id])===k); if(!ids.length) return ""; return `<div class="grp">${st(k)}<b>${LABEL[k]}</b><span>${ids.length}</span></div>`+ids.map(id=>rowHtml(id,0)).join("");}).join("");
+}
+function wireList(){
+  const l=$("#list");
+  l.oncontextmenu=e=>{const r=e.target.closest(".row"); if(!r) return; e.preventDefault(); sel=+r.dataset.id; renderAll(); ctxMenu(e.clientX,e.clientY,sel);};
+  l.onclick=e=>{const sp=e.target.closest("[data-stp]"); if(sp){e.stopPropagation(); sel=+sp.dataset.stp; renderAll(); const b=document.querySelector(`.row[data-id="${sel}"] .stbtn`).getBoundingClientRect(); statusMenu(b.left,b.bottom+4,sel); return;}
+    const d=e.target.closest("[data-disc]"); if(d){const t=T[+d.dataset.disc];t.open=!t.open;renderList();return;}
+    const r=e.target.closest(".row"); if(r&&!renaming){kbFocus="list"; selectTask(+r.dataset.id);}};
+  l.ondblclick=e=>{const r=e.target.closest(".row"); if(r) openPage(+r.dataset.id);};
+}
+
+/* =========================================================== peek + page */
+function propsHtml(t){
+  const k=kids(t.id), repos=t.repo?[t.repo]:[...new Set(k.map(c=>T[c].repo).filter(Boolean))];
+  const blocks=Object.values(T).filter(x=>x.waits.includes(t.id));
+  return `<div class="props">
+  <div class="l">Status</div><div class="v" data-stv="${t.id}" style="cursor:pointer">${st(gk(t))}${LABEL[gk(t)]}${t.status==="blocked"?`<span class="faint">· ${esc(t.blocked)}</span>`:""}</div>
+  ${k.length?(()=>{const c=progress(t.id);return `<div class="l">Progress</div><div class="v" style="gap:10px">${bar(c)}<span style="white-space:nowrap;font-variant-numeric:tabular-nums">${c.pct}% <span class="faint">· ${c.done} of ${c.total}</span></span></div>`;})():""}
+  <div class="l">Repo</div><div class="v">${repos.length?repos.map(r=>`<span class="tag">${rdot(r)}${r}</span>`).join(""):'<span class="faint">None</span>'}</div>
+  ${t.branch?`<div class="l">Branch</div><div class="v"><span class="tag mono">${ic("branch",12)}${t.branch}</span></div>`:""}
+  ${t.parent!=null?`<div class="l">Parent</div><div class="v"><span class="tag link" data-go="${t.parent}">${st(gk(T[t.parent]))}${t.parent} ${esc(T[t.parent].title)}</span></div>`:""}
+  <div class="l">Waits on</div><div class="v">${t.waits.length?t.waits.map(w=>`<span class="tag link" data-go="${w}">${st(gk(T[w]))}${w}</span>`).join(""):'<span class="faint">Nothing · ⌘D to add</span>'}</div>
+  ${blocks.length?`<div class="l">Blocks</div><div class="v">${blocks.map(b=>`<span class="tag link" data-go="${b.id}">${st(gk(b))}${b.id}</span>`).join("")}</div>`:""}
+  <div class="l">Links</div><div class="v">${t.links.length?t.links.map(([k,l])=>`<span class="tag link" data-link="${esc(l)}">${ic(linkIc[k],12)}${esc(l)}</span>`).join(""):'<span class="faint">None · ⌘L to add</span>'}</div>
+  </div>`;
+}
+function callsHtml(t){
+  return needsFor(t.id).map(n=>`<div class="call"><span style="color:var(--needs);padding-top:1px">${ic(n.kind,15)}</span><div class="w"><div class="k">${KIND[n.kind]} · ${n.tm} ago</div><div class="q">${esc(n.q)}</div><div class="acts">${n.acts.map(([l,a,p])=>`<button class="btn${p?" pri":""}" data-act="${a}" data-n="${n.id}">${l}</button>`).join("")}</div></div></div>`).join("");
+}
+function subtasksHtml(t,wide){
+  const k=kids(t.id).filter(c=>T[c].status!=="dropped");
+  if(!k.length) return `<div class="sec"><div class="sec-h">Subtasks</div><div class="doc empty">No subtasks yet. <b style="color:var(--text-2)">Plan it</b> splits this into steps.</div></div>`;
+  const W=waves(t.id);
+  const tg=`<span class="seg" id="roSeg"><span data-m="list" class="${roMode==="list"?"on":""}">Waves</span><span data-m="map" class="${roMode==="map"?"on":""}">Map</span></span>`;
+  const done=k.filter(c=>T[c].status==="done").length;
+  let inner;
+  if(roMode==="map" && wide) inner=runMap(t.id, wide);
+  else inner=Array.from({length:W.count},(_,i)=>{const ids=W.ids.filter(id=>W.wave[id]===i); return `<div class="wv"><div class="wv-h">Wave ${i+1}${i===0?" · can start now":""}<span>${ids.length>1?"· in parallel":""}</span></div>${ids.map(id=>{const s=T[id],w=waitingOn(s),o=W.outside(id);return `<div class="sub${gk(s)==="waiting"?" wait":""}" data-go="${id}">${st(gk(s))}<span class="num" style="width:30px">${id}</span><span class="t">${esc(s.title)}</span>${s.status==="blocked"?'<span class="pill warn">Blocked</span>':""}${w.length?`<span class="pill">${ic("dep",12)}${o.length?"outside: ":""}${w.join(", ")}</span>`:""}${s.status==="todo"&&!w.length?'<span class="pill ok">Ready</span>':""}${rdot(s.repo)}</div>`;}).join("")}</div>`;}).join("");
+  const c=progress(t.id);
+  const big=`<div class="pbig"><span class="pct">${c.pct}%</span>${bar(c)}<span class="faint" style="white-space:nowrap">${c.done} of ${c.total} done</span></div><div class="legend">${SEG.map(([k,col,l])=>c[k]?`<span><i style="background:${col}"></i>${l} ${c[k]}</span>`:"").join("")}${c.todo?`<span><i style="background:var(--bg-input);box-shadow:inset 0 0 0 1px var(--line-2)"></i>Todo ${c.todo}</span>`:""}</div>`;
+  return `<div class="sec"><div class="sec-h">Subtasks <span class="faint" style="font-weight:500">${W.count} waves</span><span class="sp"></span>${wide?tg:""}</div>${big}${inner}<div class="faint" style="font-size:12px;margin-top:6px">Nothing starts by itself. Select a ready task and press ⌘↩.</div></div>`;
+}
+let roMode="map";
+function threadsHtml(t){
+  const lv=LIVE[t.id]; const th=t.links.filter(l=>l[0]==="thread");
+  if(!lv&&!th.length) return "";
+  const rows=lv?[[lv[0],lv[1],lv[2]]]:th.map(l=>["run",l[1],"Starting"]);
+  return `<div class="sec"><div class="sec-h">Threads</div>${rows.map(([s,n,d])=>`<div class="thr"><span class="live l-${s}"><i></i>${{run:"Running",wait:"Waiting",stop:"Stopped"}[s]}</span><span class="t"><span class="mono">${esc(n)}</span> <span class="faint">· ${esc(d)}</span></span><button class="btn ghost" data-link="T3 thread ${esc(n)}">Open ${ic("expand",12)}</button></div>`).join("")}</div>`;
+}
+function activityHtml(t){
+  const h=HIST[t.id]||[[t.by,`${t.by==="me"?"You":"The "+t.by} changed this`,t.updated],["me","You created this","Sun"]];
+  return `<div class="sec"><div class="sec-h">Activity</div><div class="feed">${h.map(([w,txt,tm])=>`<div class="ev">${av(w)}<span>${txt}</span><span class="tm">${tm}</span></div>`).join("")}</div><div class="comment">${ic("edit",14)}Leave a note for the agent…</div></div>`;
+}
+function headBar(t,mode){
+  const crumb=ancestors(t.id).reverse().map(a=>`<span data-go="${a}" style="cursor:pointer">${esc(T[a].title)}</span> › `).join("");
+  return `<div class="pk-head"><span class="crumb">${crumb}<b>${t.id}</b></span><span style="flex:1"></span>
+  <button class="btn ghost" data-a="plan" title="Plan it (⇧⌘↩)">${ic("waves",14)}Plan it</button><button class="btn pri" data-a="do" title="Do it (⌘↩)">${ic("play",14)}Do it <kbd>⌘↩</kbd></button>
+  ${mode==="peek"?`<button class="iconbtn" data-a="expand" title="Open page (⌘↓)">${ic("expand",14)}</button><button class="iconbtn" data-a="close" title="Close (Esc)">${ic("close",14)}</button>`:`<button class="iconbtn" data-a="back" title="Back (Esc)">${ic("close",14)}</button>`}</div>`;
+}
+function peekHtml(id){
+  const t=T[id];
+  return headBar(t,"peek")+`<div class="pk"><h1>${esc(t.title)}</h1>${callsHtml(t)}${propsHtml(t)}<div class="doc${t.notes?"":" empty"}">${esc(t.notes||"No notes yet. Agents add notes here as they work.")}</div>${threadsHtml(t)}${subtasksHtml(t,false)}${activityHtml(t)}</div>`;
+}
+function wireDetail(root){
+  root.querySelectorAll("[data-go]").forEach(e=>e.onclick=ev=>{ev.stopPropagation(); const id=+e.dataset.go; page?openPage(id):selectTask(id,true);});
+  root.querySelectorAll("[data-stv]").forEach(e=>e.onclick=ev=>{ev.stopPropagation(); const b=e.getBoundingClientRect(); statusMenu(b.left,b.bottom+4,+e.dataset.stv);});
+  root.querySelectorAll("[data-link]").forEach(e=>e.onclick=()=>toast("Opens "+e.dataset.link));
+  root.querySelectorAll("[data-act]").forEach(b=>b.onclick=ev=>{ev.stopPropagation(); act(b.dataset.act, NEEDS.find(n=>n.id===b.dataset.n), b.dataset.k);});
+  root.querySelectorAll("[data-a]").forEach(b=>b.onclick=()=>{const a=b.dataset.a; if(a==="do") doIt(sel); if(a==="plan") planIt(sel); if(a==="expand") openPage(sel); if(a==="close"){peek=false;renderAll();} if(a==="back") closePage();});
+  const sg=root.querySelector("#roSeg"); if(sg) sg.querySelectorAll("span").forEach(s=>s.onclick=()=>{roMode=s.dataset.m; renderAll();});
+  wireMap(root);
+}
+function wirePeek(){ wireDetail($("#peek")); }
+function renderPage(){
+  const t=T[sel];
+  $("#main").innerHTML=headBar(t,"page")+`<div class="page"><div class="content"><div class="pk"><h1>${esc(t.title)}</h1>${callsHtml(t)}<div class="doc${t.notes?"":" empty"}" style="margin-top:14px">${esc(t.notes||"No notes yet.")}</div>${threadsHtml(t)}${subtasksHtml(t,true)}${activityHtml(t)}</div></div><aside>${propsHtml(t)}</aside></div>`;
+  wireDetail($("#main"));
+}
+
+/* =========================================================== run order (waves + map) */
+function waves(pid){
+  const ids=kids(pid).filter(c=>T[c].status!=="dropped"), set=new Set(ids), wave={};
+  const inside=id=>T[id].waits.filter(w=>set.has(w));
+  let left=[...ids],g=0; while(left.length&&g++<60){const r=left.filter(id=>inside(id).every(w=>wave[w]!=null)); r.forEach(id=>wave[id]=Math.max(0,...inside(id).map(w=>wave[w]+1))); left=left.filter(id=>wave[id]==null);}
+  const outside=id=>T[id].waits.filter(w=>!set.has(w)&&T[w]&&isOpen(T[w].status));
+  let max=Math.max(0,...Object.values(wave)); ids.forEach(id=>{if(outside(id).length) wave[id]=Math.max(wave[id],max);});
+  max=Math.max(0,...Object.values(wave));
+  return {ids,wave,count:max+1,outside};
+}
+function runMap(pid){
+  const {ids,wave,count,outside}=waves(pid);
+  const lanes=[...new Set(ids.map(id=>T[id].repo||"none"))];
+  const avail=Math.min(780,($("#main").clientWidth||1000)-280-84); const W=Math.max(460,avail), LW=Math.min(110,W*0.16), CW=(W-LW)/count;
+  const slot={},used={}; ids.forEach(id=>{const k=(T[id].repo||"none")+"|"+wave[id]; slot[id]=used[k]=(used[k]??-1)+1;});
+  const ls=l=>Math.max(1,...ids.filter(id=>(T[id].repo||"none")===l).map(id=>slot[id]+1));
+  const tops=[];let y=28; lanes.forEach((l,i)=>{tops[i]=y;y+=ls(l)*58+24;}); const H=y;
+  const pos=id=>[LW+wave[id]*CW+14, tops[lanes.indexOf(T[id].repo||"none")]+20+slot[id]*58];
+  const col=id=>T[id].repo?REPOS[T[id].repo]:"var(--text-3)";
+  let svg=""; for(let i=1;i<count;i++){const x=LW+i*CW; svg+=`<line x1="${x}" y1="0" x2="${x}" y2="${H}" stroke="var(--line)"/>`;}
+  ids.forEach(id=>{const [bx,by]=pos(id);
+    T[id].waits.filter(w=>ids.includes(w)).forEach(w=>{const [ax,ay]=pos(w),dn=!isOpen(T[w].status),a2=ax+9;
+      const d=ay===by?`M${a2} ${ay} H${bx-9}`:`M${a2} ${ay} H${bx-44} C${bx-22} ${ay} ${bx-28} ${by} ${bx-9} ${by}`;
+      svg+=`<path data-f="${w}" data-t="${id}" d="${d}" fill="none" stroke="${col(w)}" stroke-width="1.75" stroke-linecap="round" ${dn?"":'stroke-dasharray="2 5"'}/>`;});
+    outside(id).forEach(o=>{svg+=`<path data-f="${o}" data-t="${id}" d="M${bx-60} ${by} H${bx-9}" fill="none" stroke="var(--text-3)" stroke-width="1.75" stroke-linecap="round" stroke-dasharray="2 5"/>`;});
+  });
+  const heads=Array.from({length:count},(_,i)=>`<div class="ro-colh" style="left:${LW+i*CW+6}px">Wave ${i+1}</div>`).join("");
+  const lab=lanes.map((l,i)=>`<div class="lane" style="top:${tops[i]+11}px">${l==="none"?'<span class="rdot" style="--c:var(--text-3)"></span>No repo':rdot(l)+l}</div>`).join("");
+  const stops=ids.map(id=>{const t=T[id],[x,yy]=pos(id),g=gk(t),w=waitingOn(t),o=outside(id);
+    let sub=g==="waiting"?`waits on ${w.join(", ")}`:LABEL[t.status].toLowerCase(); if(o.length) sub=`waits outside: ${o.join(", ")}`;
+    if(t.status==="blocked") sub=`<span style="color:var(--st-blocked)">blocked</span>`; if(t.status==="todo"&&!w.length) sub=`<span style="color:var(--st-review)">ready</span>`;
+    return `<div class="ro-st" data-st="${id}" style="left:${x-8}px;top:${yy-8}px">${st(g)}</div><div class="stop${g==="waiting"?" wait":""}${roFocus===id?" sel":""}" data-st="${id}" style="left:${x-8}px;top:${yy+11}px;width:${CW-14}px"><b>${esc(t.title)}</b><small>${id} · ${sub}</small></div>`;}).join("");
+  return `<div class="ro" id="ro" style="width:${W}px;height:${H}px">${heads}<svg width="${W}" height="${H}">${svg}</svg>${lab}${stops}</div><div class="faint" style="display:flex;gap:16px;font-size:11.5px;margin-top:4px"><span>— done, can follow</span><span>┄ still waiting</span><span>Hover a task to trace its lines · double-click to open</span></div>`;
+}
+function wireMap(root){
+  const ro=root.querySelector("#ro"); if(!ro) return;
+  const hl=id=>{ro.classList.toggle("focusing",id!=null); ro.querySelectorAll("path[data-t]").forEach(p=>p.classList.toggle("hl",id!=null&&(+p.dataset.t===id||+p.dataset.f===id)));};
+  ro.querySelectorAll("[data-st]").forEach(e=>{const id=+e.dataset.st; e.onmouseenter=()=>hl(id); e.onmouseleave=()=>hl(roFocus);
+    e.onclick=ev=>{ev.stopPropagation(); roFocus=id; renderAll(); toast(`${id} selected · ⌘↩ starts it`);}; e.ondblclick=()=>{roFocus=null; openPage(id);};});
+  hl(roFocus);
+}
+
+/* =========================================================== needs me (inbox) */
+function renderNeeds(anim){
+  if(!NEEDS.length){ const c=counts(); $("#main").innerHTML=`<div class="head"><span class="title">Needs me</span></div><div class="empty">${ic("check",24)}<h2>Nothing needs you</h2><div>Checked 10:44 · ${c.prog} in progress · ${c.ready} ready to start</div><div style="margin-top:16px"><button class="btn" id="goReady">Show ready tasks</button></div></div>`; $("#goReady").onclick=()=>openList("ready"); return; }
+  needSel=Math.min(needSel,NEEDS.length-1);
+  let list="";
+  for(const g of GROUPS){const items=NEEDS.filter(n=>n.group===g); if(!items.length) continue;
+    list+=`<div class="ib-h">${g}<span>${items.length}</span></div>`+items.map(n=>{const i=NEEDS.indexOf(n),t=T[n.task];return `<div class="ib${i===needSel?" sel":""}${i===needSel&&kbFocus==="list"?" kb":""}" data-i="${i}" id="ib-${n.id}"><span class="ic">${ic(n.kind,15)}</span><div class="l1"><span class="num">${t.id}</span><span class="tt">${esc(t.title)}</span></div><span class="tm">${n.tm}</span><div class="l2">${esc(n.l2)}</div></div>`;}).join("");}
+  const n=NEEDS[needSel], t=T[n.task];
+  const prop=n.proposed?`<div style="margin-top:12px">${n.proposed.map((p,k)=>`<div class="prop-row">${st("proposed")}<span class="t">${esc(p)}</span><button class="btn ghost" data-act="acc1" data-n="${n.id}" data-k="${k}">${ic("check",13)}Accept</button><button class="btn ghost" data-act="edit1" data-n="${n.id}" data-k="${k}">Edit</button><button class="btn ghost" data-act="rej1" data-n="${n.id}" data-k="${k}">${ic("x",13)}</button></div>`).join("")}</div>`:"";
+  const detail=`<div class="big"><div class="k"><span style="color:var(--needs)">${ic(n.kind,14)}</span>${KIND[n.kind]} · ${n.tm} ago · <span data-go="${t.id}" style="cursor:pointer;color:var(--text)">${t.id} ${esc(t.title)}</span></div><div class="q">${esc(n.q)}</div>${prop}
+    <div class="acts">${n.acts.map(([l,a,p])=>`<button class="btn${p?" pri":""}" data-act="${a}" data-n="${n.id}">${l}${p?" <kbd>↩</kbd>":""}</button>`).join("")}<span class="sp"></span><button class="btn ghost" data-act="dismiss" data-n="${n.id}">Dismiss <kbd>⌘⌫</kbd></button></div></div>
+    <div class="pk" style="padding-top:8px">${propsHtml(t)}<div class="doc${t.notes?"":" empty"}">${esc(t.notes||"No notes on this task.")}</div>${activityHtml(t)}</div>`;
+  $("#main").innerHTML=`<div class="head"><span class="title">Needs me</span><span class="cnt">${NEEDS.length}</span><span class="sp"></span><span class="faint" style="font-size:12px">checked 10:44</span><button class="chipbtn" id="hSearch">${ic("search",13)}Jump <kbd>⌘K</kbd></button></div><div class="body"><div class="inbox" id="inbox">${list}</div><div class="detail" id="detail">${detail}</div></div>`;
+  $("#hSearch").onclick=openPal;
+  $("#inbox").onclick=e=>{const r=e.target.closest(".ib"); if(r){kbFocus="list"; needSel=+r.dataset.i; renderNeeds();}};
+  wireDetail($("#detail"));
+  const s=document.querySelector(".ib.sel"); if(s) s.scrollIntoView({block:"nearest"});
+}
+function removeNeed(n,msg){const el=document.getElementById("ib-"+n.id); const fin=()=>{NEEDS=NEEDS.filter(x=>x!==n); renderAll(); if(msg) toast(msg);}; if(el&&view==="needs"){el.classList.add("gone"); setTimeout(fin,170);} else fin();}
+function act(a,n,k){
+  const t=T[n.task];
+  switch(a){
+    case "open": removeNeed(n,`Opening the ${n.kind==="pr"?"PR":"T3 thread"} for ${n.task}…`); break;
+    case "dismiss": removeNeed(n,"Dismissed"); break;
+    case "doit": removeNeed(n); doIt(n.task,true); break;
+    case "finish": t.status="done"; t.by="me"; t.updated="now"; removeNeed(n,`${n.task} marked done`); break;
+    case "keep": removeNeed(n,"Kept open"); break;
+    case "snooze": removeNeed(n,"Snoozed until Sat 28 Nov"); break;
+    case "goto": openPage(n.task); break;
+    case "acceptall": n.proposed.forEach(p=>addTask(p,n.task,t.repo,"agent")); t.open=true; removeNeed(n,`Added ${n.proposed.length} subtasks to ${n.task}`); break;
+    case "rejectall": removeNeed(n,"Rejected all 3"); break;
+    default: { let title=n.proposed[+k];
+      if(a==="edit1"){const v=prompt("Edit the subtask; it's accepted when you save",title); if(v==null) return; title=v.trim()||title;}
+      if(a!=="rej1"){const id=addTask(title,n.task,t.repo,"agent"); t.open=true; toast(`Added ${id} under ${n.task}`);} else toast("Rejected");
+      n.proposed.splice(+k,1); if(!n.proposed.length) removeNeed(n); else renderAll(); }
+  }
+}
+
+/* =========================================================== plans overview */
+let planSel=0;
+function renderPlans(){
+  const ps=ORDER[null].filter(id=>kids(id).length&&T[id].status!=="dropped");
+  planSel=Math.min(planSel,ps.length-1);
+  const card=(id,i)=>{const t=T[id],c=progress(id),W=waves(id);
+    const cur=Math.min(...W.ids.filter(x=>isOpen(T[x].status)).map(x=>W.wave[x]).concat([W.count]));
+    const ready=W.ids.filter(x=>T[x].status==="todo"&&!waitingOn(T[x]).length);
+    const blocked=W.ids.filter(x=>T[x].status==="blocked");
+    const running=W.ids.filter(x=>LIVE[x]&&LIVE[x][0]==="run");
+    const repos=[...new Set(W.ids.map(x=>T[x].repo).filter(Boolean))];
+    return `<div class="plan${i===planSel?" sel":""}" data-plan="${id}" data-pi="${i}">
+      <h3>${st(gk(t))}${esc(t.title)}<span class="num" style="margin-left:auto">${id}</span></h3>
+      <div style="display:flex;align-items:baseline;gap:10px;margin:12px 0 8px"><span class="pct">${c.pct}%</span><span class="faint">${c.done} of ${c.total} done</span><span style="margin-left:auto">${ring(c.pct,22)}</span></div>
+      <div style="display:flex;margin-bottom:12px">${bar(c)}</div>
+      <div class="rowx"><span class="k">Wave</span><span class="v">${cur>=W.count?"All waves done":`${cur+1} of ${W.count}`}<span class="wdots">${Array.from({length:W.count},(_,w)=>`<b class="${w<cur?"d":w===cur?"c":""}"></b>`).join("")}</span></span></div>
+      <div class="rowx"><span class="k">Next up</span><span class="v">${ready.length?ready.slice(0,2).map(x=>`<span class="pill ok">${x} ${esc(T[x].title)}</span>`).join(""):c.pct===100?'<span class="pill ok">Finish it?</span>':'<span class="faint">Nothing ready</span>'}</span></div>
+      <div class="rowx"><span class="k">Agents</span><span class="v">${running.length?`<span class="live l-run"><i></i>${running.length} working</span>`:'<span class="faint">None running</span>'}${blocked.length?`<span class="pill warn">${blocked.length} blocked</span>`:""}</span></div>
+      <div class="rowx"><span class="k">Repos</span><span class="v">${repos.map(r=>`${rdot(r)}${r}`).join(" &nbsp;")||'<span class="faint">None</span>'}<span class="faint" style="margin-left:auto">${t.updated}</span></span></div>
+    </div>`;};
+  const all=ps.map(progress).reduce((a,c)=>({done:a.done+c.done,total:a.total+c.total}),{done:0,total:0});
+  $("#main").innerHTML=`<div class="head"><span class="title">Plans</span><span class="cnt">${ps.length}</span><span class="sp"></span><span class="faint" style="font-size:12px">${Math.round(all.done/all.total*100)}% of all planned work done · ${all.done} of ${all.total}</span><button class="btn pri" id="hNew">${ic("waves",13)}Plan something</button></div><div class="body"><div class="plans">${ps.map(card).join("")}</div></div>`;
+  $("#hNew").onclick=()=>toast("Type a goal, then Plan it (⇧⌘↩) turns it into phases and steps");
+  document.querySelectorAll("[data-plan]").forEach(e=>{e.onclick=()=>{planSel=+e.dataset.pi; renderPlans();}; e.ondblclick=()=>openPage(+e.dataset.plan);});
+}
+function openPlans(){view="plans";page=false;renderAll();}
+
+/* =========================================================== menus */
+function closeCtx(){document.querySelectorAll(".ctx").forEach(e=>e.remove());}
+function menuAt(x,y,items){
+  closeCtx(); const m=document.createElement("div"); m.className="ctx";
+  m.innerHTML=items.map((it,i)=>it==="-"?"<hr>":`<div class="o${it.danger?" danger":""}" data-i="${i}">${it.icon||""}<span class="t">${it.label}</span><span class="k">${it.k||""}</span></div>`).join("");
+  document.body.appendChild(m); const r=m.getBoundingClientRect();
+  m.style.left=Math.min(x,innerWidth-r.width-8)+"px"; m.style.top=Math.min(y,innerHeight-r.height-8)+"px";
+  m.querySelectorAll("[data-i]").forEach(o=>o.onclick=e=>{e.stopPropagation(); closeCtx(); items[+o.dataset.i].run();});
+  let hl=-1; const opts=[...m.querySelectorAll("[data-i]")];
+  m._key=e=>{ if(e.key==="Escape"){closeCtx();return true;} if(e.key==="ArrowDown"||e.key==="ArrowUp"){hl=(hl+(e.key==="ArrowDown"?1:-1)+opts.length)%opts.length; opts.forEach((o,i)=>o.classList.toggle("hl",i===hl)); return true;} if(e.key==="Enter"&&hl>=0){opts[hl].click(); return true;} const n=+e.key; if(n>=1&&n<=opts.length&&m.dataset.num){opts[n-1].click(); return true;} return false; };
+  return m;
+}
+function statusMenu(x,y,id){
+  const list=["todo","doing","in_review","blocked","done","dropped"];
+  const m=menuAt(x,y,list.map((s,i)=>({icon:st(s),label:LABEL[s],k:String(i+1),run:()=>setStatus(id,s)})));
+  m.dataset.num="1";
+}
+function setStatus(id,s){
+  const t=T[id];
+  if(s==="blocked"){const r=prompt("Why is it blocked? (a reason is required)", t.blocked||""); if(!r) return; t.blocked=r;}
+  if(s==="dropped"&&!confirm(`Drop ${id}${kids(id).length?" and its subtasks":""}?`)) return;
+  if(s==="done"){ if(t.status!=="done") return toggleDone(id); return; }
+  t.status=s; t.by="me"; t.updated="now"; if(s==="dropped") kids(id).forEach(k=>{if(T[k].status!=="done") T[k].status="dropped";});
+  renderAll(); toast(`${id} → ${LABEL[s]}`);
+  const g=document.querySelector(`.row[data-id="${id}"] .st`); if(g) g.classList.add("pop");
+}
+function ctxMenu(x,y,id){
+  menuAt(x,y,[
+    {icon:ic("play",14),label:"Do it",k:"⌘↩",run:()=>doIt(id)},{icon:ic("waves",14),label:"Plan it",k:"⇧⌘↩",run:()=>planIt(id)},"-",
+    {icon:st(gk(T[id])),label:"Status…",k:"S",run:()=>{const r=document.querySelector(`.row[data-id="${id}"] .stbtn`).getBoundingClientRect(); statusMenu(r.left,r.bottom+4,id);}},
+    {icon:ic("check",14),label:T[id].status==="done"?"Mark not done":"Mark done",k:"Space",run:()=>toggleDone(id)},
+    {icon:ic("edit",14),label:"Rename",k:"↩",run:()=>{renaming=id;renderAll();}},
+    {icon:ic("dep",14),label:"Add waits-on…",k:"⌘D",run:()=>toast("Pick the task it waits on")},
+    {icon:ic("expand",14),label:"Open page",k:"⌘↓",run:()=>openPage(id)},
+    {icon:ic("link",14),label:"Copy task number",k:"⇧⌘C",run:()=>toast(`Copied ${id}`)},"-",
+    {icon:ic("x",14),label:"Drop",k:"⌘⌫",danger:true,run:()=>setStatus(id,"dropped")},
+  ]);
+}
+document.addEventListener("mousedown",e=>{if(!e.target.closest(".ctx")) closeCtx();});
+document.addEventListener("keydown",e=>{const m=document.querySelector(".ctx"); if(m&&m._key(e)){e.preventDefault(); e.stopImmediatePropagation();}},true);
+
+/* =========================================================== actions */
+function openNeeds(){view="needs";page=false;kbFocus="list";renderAll();}
+function openList(f){view="list";filter=f||"all";page=false;kbFocus="list";if(sel&&!rows().some(r=>r[0]===sel)) sel=rows()[0]?.[0]??null; renderAll();}
+function selectTask(id,reveal){ if(reveal){ancestors(id).forEach(a=>T[a].open=true); if(view!=="list"||!rows().some(r=>r[0]===id)){view="list";filter="all";}} sel=id; peek=true; roFocus=null; renderAll(); }
+function openPage(id){ancestors(id).forEach(a=>T[a].open=true); if(view!=="list"){view="list";filter="all";} sel=id; page=true; roFocus=null; renderAll(); }
+function closePage(){page=false; renderAll();}
+function doIt(id,fromNeeds){
+  const tid=roFocus||id; if(!tid){toast("Select a task first");return;} const t=T[tid];
+  if(t.status==="done"){toast(`${tid} is already done`);return;}
+  const w=waitingOn(t); if(w.length){toast(`${tid} still waits on ${w.join(", ")}`);return;}
+  const k=kids(tid).filter(c=>isOpen(T[c].status));
+  if(k.length){const r=[...new Set(k.map(c=>T[c].repo).filter(Boolean))]; toast(`Starting ${r.length} threads, one per repo, on <span class="mono">${t.branch||"task-"+tid}</span>`);} else toast(`Starting a T3 thread for <b>${tid}</b>${t.repo?" in "+t.repo:""}`);
+  t.status="doing"; t.by="launch"; t.updated="now"; if(!t.links.some(l=>l[0]==="thread")) t.links.push(["thread","task-"+tid]);
+  NEEDS=NEEDS.filter(n=>!(n.kind==="play"&&n.task===tid)); renderAll();
+}
+function planIt(id){toast(`Opening a plan-review thread for <b>${id}</b>. Its steps become subtasks when you settle it.`);}
+function toggleDone(id){
+  const t=T[id]; t.status=t.status==="done"?"todo":"done"; t.by="me"; t.updated="now";
+  if(t.status==="done"){
+    Object.values(T).filter(x=>x.waits.includes(id)&&x.status==="todo"&&!waitingOn(x).length).forEach(x=>{ if(!NEEDS.some(n=>n.task===x.id&&n.kind==="play")) NEEDS.push({id:"r"+x.id,kind:"play",group:"Ready",task:x.id,tm:"now",q:`Ready to start: ${id} is done`,l2:`${id} done · ready to start`,acts:[["Do it","doit",1]]}); });
+    const p=t.parent; if(p!=null&&kids(p).every(c=>!isOpen(T[c].status))&&isOpen(T[p].status)&&!NEEDS.some(n=>n.task===p&&n.kind==="flag")) NEEDS.push({id:"f"+p,kind:"flag",group:"Finish it?",task:p,tm:"now",q:`All ${kids(p).length} subtasks are done. Mark the parent done?`,l2:"All subtasks done",acts:[["Keep open","keep"],["Mark done","finish",1]]});
+  }
+  renderAll(); const g=document.querySelector(`.row[data-id="${id}"] .st`); if(g) g.classList.add("pop");
+}
+function addTask(title,parent,repo,by="me",x={}){const id=nextId++; add(id,title,"todo",parent,repo,Object.assign({updated:"now",by},x)); (ORDER[parent]||=[]).push(id); return id;}
+
+/* =========================================================== quick add (new task modal) */
+let qa=null;
+function openQA(){ qa={title:"",desc:"",slack:null,repo:null,parent:(view==="list"&&sel&&!page)?null:null,dd:null,hl:0,q:""}; $("#qaS").classList.add("open"); renderQA(); $("#qaT").focus(); }
+function closeQA(){$("#qaS").classList.remove("open"); qa=null;}
+function renderQA(){
+  const ddHtml=(kind)=>{ if(qa.dd!==kind) return ""; const opts=kind==="repo"?["No repo",...Object.keys(REPOS)]:["Top level",...ORDER[null].filter(id=>isOpen(T[id].status)).map(String)];
+    const f=opts.filter(o=>(kind==="parent"&&o!=="Top level"?o+" "+T[+o].title:o).toLowerCase().includes(qa.q.toLowerCase())); qa.opts=f; qa.hl=Math.min(qa.hl,Math.max(0,f.length-1));
+    return `<div class="dd"><input id="ddIn" value="${esc(qa.q)}" placeholder="${kind==="repo"?"Repo…":"Parent…"}">${f.map((o,i)=>`<div class="o${i===qa.hl?" hl":""}" data-o="${esc(o)}">${kind==="repo"?(o==="No repo"?'<span class="rdot" style="--c:var(--text-3)"></span>':rdot(o)):(o==="Top level"?ic("list",13):st(gk(T[+o])))}${kind==="parent"&&o!=="Top level"?o+" "+esc(T[+o].title):o}</div>`).join("")}</div>`; };
+  $("#qa").innerHTML=`<div class="top"><span class="tag" style="height:20px">${ic("check",11)}Airboss</span>›<span>New task</span><span style="flex:1"></span><span>⌃⌥Space from any app</span></div>
+  <input class="ttl" id="qaT" placeholder="Task title" value="${esc(qa.title)}" autocomplete="off" spellcheck="false">
+  <textarea class="desc" id="qaD" placeholder="Add notes, or paste a Slack link…">${esc(qa.desc)}</textarea>
+  <div class="pills"><span class="pp set">${st("todo")}Todo</span>
+   <span class="pp${qa.repo?" set":""}${qa.dd==="repo"?" focus":""}" id="ppRepo">${qa.repo?rdot(qa.repo):ic("repo",13)}${qa.repo||"Repo"}${ddHtml("repo")}</span>
+   <span class="pp${qa.parent?" set":""}${qa.dd==="parent"?" focus":""}" id="ppParent">${ic("tree",13)}${qa.parent?qa.parent+" "+esc(T[qa.parent].title):"Parent"}${ddHtml("parent")}</span>
+   ${qa.slack?`<span class="pp set">${ic("slack",13)}Slack · ${esc(qa.slack)}<span id="slx" style="display:flex;color:var(--text-3)">${ic("x",11)}</span></span>`:""}</div>
+  <div class="ft"><span><kbd>⇥</kbd> repo</span><span><kbd>⇧</kbd><kbd>⇥</kbd> parent</span><span class="sp"></span><span><kbd>⌘</kbd><kbd>↩</kbd> create and Do it</span><button class="btn pri" id="qaGo">Create task <kbd>↩</kbd></button></div>`;
+  const tI=$("#qaT"), dI=$("#qaD");
+  tI.oninput=()=>qa.title=tI.value; dI.oninput=()=>qa.desc=dI.value;
+  const paste=e=>{const txt=(e.clipboardData||window.clipboardData).getData("text"); const m=txt.match(/https?:\/\/[\w.-]*slack\.com\/\S+/); if(m){e.preventDefault(); const ch=(m[0].match(/archives\/(\w+)/)||[])[1]; qa.slack=ch?"#"+ch.toLowerCase().slice(0,10):"thread"; const rest=txt.replace(m[0],"").trim(); if(rest&&!qa.title) qa.title=rest; renderQA(); $("#qaT").focus(); toast("Slack link attached. The agent reads the thread.");}};
+  tI.onpaste=paste; dI.onpaste=paste;
+  tI.onkeydown=dI.onkeydown=qaKey;
+  $("#ppRepo").onclick=e=>{if(e.target.closest(".dd"))return; qa.dd=qa.dd==="repo"?null:"repo"; qa.q="";qa.hl=0; renderQA();};
+  $("#ppParent").onclick=e=>{if(e.target.closest(".dd"))return; qa.dd=qa.dd==="parent"?null:"parent"; qa.q="";qa.hl=0; renderQA();};
+  $("#qaGo").onclick=()=>createFromQA(false);
+  const sx=$("#slx"); if(sx) sx.onclick=e=>{e.stopPropagation(); qa.slack=null; renderQA();};
+  const dd=$("#ddIn"); if(dd){dd.focus(); dd.setSelectionRange(dd.value.length,dd.value.length); dd.oninput=()=>{qa.q=dd.value;qa.hl=0;renderQA();}; dd.onkeydown=qaKey; document.querySelectorAll(".dd .o").forEach(o=>o.onclick=ev=>{ev.stopPropagation(); pickDD(o.dataset.o);});}
+}
+function pickDD(o){ if(qa.dd==="repo") qa.repo=o==="No repo"?null:o; else qa.parent=o==="Top level"?null:+o; if(qa.dd==="parent"&&qa.parent&&!qa.repo) qa.repo=null; qa.dd=null; renderQA(); $("#qaT").focus(); }
+function qaKey(e){
+  e.stopPropagation();
+  if(e.key==="Escape"){e.preventDefault(); if(qa.dd){qa.dd=null;renderQA();$("#qaT").focus();} else closeQA(); return;}
+  if(e.key==="Tab"){e.preventDefault(); const k=e.shiftKey?"parent":"repo"; qa.dd=qa.dd===k?null:k; qa.q="";qa.hl=0; renderQA(); if(!qa.dd)$("#qaT").focus(); return;}
+  if(qa.dd&&(e.key==="ArrowDown"||e.key==="ArrowUp")){e.preventDefault(); qa.hl=(qa.hl+(e.key==="ArrowDown"?1:-1)+qa.opts.length)%qa.opts.length; renderQA(); return;}
+  if(e.key==="Enter"&&qa.dd){e.preventDefault(); if(qa.opts[qa.hl]) pickDD(qa.opts[qa.hl]); return;}
+  if(e.key==="Enter"&&(e.target.id==="qaT"||e.metaKey||e.ctrlKey)){e.preventDefault(); createFromQA(e.metaKey||e.ctrlKey);}
+}
+function createFromQA(go){
+  const title=(qa.title||"").trim(); if(!title){toast("Give the task a title"); $("#qaT").focus(); return;}
+  const x={notes:qa.desc}; if(qa.slack) x.links=[["slack",qa.slack]];
+  const id=addTask(title,qa.parent,qa.repo,"me",x); const p=qa.parent; closeQA(); if(p!=null) T[p].open=true;
+  toast(`Created <b>${id}</b> ${esc(title)}`);
+  if(view!=="list"){view="list";filter="all";}
+  sel=id; peek=true; renderAll(); const r=document.querySelector(`.row[data-id="${id}"]`); if(r){r.classList.add("enter"); r.scrollIntoView({block:"nearest"});}
+  if(go) doIt(id);
+}
+
+/* =========================================================== palette */
+let palItems=[],palHl=0;
+const CMDS=[["Go to Needs me","G N",()=>openNeeds()],["Go to Plans","G L",()=>openPlans()],["Go to Ready to start","G R",()=>openList("ready")],["Go to All tasks","G A",()=>openList("all")],["New task","C",()=>openQA()],["Do it","⌘ ↩",()=>sel&&doIt(sel)],["Plan it","⇧ ⌘ ↩",()=>sel&&planIt(sel)],["Switch theme","",()=>setTheme(document.documentElement.dataset.theme==="dark"?"light":"dark")],["Keyboard shortcuts","?",()=>openSheet()]];
+function openPal(){$("#palS").classList.add("open"); const i=$("#palIn"); i.value=""; palHl=0; renderPal(); i.focus();}
+function closePal(){$("#palS").classList.remove("open");}
+function fz(q,s){q=q.toLowerCase();s=s.toLowerCase(); if(s.includes(q)) return 2; let i=0; for(const c of s) if(c===q[i]) i++; return i===q.length?1:0;}
+function renderPal(){
+  const q=$("#palIn").value.trim();
+  const ts=Object.values(T).filter(t=>t.status!=="dropped").map(t=>({t,s:q?fz(q,t.id+" "+t.title):(isOpen(t.status)?1:0)})).filter(x=>x.s).sort((a,b)=>b.s-a.s).slice(0,q?8:5);
+  const cs=CMDS.filter(c=>!q||fz(q,c[0])).slice(0,q?5:4);
+  palItems=[...ts.map(x=>({task:x.t.id})),...cs.map(c=>({c}))]; palHl=Math.min(palHl,Math.max(0,palItems.length-1));
+  let i=0,h="";
+  if(ts.length) h+=`<div class="grp-l">${q?"Tasks":"Jump to"}</div>`+ts.map(x=>`<div class="it${i++===palHl?" hl":""}" data-i="${i-1}">${st(gk(x.t))}<span class="num" style="width:30px">${x.t.id}</span><span class="t">${esc(x.t.title)}</span>${rdot(x.t.repo)}</div>`).join("");
+  if(cs.length) h+=`<div class="grp-l">Commands</div>`+cs.map(c=>`<div class="it${i++===palHl?" hl":""}" data-i="${i-1}">${ic("cmd",15)}<span class="t">${c[0]}</span>${c[1]?c[1].split(" ").map(k=>`<kbd>${k}</kbd>`).join(""):""}</div>`).join("");
+  $("#palRes").innerHTML=h||`<div class="empty" style="padding:24px">No match. <kbd>↩</kbd> creates “${esc(q)}” as a new task.</div>`;
+  $("#palRes").querySelectorAll("[data-i]").forEach(e=>e.onclick=()=>{palHl=+e.dataset.i; runPal();});
+}
+function runPal(){const it=palItems[palHl], q=$("#palIn").value.trim(); closePal(); if(!it){ if(q){const id=addTask(q,null,null); selectTask(id,true); toast(`Created <b>${id}</b>`);} return;} if(it.task) selectTask(it.task,true); else it.c[2]();}
+$("#palIn").addEventListener("input",()=>{palHl=0;renderPal();});
+$("#palIn").addEventListener("keydown",e=>{e.stopPropagation(); if(e.key==="Escape")closePal(); if(e.key==="ArrowDown"){e.preventDefault();palHl=Math.min(palHl+1,palItems.length-1);renderPal();} if(e.key==="ArrowUp"){e.preventDefault();palHl=Math.max(palHl-1,0);renderPal();} if(e.key==="Enter"){e.preventDefault();runPal();}});
+
+/* =========================================================== shortcuts sheet + tray */
+function openSheet(){
+  const K=[["Needs me","G N"],["Ready to start","G R"],["All tasks","G A"],["Jump to task","⌘ K"],["New task","C"],["Quick add from any app","⌃ ⌥ Space"],["Do it","⌘ ↩"],["Plan it","⇧ ⌘ ↩"],["Move","↑ ↓"],["Open / fold","→ ←"],["Mark done","Space"],["Change status","S"],["Plans","G L"],["Rename","↩"],["Open full page","⌘ ↓"],["Close page / peek","Esc"],["Open thread or PR","⌘ O"],["Add waits-on","⌘ D"],["Add link","⌘ L"],["Mark blocked","⌘ B"],["Needs me: main action","↩"],["Needs me: dismiss","⌘ ⌫"],["Switch list / detail","Tab"],["This sheet","?"]];
+  $("#sheet").innerHTML=`<h2>Keyboard shortcuts</h2><div class="cols">${K.map(k=>`<div class="k"><span>${k[0]}</span><span>${k[1].split(" ").map(x=>`<kbd>${x}</kbd>`).join("")}</span></div>`).join("")}</div><div class="faint" style="font-size:12px;margin-top:12px">Every shortcut also lives in the Task and View menus. Esc closes.</div>`;
+  $("#shS").classList.add("open");
+}
+function renderTray(){
+  $("#tray").innerHTML=`<div class="h"><span>Needs me</span><span>${NEEDS.length||""}</span></div>${NEEDS.length?NEEDS.slice(0,6).map(n=>`<div class="mi" data-n="${n.id}"><span style="color:var(--needs)">${ic(n.kind,14)}</span><span class="num">${n.task}</span><span class="t">${esc(n.l2)}</span><span class="faint" style="font-size:11.5px">${n.tm}</span></div>`).join(""):'<div class="mi"><span class="t muted">Nothing needs you</span></div>'}<hr><div class="mi" data-o="1">${ic("inbox",14)}<span class="t">Open Airboss</span><kbd>⌘</kbd><kbd>0</kbd></div><div class="mi" data-q="1">${ic("edit",14)}<span class="t">Quick add…</span><kbd>⌃</kbd><kbd>⌥</kbd><kbd>Space</kbd></div>`;
+  $("#tray").querySelectorAll("[data-n]").forEach(e=>e.onclick=()=>{closeTray(); view="needs"; page=false; needSel=NEEDS.findIndex(n=>n.id===e.dataset.n); renderAll();});
+  $("#tray").querySelector("[data-o]").onclick=()=>{closeTray(); openNeeds();};
+  $("#tray").querySelector("[data-q]").onclick=()=>{closeTray(); openQA();};
+}
+function closeTray(){$("#tray").classList.remove("open"); $("#trayBtn").classList.remove("on");}
+$("#trayBtn").onclick=e=>{e.stopPropagation(); const o=!$("#tray").classList.contains("open"); renderTray(); $("#tray").classList.toggle("open",o); $("#trayBtn").classList.toggle("on",o);};
+document.addEventListener("click",e=>{if(!e.target.closest("#tray")) closeTray();});
+["palS","qaS","shS"].forEach(id=>$("#"+id).addEventListener("mousedown",e=>{if(e.target.id===id){$("#"+id).classList.remove("open"); if(id==="qaS") qa=null;}}));
+
+/* =========================================================== theme */
+function setTheme(t){document.documentElement.dataset.theme=t; document.querySelectorAll("#themeSeg span").forEach(s=>s.classList.toggle("on",s.dataset.t===t)); try{localStorage.setItem("ab-theme",t);}catch(_){}; renderAll();}
+document.querySelectorAll("#themeSeg span").forEach(s=>s.onclick=()=>setTheme(s.dataset.t));
+try{const t=localStorage.getItem("ab-theme"); if(t) document.documentElement.dataset.theme=t, document.querySelectorAll("#themeSeg span").forEach(s=>s.classList.toggle("on",s.dataset.t===t));}catch(_){}
+
+/* =========================================================== keyboard */
+document.addEventListener("keydown",e=>{
+  if($("#palS").classList.contains("open")||$("#qaS").classList.contains("open")) return;
+  if($("#shS").classList.contains("open")){ if(e.key==="Escape"||e.key==="?") $("#shS").classList.remove("open"); return; }
+  if(renaming||e.target.closest?.("input,textarea")) return;
+  const m=e.metaKey||e.ctrlKey,k=e.key;
+  if(gPending){ gPending=false; if(k==="n")return openNeeds(); if(k==="l")return openPlans(); if(k==="r")return openList("ready"); if(k==="a")return openList("all"); if(k==="p")return openList("prog"); }
+  if(m&&k.toLowerCase()==="k"){e.preventDefault();openPal();return;}
+  if((!m&&!e.altKey&&k==="c")||(e.altKey&&e.code==="KeyN")||(e.ctrlKey&&e.altKey&&e.code==="Space")){e.preventDefault();openQA();return;}
+  if(!m&&k==="g"){gPending=true; setTimeout(()=>gPending=false,900); return;}
+  if(m&&k==="0"){e.preventDefault();openNeeds();return;}
+  if(k==="?"){openSheet();return;}
+  if(m&&k==="Enter"){e.preventDefault(); if(view==="needs"){const n=NEEDS[needSel]; if(n) act(n.acts.find(a=>a[2])[1],n);} else if(sel) (e.shiftKey?planIt:doIt)(sel); return;}
+  if(k==="Escape"){ if(page){closePage();return;} if(roFocus){roFocus=null;renderAll();return;} if(peek&&sel){peek=false;renderAll();return;} return; }
+  if(m&&k==="ArrowDown"&&view==="list"&&sel){e.preventDefault(); openPage(sel); return;}
+  if(m&&k==="ArrowUp"&&page){e.preventDefault(); closePage(); return;}
+  if(m&&k.toLowerCase()==="o"){e.preventDefault(); toast("Opens the latest thread or PR"); return;}
+  if(m&&k.toLowerCase()==="d"&&sel){e.preventDefault(); toast(`Pick the task ${sel} waits on (⌘K picker)`); return;}
+  if(m&&k.toLowerCase()==="l"&&sel){e.preventDefault(); const u=prompt("Paste a link (thread, PR, Slack, doc)"); if(u){T[sel].links.push([/slack/.test(u)?"slack":/pull/.test(u)?"pr":"doc",u.replace(/^https?:\/\//,"").slice(0,40)]); renderAll(); toast("Link added");} return;}
+  if(m&&k.toLowerCase()==="b"&&sel){e.preventDefault(); setStatus(sel,"blocked"); return;}
+  if(k==="Tab"&&view==="list"&&sel&&peek){e.preventDefault(); kbFocus=kbFocus==="list"?"peek":"list"; renderAll(); if(kbFocus==="peek") document.querySelector("#peek .btn.pri, #peek button")?.focus(); return;}
+  if(view==="needs"){
+    if(k==="ArrowDown"||k==="ArrowUp"){e.preventDefault(); kbFocus="list"; needSel=Math.max(0,Math.min(NEEDS.length-1,needSel+(k==="ArrowDown"?1:-1))); renderNeeds(); return;}
+    if(k==="Enter"){e.preventDefault(); const n=NEEDS[needSel]; if(n) act(n.acts.find(a=>a[2])[1],n); return;}
+    if(m&&k==="Backspace"){e.preventDefault(); const n=NEEDS[needSel]; if(n) removeNeed(n,"Dismissed"); return;}
+    return;
+  }
+  if(view==="plans"){ const n=document.querySelectorAll("[data-plan]").length, cols=Math.max(1,Math.round(($(".plans")?.clientWidth||700)/352));
+    if(k==="ArrowRight"){planSel=Math.min(n-1,planSel+1);renderPlans();} if(k==="ArrowLeft"){planSel=Math.max(0,planSel-1);renderPlans();}
+    if(k==="ArrowDown"){e.preventDefault();planSel=Math.min(n-1,planSel+cols);renderPlans();} if(k==="ArrowUp"){e.preventDefault();planSel=Math.max(0,planSel-cols);renderPlans();}
+    if(k==="Enter"){const el=document.querySelectorAll("[data-plan]")[planSel]; if(el) openPage(+el.dataset.plan);} return; }
+  if(page) return;
+  const r=rows().map(x=>x[0]); let i=r.indexOf(sel);
+  if(k==="ArrowDown"||k==="ArrowUp"){e.preventDefault(); kbFocus="list"; i=i<0?0:Math.max(0,Math.min(r.length-1,i+(k==="ArrowDown"?1:-1))); sel=r[i]; roFocus=null; renderAll(); return;}
+  if(!sel) return; const t=T[sel];
+  if(k==="ArrowRight"){e.preventDefault(); if(kids(sel).length){ if(!t.open){t.open=true;renderAll();} else {sel=kids(sel)[0];renderAll();} } return;}
+  if(k==="ArrowLeft"){e.preventDefault(); if(t.open&&kids(sel).length){t.open=false;renderAll();} else if(t.parent!=null&&r.includes(t.parent)){sel=t.parent;renderAll();} return;}
+  if(k===" "){e.preventDefault(); toggleDone(sel); return;}
+  if(k==="s"&&!m){e.preventDefault(); const b=document.querySelector(`.row[data-id="${sel}"] .stbtn`); if(b){const r=b.getBoundingClientRect(); statusMenu(r.left,r.bottom+4,sel);} return;}
+  if(k==="Enter"){e.preventDefault(); renaming=sel; renderAll(); return;}
+});
+
+/* =========================================================== render */
+function renderAll(){ renderSide(); if(view==="plans") renderPlans(); else if(view==="needs") renderNeeds(); else if(page&&sel) renderPage(); else renderList(); }
+window.addEventListener("resize",()=>{ if(page) renderPage(); });
+renderAll();
+</script>
+</body>
+</html>

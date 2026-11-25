@@ -1,0 +1,1020 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-25T16:24:14+00:00",
+  "title": "Design System: Airboss",
+  "extensions": {
+    "colorMeta": {
+      "desk": {
+        "role": "neutral",
+        "displayName": "Desk",
+        "canonical": "#050506",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#252526",
+          "#424243",
+          "#616163",
+          "#828284",
+          "#a5a5a6",
+          "#c9c9ca",
+          "#eeeeef"
+        ]
+      },
+      "bg": {
+        "role": "neutral",
+        "displayName": "Main Surface",
+        "canonical": "#0f1012",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242526",
+          "#414244",
+          "#606164",
+          "#818285",
+          "#a4a5a7",
+          "#c8c9cb",
+          "#eeeef0"
+        ]
+      },
+      "bg-side": {
+        "role": "neutral",
+        "displayName": "Sidebar Black",
+        "canonical": "#0a0b0c",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242526",
+          "#414243",
+          "#606163",
+          "#818284",
+          "#a4a5a6",
+          "#c8c9ca",
+          "#eeeeef"
+        ]
+      },
+      "bg-raised": {
+        "role": "neutral",
+        "displayName": "Raised Grey",
+        "canonical": "#16171a",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242527",
+          "#414245",
+          "#606165",
+          "#818286",
+          "#a4a5a8",
+          "#c8c9cc",
+          "#eeeef0"
+        ]
+      },
+      "bg-input": {
+        "role": "neutral",
+        "displayName": "Field Grey",
+        "canonical": "#1b1c20",
+        "tonalRamp": [
+          "#0b0b0d",
+          "#242528",
+          "#414245",
+          "#606165",
+          "#818287",
+          "#a4a5a9",
+          "#c8c9cc",
+          "#edeef1"
+        ]
+      },
+      "bg-hover": {
+        "role": "neutral",
+        "displayName": "Hover Wash",
+        "canonical": "rgba(255,255,255,.045)",
+        "note": "Translucent overlay; it takes its tone from the surface beneath."
+      },
+      "bg-sel": {
+        "role": "neutral",
+        "displayName": "Selected Wash",
+        "canonical": "rgba(255,255,255,.075)",
+        "note": "Translucent overlay; it takes its tone from the surface beneath."
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "rgba(255,255,255,.07)",
+        "note": "Translucent overlay; it takes its tone from the surface beneath."
+      },
+      "line-2": {
+        "role": "neutral",
+        "displayName": "Control Hairline",
+        "canonical": "rgba(255,255,255,.11)",
+        "note": "Translucent overlay; it takes its tone from the surface beneath."
+      },
+      "text": {
+        "role": "neutral",
+        "displayName": "Primary Text",
+        "canonical": "#ededf0",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#252526",
+          "#424244",
+          "#616163",
+          "#828284",
+          "#a5a5a7",
+          "#c9c9cb",
+          "#eeeef0"
+        ]
+      },
+      "text-2": {
+        "role": "neutral",
+        "displayName": "Secondary Text",
+        "canonical": "#9a9ca5",
+        "tonalRamp": [
+          "#0a0b0e",
+          "#242529",
+          "#404248",
+          "#5f6168",
+          "#80828a",
+          "#a3a5ac",
+          "#c7c9cf",
+          "#edeef3"
+        ]
+      },
+      "text-3": {
+        "role": "neutral",
+        "displayName": "Faint Text",
+        "canonical": "#6b6e78",
+        "tonalRamp": [
+          "#0a0b0f",
+          "#23252a",
+          "#404249",
+          "#5e616a",
+          "#7f828c",
+          "#a2a5ad",
+          "#c7c9d0",
+          "#eceef4"
+        ]
+      },
+      "accent": {
+        "role": "primary",
+        "displayName": "Signal Indigo",
+        "canonical": "#7b7ff5",
+        "tonalRamp": [
+          "#08022d",
+          "#1d1958",
+          "#363487",
+          "#5151b9",
+          "#7074df",
+          "#939bf8",
+          "#b9c2ff",
+          "#e2e9ff"
+        ]
+      },
+      "accent-fill": {
+        "role": "primary",
+        "displayName": "Deep Indigo Fill",
+        "canonical": "#5e63e6",
+        "tonalRamp": [
+          "#070032",
+          "#1a165f",
+          "#323190",
+          "#4c4ec4",
+          "#6972eb",
+          "#8d9aff",
+          "#b4c2ff",
+          "#ddeaff"
+        ]
+      },
+      "accent-soft": {
+        "role": "primary",
+        "displayName": "Indigo Wash",
+        "canonical": "rgba(123,127,245,.14)",
+        "note": "Translucent overlay; it takes its tone from the surface beneath."
+      },
+      "needs": {
+        "role": "secondary",
+        "displayName": "Needs-Me Red",
+        "canonical": "#f2555a",
+        "tonalRamp": [
+          "#270000",
+          "#510005",
+          "#7f0318",
+          "#b01f2e",
+          "#d84a4f",
+          "#f57b79",
+          "#ffa8a5",
+          "#ffd6d2"
+        ]
+      },
+      "needs-soft": {
+        "role": "secondary",
+        "displayName": "Needs-Me Wash",
+        "canonical": "rgba(242,85,90,.12)",
+        "note": "Translucent overlay; it takes its tone from the surface beneath."
+      },
+      "st-todo": {
+        "role": "tertiary",
+        "displayName": "Todo Grey",
+        "canonical": "#8a8d96",
+        "tonalRamp": [
+          "#0a0b0e",
+          "#232529",
+          "#404248",
+          "#5e6169",
+          "#7f828a",
+          "#a2a5ac",
+          "#c7c9cf",
+          "#edeef3"
+        ]
+      },
+      "st-doing": {
+        "role": "tertiary",
+        "displayName": "In-Progress Amber",
+        "canonical": "#e6b450",
+        "tonalRamp": [
+          "#180600",
+          "#381f00",
+          "#5c3b00",
+          "#835800",
+          "#a67a12",
+          "#c59f56",
+          "#e4c58b",
+          "#ffebbe"
+        ]
+      },
+      "st-review": {
+        "role": "tertiary",
+        "displayName": "In-Review Green",
+        "canonical": "#4cc38a",
+        "tonalRamp": [
+          "#001202",
+          "#003115",
+          "#00522c",
+          "#007646",
+          "#269966",
+          "#64ba8d",
+          "#97dbb5",
+          "#c9fddf"
+        ]
+      },
+      "st-done": {
+        "role": "tertiary",
+        "displayName": "Done Indigo",
+        "canonical": "#7b7ff5",
+        "tonalRamp": [
+          "#08022d",
+          "#1d1958",
+          "#363487",
+          "#5151b9",
+          "#7074df",
+          "#939bf8",
+          "#b9c2ff",
+          "#e2e9ff"
+        ]
+      },
+      "st-blocked": {
+        "role": "tertiary",
+        "displayName": "Blocked Orange",
+        "canonical": "#f08c3a",
+        "tonalRamp": [
+          "#200000",
+          "#461100",
+          "#6f2b00",
+          "#9b4500",
+          "#c06814",
+          "#de9057",
+          "#fbb98b",
+          "#ffe2be"
+        ]
+      },
+      "repo-1": {
+        "role": "tertiary",
+        "displayName": "Repo Blue",
+        "canonical": "#5b9cff",
+        "tonalRamp": [
+          "#00072b",
+          "#002155",
+          "#0f3f83",
+          "#245eb4",
+          "#4681da",
+          "#73a6f3",
+          "#a0cbff",
+          "#cff1ff"
+        ]
+      },
+      "repo-2": {
+        "role": "tertiary",
+        "displayName": "Repo Pink",
+        "canonical": "#e66aa6",
+        "tonalRamp": [
+          "#21000f",
+          "#47022a",
+          "#711949",
+          "#9e316a",
+          "#c5558c",
+          "#e281ad",
+          "#ffacd0",
+          "#ffd9f4"
+        ]
+      },
+      "repo-3": {
+        "role": "tertiary",
+        "displayName": "Repo Green",
+        "canonical": "#3fc79a",
+        "tonalRamp": [
+          "#001305",
+          "#00311c",
+          "#005235",
+          "#007651",
+          "#049972",
+          "#5cba97",
+          "#92dbbd",
+          "#c5fde5"
+        ]
+      },
+      "repo-4": {
+        "role": "tertiary",
+        "displayName": "Repo Orange",
+        "canonical": "#f0a04a",
+        "tonalRamp": [
+          "#1d0300",
+          "#401800",
+          "#673200",
+          "#914e00",
+          "#b67019",
+          "#d49658",
+          "#f2be8c",
+          "#ffe6bf"
+        ]
+      },
+      "actor-agent": {
+        "role": "tertiary",
+        "displayName": "Agent Avatar",
+        "canonical": "#4b4fc4",
+        "tonalRamp": [
+          "#06012f",
+          "#1a195a",
+          "#32348a",
+          "#4c51bd",
+          "#6a75e3",
+          "#8e9cfc",
+          "#b5c3ff",
+          "#deeaff"
+        ]
+      },
+      "actor-me": {
+        "role": "tertiary",
+        "displayName": "Me Avatar",
+        "canonical": "#2c7a5a",
+        "tonalRamp": [
+          "#001106",
+          "#002e1d",
+          "#124e37",
+          "#2a7053",
+          "#4e9273",
+          "#7bb498",
+          "#a7d6be",
+          "#d4f9e6"
+        ]
+      },
+      "actor-sync": {
+        "role": "tertiary",
+        "displayName": "Sync Avatar",
+        "canonical": "#555a66",
+        "tonalRamp": [
+          "#090b0f",
+          "#22252c",
+          "#3e424b",
+          "#5c616c",
+          "#7d828e",
+          "#a1a5af",
+          "#c5c9d2",
+          "#ebeef5"
+        ]
+      },
+      "actor-plan": {
+        "role": "tertiary",
+        "displayName": "Plan Avatar",
+        "canonical": "#8a5a2c",
+        "tonalRamp": [
+          "#170600",
+          "#381e03",
+          "#5c3917",
+          "#82562c",
+          "#a6774d",
+          "#c59c78",
+          "#e4c2a4",
+          "#ffe9d2"
+        ]
+      },
+      "actor-launch": {
+        "role": "tertiary",
+        "displayName": "Launch Avatar",
+        "canonical": "#3f6aa8",
+        "tonalRamp": [
+          "#000a21",
+          "#0d2446",
+          "#23426f",
+          "#3a629a",
+          "#5b83bf",
+          "#83a7db",
+          "#adcbf7",
+          "#d8f0ff"
+        ]
+      },
+      "light-desk": {
+        "role": "neutral",
+        "displayName": "Desk (light)",
+        "canonical": "#e4e5e9",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242527",
+          "#414244",
+          "#606164",
+          "#818285",
+          "#a4a5a8",
+          "#c8c9cb",
+          "#eeeef0"
+        ]
+      },
+      "light-bg": {
+        "role": "neutral",
+        "displayName": "Main Surface (light)",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "light-bg-side": {
+        "role": "neutral",
+        "displayName": "Sidebar Black (light)",
+        "canonical": "#f7f7f8",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616162",
+          "#828283",
+          "#a5a5a6",
+          "#c9c9c9",
+          "#eeeeef"
+        ]
+      },
+      "light-bg-raised": {
+        "role": "neutral",
+        "displayName": "Raised Grey (light)",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "light-bg-input": {
+        "role": "neutral",
+        "displayName": "Field Grey (light)",
+        "canonical": "#f3f3f5",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#252526",
+          "#424243",
+          "#616162",
+          "#828284",
+          "#a5a5a6",
+          "#c9c9ca",
+          "#eeeeef"
+        ]
+      },
+      "light-bg-hover": {
+        "role": "neutral",
+        "displayName": "Hover Wash (light)",
+        "canonical": "rgba(0,0,0,.04)",
+        "note": "Translucent overlay; it takes its tone from the surface beneath."
+      },
+      "light-bg-sel": {
+        "role": "neutral",
+        "displayName": "Selected Wash (light)",
+        "canonical": "rgba(0,0,0,.06)",
+        "note": "Translucent overlay; it takes its tone from the surface beneath."
+      },
+      "light-line": {
+        "role": "neutral",
+        "displayName": "Hairline (light)",
+        "canonical": "rgba(0,0,0,.07)",
+        "note": "Translucent overlay; it takes its tone from the surface beneath."
+      },
+      "light-line-2": {
+        "role": "neutral",
+        "displayName": "Control Hairline (light)",
+        "canonical": "rgba(0,0,0,.11)",
+        "note": "Translucent overlay; it takes its tone from the surface beneath."
+      },
+      "light-text": {
+        "role": "neutral",
+        "displayName": "Primary Text (light)",
+        "canonical": "#1b1c1f",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242527",
+          "#414245",
+          "#606164",
+          "#818286",
+          "#a4a5a8",
+          "#c8c9cc",
+          "#eeeef0"
+        ]
+      },
+      "light-text-2": {
+        "role": "neutral",
+        "displayName": "Secondary Text (light)",
+        "canonical": "#62656e",
+        "tonalRamp": [
+          "#0a0b0e",
+          "#23252a",
+          "#404248",
+          "#5e6169",
+          "#7f828b",
+          "#a2a5ac",
+          "#c7c9cf",
+          "#eceef3"
+        ]
+      },
+      "light-text-3": {
+        "role": "neutral",
+        "displayName": "Faint Text (light)",
+        "canonical": "#8e919a",
+        "tonalRamp": [
+          "#0a0b0e",
+          "#232529",
+          "#404248",
+          "#5e6169",
+          "#7f828a",
+          "#a2a5ac",
+          "#c7c9cf",
+          "#edeef3"
+        ]
+      },
+      "light-accent": {
+        "role": "primary",
+        "displayName": "Signal Indigo (light)",
+        "canonical": "#5e63e6",
+        "tonalRamp": [
+          "#070032",
+          "#1a165f",
+          "#323190",
+          "#4c4ec4",
+          "#6972eb",
+          "#8d9aff",
+          "#b4c2ff",
+          "#ddeaff"
+        ]
+      },
+      "light-accent-soft": {
+        "role": "primary",
+        "displayName": "Indigo Wash (light)",
+        "canonical": "rgba(94,99,230,.1)",
+        "note": "Translucent overlay; it takes its tone from the surface beneath."
+      },
+      "light-needs": {
+        "role": "secondary",
+        "displayName": "Needs-Me Red (light)",
+        "canonical": "#e03e44",
+        "tonalRamp": [
+          "#280000",
+          "#530002",
+          "#810014",
+          "#b21a29",
+          "#db474a",
+          "#f77975",
+          "#ffa7a2",
+          "#ffd5cf"
+        ]
+      },
+      "light-needs-soft": {
+        "role": "secondary",
+        "displayName": "Needs-Me Wash (light)",
+        "canonical": "rgba(224,62,68,.09)",
+        "note": "Translucent overlay; it takes its tone from the surface beneath."
+      },
+      "light-st-todo": {
+        "role": "tertiary",
+        "displayName": "Todo Grey (light)",
+        "canonical": "#9a9da5",
+        "tonalRamp": [
+          "#0a0b0e",
+          "#232529",
+          "#404247",
+          "#5f6168",
+          "#7f8289",
+          "#a2a5ab",
+          "#c7c9ce",
+          "#edeef3"
+        ]
+      },
+      "light-st-doing": {
+        "role": "tertiary",
+        "displayName": "In-Progress Amber (light)",
+        "canonical": "#d39a1d",
+        "tonalRamp": [
+          "#190500",
+          "#3b1d00",
+          "#603800",
+          "#875600",
+          "#ab7800",
+          "#c99d4c",
+          "#e8c384",
+          "#ffeaba"
+        ]
+      },
+      "light-st-review": {
+        "role": "tertiary",
+        "displayName": "In-Review Green (light)",
+        "canonical": "#2a9f68",
+        "tonalRamp": [
+          "#001202",
+          "#003014",
+          "#00512b",
+          "#007545",
+          "#309865",
+          "#69b98c",
+          "#9bdab4",
+          "#cbfcde"
+        ]
+      },
+      "light-st-done": {
+        "role": "tertiary",
+        "displayName": "Done Indigo (light)",
+        "canonical": "#5e63e6",
+        "tonalRamp": [
+          "#070032",
+          "#1a165f",
+          "#323190",
+          "#4c4ec4",
+          "#6972eb",
+          "#8d9aff",
+          "#b4c2ff",
+          "#ddeaff"
+        ]
+      },
+      "light-st-blocked": {
+        "role": "tertiary",
+        "displayName": "Blocked Orange (light)",
+        "canonical": "#e0751f",
+        "tonalRamp": [
+          "#210000",
+          "#480e00",
+          "#722700",
+          "#9f4100",
+          "#c56412",
+          "#e28d56",
+          "#feb78a",
+          "#ffe1be"
+        ]
+      },
+      "light-repo-1": {
+        "role": "tertiary",
+        "displayName": "Repo Blue (light)",
+        "canonical": "#2f73e0",
+        "tonalRamp": [
+          "#00052f",
+          "#001f5b",
+          "#083c8b",
+          "#1d5cbe",
+          "#417fe4",
+          "#6fa5fc",
+          "#9dcaff",
+          "#ccf0ff"
+        ]
+      },
+      "light-repo-2": {
+        "role": "tertiary",
+        "displayName": "Repo Pink (light)",
+        "canonical": "#cc4386",
+        "tonalRamp": [
+          "#23000e",
+          "#4b0029",
+          "#760f47",
+          "#a42868",
+          "#cc4e89",
+          "#e97cab",
+          "#ffa9ce",
+          "#ffd6f3"
+        ]
+      },
+      "light-repo-3": {
+        "role": "tertiary",
+        "displayName": "Repo Green (light)",
+        "canonical": "#1f9e74",
+        "tonalRamp": [
+          "#001205",
+          "#00301b",
+          "#005135",
+          "#007550",
+          "#299871",
+          "#66b896",
+          "#98dabc",
+          "#cafce4"
+        ]
+      },
+      "light-repo-4": {
+        "role": "tertiary",
+        "displayName": "Repo Orange (light)",
+        "canonical": "#d07a12",
+        "tonalRamp": [
+          "#1e0100",
+          "#431500",
+          "#6b2f00",
+          "#954a00",
+          "#bb6c0c",
+          "#d89455",
+          "#f5bc89",
+          "#ffe5bd"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Plan percentages and the full-page task title."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Task title in the detail panel."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "The question on a needs-me card; empty-state headings."
+      },
+      "field": {
+        "displayName": "Field",
+        "purpose": "The Jump input."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Base size; row titles at 500."
+      },
+      "notes": {
+        "displayName": "Notes",
+        "purpose": "Task notes, the only long reading text."
+      },
+      "meta": {
+        "displayName": "Meta",
+        "purpose": "Ids, times, counts, breadcrumbs."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Section headers, pills, chips, legends. The 11.5px floor."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "Branch and thread names only."
+      }
+    },
+    "shadows": [
+      {
+        "name": "float",
+        "value": "0 16px 48px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.08)",
+        "purpose": "Window, menus, popovers, modals, toasts. Dark theme."
+      },
+      {
+        "name": "float-light",
+        "value": "0 16px 48px rgba(0,0,0,.16),0 0 0 1px rgba(0,0,0,.08)",
+        "purpose": "The same, in the light theme."
+      },
+      {
+        "name": "focus-halo",
+        "value": "0 0 0 3px var(--accent-soft)",
+        "purpose": "Selected plan card, focused quick-add pill."
+      },
+      {
+        "name": "keyboard-outline",
+        "value": "inset 0 0 0 1px var(--accent)",
+        "purpose": "The row or inbox item with keyboard focus."
+      },
+      {
+        "name": "station-halo",
+        "value": "0 0 0 3px var(--bg)",
+        "purpose": "Clears lines around a station on the run-order map."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease",
+        "value": "cubic-bezier(.2,.8,.2,1)",
+        "purpose": "The one easing curve, an ease-out."
+      },
+      {
+        "name": "menu-in",
+        "value": "100-120ms",
+        "purpose": "Menus, popovers, menu-bar dropdown fade and drop 4px."
+      },
+      {
+        "name": "modal-in",
+        "value": "140ms",
+        "purpose": "Modals fade, drop 4px and scale from 98.5%."
+      },
+      {
+        "name": "hover",
+        "value": "150ms",
+        "purpose": "Card lift, fold arrow turn, map line fade."
+      },
+      {
+        "name": "panel-in",
+        "value": "180ms",
+        "purpose": "Detail panel fades in from 10px right; cleared inbox items slide out."
+      },
+      {
+        "name": "toast-in",
+        "value": "200ms",
+        "purpose": "Toasts rise 6px."
+      },
+      {
+        "name": "status-pop",
+        "value": "300ms",
+        "purpose": "Status icon scales 0.5, 1.18, 1 on change."
+      },
+      {
+        "name": "progress",
+        "value": "400ms",
+        "purpose": "Rings and bars ease to their new value."
+      },
+      {
+        "name": "new-row",
+        "value": "600ms",
+        "purpose": "New row's indigo wash fades out."
+      },
+      {
+        "name": "live-pulse",
+        "value": "1.6s ease-out infinite",
+        "purpose": "Agent working chip; the only loop."
+      },
+      {
+        "name": "reduce-motion",
+        "value": "none",
+        "purpose": "Under Reduce Motion all animation and transitions turn off."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "list-compact",
+        "value": "820px (list container)"
+      },
+      {
+        "name": "list-narrow",
+        "value": "680px (list container)"
+      },
+      {
+        "name": "window-narrow",
+        "value": "980px (viewport)"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one main action on a view, with its shortcut shown as a key cap.",
+      "html": "<button class=\"ds-btn ds-btn-pri\"><svg viewBox=\"0 0 16 16\" width=\"14\" height=\"14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"><circle cx=\"8\" cy=\"8\" r=\"5.75\"/><path d=\"M6.8 5.8 10.2 8l-3.4 2.2Z\"/></svg>Do it <kbd class=\"ds-kbd\">⌘↩</kbd></button>",
+      "css": ".ds-btn{height:28px;display:inline-flex;align-items:center;gap:7px;padding:0 11px;border-radius:6px;border:1px solid var(--line-2,rgba(255,255,255,.11));background:var(--bg-input,#1b1c20);color:var(--text,#ededf0);font:500 12.5px/1 Inter,-apple-system,sans-serif;white-space:nowrap;transition:background .12s cubic-bezier(.2,.8,.2,1),filter .12s}.ds-btn-pri{background:var(--accent-fill,#5e63e6);border-color:transparent;color:#fff}.ds-btn-pri:hover{filter:brightness(1.1)}.ds-btn:focus-visible{outline:none;box-shadow:0 0 0 3px var(--accent-soft,rgba(123,127,245,.14))}.ds-kbd{font:500 11px Inter,sans-serif;background:rgba(255,255,255,.12);border-radius:4px;padding:0 5px;min-width:18px;height:18px;display:inline-grid;place-items:center;opacity:.85}"
+    },
+    {
+      "name": "Secondary and Ghost Buttons",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Field-grey secondary and borderless ghost buttons for every other action.",
+      "html": "<div style=\"display:flex;gap:8px\"><button class=\"ds-btn2\">Keep open</button><button class=\"ds-btn2 ds-ghost\">Dismiss <kbd class=\"ds-k\">⌘⌫</kbd></button></div>",
+      "css": ".ds-btn2{height:28px;display:inline-flex;align-items:center;gap:7px;padding:0 11px;border-radius:6px;border:1px solid var(--line-2,rgba(255,255,255,.11));background:var(--bg-input,#1b1c20);color:var(--text,#ededf0);font:500 12.5px/1 Inter,-apple-system,sans-serif;transition:background .12s cubic-bezier(.2,.8,.2,1)}.ds-btn2:hover{background:var(--bg-sel,rgba(255,255,255,.075))}.ds-ghost{background:none;border-color:transparent;color:var(--text-2,#9a9ca5)}.ds-ghost:hover{background:var(--bg-hover,rgba(255,255,255,.045));color:var(--text,#ededf0)}.ds-btn2:focus-visible{outline:none;box-shadow:0 0 0 3px var(--accent-soft,rgba(123,127,245,.14))}.ds-k{font:500 11px Inter,sans-serif;color:var(--text-2,#9a9ca5);background:var(--bg-input,#1b1c20);border:1px solid var(--line-2,rgba(255,255,255,.11));border-radius:4px;padding:0 5px;height:18px;display:inline-grid;place-items:center}"
+    },
+    {
+      "name": "Task Row",
+      "kind": "custom",
+      "refersTo": "task-row",
+      "description": "The fixed 38px row: status, id, title, progress ring, live chip, needs-me dot, pills, actor, time.",
+      "html": "<div class=\"ds-row\" tabindex=\"0\"><svg class=\"ds-st\" viewBox=\"0 0 16 16\"><circle cx=\"8\" cy=\"8\" r=\"6.25\" fill=\"none\" stroke=\"var(--st-doing,#e6b450)\" stroke-width=\"1.6\"/><path d=\"M8 8V4.2a3.8 3.8 0 0 1 0 7.6Z\" fill=\"var(--st-doing,#e6b450)\"/></svg><span class=\"ds-id\">144</span><span class=\"ds-t\">Web: slot picker</span><span class=\"ds-live\"><i></i>Agent working</span><span class=\"ds-dot\"></span><span class=\"ds-sp\"></span><span class=\"ds-pill\"><span class=\"ds-rdot\"></span>booking-web</span><span class=\"ds-av\">A</span><span class=\"ds-when\">6m</span></div>",
+      "css": ".ds-row{display:flex;align-items:center;gap:10px;height:38px;padding:0 16px 0 14px;border-bottom:1px solid var(--line,rgba(255,255,255,.07));white-space:nowrap;font:13px/1.45 Inter,-apple-system,sans-serif;letter-spacing:-.006em;color:var(--text,#ededf0);background:var(--bg,#0f1012);outline:none}.ds-row:hover{background:var(--bg-hover,rgba(255,255,255,.045))}.ds-row:focus-visible{background:var(--bg-sel,rgba(255,255,255,.075));box-shadow:inset 0 0 0 1px var(--accent,#7b7ff5)}.ds-st{width:16px;height:16px;flex:none}.ds-id{width:34px;color:var(--text-3,#6b6e78);font-size:12px;font-variant-numeric:tabular-nums}.ds-t{font-weight:500;overflow:hidden;text-overflow:ellipsis}.ds-sp{flex:1}.ds-dot{width:7px;height:7px;border-radius:50%;background:var(--needs,#f2555a)}.ds-live{display:inline-flex;align-items:center;gap:6px;height:20px;padding:0 7px 0 6px;border-radius:10px;font-size:11.5px;color:var(--text-2,#9a9ca5);background:var(--bg-input,#1b1c20);border:1px solid var(--line,rgba(255,255,255,.07))}.ds-live i{width:6px;height:6px;border-radius:50%;background:var(--st-review,#4cc38a)}.ds-pill{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 8px;border-radius:11px;border:1px solid var(--line-2,rgba(255,255,255,.11));font-size:11.5px;color:var(--text-2,#9a9ca5)}.ds-rdot{width:8px;height:8px;border-radius:50%;background:var(--repo-1,#5b9cff)}.ds-av{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:10px;font-weight:600;color:#fff;background:#4b4fc4}.ds-when{width:44px;text-align:right;color:var(--text-3,#6b6e78);font-size:12px}"
+    },
+    {
+      "name": "Status Icons",
+      "kind": "custom",
+      "refersTo": "",
+      "description": "Eight 16px status shapes: todo, waiting, proposed, in progress, in review, blocked, done, dropped.",
+      "html": "<div class=\"ds-sts\"><svg viewBox=\"0 0 16 16\"><circle cx=\"8\" cy=\"8\" r=\"6.25\" fill=\"none\" stroke=\"#8a8d96\" stroke-width=\"1.6\"/></svg><svg viewBox=\"0 0 16 16\"><circle cx=\"8\" cy=\"8\" r=\"6.25\" fill=\"none\" stroke=\"#8a8d96\" stroke-width=\"1.6\" stroke-dasharray=\"2.4 2.2\"/></svg><svg viewBox=\"0 0 16 16\"><circle cx=\"8\" cy=\"8\" r=\"6.25\" fill=\"none\" stroke=\"#8a8d96\" stroke-width=\"1.6\" stroke-dasharray=\"1.2 2.2\"/></svg><svg viewBox=\"0 0 16 16\"><circle cx=\"8\" cy=\"8\" r=\"6.25\" fill=\"none\" stroke=\"#e6b450\" stroke-width=\"1.6\"/><path d=\"M8 8V4.2a3.8 3.8 0 0 1 0 7.6Z\" fill=\"#e6b450\"/></svg><svg viewBox=\"0 0 16 16\"><circle cx=\"8\" cy=\"8\" r=\"6.25\" fill=\"none\" stroke=\"#4cc38a\" stroke-width=\"1.6\"/><path d=\"M8 8V4.2a3.8 3.8 0 1 1-3.8 3.8Z\" fill=\"#4cc38a\"/></svg><svg viewBox=\"0 0 16 16\"><circle cx=\"8\" cy=\"8\" r=\"6.25\" fill=\"none\" stroke=\"#f08c3a\" stroke-width=\"1.6\"/><path d=\"M5.5 8h5\" stroke=\"#f08c3a\" stroke-width=\"2\" stroke-linecap=\"round\"/></svg><svg viewBox=\"0 0 16 16\"><circle cx=\"8\" cy=\"8\" r=\"7\" fill=\"#7b7ff5\"/><path d=\"M5 8.2l2 2 4-4.3\" fill=\"none\" stroke=\"#fff\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg><svg viewBox=\"0 0 16 16\"><circle cx=\"8\" cy=\"8\" r=\"6.25\" fill=\"none\" stroke=\"#8a8d96\" stroke-width=\"1.6\"/><path d=\"M5.6 5.6l4.8 4.8M10.4 5.6l-4.8 4.8\" stroke=\"#8a8d96\" stroke-width=\"1.4\" stroke-linecap=\"round\"/></svg></div>",
+      "css": ".ds-sts{display:flex;gap:14px;padding:12px;background:var(--bg,#0f1012)}.ds-sts svg{width:16px;height:16px;border-radius:5px;transition:box-shadow .12s}.ds-sts svg:hover{background:var(--bg-hover,rgba(255,255,255,.045));box-shadow:0 0 0 3px var(--bg-hover,rgba(255,255,255,.045))}"
+    },
+    {
+      "name": "Progress Bar",
+      "kind": "custom",
+      "refersTo": "",
+      "description": "Stacked bar: done, in review, in progress, blocked; todo is the empty track. Only done counts toward the percentage.",
+      "html": "<div class=\"ds-pbig\"><span class=\"ds-pct\">35%</span><span class=\"ds-bar\"><i style=\"width:35%;background:var(--st-done,#7b7ff5)\"></i><i style=\"width:15%;background:var(--st-review,#4cc38a)\"></i><i style=\"width:20%;background:var(--st-doing,#e6b450)\"></i><i style=\"width:5%;background:var(--st-blocked,#f08c3a)\"></i></span><span class=\"ds-of\">7 of 20 done</span></div>",
+      "css": ".ds-pbig{display:flex;align-items:center;gap:14px;padding:12px;background:var(--bg,#0f1012);font:13px Inter,-apple-system,sans-serif;color:var(--text,#ededf0)}.ds-pct{font-size:22px;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums;min-width:58px}.ds-bar{display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--bg-input,#1b1c20);flex:1;min-width:80px}.ds-bar i{display:block;height:100%;transition:width .4s cubic-bezier(.2,.8,.2,1)}.ds-bar i+i{box-shadow:-1px 0 0 var(--bg,#0f1012)}.ds-of{color:var(--text-3,#6b6e78);white-space:nowrap}"
+    },
+    {
+      "name": "Live Agent Chips",
+      "kind": "chip",
+      "refersTo": "live-chip",
+      "description": "Agent working (pulsing green), Waiting on you (red), Stopped (grey).",
+      "html": "<div style=\"display:flex;gap:8px\"><span class=\"ds-lv ds-run\"><i></i>Agent working</span><span class=\"ds-lv ds-wait\"><i></i>Waiting on you</span><span class=\"ds-lv ds-stop\"><i></i>Stopped</span></div>",
+      "css": ".ds-lv{display:inline-flex;align-items:center;gap:6px;height:20px;padding:0 7px 0 6px;border-radius:10px;font:11.5px Inter,-apple-system,sans-serif;color:var(--text-2,#9a9ca5);background:var(--bg-input,#1b1c20);border:1px solid var(--line,rgba(255,255,255,.07))}.ds-lv i{width:6px;height:6px;border-radius:50%;background:var(--st-review,#4cc38a);position:relative}.ds-run i::after{content:\"\";position:absolute;inset:-3px;border-radius:50%;border:1.5px solid var(--st-review,#4cc38a);animation:ds-pulse 1.6s ease-out infinite}.ds-wait i{background:var(--needs,#f2555a)}.ds-stop i{background:var(--text-3,#6b6e78)}@keyframes ds-pulse{from{opacity:.9;transform:scale(.6)}to{opacity:0;transform:scale(1.8)}}@media (prefers-reduced-motion:reduce){.ds-run i::after{animation:none}}"
+    },
+    {
+      "name": "Pills",
+      "kind": "chip",
+      "refersTo": "pill",
+      "description": "Row pills: Blocked (orange), Ready (green), waits-on (neutral), repo (with its dot).",
+      "html": "<div style=\"display:flex;gap:6px\"><span class=\"ds-p ds-warn\">Blocked</span><span class=\"ds-p ds-ok\">Ready</span><span class=\"ds-p\">waits on 144, 145</span><span class=\"ds-p\"><span class=\"ds-d\"></span>booking-api</span></div>",
+      "css": ".ds-p{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 8px;border-radius:11px;border:1px solid var(--line-2,rgba(255,255,255,.11));font:11.5px Inter,-apple-system,sans-serif;color:var(--text-2,#9a9ca5);white-space:nowrap}.ds-warn{color:var(--st-blocked,#f08c3a);border-color:color-mix(in srgb,var(--st-blocked,#f08c3a) 35%,transparent)}.ds-ok{color:var(--st-review,#4cc38a);border-color:color-mix(in srgb,var(--st-review,#4cc38a) 35%,transparent)}.ds-d{width:8px;height:8px;border-radius:50%;background:var(--repo-2,#e66aa6)}"
+    },
+    {
+      "name": "Sidebar Navigation",
+      "kind": "nav",
+      "refersTo": "nav-item",
+      "description": "28px nav items; Needs me carries the red count; connections footer at the foot.",
+      "html": "<nav class=\"ds-side\"><a class=\"ds-nav ds-on\" href=\"#\"><span class=\"ds-tl\">Needs me</span><span class=\"ds-badge\">8</span></a><a class=\"ds-nav\" href=\"#\"><span class=\"ds-tl\">Ready to start</span><span class=\"ds-c\">5</span></a><a class=\"ds-nav\" href=\"#\"><span class=\"ds-tl\">All tasks</span><span class=\"ds-c\">21</span></a><div class=\"ds-conn\"><i></i>All connected</div></nav>",
+      "css": ".ds-side{width:232px;padding:8px;background:var(--bg-side,#0a0b0c);border-right:1px solid var(--line,rgba(255,255,255,.07));font:13px Inter,-apple-system,sans-serif}.ds-nav{display:flex;align-items:center;gap:9px;height:28px;padding:0 8px;border-radius:6px;color:var(--text-2,#9a9ca5);text-decoration:none}.ds-nav:hover{background:var(--bg-hover,rgba(255,255,255,.045));color:var(--text,#ededf0)}.ds-nav:focus-visible{outline:none;box-shadow:inset 0 0 0 1px var(--accent,#7b7ff5)}.ds-on{background:var(--bg-sel,rgba(255,255,255,.075));color:var(--text,#ededf0)}.ds-tl{flex:1}.ds-c{font-size:12px;color:var(--text-3,#6b6e78)}.ds-badge{min-width:18px;height:18px;border-radius:9px;background:var(--needs,#f2555a);color:#fff;font-size:11px;font-weight:600;display:grid;place-items:center;padding:0 5px}.ds-conn{display:flex;align-items:center;gap:8px;height:28px;padding:0 8px;margin-top:12px;border-top:1px solid var(--line,rgba(255,255,255,.07));font-size:12px;color:var(--text-3,#6b6e78)}.ds-conn i{width:7px;height:7px;border-radius:50%;background:var(--st-review,#4cc38a)}"
+    },
+    {
+      "name": "Menu",
+      "kind": "custom",
+      "refersTo": "menu",
+      "description": "Floating menu used for the status picker and right-click menu, with number and shortcut hints.",
+      "html": "<div class=\"ds-menu\"><div class=\"ds-o\" tabindex=\"0\"><span class=\"ds-ot\">Todo</span><span class=\"ds-ok2\">1</span></div><div class=\"ds-o\" tabindex=\"0\"><span class=\"ds-ot\">In progress</span><span class=\"ds-ok2\">2</span></div><hr><div class=\"ds-o\" tabindex=\"0\"><span class=\"ds-ot\">Open page</span><span class=\"ds-ok2\">⌘↓</span></div></div>",
+      "css": ".ds-menu{min-width:220px;background:var(--bg-raised,#16171a);border:1px solid var(--line-2,rgba(255,255,255,.11));border-radius:9px;box-shadow:0 16px 48px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.08);padding:5px;font:13px Inter,-apple-system,sans-serif;color:var(--text,#ededf0);animation:ds-in .1s cubic-bezier(.2,.8,.2,1)}.ds-o{display:flex;align-items:center;gap:9px;height:30px;padding:0 9px;border-radius:6px;outline:none}.ds-o:hover,.ds-o:focus-visible{background:var(--bg-sel,rgba(255,255,255,.075))}.ds-ot{flex:1}.ds-ok2{color:var(--text-3,#6b6e78);font-size:11.5px}.ds-menu hr{border:0;height:1px;background:var(--line,rgba(255,255,255,.07));margin:4px 2px}@keyframes ds-in{from{opacity:0;transform:translateY(-4px)}}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Quiet Tower",
+    "overview": "Airboss is a control tower for agent work. It sits dark and still until something needs the person running it, and then it says so in one colour. The app is a dense list first: 38px rows, hairline borders, 13px type, one indigo accent. Detail is always one keystroke away, in a 480px panel or a full page laid out like a document.\n\nIt is a native Mac app, not a website in a window. Traffic lights, menus, a menu-bar item and standard Mac keys are part of the look. Dark is the main theme; light uses the same structure with its own values. Surfaces step from near black to slightly lighter grey; there are no gradients on surfaces and no decoration that does not carry state.\n\nStatus is shown by shape first and colour second, so it never depends on colour alone. Motion is short and only answers something the user or an agent did.",
+    "keyCharacteristics": [
+      "Dense rows at a fixed 38px, so long lists can be virtualised.",
+      "Hairline borders at 7% and 11% opacity; depth comes from tonal steps, not shadows.",
+      "One accent (indigo) for done, selection, focus and the main button.",
+      "One alarm colour (red) for \"needs me\", and nothing else.",
+      "Every number uses tabular figures.",
+      "Keyboard first: every action has a shortcut, and the main buttons show their key."
+    ],
+    "rules": [
+      {
+        "name": "The Red Is Mine Rule",
+        "body": "Red means \"needs me\" and nothing else. If it isn't waiting on the user's decision, it isn't red. Blocked work and broken connections are orange; failures that need the user are red because they sit in Needs me.",
+        "section": "colors"
+      },
+      {
+        "name": "The One Accent Rule",
+        "body": "Indigo is the only accent. Done, selection, focus and the primary button share it. No second brand colour.",
+        "section": "colors"
+      },
+      {
+        "name": "The Owned Colour Rule",
+        "body": "A repo's colour is the same in every place it appears. Never reassign a repo colour per view.",
+        "section": "colors"
+      },
+      {
+        "name": "The 11.5 Floor Rule",
+        "body": "No running text below 11.5px. Only key caps (11px) and actor initials (9–10px) go smaller.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tabular Figures Rule",
+        "body": "Every number that can change (ids, counts, percentages, times) uses tabular figures so columns don't jitter.",
+        "section": "typography"
+      },
+      {
+        "name": "The Fixed Row Rule",
+        "body": "A task row is always exactly 38px. Nothing in a row wraps or grows; long titles truncate with an ellipsis. This is what lets a 2,000-task list be virtualised and scroll at 60 fps.",
+        "section": "layout"
+      },
+      {
+        "name": "The Float-Only Rule",
+        "body": "Shadows mean \"this floats above the window\". Cards, rows and panels inside the window never get one.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** keep red for \"needs me\" only: the count badge, the needs-me dot, the \"Waiting on you\" chip and needs-me cards.",
+      "**Do** keep task rows at exactly 38px and truncate instead of wrapping.",
+      "**Do** show status by shape and colour together; never colour alone.",
+      "**Do** use tabular figures for every id, count, percentage and time.",
+      "**Do** give each repo one colour and use it for its dot, pill, lane and lines.",
+      "**Do** show the shortcut on the primary button of a view, and list every shortcut in the Task and View menus.",
+      "**Do** describe connection problems in plain words, with details in the popover.",
+      "**Do** scope every component's class names. The prototype had real bugs from shared global names (`.plan`, `.stop`, `.empty`); in Svelte, keep styles in the component and avoid bare global classes.",
+      "**Do** set font, size and colour on every text node in Paper. Text there doesn't inherit styles from its frame."
+    ],
+    "donts": [
+      "**Don't** use red for errors, warnings, destructive actions or blocked work. Blocked and connection problems are orange.",
+      "**Don't** add a second accent colour or gradients on surfaces.",
+      "**Don't** put shadows on anything inside the window; only floating layers get the float shadow.",
+      "**Don't** set text below 11.5px, except key caps and actor initials.",
+      "**Don't** show ports, protocol names or acronyms in the main UI. Those belong in the connections popover at most.",
+      "**Don't** start anything from the run-order map by itself; it only shows the order.",
+      "**Don't** animate without a state change behind it; the working pulse is the only loop."
+    ]
+  }
+}
