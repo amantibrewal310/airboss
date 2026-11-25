@@ -112,6 +112,18 @@ pub(crate) fn already_starting(repo: Option<&str>) -> ServiceError {
     )
 }
 
+/// Another call in this process is running `t3` for this place right now.
+pub(crate) fn starting_now(repo: Option<&str>) -> ServiceError {
+    let what = match repo {
+        Some(name) => one_line(name),
+        None => "This task's thread".to_string(),
+    };
+    ServiceError::new(
+        ErrorCode::AlreadyStarting,
+        format!("{what} is starting right now. Wait a moment, then check T3."),
+    )
+}
+
 pub(crate) fn task_proposed(task: TaskId) -> ServiceError {
     ServiceError::new(
         ErrorCode::TaskProposed,

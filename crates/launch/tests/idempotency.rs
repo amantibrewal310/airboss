@@ -314,10 +314,53 @@ mod settling {
         // The second press replaces only what it saw; the first press's new row isn't one.
         let second = h.launch.start(&again(do_it(t.id))).unwrap();
         assert_eq!(second.failed[0].1.code, ErrorCode::AlreadyStarting);
+        assert_eq!(
+            second.failed[0].1.message,
+            "web is starting right now. Wait a moment, then check T3."
+        );
         release.send(()).unwrap();
         assert_eq!(first.join().unwrap().unwrap().started.len(), 1);
         assert_eq!(h.t3.starts().len(), 2);
         let states: Vec<String> = h.rows(t.id).into_iter().map(|r| r.2).collect();
         assert_eq!(states, ["lost", "started"]);
+    }
+
+    #[test]
+    fn when_sync_and_t3_name_different_threads_both_are_linked() {
+        let mut h = H::new();
+        let web = h.repo("web");
+        let t = h.task("Booking flow", &[&web]);
+        let (entered_tx, entered) = mpsc::channel();
+        let (release, release_rx) = mpsc::channel();
+        h.t3.push(Reply::Hold {
+            entered: entered_tx,
+            release: release_rx,
+            then: Box::new(Reply::Thread("from-t3".into())),
+        });
+        let launch = h.launch.clone();
+        let id = t.id;
+        let running = thread::spawn(move || launch.start(&do_it(id)));
+        entered.recv_timeout(SECS(5)).unwrap();
+        // While t3 is slow to answer, the worker finds a thread on the branch.
+        h.sync
+            .answer_find_thread(h.path_of(&web), &branch_of(t.id), t3_key("from-sync"));
+        h.worker
+            .handle(airboss_launch::LaunchMsg::Tick, t0() + SECS(10));
+        release.send(()).unwrap();
+        let report = running.join().unwrap().unwrap();
+        assert_eq!(report.started.len(), 1);
+        assert_eq!(report.started[0].key, t3_key("from-sync"));
+        let mut linked: Vec<String> = h
+            .store
+            .lock()
+            .unwrap()
+            .links(t.id)
+            .unwrap()
+            .into_iter()
+            .map(|l| l.r#ref)
+            .collect();
+        linked.sort();
+        assert_eq!(linked, ["from-sync", "from-t3"]);
+        assert_eq!(h.t3.starts().len(), 1);
     }
 }

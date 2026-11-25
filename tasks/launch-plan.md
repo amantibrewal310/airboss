@@ -2,7 +2,7 @@
 
 Module `launch` from [CAPABILITIES.md](../CAPABILITIES.md). It builds what's in [SPEC-launch.md](../SPEC-launch.md) (draft 2, approved 26 Nov 2026) on `core` v3 and the `crates/services` contract. The tasks and their checkpoints are in [launch-todo.md](launch-todo.md).
 
-State: **planned 26 Nov 2026**.
+State: **built 26 Nov 2026**. All 12 tasks and 3 checkpoints done; see [launch-todo.md](launch-todo.md).
 
 ## Overview
 
@@ -49,6 +49,19 @@ Where the spec is silent or ambiguous, the reading most consistent with `core`'s
 20. **Logging** is one `eprintln!` line prefixed `airboss-launch:`. There is no logging crate, and the spec allows no new crate.
 21. **After `shutdown`,** `start` returns `ShuttingDown`.
 22. **`src/process.rs`** holds the runner shared by `t3` and `git`; the spec's tree puts running `t3` in `t3cli.rs`, which keeps the argv and answer mapping.
+
+Added while building:
+
+23. **Plan it's "Report to Airboss"** says "call `link` with `id` and `kind: "t3_thread"`" instead of the spec's "link yourself as above": the Plan it brief has no "above" to point at. The instruction is the same as Do it's.
+24. **Subtask repos come from open subtasks at any depth**, not only direct children, because an imported plan puts repos on its steps, under phases that have none.
+25. **The place check and the pending insert are one IMMEDIATE transaction.** The one-pending index alone isn't enough: a second call could check while the first's row was pending, then insert after it became `started`. Inside the transaction, a `started` or `pending` row for the place makes the call skip or say `AlreadyStarting`.
+26. **"Start again" replaces only what it saw.** It records the newest row id of the place when it checks, and replaces only pending rows up to it; a place another call in this process is running `t3` for right now (an in-memory in-flight set) is `AlreadyStarting`, never replaced. So two quick presses of Start again make one new thread, while a pending row left by a crash is still replaced.
+From the self-review:
+
+27. **Recording a repo's T3 project is best effort.** A failure is logged; the thread is still reported started, linked and the task moved, because that write isn't needed to start anything.
+28. **If sync and `t3` name different threads** for one row (settling bound it while `t3` was slow), the row keeps sync's thread and both are linked, so neither is lost.
+29. **The writes that record `t3`'s answer** (`started`, `failed`) try once more after a busy error, on top of SQLite's 2-second wait.
+30. **"Start again" while another call holds the place** says "<repo> is starting right now. Wait a moment, then check T3." (still `AlreadyStarting`).
 
 ## Dependency graph
 

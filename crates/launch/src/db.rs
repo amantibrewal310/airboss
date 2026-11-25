@@ -126,6 +126,26 @@ fn from_row(r: &SqlRow<'_>) -> rusqlite::Result<Row> {
     })
 }
 
+/// How long to pause before trying a busy write once more.
+const BUSY_PAUSE: Duration = Duration::from_millis(100);
+
+/// Runs `write` once more if SQLite was still busy after its own 2-second wait. Used for the
+/// writes that record what `t3` confirmed, so a thread that exists isn't left unrecorded.
+fn retry_busy<T>(mut write: impl FnMut() -> rusqlite::Result<T>) -> rusqlite::Result<T> {
+    match write() {
+        Err(rusqlite::Error::SqliteFailure(f, _))
+            if matches!(
+                f.code,
+                rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
+            ) =>
+        {
+            std::thread::sleep(BUSY_PAUSE);
+            write()
+        }
+        other => other,
+    }
+}
+
 /// Launch's connection to its tables.
 pub(crate) struct Db {
     conn: Connection,
@@ -267,12 +287,14 @@ impl Db {
     /// (a thread that exists wins); a row already `started` keeps the id it has. Returns the
     /// row as it now is, or `None` if the thread id already belongs to another row.
     pub fn started(&mut self, id: i64, thread: &str, now: SystemTime) -> Result<Option<Row>> {
-        let changed = self.conn.execute(
-            "UPDATE launch_threads SET state = 'started', thread_id = ?2, error = NULL,
-                    settled_at = ?3
-             WHERE id = ?1 AND state IN ('pending', 'lost')",
-            params![id, thread, time::to_ts(now)],
-        );
+        let changed = retry_busy(|| {
+            self.conn.execute(
+                "UPDATE launch_threads SET state = 'started', thread_id = ?2, error = NULL,
+                        settled_at = ?3
+                 WHERE id = ?1 AND state IN ('pending', 'lost')",
+                params![id, thread, time::to_ts(now)],
+            )
+        });
         match changed {
             Ok(_) => self.row(id),
             Err(rusqlite::Error::SqliteFailure(f, _))
@@ -286,13 +308,14 @@ impl Db {
 
     /// A pending row became `failed`: `t3` said no thread exists.
     pub fn failed(&mut self, id: i64, error: &str, now: SystemTime) -> Result<()> {
-        self.conn
-            .execute(
+        retry_busy(|| {
+            self.conn.execute(
                 "UPDATE launch_threads SET state = 'failed', error = ?2, settled_at = ?3
                  WHERE id = ?1 AND state = 'pending'",
                 params![id, error, time::to_ts(now)],
             )
-            .map_err(storage)?;
+        })
+        .map_err(storage)?;
         Ok(())
     }
 
@@ -376,5 +399,158 @@ impl Db {
             )
             .map_err(storage)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::time::UNIX_EPOCH;
+
+    use super::*;
+
+    /// A launch table file in its own temp dir, removed when dropped.
+    struct TempDb(PathBuf, Db);
+
+    impl TempDb {
+        fn new() -> TempDb {
+            static N: AtomicU32 = AtomicU32::new(0);
+            let dir = std::env::temp_dir().join(format!(
+                "airboss-launch-db-{}-{}",
+                std::process::id(),
+                N.fetch_add(1, Ordering::Relaxed)
+            ));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            let db = Db::open(&dir.join("launch.db")).unwrap();
+            TempDb(dir, db)
+        }
+    }
+
+    impl Drop for TempDb {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn now() -> SystemTime {
+        UNIX_EPOCH + Duration::from_secs(1_795_687_200)
+    }
+
+    fn row(repo: i64) -> NewRow<'static> {
+        NewRow {
+            task: TaskId(1),
+            repo: Some(RepoId(repo)),
+            mode: Mode::DoIt,
+            project_path: "/src/web",
+            branch: Some(("task-1-x", "main")),
+            title: "1 X",
+        }
+    }
+
+    fn insert(db: &mut Db, again: bool, seen: i64) -> Inserted {
+        db.insert_pending(&row(1), again, seen, now()).unwrap()
+    }
+
+    fn states(db: &Db) -> Vec<State> {
+        db.rows_for_task(TaskId(1))
+            .unwrap()
+            .into_iter()
+            .map(|r| r.state)
+            .collect()
+    }
+
+    #[test]
+    fn without_again_a_started_row_takes_the_place() {
+        let mut t = TempDb::new();
+        let Inserted::Row(id) = insert(&mut t.1, false, 0) else {
+            panic!("the first insert goes in");
+        };
+        t.1.started(id, "thread-1", now()).unwrap();
+        // A call that read the rows before this one finished still can't add a second.
+        assert_eq!(insert(&mut t.1, false, 0), Inserted::Started);
+        assert_eq!(states(&t.1), [State::Started]);
+    }
+
+    #[test]
+    fn without_again_a_pending_row_takes_the_place() {
+        let mut t = TempDb::new();
+        assert!(matches!(insert(&mut t.1, false, 0), Inserted::Row(_)));
+        assert_eq!(insert(&mut t.1, false, 0), Inserted::Pending);
+        // Another repo is another place.
+        let other = t.1.insert_pending(&row(2), false, 0, now()).unwrap();
+        assert!(matches!(other, Inserted::Row(_)));
+    }
+
+    #[test]
+    fn again_doesnt_replace_a_row_newer_than_it_saw() {
+        let mut t = TempDb::new();
+        let Inserted::Row(old) = insert(&mut t.1, false, 0) else {
+            panic!();
+        };
+        t.1.lost(old, now()).unwrap();
+        // Another call starts the place after this one looked (it saw only `old`).
+        let Inserted::Row(newer) = insert(&mut t.1, false, 0) else {
+            panic!();
+        };
+        assert_eq!(insert(&mut t.1, true, old), Inserted::Pending);
+        t.1.started(newer, "thread-2", now()).unwrap();
+        assert_eq!(insert(&mut t.1, true, old), Inserted::Started);
+        assert_eq!(states(&t.1), [State::Lost, State::Started]);
+    }
+
+    #[test]
+    fn again_with_everything_seen_replaces_pending_rows() {
+        let mut t = TempDb::new();
+        let Inserted::Row(first) = insert(&mut t.1, false, 0) else {
+            panic!();
+        };
+        let Inserted::Row(second) = insert(&mut t.1, true, first) else {
+            panic!("again replaces the pending row it saw");
+        };
+        assert_eq!(states(&t.1), [State::Lost, State::Pending]);
+        // A started row it saw doesn't stop it either.
+        t.1.started(second, "thread-1", now()).unwrap();
+        assert!(matches!(insert(&mut t.1, true, second), Inserted::Row(_)));
+        assert_eq!(states(&t.1), [State::Lost, State::Started, State::Pending]);
+    }
+
+    #[test]
+    fn a_lost_row_takes_a_thread_t3_names_later() {
+        let mut t = TempDb::new();
+        let Inserted::Row(id) = insert(&mut t.1, false, 0) else {
+            panic!();
+        };
+        assert!(t.1.lost(id, now()).unwrap());
+        // t3 answers after the row was given up on (the Mac slept mid-call).
+        let row = t.1.started(id, "late-thread", now()).unwrap().unwrap();
+        assert_eq!(row.state, State::Started);
+        assert_eq!(row.thread_id.as_deref(), Some("late-thread"));
+    }
+
+    #[test]
+    fn a_started_row_keeps_its_thread() {
+        let mut t = TempDb::new();
+        let Inserted::Row(id) = insert(&mut t.1, false, 0) else {
+            panic!();
+        };
+        t.1.started(id, "found-by-sync", now()).unwrap();
+        let row = t.1.started(id, "from-t3", now()).unwrap().unwrap();
+        assert_eq!(row.thread_id.as_deref(), Some("found-by-sync"));
+    }
+
+    #[test]
+    fn a_failed_row_records_why() {
+        let mut t = TempDb::new();
+        let Inserted::Row(id) = insert(&mut t.1, false, 0) else {
+            panic!();
+        };
+        t.1.failed(id, "T3 Code isn't open.", now()).unwrap();
+        assert_eq!(states(&t.1), [State::Failed]);
+        // Failed rows don't hold the place.
+        assert!(matches!(insert(&mut t.1, false, 0), Inserted::Row(_)));
     }
 }

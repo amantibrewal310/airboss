@@ -104,7 +104,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
   - **Files:** `src/lib.rs`, `src/worker.rs`, `tests/service.rs`
   - **Depends on:** T10
 
-- [ ] **T12. Self-review** (S)
+- [x] **T12. Self-review** (S)
   - **Description:** re-read the crate against the spec with code-review-and-quality; fix what's found; record which of the spec's success criteria tests cover (the spec itself isn't changed).
   - **Acceptance:** every finding fixed or written down with a reason.
   - **Verify:** the full check suite.
@@ -113,4 +113,17 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
 
 ### Checkpoint 3
 
-- [ ] Everything but the one real Do it by hand is covered by tests.
+- [x] Everything but the one real Do it by hand is covered by tests.
+
+## The spec's success criteria, and what covers them
+
+| Criterion | Covered by |
+|---|---|
+| Do it on a two-repo task: two threads, exact commands, one branch, both linked as `launch`, branch saved, task to `doing` | `tests/commands.rs` `do_it_in_two_repos_on_one_branch`, `do_it_in_one_repo` |
+| Quitting while `t3` runs, then starting again, links the thread and starts no second one | `tests/idempotency.rs` `quitting_while_t3_runs_then_restarting_…` |
+| Plan it starts one thread whose brief asks for `import_plan` into this task | `tests/commands.rs` `plan_it_…`, `tests/briefs.rs`; the settled plan arriving as subtasks needs a real thread (by hand) |
+| A waiting task gets `Waiting`; no repo gets `NeedsChoice`; research only starts in `research_dir` | `tests/failures.rs`, `tests/commands.rs` `research_only_…` |
+| Without T3, `availability()` is `Missing` with the design's sentence | `tests/worker.rs`, `tests/service.rs` |
+| One failing repo doesn't stop the others; retrying starts only the failed one | `tests/failures.rs` `repo_2_of_3_failing_…` |
+| Every brief matches its golden file, and no note or title can end the reference block | `tests/briefs.rs`, unit tests in `src/brief.rs` |
+| One real Do it on this Mac, checked by hand | Not done: it starts a real thread. Left for the integration wave. |

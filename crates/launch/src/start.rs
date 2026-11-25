@@ -426,7 +426,7 @@ fn run(
     };
     let Some(_flying) = InFlight::claim(inner, (task, repo, req.mode)) else {
         let name = spot.repo.as_ref().map(|x| x.name.as_str());
-        return Err(errors::already_starting(name));
+        return Err(errors::starting_now(name));
     };
     let inserted = lock(&inner.db).insert_pending(&new, req.again, go.seen, inner.clock.now())?;
     let id = match inserted {
@@ -446,14 +446,34 @@ fn run(
             thread_id,
             project_id,
         } => {
-            let Some(row) = lock(&inner.db).started(id, &thread_id, now)? else {
+            let started = lock(&inner.db).started(id, &thread_id, now);
+            let Some(row) = started? else {
                 log(&format!(
                     "t3 answered with thread {thread_id}, which another row already has"
                 ));
                 return Err(errors::bad_answer());
             };
+            // Only a record of where T3 resolved the repo: the thread exists either way.
             if let (Some(repo), Some(project)) = (repo, project_id) {
-                lock(&inner.db).set_t3_project(repo, &project, now)?;
+                let saved = lock(&inner.db).set_t3_project(repo, &project, now);
+                if let Err(e) = saved {
+                    log(&format!(
+                        "couldn't record repo {}'s T3 project: {e}",
+                        repo.0
+                    ));
+                }
+            }
+            if row.thread_id.as_deref() != Some(thread_id.as_str()) {
+                // Settling already bound this row to the thread sync found. Both exist, so
+                // link the one t3 named too rather than lose it.
+                log(&format!(
+                    "t3 answered with thread {thread_id}, but the row already has {:?}; \
+                     linking both",
+                    row.thread_id
+                ));
+                if let Err(e) = inner.core.link(task, thread_link(&thread_id, &row.title)) {
+                    log(&format!("couldn't link thread {thread_id}: {e}"));
+                }
             }
             let linked = settle::link(inner, &row);
             let mut thread = started_thread(&row).ok_or_else(errors::bad_answer)?;
@@ -461,7 +481,11 @@ fn run(
             Ok(Ran::Started(thread))
         }
         Answer::Failed(e) => {
-            lock(&inner.db).failed(id, &e.message, now)?;
+            let saved = lock(&inner.db).failed(id, &e.message, now);
+            if let Err(db) = saved {
+                // The row stays pending; settling or "Start again" clears it.
+                log(&format!("couldn't record that a start failed: {db}"));
+            }
             Err(e)
         }
         // The row stays pending: a thread may exist, and settling will find it.

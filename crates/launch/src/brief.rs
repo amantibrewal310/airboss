@@ -6,6 +6,11 @@
 //! block is reference material, not instructions. Content can't close the block early: any
 //! copy of the nonce inside it is replaced.
 //!
+//! Repo names and paths, the branch and the base sit outside the block, in the instructions,
+//! because they say where the thread works (plan decision 9). They aren't free text: control
+//! characters are replaced, branches and bases follow `core`'s branch rule, and paths must be
+//! absolute folders that exist.
+//!
 //! Templates are filled in one pass ([`fill`]): a value is never scanned for placeholders, so
 //! a title containing `{id}` or `{nonce}` stays exactly as written.
 

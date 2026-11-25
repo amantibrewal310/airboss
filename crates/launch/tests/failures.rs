@@ -433,3 +433,24 @@ fn a_timeout_says_the_thread_may_still_appear() {
     );
     assert_eq!(row, "pending");
 }
+
+#[test]
+fn failing_to_record_the_t3_project_still_counts_the_thread() {
+    let h = H::new();
+    let web = h.repo("web");
+    let t = h.task("T", &[&web]);
+    // Every write to launch_repos fails from now on.
+    h.db()
+        .execute_batch(
+            "CREATE TRIGGER no_projects BEFORE INSERT ON launch_repos
+             BEGIN SELECT RAISE(ABORT, 'injected failure'); END;",
+        )
+        .unwrap();
+    let report = h.launch.start(&do_it(t.id)).unwrap();
+    assert!(report.failed.is_empty(), "{:?}", report.failed);
+    assert_eq!(report.started.len(), 1);
+    assert!(report.started[0].linked);
+    assert!(report.moved_to_doing);
+    assert_eq!(h.get(t.id).status, Status::Doing);
+    assert_eq!(h.store.lock().unwrap().links(t.id).unwrap().len(), 1);
+}

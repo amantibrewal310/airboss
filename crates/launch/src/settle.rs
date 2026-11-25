@@ -113,13 +113,17 @@ pub(crate) fn link(inner: &Inner, row: &Row) -> bool {
         return false;
     };
     match inner.core.link(row.task, thread_link(thread, &row.title)) {
-        Ok(_) => match lock(&inner.db).linked(row.id) {
-            Ok(()) => true,
-            Err(e) => {
-                log(&format!("couldn't record the link of thread {thread}: {e}"));
-                false
+        Ok(_) => {
+            // Bound first, so the table lock is released before anything else runs.
+            let recorded = lock(&inner.db).linked(row.id);
+            match recorded {
+                Ok(()) => true,
+                Err(e) => {
+                    log(&format!("couldn't record the link of thread {thread}: {e}"));
+                    false
+                }
             }
-        },
+        }
         Err(Error::NotFound) => {
             forget(inner, row.task);
             false

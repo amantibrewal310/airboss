@@ -108,8 +108,15 @@ impl ProcessRunner {
 fn wait_until(child: &mut Child, deadline: Instant) -> io::Result<std::process::ExitStatus> {
     let mut pause = Duration::from_millis(1);
     loop {
-        if let Some(status) = child.try_wait()? {
-            return Ok(status);
+        match child.try_wait() {
+            Ok(Some(status)) => return Ok(status),
+            Ok(None) => {}
+            Err(e) => {
+                // Don't leave a child we can no longer watch.
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(e);
+            }
         }
         let now = Instant::now();
         if now >= deadline {
