@@ -3,6 +3,15 @@
 version = 4
 
 [[package]]
+name = "airboss-attention"
+version = "0.1.0"
+dependencies = [
+ "airboss-core",
+ "airboss-services",
+ "rusqlite",
+]
+
+[[package]]
 name = "airboss-core"
 version = "0.1.0"
 dependencies = [

@@ -1,0 +1,19 @@
+[package]
+name = "airboss-attention"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+description = "Decides what's waiting on me: the Needs me list, its callouts and the menu-bar count."
+
+[dependencies]
+airboss-core = { path = "../core" }
+airboss-services = { path = "../services" }
+# The same version as core's, so Cargo links one SQLite.
+rusqlite = { version = "0.43.0", features = ["bundled"] }
+
+[dev-dependencies]
+airboss-services = { path = "../services", features = ["fakes"] }
+
+[lints]
+workspace = true
