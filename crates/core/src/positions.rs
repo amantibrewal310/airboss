@@ -91,6 +91,21 @@ fn ensure_no_ancestor_dependency(conn: &Connection, id: TaskId, target: TaskId) 
     }
 }
 
+/// Rule 20 keeps plan keys unique under a parent: `Error::AlreadyExists` if `parent`
+/// already has a task with `key`.
+fn ensure_plan_key_free(conn: &Connection, parent: Option<TaskId>, key: &str) -> Result<()> {
+    let taken: bool = conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM tasks WHERE parent_id IS ?1 AND plan_key = ?2)",
+        params![parent.map(|p| p.0), key],
+        |r| r.get(0),
+    )?;
+    if taken {
+        Err(Error::AlreadyExists)
+    } else {
+        Ok(())
+    }
+}
+
 fn move_in(
     tx: &mut Tx<'_>,
     id: TaskId,
@@ -99,12 +114,18 @@ fn move_in(
     actor: &Actor,
 ) -> Result<()> {
     allowed(Call::MoveTask, actor)?;
-    let old_parent = crate::tasks::get(tx, id)?.parent;
+    let task = crate::tasks::get(tx, id)?;
+    let old_parent = task.parent;
     if let Some(target) = new_parent {
         crate::tasks::ensure_exists(tx, target)?;
         ensure_not_in_subtree(tx, id, target)?;
         ensure_open_parent(tx, target)?;
         ensure_no_ancestor_dependency(tx, id, target)?;
+    }
+    if let Some(key) = &task.plan_key
+        && old_parent != new_parent
+    {
+        ensure_plan_key_free(tx, new_parent, key)?;
     }
 
     // Park the task at the end of its new group, then close the gaps in both groups.
