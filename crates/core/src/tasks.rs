@@ -36,11 +36,17 @@ pub(crate) fn from_row(row: &Row<'_>) -> rusqlite::Result<Task> {
 
 /// `Error::NotFound` unless the task exists.
 pub(crate) fn ensure_exists(conn: &Connection, id: TaskId) -> Result<()> {
-    let found: Option<i64> = conn
-        .query_row("SELECT 1 FROM tasks WHERE id = ?1", params![id.0], |r| {
-            r.get(0)
-        })
-        .optional()?;
+    ensure_row(conn, "SELECT 1 FROM tasks WHERE id = ?1", id.0)
+}
+
+/// `Error::NotFound` unless the repo exists.
+pub(crate) fn ensure_repo_exists(conn: &Connection, id: RepoId) -> Result<()> {
+    ensure_row(conn, "SELECT 1 FROM repos WHERE id = ?1", id.0)
+}
+
+/// `Error::NotFound` unless `sql` finds a row for `id`.
+fn ensure_row(conn: &Connection, sql: &str, id: i64) -> Result<()> {
+    let found: Option<i64> = conn.query_row(sql, params![id], |r| r.get(0)).optional()?;
     found.map(|_| ()).ok_or(Error::NotFound)
 }
 
@@ -136,15 +142,6 @@ pub(crate) fn tree(conn: &Connection) -> Result<Vec<TaskNode>> {
             waiting: row.get(12)?,
         })
     })
-}
-
-pub(crate) fn ensure_repo_exists(conn: &Connection, id: RepoId) -> Result<()> {
-    let found: Option<i64> = conn
-        .query_row("SELECT 1 FROM repos WHERE id = ?1", params![id.0], |r| {
-            r.get(0)
-        })
-        .optional()?;
-    found.map(|_| ()).ok_or(Error::NotFound)
 }
 
 pub(crate) fn add_repo(
