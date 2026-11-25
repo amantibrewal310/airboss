@@ -75,3 +75,13 @@ pub(crate) fn history(conn: &Connection, task: TaskId) -> Result<Vec<Event>> {
     rows.collect::<rusqlite::Result<Vec<_>>>()
         .map_err(Error::from)
 }
+
+/// Every event with an id above `cursor`, in id order.
+pub(crate) fn after(conn: &Connection, cursor: EventId) -> Result<Vec<Event>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {EVENT_COLUMNS} FROM task_events WHERE id > ?1 ORDER BY id"
+    ))?;
+    let rows = stmt.query_map(params![cursor.0], from_row)?;
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(Error::from)
+}

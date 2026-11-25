@@ -197,7 +197,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
 
 ## Phase 5: Finish
 
-- [ ] **T13. Change notification and the event cursor** (S)
+- [x] **T13. Change notification and the event cursor** (S)
   - **Description:**
     - `subscribe()` returns a channel that receives the new event ids after each commit (rule 23).
     - `events_after(cursor)` returns history in event-id order.
