@@ -219,19 +219,21 @@ pub fn update_task(store: &mut Store, actor: &Actor, args: UpdateTask) -> Result
 
 ## Not verified yet
 
-- **Codex threads:** whether Codex passes `T3CODE_THREAD_ID` through to a stdio server. Its `mcp add` takes explicit `--env` variables, and the help doesn't say whether it inherits the thread's own environment. This gets checked in the first build task. If it doesn't, Codex threads set `AIRBOSS_THREAD` in their MCP config, and identity falls back as the table above says.
-- **Exact `rmcp` 3.11 calls** for a stdio server with `#[tool]` macros. Confirmed so far: the features exist (`server`, `macros`, `transport-io`). The rest gets checked against the crate's source and docs before the code is written.
+Checked on 25 Nov 2026, before the code was written (build task T1):
 
-## v2 alignment (25 Nov 2026)
+- **rmcp 3.11.0, from the crate source** (`rmcp-3.11.0`, `rmcp-macros-3.11.0`) and a throwaway server:
+  - `#[tool_router] impl S { #[tool(description = …, annotations(read_only_hint = true))] async fn f(&self, Parameters(args): Parameters<T>) -> CallToolResult }` builds the router. `T: Deserialize + JsonSchema`; doc comments on its fields become the schema's descriptions, and `deny_unknown_fields` gives `additionalProperties: false`. Recursive types (a plan's `children`) come out as `$defs` and `$ref`.
+  - `#[tool_handler(router = self.tool_router)] impl ServerHandler for S { fn get_info(&self) -> ServerConfig }` fills in `call_tool` and `list_tools` and keeps a hand-written `get_info`, which is how the instructions can name the actor. `ServerConfig` is `InitializeResult`: `ServerConfig::new(ServerCapabilities::builder().enable_tools().build()).with_server_info(…).with_instructions(…)`.
+  - `S.serve(rmcp::transport::stdio()).await?.waiting().await` runs until stdin closes. It works on a current-thread runtime. The handler must be `Send + Sync`, so the `Store` goes behind a `Mutex`.
+  - **Tool errors:** `CallToolResult::error(vec![ContentBlock::text(…)])` is a tool-level error (`isError: true`), which the agent sees. Arguments that don't deserialize also come back as a tool error, `failed to deserialize parameters: unknown field …`, not a JSON-RPC error. Only an unknown tool name is a JSON-RPC error (`-32602 tool not found`).
+  - `initialize` negotiates the client's version, `2024-11-05` up to `2025-11-25`.
+- **Claude Code 2.1.332 passes its whole environment to a stdio server, and adds `CLAUDE_CODE_SESSION_ID` itself.** A probe server under `claude -p --mcp-config …` saw `CLAUDE_CODE_SESSION_ID` equal to that run's session id (with the variable removed from the parent beforehand), plus `T3CODE_THREAD_ID` and an unrelated marker inherited from the parent. So a T3 thread running Claude Code gives `airboss mcp` both ids.
+- **Codex 0.172.0 does not.** A stdio server gets only `HOME LANG LOGNAME PATH PWD SHELL TMPDIR USER __CF_USER_TEXT_ENCODING`. Listing a variable in the server's `env_vars` forwards it: with `env_vars = ["T3CODE_THREAD_ID"]` the probe saw it. `codex mcp add` has no flag for `env_vars` (`--env` sets fixed values), so it goes in `~/.codex/config.toml` by hand. Codex sets its own `CODEX_THREAD_ID` only for the shell commands it runs, not in its own environment, so `env_vars` can't forward it.
+  - **Consequence:** inside T3, a Codex thread is identified through `T3CODE_THREAD_ID` once `env_vars` lists it (README). Outside T3, Codex has no per-thread id to offer, so it falls back to `AIRBOSS_THREAD` or `agent:unknown/<parent pid>`, as the identity table says.
 
-`core` v2 landed before `mcp` was built. What changed here, and nothing else:
+Still open, checked by hand once installed (last success criterion):
 
-- **Several repos per task.** Tool arguments take `repos`, a list of names, instead of `repo`. Results list a task's repos by name. Agents still can't change a task's repos.
-- **`get_task`** returns `dependencies` in both directions (from `dependencies(id)`) instead of `waits_on`, the task's `branch`, link titles, and the outside blockers in `run_order.waiting_outside`.
-- **`list_tasks`** takes `ready` (from `ready()`).
-- **`link`** takes `title`.
-- **CLI:** `airboss edit --repo` becomes `airboss repo link|unlink <task> <name>`, and `airboss branch <task> <name>` sets the branch (`--clear` clears it). `airboss add --repo` can be given more than once, and `airboss ls --ready` lists what can start now.
-- Still six tools.
+- Whether T3 sets `T3CODE_THREAD_ID` per thread for Codex threads the way it does for Claude Code ones. The probes above set it by hand.
 
 ## Open questions
 
