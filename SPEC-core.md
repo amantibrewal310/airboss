@@ -54,17 +54,19 @@ Later modules get their own crates next to it (`crates/mcp`, `crates/sync`, `cra
 
 ## Data model
 
-Four tables, starting from the draft-2 schema tested on 25 Nov 2026 in a throwaway in-memory SQLite database. The changes since then:
+Five tables, starting from the draft-2 schema tested on 25 Nov 2026 in a throwaway in-memory SQLite database. The changes since then:
 
 - `proposed` added as a status.
 - `planning` dropped as a status: `launch` records that a planning thread is running as a link and an event.
 - `observed_*` tables moved out to `sync`.
+- `task_deps` added for "this task waits on that one". Tested the same way on 25 Nov.
 
 | Table | One row is | Notes |
 |---|---|---|
 | `repos` | A git repo tasks can point at | `name` and `path` are unique; `t3_project_id` is null until `launch` first uses the repo |
 | `tasks` | One thing to get done, at any depth | `parent_id` is null for a top-level task; `repo_id` is null when the task isn't in one repo |
 | `task_events` | One change to a task | Written in the same transaction as the change it records |
+| `task_deps` | One task waiting on another task | Any two tasks, anywhere in the tree; a task can't wait on itself, and the same pair is stored once. Deleting either task removes the row |
 | `links` | One outside thing attached to a task | Kinds: `t3_thread`, `claude_session`, `pr`, `slack`, `doc`, `github_issue`; the same `(task, kind, ref)` can only be linked once |
 
 **Statuses:** `proposed`, `todo`, `doing`, `in_review`, `blocked`, `done`, `dropped`.
@@ -92,13 +94,18 @@ Four tables, starting from the draft-2 schema tested on 25 Nov 2026 in a throwaw
 8. **An agent's new subtasks start as `proposed`.** Only `me` can accept them (moving them to `todo`) or reject them (deleting them).
 9. **`plan` creates subtasks as `todo` directly,** because I settled the plan.
 10. **No cycles.** A task can't be moved under itself or under one of its own subtasks.
-11. **Every change writes one event per task it changes, in the same transaction.** This covers creating, editing, moving, status changes and links. If the change fails, no event is written. A move writes one event, for the moved task only: renumbering its siblings writes none.
+11. **Every change writes one event per task it changes, in the same transaction.** This covers creating, editing, moving, status changes, links and dependencies (recorded on the waiting task). If the change fails, no event is written. A move writes one event, for the moved task only: renumbering its siblings writes none.
 12. **Adding the same plan twice adds nothing new.** `add_tasks` skips a subtask whose title already exists under the same parent.
 13. **Deleting is only for `me`.** Agents and sync can drop a task, but never delete one.
 14. **`sync:t3` never changes status.** It only adds events and links. Status comes from agents, me and merged PRs.
 15. **Dropping a task drops its whole subtree** as one change, with an event for each task dropped. Subtasks already `done` stay `done`.
 16. **A parent is never finished automatically.** When its last subtask becomes `done`, the parent stays as it is. `attention` suggests finishing it, and I decide.
 17. **Siblings are ordered by whole-number positions (1, 2, 3, …).** Positions are renumbered on every move, so they stay gap-free.
+18. **No dependency loops.** If A waits on B, B can't wait on A, directly or through other tasks. The database rejects a task waiting on itself, and the code rejects longer loops.
+19. **"Waiting" is worked out, never stored.** A task is waiting while any task it waits on is neither `done` nor `dropped`. Waiting doesn't change a task's status. When its last blocker finishes, `attention` shows it as "ready to start".
+20. **`me` and `plan` add or remove dependencies.** Agents don't, in v1. An agent that's stuck sets `blocked` with a reason.
+21. **A plan brings its dependencies with it.** `add_tasks` takes each new task's "Depends on" as other tasks in the same batch, or as existing task ids, and checks rule 18 before writing anything.
+22. **Deleting a task that others wait on** removes those dependencies and writes an event on each waiting task.
 
 ## API shape
 
@@ -126,6 +133,11 @@ impl Store {
 
     pub fn link(&mut self, id: TaskId, link: NewLink, actor: &Actor) -> Result<Link>;  // linking twice returns the existing link
     pub fn links(&self, id: TaskId) -> Result<Vec<Link>>;
+
+    pub fn add_dependency(&mut self, task: TaskId, waits_on: TaskId, actor: &Actor) -> Result<()>;
+    pub fn remove_dependency(&mut self, task: TaskId, waits_on: TaskId, actor: &Actor) -> Result<()>;
+    pub fn waits_on(&self, id: TaskId) -> Result<Vec<Task>>;   // its open blockers
+    pub fn ready(&self) -> Result<Vec<Task>>;                  // `todo` with no open blockers
 }
 ```
 
@@ -154,11 +166,12 @@ fn check_allowed(actor: &Actor, task: &TaskFacts, to: Status) -> Result<()> {
 
 ## Testing strategy
 
-- Tests come first: one failing test per rule (1–17) before its code. Rule tests live in `tests/rules.rs`, named after the rule, e.g. `agent_cannot_finish_task_with_pr`.
+- Tests come first: one failing test per rule (1–22) before its code. Rule tests live in `tests/rules.rs`, named after the rule, e.g. `agent_cannot_finish_task_with_pr`.
 - Every test uses `Store::open_in_memory()`, so no test touches disk or another test's data.
 - Tree tests cover nesting 5 levels deep, moving a subtree, reordering, and the cycle check.
+- Dependency tests cover a chain (A waits on B waits on C), a loop rejected at every length, a plan batch with dependencies inside it, and a waiting task becoming ready when its blocker finishes.
 - **Performance checks** run in release mode, `#[ignore]`d by default:
-  - Load the whole tree of **2,000 tasks** in **under 10 ms**.
+  - Load the whole tree of **2,000 tasks**, with each task's waiting state and 1,000 dependencies, in **under 10 ms**.
   - Add a task in **under 1 ms**.
   - Change a status, event included, in **under 1 ms**.
   - These numbers are the 95th percentile over 1,000 runs on a file-backed database, measured on my Mac.
@@ -173,7 +186,7 @@ fn check_allowed(actor: &Actor, task: &TaskFacts, to: Status) -> Result<()> {
   - Keep `core` free of network calls and of Tauri.
 - **Ask first:**
   - Adding any dependency.
-  - Changing a rule (6–17).
+  - Changing a rule (6–22).
   - Changing the schema once the app is in daily use; that needs a new migration file, never an edited one.
 - **Never:**
   - Read or write T3's or Claude Code's files from `core`.
@@ -182,7 +195,7 @@ fn check_allowed(actor: &Actor, task: &TaskFacts, to: Status) -> Result<()> {
 
 ## Success criteria
 
-- [ ] `cargo test -p airboss-core` passes, with a test for every rule 1–17.
+- [ ] `cargo test -p airboss-core` passes, with a test for every rule 1–22.
 - [ ] Agents get `NotAllowed` for `done` on a task with a linked PR, for `todo`, and for deleting a task.
 - [ ] An agent can set `done` on a task with no PR only with a note; without one it gets `NoteRequired`.
 - [ ] `sync:gh` can set `done` only on a task with a merged linked PR.
@@ -191,6 +204,8 @@ fn check_allowed(actor: &Actor, task: &TaskFacts, to: Status) -> Result<()> {
 - [ ] A failed change leaves no event and no partial write. Tested by forcing an error in the middle of a change.
 - [ ] The performance checks meet their numbers in release mode.
 - [ ] `clippy -D warnings` and `fmt --check` are clean.
+- [ ] A dependency loop of any length is rejected, and nothing is written.
+- [ ] A task that waits on an open task shows as waiting; once that task is `done` or `dropped`, it appears in `ready()`.
 - [ ] Opening an existing database file runs any pending migrations once and keeps the data.
 
 ## Decisions (settled 25 Nov 2026)
@@ -199,6 +214,7 @@ fn check_allowed(actor: &Actor, task: &TaskFacts, to: Status) -> Result<()> {
 - **Parent done:** never automatic. `attention` suggests it (rule 16).
 - **`sync:t3`:** doesn't touch status, for now, to keep it simple (rule 14).
 - **Dropping a parent:** drops its subtree (rule 15).
+- **Dependencies:** a task can wait on any other task (rules 18–22). Outside blockers, such as a PR in another repo or a Linear ticket, aren't tracked in v1: set `blocked` with a reason.
 
 ## Open questions
 
