@@ -292,7 +292,7 @@ pub struct PlanTask { key: String, title: String, body: Option<String>, repo: Op
                       depends_on: Vec<DepRef>, children: Vec<PlanTask> }
 pub enum DepRef { Key(String), Task(TaskId) }
 
-pub enum Error { NotFound, NotAllowed, InvalidTransition, NoteRequired, InvalidTarget, Loop,
+pub enum Error { EmptyTitle, NotFound, NotAllowed, InvalidTransition, NoteRequired, InvalidTarget, Loop,
                  DuplicateKey, Db(rusqlite::Error) }
 ```
 
