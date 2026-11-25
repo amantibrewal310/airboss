@@ -106,6 +106,7 @@ Five tables, starting from the draft-2 schema tested on 25 Nov 2026 in a throwaw
 20. **`me` and `plan` add or remove dependencies.** Agents don't, in v1. An agent that's stuck sets `blocked` with a reason.
 21. **A plan brings its dependencies with it.** `add_tasks` takes each new task's "Depends on" as other tasks in the same batch, or as existing task ids, and checks rule 18 before writing anything.
 22. **Deleting a task that others wait on** removes those dependencies and writes an event on each waiting task.
+23. **Run order is a topological sort, in waves.** For a parent, `run_order` sorts its open subtasks so every task comes after the tasks it waits on (Kahn's algorithm). Tasks that don't depend on each other share a wave and can run in parallel. Within a wave, tasks keep their sibling order (rule 17). A blocker outside the parent that is still open puts the task in a later wave, marked "waiting outside". The same sort finds loops for rule 18. Run order is only shown: nothing starts by itself.
 
 ## API shape
 
@@ -138,6 +139,7 @@ impl Store {
     pub fn remove_dependency(&mut self, task: TaskId, waits_on: TaskId, actor: &Actor) -> Result<()>;
     pub fn waits_on(&self, id: TaskId) -> Result<Vec<Task>>;   // its open blockers
     pub fn ready(&self) -> Result<Vec<Task>>;                  // `todo` with no open blockers
+    pub fn run_order(&self, parent: TaskId) -> Result<Vec<Vec<Task>>>;  // waves, first to last
 }
 ```
 
@@ -166,14 +168,15 @@ fn check_allowed(actor: &Actor, task: &TaskFacts, to: Status) -> Result<()> {
 
 ## Testing strategy
 
-- Tests come first: one failing test per rule (1–22) before its code. Rule tests live in `tests/rules.rs`, named after the rule, e.g. `agent_cannot_finish_task_with_pr`.
+- Tests come first: one failing test per rule (1–23) before its code. Rule tests live in `tests/rules.rs`, named after the rule, e.g. `agent_cannot_finish_task_with_pr`.
 - Every test uses `Store::open_in_memory()`, so no test touches disk or another test's data.
 - Tree tests cover nesting 5 levels deep, moving a subtree, reordering, and the cycle check.
-- Dependency tests cover a chain (A waits on B waits on C), a loop rejected at every length, a plan batch with dependencies inside it, and a waiting task becoming ready when its blocker finishes.
+- Dependency tests cover a chain (A waits on B waits on C), a loop rejected at every length, a plan batch with dependencies inside it, a waiting task becoming ready when its blocker finishes, and `run_order` on a diamond (A → B, A → C, B and C → D gives waves [A], [B, C], [D]).
 - **Performance checks** run in release mode, `#[ignore]`d by default:
   - Load the whole tree of **2,000 tasks**, with each task's waiting state and 1,000 dependencies, in **under 10 ms**.
   - Add a task in **under 1 ms**.
   - Change a status, event included, in **under 1 ms**.
+  - `run_order` for a parent with 200 subtasks and 400 dependencies in **under 2 ms**.
   - These numbers are the 95th percentile over 1,000 runs on a file-backed database, measured on my Mac.
 - No coverage percentage is required. Every public function and every rule needs at least one test.
 
@@ -186,7 +189,7 @@ fn check_allowed(actor: &Actor, task: &TaskFacts, to: Status) -> Result<()> {
   - Keep `core` free of network calls and of Tauri.
 - **Ask first:**
   - Adding any dependency.
-  - Changing a rule (6–22).
+  - Changing a rule (6–23).
   - Changing the schema once the app is in daily use; that needs a new migration file, never an edited one.
 - **Never:**
   - Read or write T3's or Claude Code's files from `core`.
@@ -195,7 +198,7 @@ fn check_allowed(actor: &Actor, task: &TaskFacts, to: Status) -> Result<()> {
 
 ## Success criteria
 
-- [ ] `cargo test -p airboss-core` passes, with a test for every rule 1–22.
+- [ ] `cargo test -p airboss-core` passes, with a test for every rule 1–23.
 - [ ] Agents get `NotAllowed` for `done` on a task with a linked PR, for `todo`, and for deleting a task.
 - [ ] An agent can set `done` on a task with no PR only with a note; without one it gets `NoteRequired`.
 - [ ] `sync:gh` can set `done` only on a task with a merged linked PR.
@@ -206,6 +209,7 @@ fn check_allowed(actor: &Actor, task: &TaskFacts, to: Status) -> Result<()> {
 - [ ] `clippy -D warnings` and `fmt --check` are clean.
 - [ ] A dependency loop of any length is rejected, and nothing is written.
 - [ ] A task that waits on an open task shows as waiting; once that task is `done` or `dropped`, it appears in `ready()`.
+- [ ] `run_order` puts every task after everything it waits on, groups independent tasks into the same wave, and keeps sibling order within a wave.
 - [ ] Opening an existing database file runs any pending migrations once and keeps the data.
 
 ## Decisions (settled 25 Nov 2026)
@@ -215,6 +219,7 @@ fn check_allowed(actor: &Actor, task: &TaskFacts, to: Status) -> Result<()> {
 - **`sync:t3`:** doesn't touch status, for now, to keep it simple (rule 14).
 - **Dropping a parent:** drops its subtree (rule 15).
 - **Dependencies:** a task can wait on any other task (rules 18–22). Outside blockers, such as a PR in another repo or a Linear ticket, aren't tracked in v1: set `blocked` with a reason.
+- **Run order:** shown, never started automatically (rule 23). Starting the next wave by itself is left for later, to keep v1 simple.
 
 ## Open questions
 
