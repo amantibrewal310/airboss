@@ -28,15 +28,15 @@
     max-width: 100%;
   }
   .warn {
-    color: var(--st-blocked);
+    color: var(--warn-text);
     border-color: color-mix(in srgb, var(--st-blocked) 35%, transparent);
   }
   .ok {
-    color: var(--st-review);
+    color: var(--ok-text);
     border-color: color-mix(in srgb, var(--st-review) 35%, transparent);
   }
   .need {
-    color: var(--needs);
+    color: var(--needs-text);
     border-color: color-mix(in srgb, var(--needs) 35%, transparent);
     background: var(--needs-soft);
   }

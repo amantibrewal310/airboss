@@ -33,7 +33,8 @@
     const r = app.row(id);
     if (!r) return String(id);
     const s = sub(id).text;
-    return `${id} ${r.title}, ${s}, wave ${wave + 1}`;
+    // Starts with the visible text (title, then "id · state") so Voice Control can match it.
+    return `${r.title}, ${id}, ${s}, wave ${wave + 1}`;
   }
 
   function key(e: KeyboardEvent) {
@@ -215,10 +216,10 @@
     font-variant-numeric: tabular-nums;
   }
   .ok {
-    color: var(--st-review);
+    color: var(--ok-text);
   }
   .warn {
-    color: var(--st-blocked);
+    color: var(--warn-text);
   }
   .legend {
     display: flex;
@@ -236,7 +237,7 @@
   }
   .tangled {
     font-size: var(--fs-meta);
-    color: var(--st-blocked);
+    color: var(--warn-text);
     margin-top: 8px;
   }
 </style>

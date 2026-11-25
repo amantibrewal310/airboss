@@ -73,7 +73,7 @@
             <StatusIcon shape={shapeOf(p)} />
             <span class="t">{p.title}</span>
             <span class="c pc">{pct}%</span>
-            <ProgressRing {pct} size={13} />
+            <ProgressRing {pct} size={13} label={p.progress ? `${p.progress.done} of ${p.progress.total} done` : undefined} />
           </button>
         {/each}
       </div>
@@ -203,6 +203,9 @@
     background: var(--bg-sel);
     color: var(--text);
   }
+  .nav.on .c {
+    color: var(--text-2);
+  }
   .nav:focus-visible {
     outline: none;
     box-shadow: inset 0 0 0 var(--kb-outline) var(--focus);
@@ -226,7 +229,7 @@
     min-width: 18px;
     height: 18px;
     border-radius: 9px;
-    background: var(--needs);
+    background: var(--needs-fill);
     color: #fff;
     font-size: 11px;
     font-weight: 600;

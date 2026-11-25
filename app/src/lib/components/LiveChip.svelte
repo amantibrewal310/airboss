@@ -6,13 +6,13 @@
    * Stopped (grey). `short` uses the Threads labels; `dotOnly` is for narrow widths (the label
    * stays as the accessible name and tooltip).
    */
-  let { chip, short = false, dotOnly = false, text }: { chip: Chip; short?: boolean; dotOnly?: boolean; text?: string } = $props();
+  let { chip, short = false, dotOnly = false, text, decorative = false }: { chip: Chip; short?: boolean; dotOnly?: boolean; text?: string; decorative?: boolean } = $props();
   const label = $derived(
     text ?? (short ? { working: 'Running', waiting_on_you: 'Waiting', stopped: 'Stopped' } : { working: 'Agent working', waiting_on_you: 'Waiting on you', stopped: 'Stopped' })[chip],
   );
 </script>
 
-<span class="live {chip}" class:dot-only={dotOnly} title={label} role="img" aria-label={label}>
+<span class="live {chip}" class:dot-only={dotOnly} title={label} role={decorative ? undefined : 'img'} aria-label={decorative ? undefined : label} aria-hidden={decorative ? 'true' : undefined}>
   <i></i>{#if !dotOnly}<span class="lt">{label}</span>{/if}
 </span>
 

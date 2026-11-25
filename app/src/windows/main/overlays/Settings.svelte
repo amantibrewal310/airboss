@@ -205,7 +205,7 @@
   }
   .err {
     margin-top: 8px;
-    color: var(--st-blocked);
+    color: var(--warn-text);
     font-size: var(--fs-meta);
   }
   .switch {

@@ -6,6 +6,8 @@
   /** The notes body in Notes type. Click to edit in an auto-growing textarea; ⌘↩ or blur saves, Esc cancels. */
   let { task, body, empty = 'No notes yet. Agents add notes here as they work.' }: { task: TaskId; body: string | null; empty?: string } = $props();
   const app = useApp();
+  const uid = $props.id();
+  const hint = `notes-hint-${uid}`;
   let editing = $state(false);
   let area: HTMLTextAreaElement | undefined = $state();
   let view: HTMLDivElement | undefined = $state();
@@ -81,9 +83,12 @@
     bind:this={view}
     class="doc view"
     class:empty={!body}
-    role="button"
+    role="textbox"
+    aria-readonly="true"
+    aria-multiline="true"
     tabindex="0"
-    aria-label="Notes. Press Return to edit."
+    aria-label="Notes"
+    aria-describedby={hint}
     title="Click to edit the notes"
     onclick={click}
     onkeydown={(e) => {
@@ -96,6 +101,7 @@
   >
     {body || empty}
   </div>
+  <span id={hint} class="sr">Press Return to edit.</span>
 {/if}
 
 <style>

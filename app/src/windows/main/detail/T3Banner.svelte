@@ -31,7 +31,7 @@
     text-overflow: ellipsis;
   }
   button {
-    color: var(--accent);
+    color: var(--link);
     font-weight: 500;
   }
   button:hover {

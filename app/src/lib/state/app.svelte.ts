@@ -1216,7 +1216,8 @@ export class App {
         return;
       }
     } else this.seq.reset();
-    if (zone === 'panel' && controlOwnsKey(active, key)) return;
+    // ↩ and Space press a focused button (in the panel, or a Next up pill on a plan card).
+    if ((zone === 'panel' || zone === 'list') && controlOwnsKey(active, key)) return;
     const cmd = resolve(key, zone, this.viewKind, this.actionTask() !== null || this.ui.selected !== null);
     if (!cmd) {
       // Tab moves through every control in document order, buttons included, whatever macOS's

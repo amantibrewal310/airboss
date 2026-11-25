@@ -149,6 +149,9 @@
   .hl {
     background: var(--bg-sel);
   }
+  .hl .k {
+    color: var(--text-2);
+  }
   .off {
     color: var(--text-3);
   }

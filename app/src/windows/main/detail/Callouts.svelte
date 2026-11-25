@@ -46,8 +46,9 @@
     opacity: 0;
     transform: translateX(-10px);
   }
+  /* Out of date: a dashed edge and the label say so; the text keeps its contrast. */
   .stale {
-    opacity: 0.7;
+    border-style: dashed;
   }
   .ic {
     color: var(--needs);
@@ -65,12 +66,12 @@
     font-size: var(--fs-label);
     font-weight: 600;
     line-height: 14px;
-    color: var(--needs);
+    color: var(--needs-text);
     font-variant-numeric: tabular-nums;
   }
   .st {
     font-weight: 500;
-    color: var(--text-3);
+    color: var(--text-2);
   }
   .q {
     color: var(--text);

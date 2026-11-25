@@ -109,31 +109,33 @@
   aria-expanded={role === 'treeitem' && row.has_children ? !folded : undefined}
   aria-setsize={role === 'treeitem' ? size : undefined}
   aria-posinset={role === 'treeitem' ? pos : undefined}
-  aria-label={aria}
 >
+  <!-- The accessible name is this sentence; the terse visible pieces below are hidden from
+       VoiceOver so nothing is read twice. Voice Control still matches on the title. -->
+  <span class="sr">{aria}</span>
   {#if foldable && row.has_children}
     <span class="disc" class:open={!folded} data-fold={row.id} aria-hidden="true"><Icon name="chevron" size={10} /></span>
   {:else}
     <span class="disc" aria-hidden="true"></span>
   {/if}
   <span class="stbtn" data-status-for={row.id} title="Change status (S)"><StatusIcon {shape} {pop} label={false} /></span>
-  <span class="id">{row.id}</span>
+  <span class="id" aria-hidden="true">{row.id}</span>
   {#if renaming}
     <input bind:this={input} class="rename" value={row.title} aria-label="Rename {row.id}" onkeydown={renameKey} onblur={() => onrename?.(input?.value ?? null)} />
   {:else}
-    <span class="t" title={row.title}>{row.title}</span>
+    <span class="t" title={row.title} aria-hidden="true">{row.title}</span>
   {/if}
   {#if row.progress}
-    <span class="prog" title="{pct}% done">
-      <ProgressRing {pct} size={13} label="" /><span class="pc">{row.progress.done}/{row.progress.total}</span>
+    <span class="prog" title="{pct}% done" aria-hidden="true">
+      <ProgressRing {pct} size={13} /><span class="pc">{row.progress.done}/{row.progress.total}</span>
     </span>
   {/if}
-  {#if row.live}<LiveChip chip={row.live} />{/if}
+  {#if row.live}<LiveChip chip={row.live} decorative />{/if}
   {#if row.needs}
-    <span class="dot" class:stale={row.needs_stale} title={row.needs_stale ? 'May be out of date' : 'Needs you'} role="img" aria-label="Needs you"></span>
+    <span class="dot" class:stale={row.needs_stale} title={row.needs_stale ? 'May be out of date' : 'Needs you'} aria-hidden="true"></span>
   {/if}
   <span class="sp"></span>
-  <span class="meta">
+  <span class="meta" aria-hidden="true">
     {#if row.status === 'blocked'}
       <span class="pill warn" title={row.blocked_reason ?? undefined}>Blocked</span>
     {/if}
@@ -155,8 +157,8 @@
       {#each names as r (r.id)}<RepoDot id={r.id} name={r.name} />{/each}
     </span>
   {/if}
-  <Avatar actor={row.last_actor} />
-  <span class="when">{relative(time, now)}</span>
+  <Avatar actor={row.last_actor} decorative />
+  <span class="when" aria-hidden="true">{relative(time, now)}</span>
 </div>
 
 <style>
@@ -177,6 +179,12 @@
   }
   .row.sel {
     background: var(--bg-sel);
+  }
+  /* On the selection wash, ids, fractions and times step up to text-2 to keep 4.5:1. */
+  .row.sel .id,
+  .row.sel .prog,
+  .row.sel .when {
+    color: var(--text-2);
   }
   .row.kb::after {
     content: '';
@@ -293,11 +301,11 @@
     color: var(--text-2);
   }
   .pill.warn {
-    color: var(--st-blocked);
+    color: var(--warn-text);
     border-color: color-mix(in srgb, var(--st-blocked) 35%, transparent);
   }
   .pill.ok {
-    color: var(--st-review);
+    color: var(--ok-text);
     border-color: color-mix(in srgb, var(--st-review) 35%, transparent);
   }
   .short {

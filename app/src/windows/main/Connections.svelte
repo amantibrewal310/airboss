@@ -87,10 +87,10 @@
     flex: none;
   }
   .warn {
-    color: var(--st-blocked);
+    color: var(--warn-text);
   }
   .warn:hover {
-    color: var(--st-blocked);
+    color: var(--warn-text);
   }
   .warn i,
   .ci.off i {

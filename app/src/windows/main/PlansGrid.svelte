@@ -20,13 +20,15 @@
     return () => ro.disconnect();
   });
 
+  // The selected card is the list's one Tab stop; arrow keys move real focus to it.
   $effect(() => {
     const i = app.ui.planIndex;
-    grid?.children[i]?.scrollIntoView({ block: 'nearest' });
-  });
-
-  $effect(() => {
-    app.focusTargets.list = grid;
+    void app.plans;
+    const card = grid?.querySelectorAll<HTMLElement>('article.plan')[i];
+    if (!card) return;
+    card.scrollIntoView({ block: 'nearest' });
+    app.focusTargets.list = card;
+    if (grid?.contains(document.activeElement) && document.activeElement !== card) card.focus({ preventScroll: true });
   });
 </script>
 
@@ -38,16 +40,9 @@
     <Button variant="primary" onclick={() => app.openNew({ plan: true })}><Icon name="waves" size={13} />Plan something</Button>
   </div>
 {:else}
-  <div
-    class="plans"
-    bind:this={grid}
-    role="listbox"
-    tabindex="0"
-    aria-label="Plans"
-    aria-activedescendant={app.plans[app.ui.planIndex] ? `plan-${app.plans[app.ui.planIndex]!.id}` : undefined}
-  >
+  <div class="plans" bind:this={grid} role="list" aria-label="Plans">
     {#each app.plans as card, i (card.id)}
-      <div id="plan-{card.id}" class="cell">
+      <div class="cell" role="listitem">
         <PlanCard
           {card}
           repos={app.tasks.repoById}
@@ -69,7 +64,7 @@
     scrollbar-width: thin;
     padding: 18px 22px 40px;
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 500px));
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
     gap: 12px;
     align-content: start;
     outline: none;

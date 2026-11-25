@@ -194,6 +194,10 @@
   .it.hl {
     background: var(--bg-sel);
   }
+  .it.hl .id,
+  .it.hl .why {
+    color: var(--text-2);
+  }
   .it.off {
     color: var(--text-3);
   }

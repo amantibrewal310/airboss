@@ -102,16 +102,16 @@
     font-variant-numeric: tabular-nums;
   }
   .warn {
-    color: var(--st-blocked);
+    color: var(--warn-text);
     border-color: color-mix(in srgb, var(--st-blocked) 35%, transparent);
   }
   .ok {
-    color: var(--st-review);
+    color: var(--ok-text);
     border-color: color-mix(in srgb, var(--st-review) 35%, transparent);
   }
   .tangled {
     font-size: var(--fs-meta);
-    color: var(--st-blocked);
+    color: var(--warn-text);
     margin-top: 4px;
   }
 </style>

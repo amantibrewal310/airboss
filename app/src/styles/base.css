@@ -106,3 +106,13 @@ kbd {
     transition: none !important;
   }
 }
+
+/* Text for VoiceOver only: it is read as part of the accessible name but takes no space. */
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

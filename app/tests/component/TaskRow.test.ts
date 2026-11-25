@@ -17,6 +17,9 @@ async function show(id: number, width = 900, selected = false) {
   return { screen, el };
 }
 
+/** The row's accessible name: a VoiceOver-only sentence, with the terse visible text hidden. */
+const name = (el: Element) => el.querySelector(':scope > .sr')!.textContent;
+
 const visible = (el: Element | null) => !!el && getComputedStyle(el).display !== 'none';
 
 describe('TaskRow', () => {
@@ -29,14 +32,18 @@ describe('TaskRow', () => {
 
   it('reads like a sentence to VoiceOver', async () => {
     const { el } = await show(144);
-    expect(el.getAttribute('aria-label')).toBe('144, Web: slot picker, In progress, waiting on you, needs you, booking-web, 6 minutes ago');
+    expect(name(el)).toBe('144, Web: slot picker, In progress, waiting on you, needs you, booking-web, 6 minutes ago');
+    // Nothing else in the row is read, so the sentence is not followed by "6m" and the chip text.
+    const read = [...el.querySelectorAll(':scope > :not([aria-hidden="true"]):not(.sr)')].filter((c) => c.textContent?.trim());
+    expect(read).toEqual([]);
+    expect(el.hasAttribute('aria-label')).toBe(false);
   });
 
   it('draws each status by shape, with its name', async () => {
     const labels: Record<number, string> = { 143: 'Done', 144: 'In progress', 145: 'Waiting', 146: 'Todo', 203: 'Blocked', 204: 'In review', 153: 'Proposed', 172: 'Dropped' };
     for (const [id, label] of Object.entries(labels)) {
       const { el } = await show(Number(id));
-      expect(el.getAttribute('aria-label')).toContain(label);
+      expect(name(el)).toContain(label);
     }
   });
 
@@ -72,7 +79,8 @@ describe('TaskRow', () => {
     expect(visible(parent.querySelector('.pc'))).toBe(false);
     const live = (await show(144, 520)).el;
     expect(visible(live.querySelector('.live .lt'))).toBe(false);
-    expect(live.querySelector('.live')!.getAttribute('aria-label')).toBe('Waiting on you');
+    expect(live.querySelector('.live')!.getAttribute('title')).toBe('Waiting on you');
+    expect(name(live)).toContain('waiting on you');
   });
 
   it('dims the needs-me dot of a stale item, with a tooltip', async () => {
