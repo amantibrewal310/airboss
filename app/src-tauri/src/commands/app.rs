@@ -8,12 +8,13 @@ use airboss_core::{LinkKind, TaskId};
 use airboss_services::ThreadKey;
 use tauri_plugin_log::log;
 
-use crate::classify::{check_url, expand_home, file_path, file_url, runs_something};
+use crate::classify::{expand_home, file_url};
 use crate::dto::{
     CliStatus, CopyWhat, InstallCliResult, NavOpen, OpenTarget, QuickaddReset, path_text,
 };
 use crate::errors::{AppError, AppResult, Ctx, ErrorCode, MSG_HOTKEY_IN_USE, MSG_LINK_GONE};
 use crate::menu::{FocusContext, WindowName};
+use crate::opener::{self, Opening};
 use crate::settings::{Settings, check_hotkey, hotkey_label};
 use crate::shell::UiEvent;
 use crate::state::{AppState, Caller, lock};
@@ -34,7 +35,7 @@ pub fn open_thread(s: &AppState, _c: Caller, key: ThreadKey) -> AppResult<()> {
     open_checked(s, &url)
 }
 
-/// Opens a URL, or a link by its id; only `http`, `https`, `file` and `t3code`.
+/// Opens a URL, or a link by its id, through the allowlist in `opener.rs`.
 pub fn open_url(s: &AppState, _c: Caller, target: OpenTarget) -> AppResult<()> {
     let url = match target {
         OpenTarget::Url(u) => u,
@@ -74,19 +75,17 @@ pub fn open_url(s: &AppState, _c: Caller, target: OpenTarget) -> AppResult<()> {
     open_checked(s, &url)
 }
 
-/// Opens an allowed URL. A file that would run something when opened (an app, a script, an
-/// installer, a folder) is shown in Finder instead.
+/// Opens a link that passes the allowlist (`opener::decide`): `https` in the browser, a T3
+/// thread in T3 Code, and a document with its app. Any other file (an app, a script, a folder,
+/// anything without a known document type) is shown in Finder instead, because agents can add
+/// links and opening it could run it.
 fn open_checked(s: &AppState, url: &str) -> AppResult<()> {
-    check_url(url)?;
-    if let Some(path) = file_path(url).filter(|p| runs_something(p)) {
-        return s
-            .shell
-            .reveal(&path)
-            .map_err(|e| AppError::internal(format!("couldn't show {}: {e}", path.display())));
-    }
-    s.shell
-        .open_url(url)
-        .map_err(|e| AppError::internal(format!("couldn't open {url}: {e}")))
+    let opened = match opener::decide(url)? {
+        Opening::Browser(u) | Opening::Thread(u) => s.shell.open_url(&u),
+        Opening::Open(path) => s.shell.open_file(&path),
+        Opening::Reveal(path) => s.shell.reveal(&path),
+    };
+    opened.map_err(|e| AppError::internal(format!("couldn't open a link: {e}")))
 }
 
 /// "Check again": every service rechecks its connections.

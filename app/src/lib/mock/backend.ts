@@ -644,7 +644,9 @@ export class MockBackend implements Transport {
 
     open_url: ({ target }) => {
       if ('url' in target) {
-        if (!/^(https?|file|t3code):/i.test(target.url)) throw fail('not_allowed', "That change isn't allowed.");
+        // Rust's opener.rs is the real allowlist; the mock keeps its outline.
+        if (!/^(https:\/\/|file:\/\/\/|t3code:\/\/threads\/)/i.test(target.url))
+          throw fail('url_not_allowed', 'Airboss only opens https links, files and T3 threads.');
         this.opened.push(target.url);
       } else {
         const l = this.s.links.find((x) => x.id === target.link);

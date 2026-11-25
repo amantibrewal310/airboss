@@ -177,6 +177,13 @@ impl Shell for Arc<TauriShell> {
             .map_err(|e| e.to_string())
     }
 
+    fn open_file(&self, path: &Path) -> Result<(), String> {
+        self.app
+            .opener()
+            .open_path(path.to_string_lossy(), None::<&str>)
+            .map_err(|e| e.to_string())
+    }
+
     fn reveal(&self, path: &Path) -> Result<(), String> {
         self.app
             .opener()

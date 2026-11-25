@@ -1,4 +1,4 @@
-//! Sorting pasted links by their form (SPEC-app "Pasting"), and the opener's allowlist.
+//! Sorting pasted links by their form (SPEC-app "Pasting"). What may be opened is `opener.rs`.
 
 use std::path::Path;
 
@@ -14,6 +14,9 @@ pub fn classify(text: &str, title: Option<&str>, home: &Path) -> Result<NewLink,
     let text = text.trim();
     let lower = text.to_ascii_lowercase();
     let mut link = if let Some(rest) = strip_github(&lower) {
+        // GitHub serves only https: an `http://` or bare `github.com/…` paste keeps its path.
+        let url = format!("https://github.com/{}", &text[text.len() - rest.len()..]);
+        openable(&url)?;
         let parts: Vec<&str> = rest
             .split(['?', '#'])
             .next()
@@ -22,13 +25,13 @@ pub fn classify(text: &str, title: Option<&str>, home: &Path) -> Result<NewLink,
             .collect();
         match parts.as_slice() {
             [_, _, "pull", n, ..] if is_number(n) => {
-                let pr = PrRef::parse(text).ok_or_else(not_a_link)?;
-                NewLink::pr(pr.as_str()).with_url(text)
+                let pr = PrRef::parse(&url).ok_or_else(not_a_link)?;
+                NewLink::pr(pr.as_str()).with_url(url)
             }
             [owner, repo, "issues", n, ..] if is_number(n) => {
-                NewLink::new(LinkKind::GithubIssue, format!("{owner}/{repo}#{n}")).with_url(text)
+                NewLink::new(LinkKind::GithubIssue, format!("{owner}/{repo}#{n}")).with_url(url)
             }
-            _ => NewLink::new(LinkKind::Doc, text).with_url(text),
+            _ => NewLink::new(LinkKind::Doc, url.as_str()).with_url(url.as_str()),
         }
     } else if lower.starts_with(T3_THREADS) {
         // t3code://threads/<environment>/<thread>, keeping the thread id's case as pasted.
@@ -40,17 +43,23 @@ pub fn classify(text: &str, title: Option<&str>, home: &Path) -> Result<NewLink,
             .nth(1)
             .filter(|t| !t.is_empty())
             .ok_or_else(not_a_link)?;
+        openable(text)?;
         NewLink::new(LinkKind::T3Thread, thread).with_url(text)
     } else if is_slack(&lower) {
-        let path = text
-            .split_once("://")
-            .map(|(_, rest)| rest)
-            .and_then(|rest| rest.split_once('/'))
+        let rest = text.split_once("://").map_or(text, |(_, rest)| rest);
+        let url = format!("https://{rest}");
+        openable(&url)?;
+        let path = rest
+            .split_once('/')
             .map(|(_, path)| format!("/{path}"))
             .unwrap_or_else(|| text.to_string());
-        NewLink::new(LinkKind::Slack, path).with_url(text)
-    } else if lower.starts_with("http://") || lower.starts_with("https://") {
+        NewLink::new(LinkKind::Slack, path).with_url(url)
+    } else if lower.starts_with("https://") {
+        openable(text)?;
         NewLink::new(LinkKind::Doc, text).with_url(text)
+    } else if lower.starts_with("http://") {
+        // Airboss opens only https links; a link it couldn't open isn't worth keeping.
+        return Err(AppError::new(ErrorCode::UrlNotAllowed, MSG_URL_NOT_ALLOWED));
     } else if text.starts_with('/') || text.starts_with("~/") || text == "~" {
         let path = expand_home(text, home);
         NewLink::new(LinkKind::Doc, text).with_url(file_url(&path))
@@ -77,6 +86,12 @@ pub fn classify(text: &str, title: Option<&str>, home: &Path) -> Result<NewLink,
 
 fn not_a_link() -> AppError {
     AppError::new(ErrorCode::NotALink, MSG_NOT_A_LINK)
+}
+
+/// A pasted URL must be one the opener would open (a file path is checked when it's opened,
+/// since the file may not exist yet).
+fn openable(url: &str) -> Result<(), AppError> {
+    crate::opener::decide(url).map(|_| ())
 }
 
 fn is_number(n: &str) -> bool {
@@ -124,99 +139,6 @@ pub fn file_url(path: &Path) -> String {
         }
     }
     out
-}
-
-/// The path a `file://` URL names, with `%XX` escapes decoded; `None` for any other URL.
-pub fn file_path(url: &str) -> Option<std::path::PathBuf> {
-    let rest = url.get(..7).filter(|s| s.eq_ignore_ascii_case("file://"))?;
-    let path = url[rest.len()..]
-        .strip_prefix("localhost")
-        .unwrap_or(&url[rest.len()..]);
-    let bytes = path.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        let hex = |b: u8| (b as char).to_digit(16);
-        match (
-            bytes[i],
-            bytes.get(i + 1).copied().and_then(hex),
-            bytes.get(i + 2).copied().and_then(hex),
-        ) {
-            (b'%', Some(h), Some(l)) => {
-                out.push((h * 16 + l) as u8);
-                i += 3;
-            }
-            (b, _, _) => {
-                out.push(b);
-                i += 1;
-            }
-        }
-    }
-    Some(std::path::PathBuf::from(
-        String::from_utf8_lossy(&out).into_owned(),
-    ))
-}
-
-/// File types macOS runs, installs or opens elsewhere when "opened".
-const RUNS: &[&str] = &[
-    "app",
-    "command",
-    "terminal",
-    "tool",
-    "sh",
-    "zsh",
-    "bash",
-    "csh",
-    "ksh",
-    "pkg",
-    "mpkg",
-    "workflow",
-    "action",
-    "scpt",
-    "scptd",
-    "applescript",
-    "prefpane",
-    "bundle",
-    "plugin",
-    "kext",
-    "osax",
-    "jar",
-    "dmg",
-    "webloc",
-    "inetloc",
-    "fileloc",
-    "shortcut",
-    "mobileconfig",
-    "configprofile",
-    "py",
-    "pl",
-    "rb",
-];
-
-/// Whether opening `path` could run something: a folder or bundle, an executable, or a type
-/// in [`RUNS`]. Such links are revealed in Finder instead, because agents can add links.
-pub fn runs_something(path: &Path) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(str::to_ascii_lowercase);
-    if ext.as_deref().is_some_and(|e| RUNS.contains(&e)) {
-        return true;
-    }
-    match std::fs::metadata(path) {
-        Ok(m) => m.is_dir() || m.permissions().mode() & 0o111 != 0,
-        Err(_) => false,
-    }
-}
-
-/// The opener's allowlist: only `http`, `https`, `file` and `t3code`.
-pub fn check_url(url: &str) -> Result<(), AppError> {
-    let scheme = url.split_once(':').map(|(s, _)| s.to_ascii_lowercase());
-    match scheme.as_deref() {
-        Some("http" | "https" | "file" | "t3code") if url.contains("://") => Ok(()),
-        _ => Err(AppError::new(ErrorCode::UrlNotAllowed, MSG_URL_NOT_ALLOWED)),
-    }
 }
 
 #[cfg(test)]
@@ -271,6 +193,23 @@ mod tests {
             (LinkKind::Doc, Some("https://example.com/spec"))
         );
 
+        // GitHub links are kept as https, whatever form was pasted.
+        for pasted in [
+            "http://github.com/Acme/Web/pull/58",
+            "github.com/Acme/Web/pull/58",
+        ] {
+            let pr = c(pasted);
+            assert_eq!(
+                (pr.kind, pr.url.as_deref()),
+                (LinkKind::Pr, Some("https://github.com/Acme/Web/pull/58"))
+            );
+        }
+        let slack = c("http://acme.slack.com/archives/C01/p1");
+        assert_eq!(
+            slack.url.as_deref(),
+            Some("https://acme.slack.com/archives/C01/p1")
+        );
+
         let bare = c("Acme/Web#12");
         assert_eq!(
             (bare.kind, bare.r#ref.as_str()),
@@ -292,33 +231,21 @@ mod tests {
     }
 
     #[test]
-    fn a_title_overrides_the_default() {
-        let l = classify("/tmp/a.md", Some("Plan"), Path::new("/")).unwrap();
-        assert_eq!(l.title.as_deref(), Some("Plan"));
+    fn a_link_the_opener_would_refuse_is_refused_when_pasted() {
+        for t in [
+            "http://example.com/spec",
+            "https://user@evil.example/",
+            "t3code://threads/env/thread?x=1",
+            "t3code://threads/env/thread/more",
+        ] {
+            let e = classify(t, None, Path::new("/")).unwrap_err();
+            assert_eq!(e.code, ErrorCode::UrlNotAllowed, "{t}");
+        }
     }
 
     #[test]
-    fn the_opener_allows_only_four_schemes() {
-        for ok in [
-            "https://x.y",
-            "http://x",
-            "file:///tmp/a",
-            "t3code://threads/e/t",
-        ] {
-            assert!(check_url(ok).is_ok(), "{ok}");
-        }
-        for bad in [
-            "javascript:alert(1)",
-            "ssh://x",
-            "x-apple.systempreferences:",
-            "/etc/passwd",
-            "mailto:a@b",
-        ] {
-            assert_eq!(
-                check_url(bad).unwrap_err().code,
-                ErrorCode::UrlNotAllowed,
-                "{bad}"
-            );
-        }
+    fn a_title_overrides_the_default() {
+        let l = classify("/tmp/a.md", Some("Plan"), Path::new("/")).unwrap();
+        assert_eq!(l.title.as_deref(), Some("Plan"));
     }
 }

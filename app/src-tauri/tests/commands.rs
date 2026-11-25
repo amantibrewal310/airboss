@@ -1066,13 +1066,17 @@ fn open_thread_and_open_url_go_through_the_allowlist() {
         s.link(t, NewLink::new(LinkKind::Doc, "~/plan.md"), &Actor::Me)
             .unwrap()
     });
+    // A `~` path opens from the home folder, once it's there.
+    assert_eq!(
+        err_code(appcmd::open_url(&app.state, M, OpenTarget::Link(link.id))),
+        (ErrorCode::NotFound, "That file no longer exists.".into())
+    );
+    std::fs::write(app.home.join("plan.md"), "# plan").unwrap();
     appcmd::open_url(&app.state, M, OpenTarget::Link(link.id)).unwrap();
-    let home = app.home.to_string_lossy().to_string();
-    assert!(
-        app.shell
-            .calls()
-            .iter()
-            .any(|c| c.starts_with("open_url(file://") && c.contains(&home[1..]))
+    let plan = app.home.join("plan.md").canonicalize().unwrap();
+    assert_eq!(
+        app.shell.calls().last().unwrap(),
+        &format!("open_file({})", plan.display())
     );
 }
 
@@ -1423,20 +1427,75 @@ fn file_links_that_would_run_something_are_shown_in_finder() {
     let bundle = dir.join("Thing.app");
     std::fs::create_dir_all(&bundle).unwrap();
     let url = |p: &Path| airboss_app::classify::file_url(p);
+    let real = |p: &Path| p.canonicalize().unwrap();
     appcmd::open_url(&app.state, M, OpenTarget::Url(url(&doc))).unwrap();
     for p in [&script, &exe, &bundle, &dir] {
         appcmd::open_url(&app.state, M, OpenTarget::Url(url(p))).unwrap();
     }
     let calls = app.shell.calls();
-    assert!(calls.contains(&format!("open_url({})", url(&doc))));
+    assert!(
+        calls.contains(&format!("open_file({})", real(&doc).display())),
+        "{calls:?}"
+    );
     for p in [&script, &exe, &bundle, &dir] {
         assert!(
-            calls.contains(&format!("reveal({})", p.display())),
+            calls.contains(&format!("reveal({})", real(p).display())),
             "{} should be revealed: {calls:?}",
             p.display()
         );
-        assert!(!calls.contains(&format!("open_url({})", url(p))));
     }
+    assert_eq!(
+        calls.iter().filter(|c| c.starts_with("open_")).count(),
+        1,
+        "only the document opens: {calls:?}"
+    );
+}
+
+/// The final audit's B1: an agent stores a link through MCP `link`, and ⌘O must never run it.
+#[test]
+fn agent_links_that_would_run_code_never_reach_open() {
+    use std::os::unix::fs::PermissionsExt;
+    let app = TestApp::new();
+    let dir = temp_dir("b1");
+    let script = dir.join("x.command");
+    std::fs::write(&script, "#!/bin/sh\nopen -a Calculator\n").unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let t = app.add("T", None);
+    let base = airboss_app::classify::file_url(&script);
+    for url in [
+        format!("{base}?a"),
+        "file:/System/Applications/Calculator.app?://".to_string(),
+        base.replacen("file://", "file://localhost", 1),
+        format!("{base}#x"),
+        "http://example.com/x.command".to_string(),
+    ] {
+        let agent = Actor::Agent("t3/thread-1".into());
+        let link = app.core(|s| {
+            s.link(
+                t,
+                NewLink::new(LinkKind::Doc, "x").with_url(url.as_str()),
+                &agent,
+            )
+            .unwrap()
+        });
+        let (code, message) = err_code(appcmd::open_url(&app.state, M, OpenTarget::Link(link.id)));
+        assert_eq!(code, ErrorCode::UrlNotAllowed, "{url}");
+        assert_eq!(
+            message, "Airboss only opens https links, files and T3 threads.",
+            "{url}"
+        );
+    }
+    assert!(
+        app.shell.calls().iter().all(|c| !c.starts_with("open_")),
+        "nothing reached the opener: {:?}",
+        app.shell.calls()
+    );
+    // The plain file URL is shown in Finder, never opened.
+    appcmd::open_url(&app.state, M, OpenTarget::Url(base)).unwrap();
+    assert_eq!(
+        app.shell.calls().last().unwrap(),
+        &format!("reveal({})", script.canonicalize().unwrap().display())
+    );
 }
 
 #[test]

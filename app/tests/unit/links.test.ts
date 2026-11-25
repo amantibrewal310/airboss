@@ -21,8 +21,12 @@ describe('links.ts', () => {
     expect(classify('~/Code/web/docs/booking-flow.md')).toMatchObject({ kind: 'doc', ref: '~/Code/web/docs/booking-flow.md', url: null, label: 'booking-flow.md' });
     expect(classify('/Users/me/notes.md')).toMatchObject({ kind: 'doc', label: 'notes.md' });
   });
-  it('any other http(s) URL is a doc, with its URL', () => {
+  it('any other https URL is a doc, with its URL', () => {
     expect(classify('https://example.com/spec/booking?x=1')).toMatchObject({ kind: 'doc', url: 'https://example.com/spec/booking?x=1', label: 'booking' });
+  });
+  it('a plain http URL stays text: Airboss opens only https links', () => {
+    expect(classify('http://example.com/spec')).toBeNull();
+    expect(extractLinks('see http://example.com/spec')).toEqual({ links: [], rest: 'see http://example.com/spec' });
   });
   it('anything else is not a link', () => {
     expect(classify('fix the slot picker')).toBeNull();

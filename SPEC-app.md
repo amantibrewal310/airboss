@@ -376,6 +376,22 @@ The stores are classes in `lib/state/*.svelte.ts`, one exported instance each, w
 
 Red is never used for errors (The Red Is Mine Rule).
 
+### Opening links
+
+Agents can store any URL through MCP `link`, so every link the app opens (⌘O, a link tag, Open PR, Open thread) goes through one strict allowlist, `opener::decide` (final audit B1). Nothing else reaches macOS's `open`.
+
+| Form | What happens |
+|---|---|
+| `https://host[:port]/…`, printable ASCII, no user info and no `\` | Opens in the browser |
+| `t3code://threads/<environment>/<thread>`: the environment is letters, digits and `-`; the thread id adds `_` and `%XX`; nothing after it | Opens in T3 Code |
+| `file:///absolute/path`: no host (not even `localhost`), no query, no fragment | Percent-decoded, resolved (symlinks and `..`) and required to exist. A plain, non-executable file whose extension (any case) is on the list below opens with its default app. Everything else is **shown in Finder**: folders, bundles (`.app`, `.workflow`, `.rtfd`), `.command`, `.terminal`, `.sh`, `.py`, `.html`, `.svg`, executables, files without an extension, and lookalike extensions |
+| anything else, `http` included | Refused: "Airboss only opens https links, files and T3 threads." |
+
+- **Documents that open:** `md`, `markdown`, `txt`, `text`, `rtf`, `log`, `csv`, `tsv`, `json`, `jsonl`, `yaml`, `yml`, `toml`, `xml`, `ini`, `cfg`, `conf`, `diff`, `patch`, `pdf`, `png`, `jpg`, `jpeg`, `gif`, `webp`, `heic`, `heif`, `tif`, `tiff`, `bmp`, and the code files `rs`, `ts`, `tsx`, `js`, `jsx`, `mjs`, `cjs`, `svelte`, `vue`, `css`, `scss`, `go`, `java`, `kt`, `swift`, `c`, `h`, `cc`, `cpp`, `hpp`, `sql`, `graphql`, `proto`. Each one's default app shows it and runs nothing; HTML and SVG are left out because a browser would run their scripts, and `.py` because Python Launcher runs it.
+- **What's opened** is the resolved path, never the URL text, so a symlink is judged by what it points at.
+- A missing file says "That file no longer exists."; one Airboss can't resolve says "Airboss can't reach that file."
+- `opener.rs` has a table-driven test of every trick in the audit (`file:///tmp/x.command?a`, `file:/System/Applications/Calculator.app?://`), plus mixed case, `file://localhost`, `..` and `%2E%2E`, symlinks to executables, and Unicode lookalikes (a Cyrillic `і` in the scheme, a Cyrillic `ԁ` in an extension, a fullwidth dot, a right-to-left override).
+
 ## Screens
 
 Every screen keeps DESIGN.md's layout, sizes and motion. This section adds data, behaviour and states. Keys per context are in [Appendix C](#appendix-c-keyboard-map-and-focus-rules).
@@ -552,7 +568,9 @@ One `NewTask.svelte` component serves both: as a modal on the scrim in the app, 
   | `*.slack.com/archives/…` | Slack |
   | `t3code://threads/<environment>/<thread>` | T3 thread, ref `<thread>` |
   | an absolute or `~` path | doc |
-  | any other `http(s)` URL | doc, with its URL |
+  | any other `https` URL | doc, with its URL |
+
+  GitHub and Slack links are kept as `https`, whatever form was pasted. A plain `http` link, or any URL the opener would refuse (below), is refused when pasted with the opener's message, so a link that's kept is a link that opens.
 
 - **↩ Create task:** `create_task`. The repos go in `NewTask.repos`, so `add_task` links them in the same change, and then each link is added.
   - The panel hides at once. In the app, the new row is highlighted and selected.
@@ -951,7 +969,7 @@ Writes return `Patch` (shown as → P). All `core` calls act as `me`, with one l
 | `add_to_t3` | `repo` | | `launch.add_to_t3` |
 | `reopen_and_start` | `id` | as `do_it` | `set_status` todo, then `do_it` |
 | `open_thread` | `ThreadKey` | | `sync.thread_url`, then opener |
-| `open_url` | `url` or `link` | | opener; only `http`, `https`, `file` and `t3code` |
+| `open_url` | `url` or `link` | | `opener.rs`'s allowlist (see "Opening links"), then the opener: browser, T3, a document's app, or Finder |
 | `needs_dismiss` / `needs_snooze` | `key` / `key, until?` | undo entry | `attention.dismiss` / `attention.snooze` |
 | `needs_restore` | `key` | | `attention.restore` |
 | `undo` | `entry?` (none: the top) | `{patch?, message}` | the entry's inverse calls, after the `events_after` check |
@@ -1031,4 +1049,6 @@ Global, from any app: the quick-add hotkey (⌃⌥N by default), on Pressed only
 | `Internal` | "Something went wrong inside Airboss; details are in the log." |
 | `DbUnavailable`, at start | "Airboss can't open its database", with `"<path>: <reason>"` as detail |
 | `DbUnavailable`, while running | "Quit Airboss (⌘Q) and open it again. Changes made since the problem began may not have been saved. Troubleshooting has more." |
+| `UrlNotAllowed` | "Airboss only opens https links, files and T3 threads." |
+| A file link whose file is gone | "That file no longer exists." (or "Airboss can't reach that file.") |
 | A `ServiceError` | its own `message`, from the service's spec |
