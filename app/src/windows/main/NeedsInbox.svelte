@@ -55,8 +55,8 @@
         >
           <span class="ic"><Icon name={KIND_ICON[n.kind]} size={15} /></span>
           <div class="w">
-            <div class="l1"><span class="id">{n.task}</span><span class="tt">{n.task_title}</span><span class="tm">{relative(n.since, app.now)}</span></div>
-            <div class="l2">{n.stale ? `May be out of date · ${n.context}` : n.context}</div>
+            <div class="l1"><span class="id">{n.task}</span><span class="tt" title={n.task_title}>{n.task_title}</span><span class="tm">{relative(n.since, app.now)}</span></div>
+            <div class="l2" title={n.context}>{n.stale ? `May be out of date · ${n.context}` : n.context}</div>
           </div>
         </div>
       {/each}

@@ -72,7 +72,7 @@
             {#if editing === id}
               <input bind:this={editInput} class="edit" value={app.row(id)?.title ?? title} aria-label="Edit {id}, then accept" onkeydown={(e) => editKey(e, id)} onblur={() => (editing = null)} />
             {:else}
-              <span class="t">{app.row(id)?.title ?? title}</span>
+              <span class="t" title={app.row(id)?.title ?? title}>{app.row(id)?.title ?? title}</span>
               <button type="button" class="g" onclick={() => app.acceptProposals(item, [id])}><Icon name="check" size={13} />Accept</button>
               <button type="button" class="g" onclick={() => edit(id)}>Edit</button>
               <button type="button" class="g x" aria-label="Reject {id}" title="Reject" onclick={() => app.rejectProposals(item, [id])}><Icon name="close" size={13} /></button>

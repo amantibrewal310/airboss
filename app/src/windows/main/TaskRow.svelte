@@ -144,7 +144,7 @@
       </span>
     {/if}
     {#if row.ready_pill}<span class="pill ok">Ready</span>{/if}
-    {#if row.quiet_days !== null}<span class="pill">Quiet {row.quiet_days} {row.quiet_days === 1 ? 'day' : 'days'}</span>{/if}
+    {#if row.quiet_days !== null}<span class="pill quiet">Quiet {row.quiet_days} {row.quiet_days === 1 ? 'day' : 'days'}</span>{/if}
     {#each shownRepos as r (r.id)}
       <span class="pill rn" title={row.repos_from_subtasks ? `${r.name} · from subtasks` : r.name}><RepoDot id={r.id} />{r.name}</span>
     {/each}
@@ -233,7 +233,7 @@
     text-overflow: ellipsis;
     font-weight: 500;
     flex: 0 1 auto;
-    min-width: 0;
+    min-width: 48px;
   }
   .done .t {
     color: var(--text-2);
@@ -350,6 +350,32 @@
     }
     .row :global(.live) {
       padding: 0 6px;
+    }
+  }
+  /* Beside the panel in a small window: the title keeps its room; the actor and quieter pills go. */
+  @container list (max-width: 460px) {
+    .row :global(.av),
+    .pill.ok,
+    .pill.quiet {
+      display: none;
+    }
+    .when {
+      width: 28px;
+    }
+  }
+  @container list (max-width: 360px) {
+    .row {
+      gap: 8px;
+    }
+    .id {
+      width: 30px;
+    }
+    .t {
+      min-width: 40px;
+    }
+    .rd,
+    .meta .pill:not(.warn) {
+      display: none;
     }
   }
 </style>

@@ -46,40 +46,40 @@ Each task ends with `pnpm check`, `pnpm test` and `pnpm build` clean, then one c
 
 ### Phase 1: Foundations
 
-- [ ] **T1 Scaffold.** Vite 8 + Svelte 5 + TS 6, two entry pages, Vitest (unit in Node,
+- [x] **T1 Scaffold.** Vite 8 + Svelte 5 + TS 6, two entry pages, Vitest (unit in Node,
   component in WebKit), Playwright, scripts `dev`, `dev:mock`, `check`, `test`, `test:e2e`,
   `build`, `build:mock`. Versions pinned exactly as SPEC-app's table.
   *Check:* `pnpm check`, `pnpm test` (a smoke test), `pnpm build` all pass.
-- [ ] **T2 Tokens, type and focus.** `styles/tokens.css` (dark, light, system with
+- [x] **T2 Tokens, type and focus.** `styles/tokens.css` (dark, light, system with
   `data-theme` override, Increase Contrast, Reduce Motion, system accent hook) and
   `styles/base.css` (reset, Inter variable woff2, focus rings, selection). Theme store applies
   System/Dark/Light. *Check:* unit test of the theme resolver; a token page renders in both
   themes.
-- [ ] **T3 Types and API.** `lib/types/` (core, services, dto, commands, events) and
+- [x] **T3 Types and API.** `lib/types/` (core, services, dto, commands, events) and
   `lib/api/` with one function per Appendix A command and one listener per Appendix B event.
   *Check:* a unit test that every Appendix A command name and Appendix B event name has a
   wrapper (table-driven), and that the wrappers pass the documented argument names.
-- [ ] **T4 Mock backend and fixtures.** Model, row builder, `design`/`full`/`perf` fixtures,
+- [x] **T4 Mock backend and fixtures.** Model, row builder, `design`/`full`/`perf` fixtures,
   handlers for every command, `UnscriptedCall`, the replay transport, and the plug-in note.
   *Check:* unit tests: rows match the view-model rules (progress, repo union, branch
   inheritance, chip precedence, waiting), unknown command throws, replay is strict about order.
 
 ### Checkpoint A: data flows
 
-- [ ] `bootstrap` in the browser returns rows for each fixture; check, tests and build clean.
+- [x] `bootstrap` in the browser returns rows for each fixture; check, tests and build clean.
 
 ### Phase 2: Shell and list
 
-- [ ] **T5 Stores and patch application.** `tasks`, `needs`, `connections`, `ui`, `detail`,
+- [x] **T5 Stores and patch application.** `tasks`, `needs`, `connections`, `ui`, `detail`,
   `toasts`, `settings`. `applyPatch` by `seq`. *Check:* unit tests: stale `seq` ignored, only
   changed rows replaced, order and repos only when sent.
-- [ ] **T6 Shell.** Window grid (232px sidebar, main, 480/380px panel), traffic-light space
+- [x] **T6 Shell.** Window grid (232px sidebar, main, 480/380px panel), traffic-light space
   and drag regions, sidebar (nav with counts, Needs me badge, Parents with rings, Repos with
   dots, "+"), connections footer and popover (merged rows). *Check:* component test of the
   footer text for each connection state; screenshot by eye against screen 01.
-- [ ] **T7 Views and visible rows.** `logic/views.ts` for Ready, In progress, All (tree and By
+- [x] **T7 Views and visible rows.** `logic/views.ts` for Ready, In progress, All (tree and By
   status), per repo, per parent; folds. *Check:* unit tests for each view and fold rule.
-- [ ] **T8 Virtual list and rows.** `VirtualList` (prefix sums, binary search, overscan 8,
+- [x] **T8 Virtual list and rows.** `VirtualList` (prefix sums, binary search, overscan 8,
   `translateY`, sticky group header, `nearest` scrolling) and `TaskRow` (all lanes, pills,
   chips, dot, avatar, time, narrow widths by container query). *Check:* unit tests of the
   maths; component test: 2,000 rows render under 60 DOM rows and the selection stays visible;
@@ -87,69 +87,69 @@ Each task ends with `pnpm check`, `pnpm test` and `pnpm build` clean, then one c
 
 ### Phase 3: Keyboard
 
-- [ ] **T9 Registry, keymap, focus zones.** `logic/commands.ts`, `keymap.ts`, `focus.ts`,
+- [x] **T9 Registry, keymap, focus zones.** `logic/commands.ts`, `keymap.ts`, `focus.ts`,
   one `keydown` listener, G-sequences, Mac arrows, F6. *Check:* unit tests of every row of
   Appendix C's focus table and of the key map.
-- [ ] **T10 Selection rules.** `logic/selection.ts` (same index on removal, fold selects
+- [x] **T10 Selection rules.** `logic/selection.ts` (same index on removal, fold selects
   parent, reveal unfolds and switches view, needs same index, map selection clears) and stale
   responses by request number. *Check:* unit tests per rule.
 
 ### Checkpoint B: the list works by keyboard
 
-- [ ] 2,000 rows scroll smoothly; every list key works; tests clean.
+- [x] 2,000 rows scroll smoothly; every list key works; tests clean.
 
 ### Phase 4: Panel and page
 
-- [ ] **T11 Task panel.** Header (breadcrumb, Plan it, Do it with Starting…, open page, close),
+- [x] **T11 Task panel.** Header (breadcrumb, Plan it, Do it with Starting…, open page, close),
   T3-missing line, title rename, callouts, properties (status, repos checklist, branch edit,
   parent, waits on, blocks, links with titles), notes editor, Waves list, threads, activity
   with subtasks and "Show more", note input, skeleton after 150 ms. *Check:* component tests
   (rename, notes, banner, Starting…).
-- [ ] **T12 Full page and run map.** Page layout with the properties rail; `runMapLayout.ts`
+- [x] **T12 Full page and run map.** Page layout with the properties rail; `runMapLayout.ts`
   (waves as columns, curves, wave skips, outside stubs, tangled list, fallback over 40 subtasks
   or 8 waves); map keys. *Check:* unit tests with DESIGN's Refunds example; screenshot against
   screen 03.
 
 ### Phase 5: Views
 
-- [ ] **T13 Needs me.** Inbox groups, card, every kind's actions, local hiding with the 180 ms
+- [x] **T13 Needs me.** Inbox groups, card, every kind's actions, local hiding with the 180 ms
   exit, Accept/Reject with the 5 s window and Undo, Snooze, Dismiss, empty state.
   *Check:* unit tests of the reject window; component test of each kind's actions.
-- [ ] **T14 Ready, In progress, Plans.** Ready with "since"; Plans cards and grid keys; Plan
+- [x] **T14 Ready, In progress, Plans.** Ready with "since"; Plans cards and grid keys; Plan
   something. *Check:* component test of a plan card; screenshot against screen 04.
 
 ### Phase 6: Overlays
 
-- [ ] **T15 Menus.** Status menu (1–6, blocked reason, drop confirmation, proposed
+- [x] **T15 Menus.** Status menu (1–6, blocked reason, drop confirmation, proposed
   Accept/Reject), context menu from the registry, Start in menu, repo checklist.
   *Check:* component tests for the status menu and Start in menu.
-- [ ] **T16 Jump, New task, quick add.** Jump with fuzzy search, commands, create, and picker
+- [x] **T16 Jump, New task, quick add.** Jump with fuzzy search, commands, create, and picker
   mode; `NewTask` for both the modal and `quickadd.html` (reset on hide, ↓ title→notes, Tab
   and Shift-Tab dropdowns, paste links, ⌘↩). *Check:* unit tests for `search.ts` and
   `links.ts`; component tests for Jump and NewTask.
-- [ ] **T17 Sheet, Settings, toasts and launch results.** Shortcut sheet from the registry,
+- [x] **T17 Sheet, Settings, toasts and launch results.** Shortcut sheet from the registry,
   Settings (hotkey recorder, login, appearance, CLI, agent setup), toasts with Undo/Retry/
   "Add to T3", F6, `LaunchReport` toasts. *Check:* unit tests of the toast builder.
 
 ### Phase 7: States and patches
 
-- [ ] **T18 States.** First run (open at login ticked, Add repos, connections), T3 missing,
+- [x] **T18 States.** First run (open at login ticked, Add repos, connections), T3 missing,
   nothing needs you, database error, empty views, Add repos dialog. *Check:* component test of
   Add repos.
-- [ ] **T19 Patches and optimism.** Event wiring, seq dedupe, fresh-row highlight, status pop,
+- [x] **T19 Patches and optimism.** Event wiring, seq dedupe, fresh-row highlight, status pop,
   detail refetch on upsert, plans refetch debounce, needs local hiding with the 2 s cap.
   *Check:* unit tests of patch order and dedupe.
 
 ### Phase 8: Tests and polish
 
-- [ ] **T20 End-to-end smoke and baselines.** Playwright keyboard-only smoke test; 24
+- [x] **T20 End-to-end smoke and baselines.** Playwright keyboard-only smoke test; 24
   screenshot baselines (12 web screens, dark and light). *Check:* `pnpm test:e2e` passes.
-- [ ] **T21 Polish.** Screen by screen against the PNGs and Paper: spacing, type, colour,
+- [x] **T21 Polish.** Screen by screen against the PNGs and Paper: spacing, type, colour,
   hover and focus, motion, truncation tooltips, narrow widths. *Check:* side-by-side review.
 
 ### Checkpoint C: done
 
-- [ ] Check, every test and the build are clean; bundle sizes recorded; frame times recorded.
+- [x] Check, every test and the build are clean; bundle sizes recorded; frame times recorded.
 
 ## Risks
 
@@ -167,3 +167,92 @@ backend or a reviewer may want to know.
 
 1. **`lib/api/` instead of `lib/ipc/`.** The brief for this work names `lib/api/`; the layout is
    otherwise SPEC-app's.
+2. **The mock simulates writes until Rust records them.** SPEC-app's mock replays a script
+   recorded from Rust, which doesn't exist yet. `MockBackend` applies each write to a small model
+   and builds the patch the way the view-model table says; it throws `UnscriptedCall` for any
+   unknown command. `mock/replay.ts` is the strict, in-order replay transport, ready for
+   `tests/script.json`; `mock/fixtures/index.ts` is the one loader the generated fixtures replace.
+3. **Display waves put a subtask that waits outside in the last wave.** SPEC-app's text says "the
+   column after its latest inside blocker, or wave 1", but its own test (DESIGN's Refunds: waves
+   of 3, 2, 1 and 2) and the design put Backfill (208) in wave 4. The mock follows the test and
+   the design; Rust owns this rule.
+4. **Narrow widths step at 700px and 560px of list width, not 820px and 680px.** The Paper screens
+   show full repo pills in a 728px list beside the panel; DESIGN's numbers would turn them into
+   dots. Two more steps (460px, 360px) hide the actor and the quieter pills so a 288px list
+   (900px window, 380px panel) never overflows.
+5. **Branch shows only the task's own branch.** Screens 01 and 02 have no Branch line for a
+   subtask; the branch Do it would use (`Prepared.branch`) is in Do it's tooltip instead of a
+   text-3 line.
+6. **The panel has no Parent line for a top-level task, and the page rail drops "+ Link repo"
+   once a task has repos** (its repo tags open the checklist), matching screen 03. Move under…
+   stays in ⌘K, the context menu and the Task menu.
+7. **Drop's icon in the context menu is grey.** The Paper menu draws it red; the Red Is Mine Rule
+   keeps red for needs-me only.
+8. **`AlreadyStarting` gets a toast**, "Already starting — check T3 in a moment." (EM decision of
+   26 Nov), although Appendix D says no toast. A second ⌘↩ while the button says "Starting…"
+   does nothing, as the spec asks.
+9. **Esc on the page clears a map selection first, then closes the page.** Appendix C lists
+   "close page, then clear the map selection"; clearing first is the progressive reading.
+10. **In the panel, ↩ and Space press the focused button** (Appendix C, `panel` zone); with focus
+    elsewhere in the panel, Space marks the selected task done.
+11. **⌘W is left to the native menu** (a page can't stop a browser closing a tab); ⌘0 is handled
+    by the page as well as the menu (the 50 ms dedupe is Rust's).
+12. **The header's count is the open tasks the view holds, whatever is folded**, like the
+    sidebar's (screen 01 shows 21 in both).
+13. **A parent whose only subtasks are proposals isn't a plan yet**: it gets no plan card and no
+    Parents entry, though its row folds and shows 0/3.
+14. **Folds come from `Settings.folded`.** A task that becomes a parent later (Plan it, accepted
+    proposals) starts open, so a new plan is visible.
+15. **The Plans grid is `repeat(auto-fill, minmax(min(100%, 420px), 500px))`**: two 500px cards at
+    1440px like screen 04, still at least 340px wide.
+16. **The design fixture follows the contract where the design doesn't**: 144's thread is waiting
+    on a question, so its chip reads "Waiting on you" (the design shows "Agent working"), and a
+    proposal-only parent folds.
+17. **Tabular figures only on numbers.** Inter's `tnum` widens the hyphen, so it's set on ids,
+    counts, times and percentages, not on the body.
+18. **New task in the main window creates with `then: 'none'` and then runs Do it or Plan it
+    through the normal flow** (Starting…, result toasts). Quick add sends `then`, so Rust handles
+    a failure while the panel is hidden, as the spec describes.
+19. **Quick add keeps a typed title only when it was hidden by something other than Esc or
+    Create** (clicking elsewhere, the hotkey).
+20. **Screen 07's baseline shows the right-click menu**; only one overlay is open at a time, so
+    the status menu is covered by component tests.
+21. **List keys beyond Appendix C:** Home, End, Page Up, Page Down, ⌥↑ and ⌥↓ move by page or to
+    the ends, as Mac lists do.
+22. **Connections merge by name in the UI too** (worst state wins), so it doesn't matter whether
+    Rust merges first.
+
+## What the backend must match
+
+Everything is in `src/lib/api/contract.ts` and `src/lib/types/`. Fields the UI needs beyond the
+spec's text are marked EXTRA there:
+
+- `Bootstrap.cli: { installed, path, on_path }` (Settings and the Agents row).
+- `TaskDetail.history_more` (Show more) and `TaskDetail.suggested_prs` (the ⌘L popover).
+- `HistoryEntry.thread_title` (for "Agent in <thread title>").
+- Undoable writes (`set_status`, `toggle_done`, `reject_proposals`, `move_task`, `reorder`,
+  `needs_dismiss`, `needs_snooze`) return `{ patch, undo: { id, label } | null }`, so a toast's
+  Undo undoes its own entry.
+- `CreateTaskResult.link_errors` ("Created 153, but couldn't link …").
+- `AppError.code` values `db_unavailable` (`bootstrap`, `detail` = the database path) and
+  `undo_refused`.
+- `menu:action { command }` uses the ids in `src/lib/logic/commands.ts`.
+- Command arguments use Tauri's camelCase names (`historyLimit`, `waitsOn`, `needsKey`); struct
+  fields inside stay snake_case; enums are snake_case strings and data enums externally tagged.
+
+## Results
+
+- **Tests:** 106 unit tests (Node) and 41 component tests (WebKit) in Vitest; 30 Playwright tests
+  (smoke, 60 fps, 4 accessibility, 24 screenshot baselines).
+- **60 fps:** Playwright WebKit, perf fixture (2,000 tasks, every parent open, 1,991 rows,
+  75,694px), whole list scrolled in 3 s: 300 frames, p50 10 ms, p95 12 ms, max 12 ms, none over
+  20 ms; at most 40 rows in the DOM. (Headless WebKit runs rAF at 100 Hz.)
+- **Bundle** (`pnpm build`, minified / gzip -9): the main window loads 245 KB of JS / 80 KB
+  (its entry 148 KB / 44 KB, plus a 96 KB / 36 KB chunk it shares with quick add: the Svelte
+  runtime, New task, menus, icons and the API) and 59 KB / 11 KB of CSS. Quick add loads its own
+  2.8 KB entry plus the shared chunk: 100 KB / 38 KB of JS and 11 KB / 3.4 KB of CSS. The font is
+  48 KB (Inter variable, Latin). No mock code reaches the production build.
+- **Gap:** SPEC-app's budget asks for quick add under 40 KB minified. Its own code is 2.8 KB, but
+  the shared Svelte runtime and form components make it 100 KB minified (38 KB gzipped). Meeting
+  the letter of the budget needs a smaller form for the panel (or counting gzip); left for the
+  integration pass.

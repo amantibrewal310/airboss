@@ -123,7 +123,7 @@
         {#if item.kind === 'task'}
           <StatusIcon shape={shapeOf(item.row)} />
           <span class="id">{item.row.id}</span>
-          <span class="t">{item.row.title}</span>
+          <span class="t" title={item.row.title}>{item.row.title}</span>
           {#if item.reason}<span class="why">{item.reason}</span>{/if}
           {#each item.row.repos as r (r)}<RepoDot id={r} name={app.tasks.repoById.get(r)?.name} />{/each}
         {:else if item.kind === 'top'}

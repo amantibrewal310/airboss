@@ -42,7 +42,7 @@
   ondblclick={onopen}
   onkeydown={() => {}}
 >
-  <h3><StatusIcon shape={shapeOf(card)} /><span class="title">{card.title}</span><span class="id">{card.id}</span></h3>
+  <h3><StatusIcon shape={shapeOf(card)} /><span class="title" title={card.title}>{card.title}</span><span class="id">{card.id}</span></h3>
   <div class="pctrow">
     <span class="pct">{pct}%</span>
     <span class="of">{card.progress.done} of {card.progress.total} done</span>

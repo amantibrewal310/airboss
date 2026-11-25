@@ -101,6 +101,11 @@
             app.ui.keyboard = false;
           }}
           ondblclick={() => app.openPage(s.id)}
+          oncontextmenu={(e) => {
+            e.preventDefault();
+            app.ui.mapSel = s.id;
+            app.open({ kind: 'context', task: s.id, at: { x: e.clientX, y: e.clientY } });
+          }}
         >
           <b title={r.title}>{r.title}</b>
           <small><span>{s.id} · <span class={info.tone}>{info.text}</span></span>{#each r.repos as repo (repo)}<RepoDot id={repo} name={app.tasks.repoById.get(repo)?.name} />{/each}</small>

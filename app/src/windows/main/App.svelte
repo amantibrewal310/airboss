@@ -20,6 +20,17 @@
   // svelte-ignore state_referenced_locally
   provideApp(app);
 
+  // The native menus follow focus: zone, selection and view, sent at most once a frame.
+  $effect(() => {
+    void app.ui.zone;
+    void app.ui.overlay;
+    void app.ui.view;
+    void app.ui.selected;
+    void app.ui.mapSel;
+    void app.needs.selectedKey;
+    if (app.ready) app.sendContext();
+  });
+
   onMount(() => {
     // Rust shows the window once the bootstrap data has rendered (2 s backstop in Rust).
     const stop = $effect.root(() => {

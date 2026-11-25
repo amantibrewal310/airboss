@@ -539,7 +539,7 @@ export class App {
     if (p) this.onPatch(p);
   }
 
-  async toggleDone(id: TaskId | null = this.ui.selected): Promise<void> {
+  async toggleDone(id: TaskId | null = this.actionTask()): Promise<void> {
     const r = this.tasks.get(id);
     if (!r || r.status === 'proposed') return;
     try {
@@ -1174,7 +1174,7 @@ export class App {
       case 'close_fold':
         return this.arrowLeft();
       case 'rename':
-        if (sel !== null) this.ui.renaming = sel;
+        if (sel !== null && !this.ui.pageOpen) this.ui.renaming = sel;
         return;
       case 'to_panel':
         if (sel === null) return;
@@ -1197,7 +1197,7 @@ export class App {
       case 'plan_it':
         return void this.planIt();
       case 'open_page':
-        return this.openPage();
+        return this.openPage(this.actionTask());
       case 'back':
         return this.closePage();
       case 'move_up':
