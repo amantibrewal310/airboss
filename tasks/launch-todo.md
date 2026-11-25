@@ -77,7 +77,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
   - **Files:** `src/start.rs`, `src/lib.rs`, `tests/commands.rs`, `tests/idempotency.rs`
   - **Depends on:** T7
 
-- [ ] **T9. Failures and partial failures** (S)
+- [x] **T9. Failures and partial failures** (S)
   - **Description:** each error's row state and loop behaviour; core write failures through `fail_next`.
   - **Acceptance:** repo 2 of 3 failing still links 1 and 3 and moves the task to `doing`, and a retry starts only repo 2; a global error fails the rest; `fail_next(Link)` reports `linked: false`; `fail_next(SetStatus, InvalidTransition)` succeeds; `fail_next(SetBranch)` starts nothing; `RepoMissing`, `NoBaseBranch`, `BadBranch` write no row; T3 missing.
   - **Verify:** `tests/failures.rs`.
@@ -86,7 +86,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
 
 ### Checkpoint 2
 
-- [ ] Do it and Plan it work end to end against the fakes, with every failure reported.
+- [x] Do it and Plan it work end to end against the fakes, with every failure reported.
 
 ## Phase 3: Settling and the service
 
