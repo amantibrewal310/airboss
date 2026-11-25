@@ -6,7 +6,7 @@ mod common;
 use std::path::Path;
 
 use airboss_core::{Actor, LinkKind, NewLink, NewTask, Status, Store, TaskId};
-use common::{TempDir, run, stderr, stdout};
+use common::{NEWER_DATABASE, TempDir, as_if_a_newer_airboss_migrated, run, stderr, stdout};
 use serde_json::Value;
 
 fn ok(db: &Path, args: &[&str]) -> String {
@@ -250,6 +250,17 @@ fn log_shows_recent_history_newest_last() {
         lines[0].contains("#1  me") && lines[0].contains("created"),
         "{text}"
     );
+    // Each line starts with its event id, the number `--after` takes.
+    let ids: Vec<i64> = json(&dir.db(), &["log"])
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["id"].as_i64().unwrap())
+        .collect();
+    let width = ids.iter().max().unwrap().to_string().len();
+    for (line, id) in lines.iter().zip(&ids) {
+        assert!(line.starts_with(&format!("{id:>width$}  ")), "{line}");
+    }
     assert!(lines.last().unwrap().contains("linked"), "{text}");
     assert!(text.contains("→ in progress"), "{text}");
     assert!(text.contains("agent:t3/x"), "{text}");
@@ -265,6 +276,15 @@ fn log_after_shows_only_newer_events() {
     let newer = json(&dir.db(), &["log", "--after", &after]);
     assert_eq!(newer.as_array().unwrap().len(), 1);
     assert_eq!(newer[0]["kind"], "linked");
+
+    // The id on a text line works too.
+    let text = ok(&dir.db(), &["log"]);
+    let second_last = text.lines().rev().nth(1).unwrap();
+    let id = second_last.split_whitespace().next().unwrap();
+    assert_eq!(id, after);
+    let newer = ok(&dir.db(), &["log", "--after", id]);
+    assert_eq!(newer.lines().count(), 1);
+    assert!(newer.contains("linked"), "{newer}");
 }
 
 #[test]
@@ -550,6 +570,114 @@ fn repo_add_link_and_unlink() {
 }
 
 #[test]
+fn repo_edit_renames_moves_and_changes_the_remote() {
+    let dir = TempDir::new();
+    let db = dir.db();
+    ok(
+        &db,
+        &[
+            "repo",
+            "add",
+            "web",
+            "/src/web",
+            "--remote",
+            "git@x:web.git",
+        ],
+    );
+    ok(&db, &["add", "Task", "--repo", "web"]);
+    let src = dir.0.join("moved");
+    std::fs::create_dir_all(&src).unwrap();
+    let src = src.canonicalize().unwrap();
+    assert_eq!(
+        ok(
+            &db,
+            &[
+                "repo",
+                "edit",
+                "web",
+                "--name",
+                "site",
+                "--path",
+                src.to_str().unwrap()
+            ]
+        ),
+        format!("Edited repo site at {}\n", src.display())
+    );
+    assert_eq!(
+        json(&db, &["show", "1"])["task"]["repos"],
+        serde_json::json!(["site"])
+    );
+    let v = json(&db, &["repo", "edit", "site", "--no-remote"]);
+    assert_eq!(v["remote_url"], Value::Null);
+    let v = json(&db, &["repo", "edit", "site", "--remote", "git@x:site.git"]);
+    assert_eq!(v["remote_url"], "git@x:site.git");
+
+    ok(&db, &["repo", "add", "api", "/src/api"]);
+    assert_eq!(
+        fails(&db, &["repo", "edit", "site", "--name", "api"]),
+        "That name or path is already registered. List the repos to see it."
+    );
+    assert_eq!(
+        fails(&db, &["repo", "edit", "site", "--name", " "]),
+        "A repo needs a name and a path that aren't blank."
+    );
+    assert_eq!(
+        fails(&db, &["repo", "edit", "site"]),
+        "Give --name, --path, --remote or --no-remote."
+    );
+    assert_eq!(
+        fails(&db, &["repo", "edit", "nope", "--name", "x"]),
+        "There's no repo named \"nope\". Registered repos: api, site."
+    );
+    assert!(
+        !run(
+            &db,
+            &["repo", "edit", "site", "--remote", "a", "--no-remote"]
+        )
+        .status
+        .success()
+    );
+}
+
+#[test]
+fn repo_rm_unlinks_its_tasks_then_removes_it() {
+    let dir = TempDir::new();
+    let db = dir.db();
+    ok(&db, &["repo", "add", "web", "/src/web"]);
+    ok(&db, &["repo", "add", "api", "/src/api"]);
+    ok(&db, &["add", "One", "--repo", "web", "--repo", "api"]);
+    ok(&db, &["add", "Two", "--repo", "web"]);
+    assert_eq!(
+        ok(&db, &["repo", "rm", "web"]),
+        "Removed repo web, and unlinked it from #1, #2\n"
+    );
+    assert_eq!(ok(&db, &["repo", "ls"]), "api  /src/api\n");
+    assert_eq!(
+        json(&db, &["show", "1"])["task"]["repos"],
+        serde_json::json!(["api"])
+    );
+    let log = json(&db, &["log"]);
+    let last = &log.as_array().unwrap()[log.as_array().unwrap().len() - 1];
+    assert_eq!(
+        (last["kind"].as_str(), last["body"].as_str()),
+        (Some("repo_unlinked"), Some("web"))
+    );
+
+    let v = json(&db, &["repo", "rm", "api"]);
+    assert_eq!(v["repo"]["name"], "api");
+    assert_eq!(v["unlinked"], serde_json::json!([1]));
+    ok(&db, &["repo", "add", "ios", "/src/ios"]);
+    assert_eq!(
+        ok(&db, &["repo", "rm", "ios"]),
+        "Removed repo ios; no task had it\n"
+    );
+    assert_eq!(
+        fails(&db, &["repo", "rm", "ios"]),
+        "There's no repo named \"ios\". No repos are registered yet."
+    );
+}
+
+#[test]
 fn branch_sets_and_clears() {
     let dir = TempDir::new();
     let db = dir.db();
@@ -604,4 +732,67 @@ fn every_write_is_recorded_as_me() {
     for e in log.as_array().unwrap() {
         assert_eq!(e["actor"], "me");
     }
+}
+
+#[test]
+fn a_database_from_a_newer_airboss_is_refused_with_what_to_do() {
+    let dir = TempDir::new();
+    let db = dir.db();
+    ok(&db, &["add", "Task"]);
+    as_if_a_newer_airboss_migrated(&db);
+    assert_eq!(fails(&db, &["ls"]), NEWER_DATABASE);
+    assert_eq!(fails(&db, &["add", "Another"]), NEWER_DATABASE);
+}
+
+#[test]
+fn with_no_home_and_no_airboss_db_it_says_what_to_set() {
+    let dir = TempDir::new();
+    let out = common::airboss(&dir.db())
+        .env_remove("AIRBOSS_DB")
+        .env_remove("HOME")
+        .current_dir(&dir.0)
+        .arg("ls")
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(
+        stderr(&out),
+        "airboss: HOME isn't set, so there's no default database; set AIRBOSS_DB\n"
+    );
+    assert_eq!(
+        std::fs::read_dir(&dir.0).unwrap().count(),
+        0,
+        "no file anywhere"
+    );
+}
+
+#[test]
+fn backup_writes_a_copy_and_keeps_an_existing_file_unless_forced() {
+    let dir = TempDir::new();
+    let db = dir.db();
+    seed(&db);
+    let copy = dir.0.join("backup.db");
+    let copy_text = copy.to_str().unwrap();
+    assert_eq!(
+        ok(&db, &["backup", copy_text]),
+        format!("Backed up the database to {copy_text}\n")
+    );
+    assert_eq!(ok(&copy, &["ls", "--all"]), ok(&db, &["ls", "--all"]));
+    assert_eq!(
+        fails(&db, &["backup", copy_text]),
+        format!(
+            "There's already a file at {copy_text}. Pick another path, or give --force to \
+             replace it."
+        )
+    );
+    ok(&db, &["add", "Later"]);
+    assert_eq!(
+        json(&db, &["backup", copy_text, "--force"])["path"],
+        copy_text
+    );
+    assert_eq!(ok(&copy, &["ls"]), ok(&db, &["ls"]));
+    assert_eq!(
+        fails(&db, &["backup", db.to_str().unwrap(), "--force"]),
+        "That's the database itself. Back it up to another path."
+    );
 }

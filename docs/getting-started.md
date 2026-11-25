@@ -153,6 +153,55 @@ Threads started with Do it or Plan it get a brief that repeats these steps for t
 
 **Plan it** asks the agent to plan with a `plan-review` skill and then call `import_plan`. Install that skill for the agent you plan with.
 
+## Uninstall
+
+If you might want your tasks later, back them up first, while the CLI is still there:
+
+```sh
+airboss backup ~/airboss-backup.db
+```
+
+Then, in this order:
+
+1. **Quit Airboss:** ⌘Q, or **Quit Airboss** in the menu-bar menu. Closing the window leaves it running in the menu bar.
+2. **Remove the login item.** Open at login is a LaunchAgent. Turn it off in Settings before you quit, or remove it:
+
+   ```sh
+   rm -f ~/Library/LaunchAgents/Airboss.plist
+   ```
+
+3. **Remove the app:**
+
+   ```sh
+   rm -rf /Applications/Airboss.app
+   ```
+
+4. **Remove the CLI link**, if it's still the one the app made:
+
+   ```sh
+   [ -L ~/.local/bin/airboss ] && rm ~/.local/bin/airboss
+   ```
+
+   If you built the CLI yourself and copied it there, remove that file instead. Take the `export PATH="$HOME/.local/bin:$PATH"` line out of `~/.zshrc` too, unless something else lives in `~/.local/bin`.
+5. **Remove `airboss mcp` from each agent client:**
+
+   ```sh
+   claude mcp remove --scope user airboss
+   codex mcp remove airboss
+   ```
+
+   For any other client, delete the `airboss` server from its MCP config. Remove the [agent note](#tell-agents-to-report) from your repos' `AGENTS.md` and `CLAUDE.md` as well.
+6. **Optionally, remove your data.** This deletes every task and its history, and can't be undone:
+
+   ```sh
+   rm -rf ~/Library/Application\ Support/Airboss     # airboss.db, its -wal and -shm, app-settings.json
+   rm -rf ~/Library/Logs/Airboss                    # app.log and the two before it
+   ```
+
+   macOS may also keep the web view's caches in `~/Library/WebKit/io.github.amantibrewal310.airboss` and `~/Library/Caches/io.github.amantibrewal310.airboss`; remove them if they're there. A database you pointed `AIRBOSS_DB` at stays where you put it, with its own `app-settings.json` beside it.
+
+Airboss never writes to T3 Code's or Claude Code's files, so there's nothing to undo there.
+
 ## Next
 
 - [Using Airboss](using-airboss.md): the daily flow and every shortcut

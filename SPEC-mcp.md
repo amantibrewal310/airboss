@@ -136,7 +136,10 @@ airboss mv 12 [--under 9 | --top] [--pos 2]
 airboss wait 12 --on 9 | airboss unwait 12 --on 9
 airboss link 12 pr owner/repo#42 [--url …] [--title …]
 airboss repo add hub-ui ~/Workspace/…/hub-ui [--remote …] | airboss repo ls
+airboss repo edit hub-ui [--name …] [--path …] [--remote … | --no-remote]
+airboss repo rm hub-ui                # unlinks it from its tasks first
 airboss log [--after <event id>]      # recent history, newest last
+airboss backup ~/Backups/airboss.db [--force]   # a consistent copy, while everything runs
 airboss mcp                           # the MCP server over stdio (agents only)
 ```
 
@@ -249,9 +252,10 @@ Where the build differs from, or fills in, the text above:
 - **`update_task`'s schema offers only `doing`, `in_review`, `blocked` and `done`**, the statuses an agent may set, so agents don't try the others. `core` still decides each change.
 - **`propose_tasks` checks first, then adds.** `core` has no batch add for agents, so the count, titles, repo names and the parent are all checked before the first task is added. Only a database failure can stop it partway, and then the error lists what was already proposed.
 - **Error messages:** one per `core::Error` variant, picked out by what the call tried where a variant covers two situations (`NotAllowed`: a task with a PR, or a status only the user sets; `NoteRequired`: blocked or done; `InvalidTarget`: a closed parent, or a dependency on a parent or subtask; `Loop`: a move or a dependency). Arguments that don't match the schema are reported by rmcp as a tool error, `failed to deserialize parameters: …`, which names the bad field or value.
+- **A database from a newer Airboss** (core rule 32) is refused with `core`'s own sentence, "This database was created by a newer Airboss. Update the `airboss` command.", on its own: at start, `airboss mcp` and every CLI command print it to stderr and exit 1, and a server that's already running returns it as the tool error for every write.
 - **`AIRBOSS_THREAD`** may be written `t3/<id>` or `claude/<id>`; then `mine` and linking this thread work too. A leading `agent:` is ignored.
 - **Tool annotations:** `list_tasks` and `get_task` are marked read-only; `link` and `import_plan` idempotent; none is destructive.
-- **CLI details:** `airboss branch <task> --clear` clears a branch; `airboss ls --ready` shows since when each task has been ready; `airboss log` shows the last 50 events unless given `--after`; `ls` keeps a done or dropped parent when something under it is open, so the tree keeps its shape. Waiting is drawn as todo's ring with a "waiting" pill, and proposed as the dotted ring.
+- **CLI details:** `airboss branch <task> --clear` clears a branch; `airboss ls --ready` shows since when each task has been ready; `airboss log` shows the last 50 events unless given `--after`, each line starting with its event id (the number `--after` takes); `ls` keeps a done or dropped parent when something under it is open, so the tree keeps its shape. Waiting is drawn as todo's ring with a "waiting" pill, and proposed as the dotted ring.
 
 ## Open questions
 

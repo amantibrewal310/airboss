@@ -35,6 +35,41 @@ pub enum Error {
     Db(#[from] rusqlite::Error),
 }
 
+/// What a binary says when the file was migrated by a newer Airboss than itself, so its
+/// writes could break rules it doesn't know about.
+pub const NEWER_DATABASE: &str =
+    "This database was created by a newer Airboss. Update the `airboss` command.";
+
+impl Error {
+    /// The file has a migration newer than this binary knows: it's refused, not written.
+    ///
+    /// Carried as `Error::Db`, so callers that match every variant keep compiling; check it
+    /// with [`Error::is_newer_database`].
+    pub(crate) fn newer_database() -> Error {
+        Error::Db(rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CANTOPEN),
+            Some(NEWER_DATABASE.to_string()),
+        ))
+    }
+
+    /// There's no file to open, e.g. no `HOME` to find the default one in; `why` says so.
+    pub(crate) fn cant_open(why: String) -> Error {
+        Error::Db(rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CANTOPEN),
+            Some(why),
+        ))
+    }
+
+    /// Whether this is the refusal of a database a newer Airboss migrated. Its `Display` is
+    /// [`NEWER_DATABASE`], which is what to show.
+    pub fn is_newer_database(&self) -> bool {
+        matches!(
+            self,
+            Error::Db(rusqlite::Error::SqliteFailure(_, Some(m))) if m == NEWER_DATABASE
+        )
+    }
+}
+
 /// Shorthand used across the crate.
 pub type Result<T> = std::result::Result<T, Error>;
 

@@ -244,3 +244,48 @@ fn a_migration_that_breaks_a_foreign_key_is_rolled_back() {
         .is_err()
     );
 }
+
+// A newer Airboss migrated the file past what this binary knows.
+
+#[test]
+fn an_open_store_refuses_writes_once_a_newer_airboss_migrated_the_file() {
+    let dir = TempDir::new();
+    let mut s = file_store(&dir);
+    s.add_task(
+        airboss_core::NewTask::new("Before"),
+        &airboss_core::Actor::Me,
+    )
+    .unwrap();
+    raw(&s)
+        .execute(
+            "INSERT INTO schema_migrations (module, version) VALUES ('core', 99)",
+            [],
+        )
+        .unwrap();
+    let err = s
+        .add_task(
+            airboss_core::NewTask::new("After"),
+            &airboss_core::Actor::Me,
+        )
+        .unwrap_err();
+    assert!(err.is_newer_database(), "{err}");
+    assert_eq!(
+        s.tree().unwrap().len(),
+        1,
+        "reads work; nothing was written"
+    );
+    match Store::open(&s.path().unwrap()) {
+        Err(e) => assert!(e.is_newer_database(), "{e}"),
+        Ok(_) => panic!("a newer database opened"),
+    }
+}
+
+#[test]
+fn other_errors_are_not_the_newer_database_error() {
+    assert!(!Error::NotFound.is_newer_database());
+    let busy = Error::Db(rusqlite::Error::SqliteFailure(
+        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
+        None,
+    ));
+    assert!(!busy.is_newer_database());
+}

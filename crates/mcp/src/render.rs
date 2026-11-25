@@ -433,6 +433,7 @@ fn message(err: &Error, facts: &Facts) -> String {
         Error::DuplicateKey(key) => {
             format!("The plan uses the key \"{key}\" twice. Give every step its own key.")
         }
+        Error::Db(_) if err.is_newer_database() => airboss_core::NEWER_DATABASE.into(),
         // `mcp` doesn't depend on rusqlite, so busy is recognised by SQLite's own wording.
         Error::Db(e) if is_busy(&e.to_string()) => {
             "The Airboss database is busy. Try again in a moment.".into()

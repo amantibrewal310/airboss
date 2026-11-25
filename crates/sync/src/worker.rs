@@ -216,5 +216,7 @@ impl Env {
 
 /// Logs one line through the services' log, which the app sends to its log file.
 pub(crate) fn log(what: &str) {
+    #[cfg(feature = "fakes")]
+    crate::fake::keep_log(&format!("airboss-sync: {what}"));
     airboss_services::log::line("airboss-sync", what);
 }

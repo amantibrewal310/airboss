@@ -4,7 +4,7 @@
 mod common;
 
 use airboss_core::{Actor, NewLink, NewTask, Store, TaskId};
-use common::{Mcp, TempDir};
+use common::{Mcp, NEWER_DATABASE, TempDir, as_if_a_newer_airboss_migrated};
 use serde_json::json;
 
 const THREAD: &str = "thread-under-test";
@@ -247,4 +247,26 @@ fn two_servers_and_the_cli_write_at_once_without_errors() {
     let s = Store::open(&dir.db()).unwrap();
     assert_eq!(s.history(id).unwrap().len(), 1 + 80);
     assert_eq!(s.tree().unwrap().len(), 1 + 15);
+}
+
+#[test]
+fn a_server_running_when_a_newer_airboss_migrates_refuses_writes_plainly() {
+    let dir = TempDir::new();
+    let id = seed(&dir.db(), &["Code"])[0];
+    let mut mcp = Mcp::start(&dir.db(), Some(THREAD));
+    mcp.initialize();
+    mcp.ok("get_task", json!({"id": id.0}));
+    as_if_a_newer_airboss_migrated(&dir.db());
+    let (is_error, text) = mcp.call("update_task", json!({"id": id.0, "status": "doing"}));
+    assert!(is_error);
+    assert_eq!(text, NEWER_DATABASE);
+    assert!(mcp.finish());
+
+    // A new server on that file doesn't start.
+    let out = common::airboss(&dir.db()).arg("mcp").output().unwrap();
+    assert!(!out.status.success());
+    assert_eq!(
+        common::stderr(&out).trim_end(),
+        format!("airboss: {NEWER_DATABASE}")
+    );
 }

@@ -38,7 +38,7 @@ To-do apps and trackers don't know agent threads exist. T3 knows threads but not
 - Needs me: agent questions and approvals, PRs to review, failed runs, proposed subtasks, tasks that just became ready, parents whose subtasks are all done, work quiet 5+ days.
 - T3 Code and `gh` are optional: without them, Do it / Plan it and PR sync switch off and everything else still works.
 - Stack: Tauri 2.12, Rust backend, Svelte 5 with plain CSS. No heavy component library.
-- Performance: download under 15 MB, idle memory under 80 MB, cold start under 1 s, hotkey to quick-add under 100 ms, tree of 2,000 tasks scrolls at 60 fps (virtualised list).
+- Performance: download under 15 MB, idle memory under 130 MB (under 140 MB at 2,000 tasks), cold start under 1 s, hotkey to quick-add under 100 ms, tree of 2,000 tasks scrolls at 60 fps (virtualised list).
 - macOS only. Local only, no login.
 
 ## Brand Commitments

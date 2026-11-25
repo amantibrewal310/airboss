@@ -3,12 +3,14 @@
 //! Every other module reads and writes tasks only through [`Store`].
 //! See `SPEC-core.md` at the repo root for the rules enforced here.
 
+mod backup;
 mod db;
 mod delete;
 mod deps;
 mod error;
 mod events;
 mod links;
+mod location;
 mod model;
 mod permissions;
 mod plans;
@@ -28,7 +30,8 @@ use rusqlite::Connection;
 use crate::tx::Tx;
 
 pub use db::Migration;
-pub use error::{Error, Result};
+pub use error::{Error, NEWER_DATABASE, Result};
+pub use location::{DB_VAR, default_db_path};
 pub use model::TaskEdit;
 pub use model::{
     Actor, Event, EventKind, NewTask, Origin, Repo, Status, Task, TaskNode, UnknownValue,
@@ -105,6 +108,9 @@ impl Store {
     /// Runs one call as one transaction: all of it lands, events included, or none of it (rule 21).
     fn write<T>(&mut self, change: impl FnOnce(&mut Tx<'_>) -> Result<T>) -> Result<T> {
         let mut tx = Tx::begin(&mut self.conn)?;
+        // A newer Airboss may have migrated the file since this handle opened it, e.g. under
+        // a long-running `airboss mcp`. Its rules could differ, so write nothing.
+        db::refuse_newer_core(&tx)?;
         let out = change(&mut tx)?;
         self.last_committed = tx.commit()?;
         // Sent only after a commit, and only when something was written, so a refused,
@@ -158,6 +164,8 @@ pub(crate) mod fault {
     pub(crate) const NOTE_RECORDED: &str = "tasks::add_note after event";
     pub(crate) const REPO_LINKED: &str = "repos::link_repo after insert";
     pub(crate) const REPO_UNLINKED: &str = "repos::unlink_repo after delete";
+    pub(crate) const REPO_EDITED: &str = "repos::edit_repo after update";
+    pub(crate) const REPO_REMOVED: &str = "repos::remove_repo after unlinking, before delete";
     pub(crate) const LINK_INSERTED: &str = "links::link after insert";
     pub(crate) const LINK_DELETED: &str = "links::unlink after delete";
     pub(crate) const PR_STATE_RECORDED: &str = "links::set_pr_state after one task";

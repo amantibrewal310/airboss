@@ -367,14 +367,14 @@ crates/launch/
 
 ## Success criteria
 
-- [ ] Do it on a two-repo task starts two threads with the exact commands above on one branch, links both as `launch`, saves the branch and moves the task to `doing`.
-- [ ] Quitting Airboss while `t3` runs, then starting again, links the thread that was made and starts no second one.
-- [ ] Plan it starts one thread whose brief ends with `import_plan` for this task; a settled plan arrives as subtasks (checked by hand once).
-- [ ] A waiting task gets `Waiting`; a task with no repo gets `NeedsChoice`, and research only starts in `research_dir`.
-- [ ] Without T3, `availability()` is `Missing` with the design's sentence.
-- [ ] One failing repo doesn't stop the others; retrying starts only the failed one.
-- [ ] Every brief matches its golden file, and no note or title can end the reference block.
-- [ ] One real Do it on this Mac, checked by hand: the thread appears in T3 on the right branch and worktree, and `sync` shows it running.
+- [x] Do it on a two-repo task starts two threads with the exact commands above on one branch, links both as `launch`, saves the branch and moves the task to `doing` (`do_it_in_two_repos_on_one_branch`).
+- [x] Quitting Airboss while `t3` runs, then starting again, links the thread that was made and starts no second one (`quitting_while_t3_runs_then_restarting_links_the_thread_and_starts_no_second`, `the_pending_row_is_committed_before_t3_runs`).
+- [ ] Plan it starts one thread whose brief ends with `import_plan` for this task; a settled plan arrives as subtasks (manual: the brief is tested by `plan_it_tells_the_agent_to_import_into_this_task`; a settled plan arriving needs a real planning session).
+- [x] A waiting task gets `Waiting`; a task with no repo gets `NeedsChoice`, and research only starts in `research_dir` (`a_waiting_task_is_refused_for_do_it_but_can_be_planned`, `a_task_with_no_repo_needs_a_choice`, `research_only_starts_in_the_chosen_folder`).
+- [x] Without T3, `availability()` is `Missing` with the design's sentence (`availability_ready_missing_and_back`).
+- [x] One failing repo doesn't stop the others; retrying starts only the failed one (`repo_2_of_3_failing_still_starts_1_and_3_and_a_retry_starts_only_2`).
+- [x] Every brief matches its golden file, and no note or title can end the reference block (`do_it_two_repos` and the other golden tests, `hostile_notes_and_titles_stay_inside_the_block`).
+- [x] One real Do it on this Mac, checked by hand: the thread appears in T3 on the right branch and worktree, and `sync` shows it running (`one_real_do_it` in `app/src-tauri/tests/real_launch.rs`, run in integration QA, step 4).
 
 ## Checked on this Mac
 
