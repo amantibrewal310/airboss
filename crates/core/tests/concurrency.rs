@@ -72,3 +72,38 @@ fn a_snapshot_sees_one_moment_while_another_handle_writes() {
     writer.join().unwrap();
     assert!(seen > 1, "the reader ran alongside the writer");
 }
+
+#[test]
+fn opening_a_migrated_database_needs_no_write_lock() {
+    // Every CLI command and every agent's `airboss mcp` opens the file. They must open it,
+    // and read, while another process holds a long write transaction: in WAL, readers don't
+    // wait for writers.
+    use std::time::{Duration, Instant};
+    let dir = TempDir::new();
+    let path = dir.0.join("airboss.db");
+    const SQL: &str = "CREATE TABLE qa_things (id INTEGER PRIMARY KEY);";
+    let migrations = [airboss_core::Migration {
+        version: 1,
+        sql: SQL,
+    }];
+    {
+        let mut store = Store::open(&path).unwrap();
+        store.add_task(NewTask::new("one"), &Actor::Me).unwrap();
+        store.migrate_module("qa", &migrations).unwrap();
+    }
+    let holder = rusqlite::Connection::open(&path).unwrap();
+    holder
+        .execute_batch("BEGIN IMMEDIATE; UPDATE tasks SET title = title;")
+        .unwrap();
+
+    let started = Instant::now();
+    let mut store = Store::open(&path).unwrap();
+    store.migrate_module("qa", &migrations).unwrap();
+    assert!(
+        started.elapsed() < Duration::from_millis(500),
+        "waited {:?} for the write lock",
+        started.elapsed()
+    );
+    assert_eq!(store.tree().unwrap().len(), 1);
+    holder.execute_batch("COMMIT").unwrap();
+}
