@@ -6,7 +6,7 @@ The direction behind it is in [docs/idea.md](docs/idea.md).
 
 | Module id | What it does | Depends on |
 |---|---|---|
-| `core` | The task tree, task history and links in SQLite. Enforces the rules: done only from a merged PR or from me; agents only propose subtasks; blocked needs a reason. | none |
+| `core` | The task tree, task history and links in SQLite. Enforces the rules: code is done only when its PR merges, and agents can finish only PR-less tasks; agents only propose subtasks; blocked needs a reason. | none |
 | `mcp` | The local MCP server agents use (`list_tasks`, `get_task`, `update_task`, `link`, `add_tasks`, `propose_tasks`). Needs a token, listens on 127.0.0.1 only. | `core` |
 | `app` | The Mac app: Dock icon; main window with the tree on the left and the selected task on the right; menu-bar icon with the "waiting on you" count; hotkey quick-add; launch at login. | `core` |
 | `launch` | The Do it and Plan it buttons. Writes the starting brief and runs `t3 thread start --worktree`, one thread per repo with a shared branch name. Links each thread to its task. The only module that calls the `t3` CLI. | `core`, `app` |

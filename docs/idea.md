@@ -42,7 +42,7 @@ Why it's different: to-do apps and trackers don't know agent threads exist. T3 k
 
 ## Settled rules
 
-- **Done** comes only from a merged PR or from me ticking it. Agents can move a task to "in review" at most.
+- **Done** comes from me ticking it, or from a merged PR for tasks with a PR. An agent can mark done only a task with no PR (research, a doc, a config change), and must say what it did. Code is done only when its PR merges.
 - **Agents propose subtasks** (`propose_tasks`), and I accept, edit or reject them in "needs me". The exception is a plan I settle in plan-review: its phases and steps are created straight away.
 - **Each Do it thread runs in its own worktree,** created by T3 with `--worktree`.
 - **Work across repos means one thread per repo.** Plan it splits work so each subtask sits in one repo. Do it on a parent opens one thread per repo, all on the same branch name (e.g. `task-142-booking-flow`). Each brief names its sibling thread and the API the two sides agree on.
