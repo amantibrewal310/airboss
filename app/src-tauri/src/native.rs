@@ -282,10 +282,13 @@ impl Shell for Arc<TauriShell> {
             .map_err(|e| e.to_string())
     }
 
-    fn open_file(&self, path: &Path) -> Result<(), String> {
+    fn open_file(&self, path: &Path, app: &Path) -> Result<(), String> {
+        // `open -a <app> -- <path>`: the allowlist checked `path` as UTF-8, so nothing changes
+        // on the way.
+        let path = path.to_str().ok_or("the path isn't UTF-8")?;
         self.app
             .opener()
-            .open_path(path.to_string_lossy(), None::<&str>)
+            .open_path(path, Some(app.to_string_lossy().into_owned()))
             .map_err(|e| e.to_string())
     }
 

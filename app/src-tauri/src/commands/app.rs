@@ -75,13 +75,13 @@ pub fn open_url(s: &AppState, _c: Caller, target: OpenTarget) -> AppResult<()> {
 }
 
 /// Opens a link that passes the allowlist (`opener::decide`): `https` in the browser, a T3
-/// thread in T3 Code, and a document with its app. Any other file (an app, a script, a folder,
+/// thread in T3 Code, and a document in TextEdit or Preview. Any other file (an app, a script, a folder,
 /// anything without a known document type) is shown in Finder instead, because agents can add
 /// links and opening it could run it.
 fn open_checked(s: &AppState, url: &str) -> AppResult<()> {
     let opened = match opener::decide(url)? {
         Opening::Browser(u) | Opening::Thread(u) => s.shell.open_url(&u),
-        Opening::Open(path) => s.shell.open_file(&path),
+        Opening::Open(path, viewer) => s.shell.open_file(&path, viewer.app()),
         Opening::Reveal(path) => s.shell.reveal(&path),
     };
     opened.map_err(|e| AppError::internal(format!("couldn't open a link: {e}")))

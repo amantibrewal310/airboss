@@ -92,8 +92,9 @@ pub trait Shell: Send + Sync {
     fn resize_quickadd(&self, height: f64);
     /// Opens a URL the allowlist has already passed (`https` or `t3code`).
     fn open_url(&self, url: &str) -> Result<(), String>;
-    /// Opens a document the allowlist has already passed, by its resolved path.
-    fn open_file(&self, path: &std::path::Path) -> Result<(), String>;
+    /// Opens a document the allowlist has already passed, by its resolved path, in `app`
+    /// (`open -a app -- path`), never in the app LaunchServices would pick.
+    fn open_file(&self, path: &std::path::Path, app: &std::path::Path) -> Result<(), String>;
     /// Shows a file or folder in Finder, without opening it.
     fn reveal(&self, path: &std::path::Path) -> Result<(), String>;
     /// Puts text on the clipboard.
@@ -230,8 +231,12 @@ impl Shell for RecordingShell {
         self.call(format!("open_url({url})"));
         Ok(())
     }
-    fn open_file(&self, path: &std::path::Path) -> Result<(), String> {
-        self.call(format!("open_file({})", path.display()));
+    fn open_file(&self, path: &std::path::Path, app: &std::path::Path) -> Result<(), String> {
+        self.call(format!(
+            "open_file({} in {})",
+            path.display(),
+            app.display()
+        ));
         Ok(())
     }
     fn reveal(&self, path: &std::path::Path) -> Result<(), String> {

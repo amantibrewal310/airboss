@@ -116,6 +116,8 @@ cargo run -p airboss-app --example seed -- --tasks 2000 --db /tmp/airboss-qa/big
       open.**
 - [ ] `airboss link <id> doc /tmp/airboss-qa/x.command` (no `?a`), open it: Finder shows the
       file selected, and Calculator still doesn't open.
+- [ ] `echo '# Plan' > /tmp/airboss-qa/plan.md && airboss link <id> doc /tmp/airboss-qa/plan.md`,
+      open it: it opens in **TextEdit** (whatever app usually opens `.md` files on this Mac).
 
 ## 9. A real sleep and wake
 

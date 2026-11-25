@@ -3,16 +3,18 @@
 //!
 //! - `https://host/…`: the browser.
 //! - `t3code://threads/<environment>/<thread>`: T3 Code, with both ids from a short alphabet.
-//! - `file:///absolute/path`, with no host, query or fragment: the path is percent-decoded and
-//!   resolved (symlinks and `..`), and must exist. Only a plain file of a document type on
-//!   [`OPENS`] opens. Everything else, folders, bundles, apps, scripts, executables and files
-//!   with no extension, is shown in Finder instead, because opening it could run it.
+//! - `file:///absolute/path`, with no host, query or fragment: the path is percent-decoded
+//!   (and must be UTF-8), resolved (symlinks and `..`), and must exist. Only a plain file of a
+//!   document type on [`OPENS`] opens, and only in a fixed system viewer (TextEdit or Preview),
+//!   never the app LaunchServices would pick: a Finder alias named like a document, a per-file
+//!   "Open With" attribute or a hijacked default handler would make that pick an app.
+//!   Everything else, folders, bundles, apps, scripts, executables and files with no
+//!   extension, is shown in Finder instead, because opening it could run it.
 //!
 //! Anything else is refused with Appendix D's "Airboss only opens https links, files and T3
 //! threads."
 
 use std::ffi::OsStr;
-use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
@@ -25,8 +27,8 @@ pub enum Opening {
     Browser(String),
     /// A `t3code://threads/…` URL, rebuilt from its checked parts.
     Thread(String),
-    /// A document to open with its default app: the resolved path.
-    Open(PathBuf),
+    /// A document to open: the resolved path, in a fixed system viewer.
+    Open(PathBuf, Viewer),
     /// Anything else on disk, shown in Finder: the resolved path.
     Reveal(PathBuf),
 }
@@ -45,6 +47,39 @@ pub const OPENS: &[&str] = &[
     "rs", "ts", "tsx", "js", "jsx", "mjs", "cjs", "svelte", "vue", "css", "scss", "go", "java",
     "kt", "swift", "c", "h", "cc", "cpp", "hpp", "sql", "graphql", "proto",
 ];
+
+/// The system app a document opens in. Both live on the sealed system volume, and are named
+/// by path, so `open -a` can't land on a lookalike an agent registered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Viewer {
+    /// Text, notes and code, shown as text (RTF as rich text).
+    TextEdit,
+    /// PDFs and images.
+    Preview,
+}
+
+impl Viewer {
+    /// The viewer for a document extension on [`OPENS`] (any case); `None` for anything else.
+    pub fn for_extension(ext: &str) -> Option<Viewer> {
+        let ext = ext.to_ascii_lowercase();
+        if !OPENS.contains(&ext.as_str()) {
+            return None;
+        }
+        Some(match ext.as_str() {
+            "pdf" | "png" | "jpg" | "jpeg" | "gif" | "webp" | "heic" | "heif" | "tif" | "tiff"
+            | "bmp" => Viewer::Preview,
+            _ => Viewer::TextEdit,
+        })
+    }
+
+    /// The app's path, for `open -a`.
+    pub fn app(self) -> &'static Path {
+        Path::new(match self {
+            Viewer::TextEdit => "/System/Applications/TextEdit.app",
+            Viewer::Preview => "/System/Applications/Preview.app",
+        })
+    }
+}
 
 fn refused() -> AppError {
     AppError::new(ErrorCode::UrlNotAllowed, MSG_URL_NOT_ALLOWED)
@@ -177,29 +212,27 @@ fn file(rest: &str) -> Result<Opening, AppError> {
         return Err(refused());
     }
     let bytes = percent_decode(path).ok_or_else(refused)?;
-    let path = Path::new(OsStr::from_bytes(&bytes));
+    // Not UTF-8: the opener would pass the path on changed (lossily), not as checked here.
+    let text = std::str::from_utf8(&bytes).map_err(|_| refused())?;
+    let path = Path::new(text);
     let real = path.canonicalize().map_err(|e| match e.kind() {
         std::io::ErrorKind::NotFound => AppError::new(ErrorCode::NotFound, MSG_FILE_GONE),
         _ => AppError::new(ErrorCode::NotFound, MSG_FILE_UNREADABLE),
     })?;
-    Ok(if opens(&real) {
-        Opening::Open(real)
-    } else {
-        Opening::Reveal(real)
+    Ok(match viewer(&real) {
+        Some(v) => Opening::Open(real, v),
+        None => Opening::Reveal(real),
     })
 }
 
-/// Whether a resolved path is a plain, non-executable file of a type on [`OPENS`].
-pub fn opens(real: &Path) -> bool {
-    let Ok(meta) = std::fs::metadata(real) else {
-        return false;
-    };
-    let document = real
-        .extension()
-        .and_then(OsStr::to_str)
-        .map(str::to_ascii_lowercase)
-        .is_some_and(|e| OPENS.contains(&e.as_str()));
-    meta.is_file() && meta.permissions().mode() & 0o111 == 0 && document
+/// The viewer for a resolved path that's a plain, non-executable file of a type on [`OPENS`];
+/// `None` for anything else, which is revealed instead.
+pub fn viewer(real: &Path) -> Option<Viewer> {
+    let meta = std::fs::metadata(real).ok()?;
+    if !meta.is_file() || meta.permissions().mode() & 0o111 != 0 {
+        return None;
+    }
+    Viewer::for_extension(real.extension().and_then(OsStr::to_str)?)
 }
 
 #[cfg(test)]
@@ -396,16 +429,29 @@ mod tests {
             "main.rs",
         ] {
             let url = file_url(&dir.join(name));
-            assert_eq!(decide(&url).unwrap(), Opening::Open(real(name)), "{name}");
+            let viewer = if name.ends_with(".rs") || name.ends_with(".md") || name.ends_with(".MD")
+            {
+                Viewer::TextEdit
+            } else {
+                Viewer::Preview
+            };
+            assert_eq!(
+                decide(&url).unwrap(),
+                Opening::Open(real(name), viewer),
+                "{name}"
+            );
         }
         // A symlink to a document opens the document.
         assert_eq!(
             decide(&file_url(&dir.join("alias.md"))).unwrap(),
-            Opening::Open(real("plan.md"))
+            Opening::Open(real("plan.md"), Viewer::TextEdit)
         );
         // A mixed-case scheme is still a file URL.
         let upper = file_url(&dir.join("plan.md")).replacen("file", "FiLe", 1);
-        assert_eq!(decide(&upper).unwrap(), Opening::Open(real("plan.md")));
+        assert_eq!(
+            decide(&upper).unwrap(),
+            Opening::Open(real("plan.md"), Viewer::TextEdit)
+        );
         for name in [
             "x.command",
             "run.sh",
@@ -458,11 +504,11 @@ mod tests {
         );
         assert_eq!(
             decide(&format!("{base}/sub/../plan.md")).unwrap(),
-            Opening::Open(real("plan.md"))
+            Opening::Open(real("plan.md"), Viewer::TextEdit)
         );
         assert_eq!(
             decide(&format!("{base}%2Fplan.md")).unwrap(),
-            Opening::Open(real("plan.md"))
+            Opening::Open(real("plan.md"), Viewer::TextEdit)
         );
         // The audit's first trick, with the file really there: still refused, never opened.
         assert_eq!(
@@ -470,6 +516,43 @@ mod tests {
             ErrorCode::UrlNotAllowed
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The final review: LaunchServices picks the app for a plain `open`, and a Finder alias
+    /// named `plan.md`, a per-file "Open With" attribute or a hijacked default handler can make
+    /// that pick an app. So a document opens in a fixed system viewer, never in whatever
+    /// claims its type.
+    #[test]
+    fn documents_open_only_in_a_fixed_system_viewer() {
+        for ext in OPENS {
+            let v = Viewer::for_extension(ext).unwrap();
+            assert!(v.app().starts_with("/System/Applications/"), "{ext}");
+        }
+        assert_eq!(Viewer::for_extension("pdf"), Some(Viewer::Preview));
+        assert_eq!(Viewer::for_extension("PNG"), Some(Viewer::Preview));
+        assert_eq!(Viewer::for_extension("md"), Some(Viewer::TextEdit));
+        assert_eq!(Viewer::for_extension("command"), None);
+        assert_eq!(
+            Viewer::TextEdit.app(),
+            Path::new("/System/Applications/TextEdit.app")
+        );
+        assert_eq!(
+            Viewer::Preview.app(),
+            Path::new("/System/Applications/Preview.app")
+        );
+    }
+
+    /// Bytes that aren't UTF-8 would reach `open` changed (lossily), not as checked.
+    #[test]
+    fn a_path_that_isnt_utf8_is_refused() {
+        assert_eq!(
+            refused_code("file:///tmp/a%FF.md"),
+            ErrorCode::UrlNotAllowed
+        );
+        assert_eq!(
+            refused_code("file:///tmp/%C3%28.md"),
+            ErrorCode::UrlNotAllowed
+        );
     }
 
     #[test]

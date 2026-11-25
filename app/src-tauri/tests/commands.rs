@@ -1076,7 +1076,10 @@ fn open_thread_and_open_url_go_through_the_allowlist() {
     let plan = app.home.join("plan.md").canonicalize().unwrap();
     assert_eq!(
         app.shell.calls().last().unwrap(),
-        &format!("open_file({})", plan.display())
+        &format!(
+            "open_file({} in /System/Applications/TextEdit.app)",
+            plan.display()
+        )
     );
 }
 
@@ -1588,7 +1591,10 @@ fn file_links_that_would_run_something_are_shown_in_finder() {
     }
     let calls = app.shell.calls();
     assert!(
-        calls.contains(&format!("open_file({})", real(&doc).display())),
+        calls.contains(&format!(
+            "open_file({} in /System/Applications/TextEdit.app)",
+            real(&doc).display()
+        )),
         "{calls:?}"
     );
     for p in [&script, &exe, &bundle, &dir] {
