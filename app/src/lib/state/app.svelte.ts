@@ -448,15 +448,26 @@ export class App {
   // ================================================================== overlays
 
   open(o: Overlay): void {
-    if (!this.ui.overlay) this.ui.returnFocus = document.activeElement as HTMLElement | null;
+    if (!this.ui.overlay) this.ui.returnFocus = this.pendingReturn ?? (document.activeElement as HTMLElement | null);
+    this.pendingReturn = null;
     this.ui.overlay = o;
   }
+
+  /** Focus to give back once the overlay that just closed is gone (unless another opens first). */
+  private pendingReturn: HTMLElement | null = null;
 
   close(): void {
     this.ui.overlay = null;
     const el = this.ui.returnFocus;
     this.ui.returnFocus = null;
-    queueMicrotask(() => (el && el.isConnected ? el.focus({ preventScroll: true }) : this.focus('list')));
+    this.pendingReturn = el;
+    queueMicrotask(() => {
+      // A menu item that opens another overlay (Blocked, Drop) hands its focus target on.
+      if (this.ui.overlay || this.pendingReturn !== el) return;
+      this.pendingReturn = null;
+      if (el && el.isConnected) el.focus({ preventScroll: true });
+      else this.focus('list');
+    });
   }
 
   /** Where a menu for this task opens: under its status icon, its row, or the middle. */

@@ -15,11 +15,11 @@
 
   /** The one open overlay. ⌘K and ⌘N replace it; Esc closes it. */
   const app = useApp();
-  const o = $derived(app.ui.overlay);
+  const current = $derived(app.ui.overlay);
 </script>
 
-{#if o}
-  {#key o}
+<!-- A keyed one-item list: each overlay keeps its own value while the next one replaces it. -->
+{#each current ? [current] : [] as o (o)}
     {#if o.kind === 'jump'}
       <Jump mode={o.mode} task={o.mode === 'jump' ? null : o.task} />
     {:else if o.kind === 'status'}
@@ -55,5 +55,4 @@
     {:else if o.kind === 'add_repos'}
       <AddReposModal />
     {/if}
-  {/key}
-{/if}
+{/each}
