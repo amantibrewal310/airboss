@@ -102,9 +102,10 @@ impl LaunchTools {
     }
 }
 
-/// One line on stderr. Launch has no logging crate (SPEC-launch allows no new crate).
+/// One line through the services' log, which the app sends to its log file. Launch has no
+/// logging crate (SPEC-launch allows no new crate).
 pub(crate) fn log(message: &str) {
-    eprintln!("airboss-launch: {message}");
+    airboss_services::log::line("airboss-launch", message);
 }
 
 pub(crate) fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {

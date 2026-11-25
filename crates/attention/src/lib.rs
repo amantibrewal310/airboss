@@ -309,7 +309,7 @@ fn shutting_down() -> ServiceError {
     ServiceError::new(ErrorCode::ShuttingDown, "Airboss is shutting down.")
 }
 
-/// One line on stderr. The app captures it with the rest of its log.
+/// One line through the services' log, which the app sends to its log file.
 pub(crate) fn log(message: &str) {
-    eprintln!("airboss-attention: {message}");
+    airboss_services::log::line("airboss-attention", message);
 }

@@ -95,7 +95,7 @@ A new database comes with new settings, so it's a first run, and that turns open
 
 ## Logs
 
-- **The app** logs to `~/Library/Logs/Airboss/app.log`: start-up, connections, refused hotkeys, background errors and panics.
+- **The app** logs to `~/Library/Logs/Airboss/app.log`: start-up, connections, refused hotkeys, background errors and panics, plus every line from its services, tagged `airboss-sync`, `airboss-launch` or `airboss-attention` (for example "Claude sync broken: ps failed"). That holds when Airboss opens from Finder or at login, where nothing reads stderr. The file is rotated at 1 MB and the last two are kept, as `app_<date>.log`.
 - **The CLI** prints errors to stderr, starting `airboss:`, and exits with code 1.
 - **`airboss mcp`** writes only MCP messages to stdout. Its own errors go to stderr; where that ends up depends on the agent client.
 - **Task history** is in the app's activity list, in `airboss show <id>`, and across all tasks in `airboss log`.

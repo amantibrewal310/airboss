@@ -8,6 +8,8 @@ use tauri_plugin_log::{Target, TargetKind, log::LevelFilter};
 
 fn main() {
     let started = Instant::now();
+    // Before anything starts a thread: service lines and panics go to the app log.
+    airboss_app::logs::install();
     airboss_app::macos::disable_state_restoration();
     let hidden = std::env::args().any(|a| a == "--hidden");
     let logs = std::env::var_os("HOME")
@@ -69,6 +71,7 @@ fn main() {
     match app {
         Ok(app) => app.run(native::on_run_event),
         Err(e) => {
+            tauri_plugin_log::log::error!("Airboss couldn't start: {e}");
             eprintln!("Airboss couldn't start: {e}");
             std::process::exit(1);
         }

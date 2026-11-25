@@ -225,12 +225,13 @@ crates/attention/
 
 ## Shared contract
 
-`crates/services` (`airboss-services`): types and traits only. It depends on `airboss-core` (ids, `Repo`, `PrState`, `Event`, `CoreSnapshot`) and `serde`, uses `std` only (no tokio, no threads), and has no logic beyond `Changes`, `PrRef`, `ThreadState::chip`, `NeedsKind::group`, the `SyncSnapshot` helpers and `time`. The value types derive `Clone`, `Debug` and `Serialize`; `SyncSnapshot` derives `Clone` and `Debug` only. Field names are the ones the app spec's draft 2 reads.
+`crates/services` (`airboss-services`): types and traits only. It depends on `airboss-core` (ids, `Repo`, `PrState`, `Event`, `CoreSnapshot`) and `serde`, uses `std` only (no tokio, no threads), and has no logic beyond `Changes`, `PrRef`, `ThreadState::chip`, `NeedsKind::group`, the `SyncSnapshot` helpers, `time` and `log` (integration QA R1: `log::line(source, message)` goes to stderr until the app calls `log::set_sink`, then to the app's log file; every service logs through it). The value types derive `Clone`, `Debug` and `Serialize`; `SyncSnapshot` derives `Clone` and `Debug` only. Field names are the ones the app spec's draft 2 reads.
 
 ```rust
 pub type SharedStore = Arc<Mutex<airboss_core::Store>>;
 pub type Timestamp = String;                     // UTC text in core's format, "2026-11-25T17:19:07.841Z"
 pub mod time { pub fn to_ts(t: SystemTime) -> Timestamp; pub fn from_ts(ts: &str) -> Option<SystemTime>; }
+pub mod log { pub type Sink = fn(&str, &str); pub fn set_sink(s: Sink) -> bool; pub fn has_sink() -> bool; pub fn line(source: &str, message: &str); }
 pub trait Clock: Send + Sync { fn now(&self) -> SystemTime; }
 pub struct SystemClock;                          // impl Clock: SystemTime::now()
 

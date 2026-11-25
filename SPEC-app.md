@@ -57,7 +57,7 @@ Versions are the latest stable on crates.io and npm on 25 Nov 2026, pinned exact
 | `tauri-plugin-opener` | 2.7.3 | PRs, docs, Slack and `t3code://` links |
 | `tauri-plugin-clipboard-manager` | 2.5.0 | Copy task number, agent note, setup command |
 | `tauri-plugin-dialog` | 2.8.4 | Folder picker for "Add another folder…" |
-| `tauri-plugin-log` | 2.10.2 | `~/Library/Logs/Airboss/app.log` |
+| `tauri-plugin-log` | 2.10.2 | `~/Library/Logs/Airboss/app.log`, rotated at 1 MB, keeping 3 files. The services' lines (`airboss_services::log::line`) and panics on any thread go there too (`logs::install`), since stderr is `/dev/null` when the app opens from Finder. Nothing in the app process writes to stderr directly (`tests/logs.rs` checks the sources) |
 | `tauri-nspanel` | 2.1.1 | Quick add as a non-activating panel over full-screen apps |
 | `notify` | 9.0.0, `default-features = false`, feature `macos_kqueue` | kqueue on the WAL file and its folder. FSEvents is not used. |
 | `objc2` 0.6.5, `objc2-foundation` 0.3.2, `objc2-app-kit` 0.3.2 | the versions Tauri already links | System accent colour and the wake notification, in one module, `src/macos.rs` |
