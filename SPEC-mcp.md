@@ -146,13 +146,15 @@ airboss mcp                           # the MCP server over stdio (agents only)
 
 On top of the targets in `CAPABILITIES.md`; measured on my Mac in release mode.
 
-| What | Target |
-|---|---|
-| `airboss mcp` start to answering `initialize` | under 50 ms |
-| A tool call (`list_tasks` on 2,000 tasks, `update_task`) | under 20 ms (95th percentile) |
-| Memory per `airboss mcp` process when idle | under 15 MB |
-| `airboss` binary size (release, stripped) | under 10 MB |
-| A CLI command such as `airboss ls`, end to end | under 100 ms |
+| What | Target | Measured (25 Nov 2026) |
+|---|---|---|
+| `airboss mcp` start to answering `initialize` | under 50 ms | 2.3 ms (p95, 50 runs) |
+| A tool call (`list_tasks` on 2,000 tasks, `update_task`) | under 20 ms (95th percentile) | `list_tasks` 3.4 ms, `update_task` 0.1 ms, `get_task` 3.4 ms (p95, 300 runs each) |
+| Memory per `airboss mcp` process when idle | under 15 MB | 8.6 MB resident |
+| `airboss` binary size (release, stripped) | under 10 MB | 5.4 MB (6.8 MB as built) |
+| A CLI command such as `airboss ls`, end to end | under 100 ms | 9.3 ms (p95, 50 runs) |
+
+Measured on a Mac16,1 (Apple M4), macOS 27.2.1, in release mode, over real stdio against a file-backed database with 2,020 tasks (`tests/perf.rs`).
 
 ## Code style
 
