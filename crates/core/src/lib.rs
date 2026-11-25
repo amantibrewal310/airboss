@@ -20,7 +20,7 @@ mod status;
 mod tasks;
 mod tx;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, Sender};
 
 use rusqlite::Connection;
@@ -82,6 +82,15 @@ impl Store {
     /// Opens a private in-memory database, mainly for tests.
     pub fn open_in_memory() -> Result<Store> {
         Ok(Store::with(db::open_memory()?))
+    }
+
+    /// The database file's absolute path, as SQLite resolved it, so another module can open
+    /// its own `Store` on the same file from any working directory. `None` in memory.
+    pub fn path(&self) -> Option<PathBuf> {
+        self.conn
+            .path()
+            .filter(|p| !p.is_empty())
+            .map(PathBuf::from)
     }
 
     fn with(conn: Connection) -> Store {

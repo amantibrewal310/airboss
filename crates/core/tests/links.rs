@@ -310,3 +310,21 @@ fn linking_again_with_another_title_returns_the_link_as_it_was() {
         .unwrap();
     assert_eq!(again, first);
 }
+
+#[test]
+fn links_of_kind_lists_every_tasks_links_of_that_kind_by_id() {
+    let mut s = store();
+    let a = task(&mut s, "A");
+    let b = task(&mut s, "B");
+    let pr1 = s.link(b, NewLink::pr("acme/web#1"), &Actor::Me).unwrap();
+    s.link(a, NewLink::new(LinkKind::T3Thread, "t3/1"), &Actor::Me)
+        .unwrap();
+    let pr2 = s.link(a, NewLink::pr("acme/web#2"), &Actor::Me).unwrap();
+    let pr3 = s.link(b, NewLink::pr("acme/api#3"), &Actor::Me).unwrap();
+
+    assert_eq!(s.links_of_kind(LinkKind::Pr).unwrap(), vec![pr1, pr2, pr3]);
+    let threads = s.links_of_kind(LinkKind::T3Thread).unwrap();
+    assert_eq!(threads.len(), 1);
+    assert_eq!(threads[0].task, a);
+    assert!(s.links_of_kind(LinkKind::Slack).unwrap().is_empty());
+}

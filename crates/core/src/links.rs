@@ -42,6 +42,16 @@ impl crate::Store {
     pub fn links(&self, id: TaskId) -> Result<Vec<Link>> {
         links(&self.conn, id)
     }
+
+    /// Every task's links of one kind, oldest first, e.g. every PR for `sync:gh` to check.
+    pub fn links_of_kind(&self, kind: LinkKind) -> Result<Vec<Link>> {
+        query_all(
+            &self.conn,
+            &format!("SELECT {LINK_COLUMNS} FROM links WHERE kind = ?1 ORDER BY id"),
+            params![kind.as_str()],
+            from_row,
+        )
+    }
 }
 
 const LINK_COLUMNS: &str = "id, task_id, kind, ref, url, pr_state, linked_by, linked_at, title";
