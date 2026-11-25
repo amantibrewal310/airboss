@@ -43,3 +43,113 @@ impl Drop for TempDir {
         let _ = std::fs::remove_dir_all(&self.0);
     }
 }
+
+/// The environment id every [`T3Fixture`] writes.
+pub const FIXTURE_ENVIRONMENT: &str = "0b8a1f9e-1d2c-4b3a-9f8e-7d6c5b4a3f21";
+
+/// A fake T3 data folder: a real SQLite file in a temp dir with T3's real schema
+/// (`tests/fixtures/t3_schema.sql`), in WAL mode as T3 keeps it, plus `environment-id`.
+/// Tests write to it through [`exec`](T3Fixture::exec), as T3 would, and `T3Db` reads it.
+pub struct T3Fixture {
+    dir: TempDir,
+    conn: rusqlite::Connection,
+}
+
+impl T3Fixture {
+    /// T3's schema, no rows.
+    #[allow(clippy::expect_used)]
+    pub fn empty() -> T3Fixture {
+        let dir = TempDir::new();
+        let conn = rusqlite::Connection::open(dir.path().join("statev2.sqlite"))
+            .expect("a fixture database");
+        conn.pragma_update(None, "journal_mode", "WAL")
+            .expect("WAL mode");
+        conn.execute_batch(include_str!("../tests/fixtures/t3_schema.sql"))
+            .expect("T3's schema loads");
+        std::fs::write(
+            dir.path().join("environment-id"),
+            format!("{FIXTURE_ENVIRONMENT}\n"),
+        )
+        .expect("environment-id");
+        T3Fixture { dir, conn }
+    }
+
+    /// T3's schema with `tests/fixtures/t3_rows.sql`: one thread per state.
+    pub fn with_rows() -> T3Fixture {
+        let f = T3Fixture::empty();
+        f.exec(include_str!("../tests/fixtures/t3_rows.sql"));
+        f
+    }
+
+    /// The fake `~/.t3/userdata`.
+    pub fn dir(&self) -> &Path {
+        self.dir.path()
+    }
+
+    /// Runs SQL as T3 would, committing at once.
+    #[allow(clippy::expect_used)]
+    pub fn exec(&self, sql: &str) {
+        self.conn
+            .execute_batch(sql)
+            .unwrap_or_else(|e| panic!("fixture SQL failed: {e}\n{sql}"));
+    }
+
+    /// Adds a top-level thread with every required key, in `project`.
+    pub fn add_thread(&self, id: &str, project: &str, updated_at: &str) {
+        self.exec(&format!(
+            "INSERT INTO orchestration_v2_projection_threads
+               (thread_id, project_id, title, default_provider, runtime_mode, interaction_mode,
+                created_at, updated_at, payload_json)
+             VALUES ('{id}', '{project}', 'Thread {id}', 'claudeAgent', 'full-access', 'default',
+                '{updated_at}', '{updated_at}',
+                json_object('branch', 'feat/{id}', 'worktreePath', NULL,
+                  'lineage', json_object('parentThreadId', NULL, 'rootThreadId', '{id}'),
+                  'settledAt', NULL, 'pullRequests', json_array()))"
+        ));
+    }
+
+    /// Adds a run to a thread; `started_at` goes in its payload.
+    pub fn add_run(&self, thread: &str, ordinal: u32, status: &str, at: &str) {
+        self.exec(&format!(
+            "INSERT INTO orchestration_v2_projection_runs
+               (run_id, thread_id, ordinal, provider, status, requested_at, completed_at, payload_json)
+             VALUES ('{thread}-r{ordinal}', '{thread}', {ordinal}, 'claudeAgent', '{status}', '{at}',
+               CASE WHEN '{status}' IN ('completed','interrupted','failed','cancelled','rolled_back')
+                    THEN '{at}' END,
+               json_object('startedAt', '{at}'))"
+        ));
+    }
+
+    /// Adds a pending request, with its turn item unless `item_json` is `None`.
+    pub fn add_request(
+        &self,
+        thread: &str,
+        id: &str,
+        kind: &str,
+        at: &str,
+        item_json: Option<&str>,
+    ) {
+        self.exec(&format!(
+            "INSERT INTO orchestration_v2_projection_runtime_requests
+               (runtime_request_id, thread_id, node_id, kind, status, created_at, payload_json)
+             VALUES ('{id}', '{thread}', 'n-{id}', '{kind}', 'pending', '{at}', '{{}}')"
+        ));
+        if let Some(item) = item_json {
+            let item_type = if kind == "user_input" {
+                "user_input_request"
+            } else {
+                "approval_request"
+            };
+            self.add_item(thread, id, item_type, at, item);
+        }
+    }
+
+    /// Adds the turn item of request `id`.
+    pub fn add_item(&self, thread: &str, id: &str, item_type: &str, at: &str, json: &str) {
+        self.exec(&format!(
+            "INSERT INTO orchestration_v2_projection_turn_items
+               (turn_item_id, thread_id, run_id, node_id, ordinal, type, status, updated_at, payload_json)
+             VALUES ('i-{id}', '{thread}', NULL, 'n-{id}', 1, '{item_type}', 'pending', '{at}', '{json}')"
+        ));
+    }
+}
