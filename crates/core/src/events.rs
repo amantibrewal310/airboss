@@ -35,10 +35,10 @@ pub(crate) fn record(
     Ok(id)
 }
 
-pub(crate) const EVENT_COLUMNS: &str = "id, task_id, kind, to_status, body, actor, at";
+const EVENT_COLUMNS: &str = "id, task_id, kind, to_status, body, actor, at";
 
 /// Reads a row selected with [`EVENT_COLUMNS`].
-pub(crate) fn from_row(row: &Row<'_>) -> rusqlite::Result<Event> {
+fn from_row(row: &Row<'_>) -> rusqlite::Result<Event> {
     let kind: String = row.get(2)?;
     let to_status: Option<String> = row.get(3)?;
     let actor: String = row.get(5)?;

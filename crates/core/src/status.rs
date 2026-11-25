@@ -9,15 +9,15 @@ use crate::{Error, Result, TaskId, fault, tasks};
 
 /// What rule 6 needs to know about a task, read inside the change's transaction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct TaskFacts {
-    pub(crate) status: Status,
-    pub(crate) has_pr: bool,
+struct TaskFacts {
+    status: Status,
+    has_pr: bool,
     /// True when no linked PR is `open` (vacuously true with no PRs).
-    pub(crate) prs_all_merged_or_closed: bool,
-    pub(crate) any_pr_merged: bool,
+    prs_all_merged_or_closed: bool,
+    any_pr_merged: bool,
 }
 
-pub(crate) fn facts(conn: &Connection, id: TaskId) -> Result<TaskFacts> {
+fn facts(conn: &Connection, id: TaskId) -> Result<TaskFacts> {
     let row: Option<(String, i64, i64, i64)> = conn
         .query_row(
             "SELECT t.status, count(l.id),
@@ -40,7 +40,7 @@ pub(crate) fn facts(conn: &Connection, id: TaskId) -> Result<TaskFacts> {
 /// Agents move work forward and can finish PR-less work; code finishes only when its PRs
 /// merge. `InvalidTransition` means the table has a row for this actor and target, but not
 /// from this status; `NotAllowed` means no row lets this actor do this at all.
-pub(crate) fn check_status_change(
+fn check_status_change(
     actor: &Actor,
     task: &TaskFacts,
     to: Status,

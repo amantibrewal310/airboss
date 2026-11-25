@@ -14,7 +14,7 @@ pub(crate) struct Migration {
 }
 
 /// `core`'s migrations, oldest first. Never edit a shipped one; add a new version.
-pub(crate) const CORE_MIGRATIONS: &[Migration] = &[Migration {
+const CORE_MIGRATIONS: &[Migration] = &[Migration {
     version: 1,
     sql: include_str!("migrations/001_core.sql"),
 }];
