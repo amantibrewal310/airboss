@@ -406,3 +406,57 @@ fn a_reopening_link_writes_the_link_and_the_reopen_as_two_events_in_that_order()
         ]
     );
 }
+
+// Rule 7: only an open PR reopens a done task, and a PR reopened on GitHub reopens it.
+
+#[test]
+fn a_merged_or_closed_pr_linked_to_a_done_task_leaves_it_done() {
+    for state in [PrState::Merged, PrState::Closed] {
+        reopen_case(
+            &Actor::SyncGh,
+            NewLink::pr("acme/web#7").with_pr_state(state),
+            Done,
+        );
+    }
+}
+
+#[test]
+fn a_pr_reopened_on_github_reopens_its_done_task_for_review() {
+    let (mut s, id) = task_in(Doing, &[]);
+    s.link(id, NewLink::pr("acme/web#7"), &Actor::SyncGh)
+        .unwrap();
+    s.set_pr_state("acme/web#7", PrState::Merged, &Actor::SyncGh)
+        .unwrap();
+    s.set_status(id, Done, None, &Actor::SyncGh).unwrap();
+    let events_before = s.history(id).unwrap().len();
+
+    let changed = s
+        .set_pr_state("acme/web#7", PrState::Open, &Actor::SyncGh)
+        .unwrap();
+
+    assert_eq!(changed, vec![id]);
+    assert_eq!(s.task(id).unwrap().status, InReview);
+    let new: Vec<_> = s.history(id).unwrap()[events_before..]
+        .iter()
+        .map(|e| (e.kind, e.to_status, e.actor.clone()))
+        .collect();
+    assert_eq!(
+        new,
+        vec![
+            (EventKind::LinkState, None, Actor::SyncGh),
+            (EventKind::Status, Some(InReview), Actor::SyncGh),
+        ]
+    );
+}
+
+#[test]
+fn a_pr_reopened_on_github_leaves_open_work_alone() {
+    let (mut s, id) = task_in(Doing, &[PrState::Closed]);
+    s.set_pr_state("acme/web#0", PrState::Open, &Actor::SyncGh)
+        .unwrap();
+    assert_eq!(s.task(id).unwrap().status, Doing);
+    assert_eq!(
+        s.history(id).unwrap().last().unwrap().kind,
+        EventKind::LinkState
+    );
+}

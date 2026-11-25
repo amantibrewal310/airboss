@@ -186,7 +186,7 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
    | `sync:t3`, `plan` | (none) | (none) | They never change status |
 
    `proposed` is left only by `me`: accepting moves it to `todo`, and rejecting moves it to `dropped` with an optional reason. Rejected proposals stay in history and are hidden from the tree. Only a true rejection is hidden: a proposal I accepted and later dropped stays visible, and so does an open proposal dropped along with its parent (rule 9).
-7. **A PR linked after the fact reopens the task.** If an actor other than `me` links a PR to a `done` task, the task moves to `in_review` in the same change. Code can't stay done while its PR is unmerged.
+7. **An open PR reopens a done task.** If an actor other than `me` links an `open` PR to a `done` task, the task moves to `in_review` in the same change. A PR linked already `merged` or `closed` reopens nothing. And when `set_pr_state` records a PR as `open` again, every `done` task linked to it moves to `in_review`, with a `status` event after the `link_state` event, by the same actor. Code can't stay done while its PR is unmerged.
 
 ### Who may do everything else (enforced by code)
 
@@ -382,7 +382,7 @@ fn check_status_change(actor: &Actor, task: &TaskFacts, to: Status, note: Option
 - [ ] `cargo test -p airboss-core` passes, with tests for every rule, every row of the rule 6 table and every "no" in the rule 8 table.
 - [ ] An agent can't accept its own proposal, reopen a `done` or `dropped` task, drop a task, or finish a task that has a PR.
 - [ ] `sync:gh` finishes a task only when none of its PRs is open and at least one has merged.
-- [ ] Linking a PR to a `done` task moves it back to `in_review`.
+- [ ] Linking an open PR to a `done` task, or reopening its PR, moves it back to `in_review`.
 - [ ] Rejected proposals are `dropped`, are hidden from `tree()`, and are still in history.
 - [ ] Dependency loops of any length are rejected, including across parents, and nothing is written.
 - [ ] `run_order` returns the expected waves for the diamond, the cross-phase case and the outside-blocker case.

@@ -77,8 +77,9 @@ pub(crate) fn link(tx: &mut Tx<'_>, task: TaskId, new: NewLink, actor: &Actor) -
     fault::hit(fault::LINK_INSERTED)?;
     let body = format!("{} {}", new.kind, new.r#ref);
     events::record(tx, task, EventKind::Linked, None, Some(&body), actor)?;
-    // Rule 7: code can't stay done while a PR someone else just linked is unreviewed.
+    // Rule 7: code can't stay done while an open PR someone else just linked is unreviewed.
     if new.kind == LinkKind::Pr
+        && pr_state == Some(PrState::Open)
         && *actor != Actor::Me
         && crate::tasks::get(tx, task)?.status == Status::Done
     {
@@ -102,7 +103,8 @@ pub(crate) fn unlink(tx: &mut Tx<'_>, id: LinkId, actor: &Actor) -> Result<()> {
 }
 
 /// Records a PR's new state on every task linked to it, one `link_state` event each, and
-/// returns the tasks whose link actually changed.
+/// returns the tasks whose link actually changed. A PR reopened on a `done` task moves the
+/// task back to `in_review` (rule 7).
 pub(crate) fn set_pr_state(
     tx: &mut Tx<'_>,
     pr_ref: &str,
@@ -127,6 +129,11 @@ pub(crate) fn set_pr_state(
         )?;
         events::record(tx, task, EventKind::LinkState, None, Some(&body), actor)?;
         fault::hit(fault::PR_STATE_RECORDED)?;
+        // Rule 7: a PR reopened on GitHub needs review again, so its task can't stay done.
+        if state == PrState::Open && crate::tasks::get(tx, task)?.status == Status::Done {
+            let why = format!("reopened: PR {pr_ref} reopened");
+            status::apply(tx, task, Status::InReview, Some(&why), actor)?;
+        }
     }
     Ok(tasks)
 }
