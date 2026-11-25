@@ -145,7 +145,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
 
 ## Phase 4: Dependencies and plans
 
-- [ ] **T10. Dependencies, loops and waiting** (M)
+- [x] **T10. Dependencies, loops and waiting** (M)
   - **Description:**
     - `add_dependency` and `remove_dependency` (`me` and `plan` only), each writing an event on the waiting task.
     - Rule 14: a recursive query checks for loops across the whole tree.
