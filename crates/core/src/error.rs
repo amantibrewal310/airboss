@@ -52,6 +52,14 @@ impl Error {
         ))
     }
 
+    /// There's no file to open, e.g. no `HOME` to find the default one in; `why` says so.
+    pub(crate) fn cant_open(why: String) -> Error {
+        Error::Db(rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CANTOPEN),
+            Some(why),
+        ))
+    }
+
     /// Whether this is the refusal of a database a newer Airboss migrated. Its `Display` is
     /// [`NEWER_DATABASE`], which is what to show.
     pub fn is_newer_database(&self) -> bool {

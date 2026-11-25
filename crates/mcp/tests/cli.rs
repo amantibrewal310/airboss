@@ -615,3 +615,25 @@ fn a_database_from_a_newer_airboss_is_refused_with_what_to_do() {
     assert_eq!(fails(&db, &["ls"]), NEWER_DATABASE);
     assert_eq!(fails(&db, &["add", "Another"]), NEWER_DATABASE);
 }
+
+#[test]
+fn with_no_home_and_no_airboss_db_it_says_what_to_set() {
+    let dir = TempDir::new();
+    let out = common::airboss(&dir.db())
+        .env_remove("AIRBOSS_DB")
+        .env_remove("HOME")
+        .current_dir(&dir.0)
+        .arg("ls")
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(
+        stderr(&out),
+        "airboss: HOME isn't set, so there's no default database; set AIRBOSS_DB\n"
+    );
+    assert_eq!(
+        std::fs::read_dir(&dir.0).unwrap().count(),
+        0,
+        "no file anywhere"
+    );
+}

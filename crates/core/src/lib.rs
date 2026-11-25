@@ -9,6 +9,7 @@ mod deps;
 mod error;
 mod events;
 mod links;
+mod location;
 mod model;
 mod permissions;
 mod plans;
@@ -29,6 +30,7 @@ use crate::tx::Tx;
 
 pub use db::Migration;
 pub use error::{Error, NEWER_DATABASE, Result};
+pub use location::{DB_VAR, default_db_path};
 pub use model::TaskEdit;
 pub use model::{
     Actor, Event, EventKind, NewTask, Origin, Repo, Status, Task, TaskNode, UnknownValue,

@@ -389,6 +389,9 @@ pub enum DepRef { Key(String), Task(TaskId) }
 pub enum Error { EmptyTitle, AlreadyExists, NotFound, NotAllowed, InvalidTransition, NoteRequired, InvalidTarget, Loop,
                  DuplicateKey, Db(rusqlite::Error) }
 impl Error { pub fn is_newer_database(&self) -> bool; }   // rule 32; its text is NEWER_DATABASE
+
+pub fn default_db_path() -> Result<PathBuf>;   // AIRBOSS_DB, else ~/Library/Application Support/Airboss/airboss.db;
+                                               // no HOME either: an error naming AIRBOSS_DB, never a relative path
 ```
 
 `Store` isn't shared between threads by itself. The app holds one `Store` behind a mutex. Every call is short, so `mcp`, `app` and `sync` waiting on one lock stays well under the 20 ms MCP target.
@@ -594,6 +597,7 @@ The app and service specs asked for a few more things. The EM decided them in [t
 The final audit of `main` found gaps that need `core`. They're folded into the rules, tables and API above.
 
 1. **A newer database is refused** (rule 32). An older `airboss mcp`, still running after an update, wrote a PR ref the newer app never matched.
+2. **One place for the database path.** `default_db_path()` and `DB_VAR` replace the CLI's and the app's own copies. With no `HOME` the CLI errored while the app used a relative path; now both get the same error.
 
 ## Open questions
 
