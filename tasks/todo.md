@@ -114,7 +114,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
 
 ## Phase 3: Tree shape
 
-- [ ] **T8. Move tasks and keep positions gap-free** (M)
+- [x] **T8. Move tasks and keep positions gap-free** (M)
   - **Description:** `move_task` (`me` only).
     - Rule 11: no cycles.
     - Rule 12: no moving under a `proposed`, `done` or `dropped` parent. The same check applies when adding a task.
