@@ -7,14 +7,20 @@ mod db;
 mod error;
 mod events;
 mod model;
+mod permissions;
 mod tasks;
+mod tx;
 
 use std::path::Path;
 
-use rusqlite::{Connection, Transaction};
+use rusqlite::Connection;
+
+use crate::tx::Tx;
 
 pub use error::{Error, Result};
-pub use model::{Actor, Event, EventKind, NewTask, Origin, Repo, Status, Task, TaskNode};
+pub use model::{
+    Actor, Event, EventKind, NewTask, Origin, Repo, Status, Task, TaskNode, UnknownValue,
+};
 
 macro_rules! id_type {
     ($(#[$doc:meta])* $name:ident) => {
@@ -47,6 +53,8 @@ id_type!(
 /// It isn't shared between threads by itself: the app keeps one behind a mutex.
 pub struct Store {
     conn: Connection,
+    /// Event ids from the last committed call; the change notification (rule 23) sends these.
+    last_committed: Vec<EventId>,
 }
 
 impl Store {
@@ -54,6 +62,7 @@ impl Store {
     pub fn open(path: &Path) -> Result<Store> {
         Ok(Store {
             conn: db::open_file(path)?,
+            last_committed: Vec::new(),
         })
     }
 
@@ -61,14 +70,15 @@ impl Store {
     pub fn open_in_memory() -> Result<Store> {
         Ok(Store {
             conn: db::open_memory()?,
+            last_committed: Vec::new(),
         })
     }
 
     /// Runs one call as one transaction: all of it lands, events included, or none of it (rule 21).
-    fn write<T>(&mut self, change: impl FnOnce(&Transaction<'_>) -> Result<T>) -> Result<T> {
-        let tx = self.conn.transaction()?;
-        let out = change(&tx)?;
-        tx.commit()?;
+    fn write<T>(&mut self, change: impl FnOnce(&mut Tx<'_>) -> Result<T>) -> Result<T> {
+        let mut tx = Tx::begin(&mut self.conn)?;
+        let out = change(&mut tx)?;
+        self.last_committed = tx.commit()?;
         Ok(out)
     }
 
@@ -119,6 +129,8 @@ pub(crate) mod fault {
         static ARMED: Cell<Option<&'static str>> = const { Cell::new(None) };
     }
 
+    pub(crate) const TASK_INSERTED: &str = "tasks::add after insert";
+
     pub(crate) fn arm(point: &'static str) {
         ARMED.with(|a| a.set(Some(point)));
     }
@@ -134,6 +146,8 @@ pub(crate) mod fault {
 
 #[cfg(not(test))]
 pub(crate) mod fault {
+    pub(crate) const TASK_INSERTED: &str = "tasks::add after insert";
+
     #[inline(always)]
     pub(crate) fn hit(_point: &str) -> crate::Result<()> {
         Ok(())
@@ -156,7 +170,7 @@ mod tests {
     #[test]
     fn a_failure_after_the_insert_leaves_no_task_and_no_event() {
         let mut store = Store::open_in_memory().unwrap();
-        fault::arm("tasks::add after insert");
+        fault::arm(fault::TASK_INSERTED);
         assert!(store.add_task(NewTask::new("Doomed"), &Actor::Me).is_err());
         assert_eq!(
             (count(&store, "tasks"), count(&store, "task_events")),
@@ -169,5 +183,23 @@ mod tests {
             (count(&store, "tasks"), count(&store, "task_events")),
             (1, 1)
         );
+    }
+
+    #[test]
+    fn a_committed_call_reports_exactly_the_events_it_wrote() {
+        let mut store = Store::open_in_memory().unwrap();
+        let t = store.add_task(NewTask::new("One"), &Actor::Me).unwrap();
+        let history = store.history(t.id).unwrap();
+        assert_eq!(store.last_committed, vec![history[0].id]);
+    }
+
+    #[test]
+    fn a_failed_call_reports_no_events() {
+        let mut store = Store::open_in_memory().unwrap();
+        store.add_task(NewTask::new("Before"), &Actor::Me).unwrap();
+        let before = store.last_committed.clone();
+        fault::arm(fault::TASK_INSERTED);
+        assert!(store.add_task(NewTask::new("Doomed"), &Actor::Me).is_err());
+        assert_eq!(store.last_committed, before);
     }
 }

@@ -6,6 +6,9 @@ pub enum Error {
     /// A task's title is empty or only spaces.
     #[error("a task needs a title")]
     EmptyTitle,
+    /// Something with the same unique name already exists, e.g. a repo name or path.
+    #[error("already exists")]
+    AlreadyExists,
     /// The task, link or repo doesn't exist.
     #[error("not found")]
     NotFound,

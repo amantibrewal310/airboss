@@ -6,6 +6,8 @@ use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use crate::events::{self, bad_text};
 use crate::model::{Actor, EventKind, NewTask, Origin, Repo, Status, Task, TaskNode};
+use crate::permissions::{Call, allowed};
+use crate::tx::Tx;
 use crate::{Error, RepoId, Result, TaskId, fault};
 
 pub(crate) const TASK_COLUMNS: &str = "t.id, t.parent_id, t.repo_id, t.title, t.body, t.status, \
@@ -21,7 +23,7 @@ pub(crate) fn from_row(row: &Row<'_>) -> rusqlite::Result<Task> {
         repo: row.get::<_, Option<i64>>(2)?.map(RepoId),
         title: row.get(3)?,
         body: row.get(4)?,
-        status: Status::parse(&status).ok_or_else(|| bad_text(5, &status))?,
+        status: status.parse().map_err(|_| bad_text(5, &status))?,
         blocked_reason: row.get(6)?,
         position: row.get(7)?,
         origin: Origin::parse(&origin).ok_or_else(|| bad_text(8, &origin))?,
@@ -59,23 +61,32 @@ fn next_position(conn: &Connection, parent: Option<TaskId>) -> Result<u32> {
     )?)
 }
 
-pub(crate) fn add(conn: &Connection, new: NewTask, actor: &Actor) -> Result<Task> {
-    let (origin, status) = match actor {
-        Actor::Me => (Origin::Me, Status::Todo),
-        _ => return Err(Error::NotAllowed),
-    };
-    let title = new.title.trim();
+/// A task title with surrounding spaces removed; `Error::EmptyTitle` if nothing is left.
+pub(crate) fn clean_title(title: &str) -> Result<&str> {
+    let title = title.trim();
     if title.is_empty() {
-        return Err(Error::EmptyTitle);
+        Err(Error::EmptyTitle)
+    } else {
+        Ok(title)
     }
+}
+
+pub(crate) fn add(tx: &mut Tx<'_>, new: NewTask, actor: &Actor) -> Result<Task> {
+    allowed(Call::AddTask, actor)?;
+    // An agent's task is only a proposal until I accept it (rule 8).
+    let (origin, status) = match actor {
+        Actor::Agent(_) => (Origin::Agent, Status::Proposed),
+        _ => (Origin::Me, Status::Todo),
+    };
+    let title = clean_title(&new.title)?;
     if let Some(parent) = new.parent {
-        ensure_exists(conn, parent)?;
+        ensure_exists(tx, parent)?;
     }
     if let Some(repo) = new.repo {
-        ensure_repo_exists(conn, repo)?;
+        ensure_repo_exists(tx, repo)?;
     }
-    let position = next_position(conn, new.parent)?;
-    conn.execute(
+    let position = next_position(tx, new.parent)?;
+    tx.execute(
         "INSERT INTO tasks (parent_id, repo_id, title, body, status, position, origin)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         params![
@@ -88,19 +99,19 @@ pub(crate) fn add(conn: &Connection, new: NewTask, actor: &Actor) -> Result<Task
             origin.as_str()
         ],
     )?;
-    let id = TaskId(conn.last_insert_rowid());
-    fault::hit("tasks::add after insert")?;
-    events::record(conn, id, EventKind::Created, None, None, actor)?;
-    get(conn, id)
+    let id = TaskId(tx.last_insert_rowid());
+    fault::hit(fault::TASK_INSERTED)?;
+    events::record(tx, id, EventKind::Created, None, None, actor)?;
+    get(tx, id)
 }
 
 /// The whole tree, depth-first, siblings in position order.
 pub(crate) fn tree(conn: &Connection) -> Result<Vec<TaskNode>> {
     let sql = format!(
         "WITH RECURSIVE walk(id, depth, path) AS (
-             SELECT id, 0, printf('%08d', position) FROM tasks WHERE parent_id IS NULL
+             SELECT id, 0, printf('%010d', position) FROM tasks WHERE parent_id IS NULL
              UNION ALL
-             SELECT c.id, w.depth + 1, w.path || '.' || printf('%08d', c.position)
+             SELECT c.id, w.depth + 1, w.path || '.' || printf('%010d', c.position)
              FROM tasks c JOIN walk w ON c.parent_id = w.id
          )
          SELECT {TASK_COLUMNS}, w.depth FROM walk w JOIN tasks t ON t.id = w.id ORDER BY w.path"
@@ -127,22 +138,28 @@ fn ensure_repo_exists(conn: &Connection, id: RepoId) -> Result<()> {
 }
 
 pub(crate) fn add_repo(
-    conn: &Connection,
+    tx: &mut Tx<'_>,
     name: &str,
     path: &Path,
     remote: Option<&str>,
     actor: &Actor,
 ) -> Result<Repo> {
-    if *actor != Actor::Me {
-        return Err(Error::NotAllowed);
-    }
+    allowed(Call::AddRepo, actor)?;
     let path = path.to_string_lossy();
-    conn.execute(
+    tx.execute(
         "INSERT INTO repos (name, path, remote_url) VALUES (?1, ?2, ?3)",
         params![name, path, remote],
-    )?;
+    )
+    .map_err(|e| match e {
+        rusqlite::Error::SqliteFailure(f, _)
+            if f.extended_code == rusqlite::ffi::SQLITE_CONSTRAINT_UNIQUE =>
+        {
+            Error::AlreadyExists
+        }
+        other => Error::Db(other),
+    })?;
     Ok(Repo {
-        id: RepoId(conn.last_insert_rowid()),
+        id: RepoId(tx.last_insert_rowid()),
         name: name.to_string(),
         path: path.into_owned(),
         remote_url: remote.map(str::to_string),

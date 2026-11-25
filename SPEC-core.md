@@ -194,6 +194,7 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
 
    | Call | `me` | an agent | `plan` | `sync:gh` | `sync:t3` | `launch` |
    |---|---|---|---|---|---|---|
+   | `add_repo` | yes | (no) | (no) | (no) | (no) | (no) |
    | `add_task` | yes, as `todo` | yes, always as `proposed` | (no) | (no) | (no) | (no) |
    | `add_tasks` (a plan) | yes | (no) | yes | (no) | (no) | (no) |
    | `edit_task` (title, notes, repo) | yes | (no) | (no) | (no) | (no) | (no) |
@@ -292,7 +293,7 @@ pub struct PlanTask { key: String, title: String, body: Option<String>, repo: Op
                       depends_on: Vec<DepRef>, children: Vec<PlanTask> }
 pub enum DepRef { Key(String), Task(TaskId) }
 
-pub enum Error { EmptyTitle, NotFound, NotAllowed, InvalidTransition, NoteRequired, InvalidTarget, Loop,
+pub enum Error { EmptyTitle, AlreadyExists, NotFound, NotAllowed, InvalidTransition, NoteRequired, InvalidTarget, Loop,
                  DuplicateKey, Db(rusqlite::Error) }
 ```
 
@@ -346,7 +347,8 @@ fn check_status_change(actor: &Actor, task: &TaskFacts, to: Status, note: Option
   - the same plan twice, which changes nothing
   - a revised plan with one renamed step and one new step, which adds only the new step
   - a plan containing a loop, which writes nothing
-- **Failure tests:** an error forced partway through a call leaves no rows and no events behind, and no notification goes out.
+- **Failure tests:** an error forced partway through a call leaves no rows and no events behind, and no notification goes out. They live in `src/` unit tests, because the fault-injection points exist only in test builds of the crate.
+- **Concurrency:** several `Store` handles on one file must write at once without "database is locked". Every write takes the lock up front (an IMMEDIATE transaction), and opening sets `busy_timeout` before anything else.
 - **Change notification:** one commit sends exactly the ids of the events it wrote.
 - **Performance checks** run in release mode, `#[ignore]`d by default, on a file-backed database with `synchronous = NORMAL`. The numbers are the 95th percentile over 1,000 runs. Each run prints the machine (model, chip and macOS version) next to the numbers.
 
