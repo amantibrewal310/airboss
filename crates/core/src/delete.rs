@@ -7,6 +7,15 @@ use crate::permissions::{Call, allowed};
 use crate::tx::Tx;
 use crate::{Result, TaskId, deps, fault, positions, tasks};
 
+impl crate::Store {
+    /// Deletes a task and its whole subtree, with their events, links and dependencies.
+    /// `me` only. Tasks that waited on anything deleted get a `waits_on_removed` event,
+    /// and the old siblings are renumbered 1..n.
+    pub fn delete_task(&mut self, id: TaskId, actor: &Actor) -> Result<()> {
+        self.write(|tx| delete(tx, id, actor))
+    }
+}
+
 fn delete(tx: &mut Tx<'_>, id: TaskId, actor: &Actor) -> Result<()> {
     allowed(Call::DeleteTask, actor)?;
     let parent = tasks::get(tx, id)?.parent;
@@ -16,15 +25,6 @@ fn delete(tx: &mut Tx<'_>, id: TaskId, actor: &Actor) -> Result<()> {
     tx.execute("DELETE FROM tasks WHERE id = ?1", params![id.0])?;
     positions::renumber(tx, parent)?;
     fault::hit(fault::DELETE_RENUMBERED)
-}
-
-impl crate::Store {
-    /// Deletes a task and its whole subtree, with their events, links and dependencies.
-    /// `me` only. Tasks that waited on anything deleted get a `waits_on_removed` event,
-    /// and the old siblings are renumbered 1..n.
-    pub fn delete_task(&mut self, id: TaskId, actor: &Actor) -> Result<()> {
-        self.write(|tx| delete(tx, id, actor))
-    }
 }
 
 #[cfg(test)]

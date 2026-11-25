@@ -10,6 +10,40 @@ use crate::tasks::ensure_exists;
 use crate::tx::Tx;
 use crate::{Error, LinkId, Result, TaskId, fault, status};
 
+impl crate::Store {
+    /// Attaches an outside thing to a task. Linking the same thing twice returns the
+    /// existing link, so callers can link without checking first.
+    pub fn link(&mut self, id: TaskId, new: NewLink, actor: &Actor) -> Result<Link> {
+        self.write(|tx| link(tx, id, new, actor))
+    }
+
+    /// Removes a link. An agent may only remove links it added.
+    pub fn unlink(&mut self, link: LinkId, actor: &Actor) -> Result<()> {
+        self.write(|tx| unlink(tx, link, actor))
+    }
+
+    /// Records a PR's state on every task linked to it; returns the tasks that changed, so
+    /// `sync:gh` knows which ones to check for finishing.
+    pub fn set_pr_state(
+        &mut self,
+        pr_ref: &str,
+        state: PrState,
+        actor: &Actor,
+    ) -> Result<Vec<TaskId>> {
+        self.write(|tx| set_pr_state(tx, pr_ref, state, actor))
+    }
+
+    /// The tasks linked to one outside thing, e.g. every task a PR belongs to.
+    pub fn tasks_for_link(&self, kind: LinkKind, r#ref: &str) -> Result<Vec<TaskId>> {
+        tasks_for_link(&self.conn, kind, r#ref)
+    }
+
+    /// A task's links, oldest first.
+    pub fn links(&self, id: TaskId) -> Result<Vec<Link>> {
+        links(&self.conn, id)
+    }
+}
+
 const LINK_COLUMNS: &str = "id, task_id, kind, ref, url, pr_state, linked_by, linked_at";
 
 fn from_row(row: &Row<'_>) -> rusqlite::Result<Link> {
@@ -158,40 +192,6 @@ pub(crate) fn tasks_for_link(
         params![kind.as_str(), r#ref],
         |r| r.get(0).map(TaskId),
     )
-}
-
-impl crate::Store {
-    /// Attaches an outside thing to a task. Linking the same thing twice returns the
-    /// existing link, so callers can link without checking first.
-    pub fn link(&mut self, id: TaskId, new: NewLink, actor: &Actor) -> Result<Link> {
-        self.write(|tx| link(tx, id, new, actor))
-    }
-
-    /// Removes a link. An agent may only remove links it added.
-    pub fn unlink(&mut self, link: LinkId, actor: &Actor) -> Result<()> {
-        self.write(|tx| unlink(tx, link, actor))
-    }
-
-    /// Records a PR's state on every task linked to it; returns the tasks that changed, so
-    /// `sync:gh` knows which ones to check for finishing.
-    pub fn set_pr_state(
-        &mut self,
-        pr_ref: &str,
-        state: PrState,
-        actor: &Actor,
-    ) -> Result<Vec<TaskId>> {
-        self.write(|tx| set_pr_state(tx, pr_ref, state, actor))
-    }
-
-    /// The tasks linked to one outside thing, e.g. every task a PR belongs to.
-    pub fn tasks_for_link(&self, kind: LinkKind, r#ref: &str) -> Result<Vec<TaskId>> {
-        tasks_for_link(&self.conn, kind, r#ref)
-    }
-
-    /// A task's links, oldest first.
-    pub fn links(&self, id: TaskId) -> Result<Vec<Link>> {
-        links(&self.conn, id)
-    }
 }
 
 #[cfg(test)]

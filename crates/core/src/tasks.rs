@@ -12,6 +12,49 @@ use crate::status::DROPPED_WITH;
 use crate::tx::Tx;
 use crate::{Error, RepoId, Result, TaskId, fault};
 
+impl crate::Store {
+    /// Registers a repo tasks can point at. Only `me` does this.
+    pub fn add_repo(
+        &mut self,
+        name: &str,
+        path: &Path,
+        remote: Option<&str>,
+        actor: &Actor,
+    ) -> Result<Repo> {
+        self.write(|tx| add_repo(tx, name, path, remote, actor))
+    }
+
+    /// Every registered repo, by name.
+    pub fn repos(&self) -> Result<Vec<Repo>> {
+        repos(&self.conn)
+    }
+
+    /// Adds one task at the end of its siblings, with a `created` event.
+    pub fn add_task(&mut self, new: NewTask, actor: &Actor) -> Result<Task> {
+        self.write(|tx| add(tx, new, actor))
+    }
+
+    /// One task; `Error::NotFound` if it doesn't exist.
+    pub fn task(&self, id: TaskId) -> Result<Task> {
+        get(&self.conn, id)
+    }
+
+    /// The whole tree, depth-first, siblings in their chosen order.
+    pub fn tree(&self) -> Result<Vec<TaskNode>> {
+        tree(&self.conn)
+    }
+
+    /// Changes a task's title, notes or repo. Only `me` does this (rule 8).
+    pub fn edit_task(&mut self, id: TaskId, change: TaskEdit, actor: &Actor) -> Result<Task> {
+        self.write(|tx| edit(tx, id, change, actor))
+    }
+
+    /// Adds a note to a task's history. Anyone but `plan` may (rule 8).
+    pub fn add_note(&mut self, id: TaskId, text: &str, actor: &Actor) -> Result<()> {
+        self.write(|tx| add_note(tx, id, text, actor))
+    }
+}
+
 pub(crate) const TASK_COLUMNS: &str = "t.id, t.parent_id, t.repo_id, t.title, t.body, t.status, \
      t.blocked_reason, t.position, t.origin, t.plan_key, t.created_at";
 
@@ -266,18 +309,6 @@ pub(crate) fn add_note(tx: &mut Tx<'_>, id: TaskId, text: &str, actor: &Actor) -
     ensure_exists(tx, id)?;
     events::record(tx, id, EventKind::Note, None, Some(text), actor)?;
     fault::hit(fault::NOTE_RECORDED)
-}
-
-impl crate::Store {
-    /// Changes a task's title, notes or repo. Only `me` does this (rule 8).
-    pub fn edit_task(&mut self, id: TaskId, change: TaskEdit, actor: &Actor) -> Result<Task> {
-        self.write(|tx| edit(tx, id, change, actor))
-    }
-
-    /// Adds a note to a task's history. Anyone but `plan` may (rule 8).
-    pub fn add_note(&mut self, id: TaskId, text: &str, actor: &Actor) -> Result<()> {
-        self.write(|tx| add_note(tx, id, text, actor))
-    }
 }
 
 #[cfg(test)]

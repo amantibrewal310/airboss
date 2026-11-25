@@ -74,20 +74,20 @@ pub struct Store {
 impl Store {
     /// Opens (or creates) the database file and brings `core`'s schema up to date.
     pub fn open(path: &Path) -> Result<Store> {
-        Ok(Store {
-            conn: db::open_file(path)?,
-            last_committed: Vec::new(),
-            subscribers: Vec::new(),
-        })
+        Ok(Store::with(db::open_file(path)?))
     }
 
     /// Opens a private in-memory database, mainly for tests.
     pub fn open_in_memory() -> Result<Store> {
-        Ok(Store {
-            conn: db::open_memory()?,
+        Ok(Store::with(db::open_memory()?))
+    }
+
+    fn with(conn: Connection) -> Store {
+        Store {
+            conn,
             last_committed: Vec::new(),
             subscribers: Vec::new(),
-        })
+        }
     }
 
     /// Runs one call as one transaction: all of it lands, events included, or none of it (rule 21).
@@ -116,42 +116,6 @@ impl Store {
     /// reliable way to catch up after missing notifications.
     pub fn events_after(&self, cursor: EventId) -> Result<Vec<Event>> {
         events::after(&self.conn, cursor)
-    }
-
-    /// Registers a repo tasks can point at. Only `me` does this.
-    pub fn add_repo(
-        &mut self,
-        name: &str,
-        path: &Path,
-        remote: Option<&str>,
-        actor: &Actor,
-    ) -> Result<Repo> {
-        self.write(|tx| tasks::add_repo(tx, name, path, remote, actor))
-    }
-
-    /// Every registered repo, by name.
-    pub fn repos(&self) -> Result<Vec<Repo>> {
-        tasks::repos(&self.conn)
-    }
-
-    /// Adds one task at the end of its siblings, with a `created` event.
-    pub fn add_task(&mut self, new: NewTask, actor: &Actor) -> Result<Task> {
-        self.write(|tx| tasks::add(tx, new, actor))
-    }
-
-    /// One task; `Error::NotFound` if it doesn't exist.
-    pub fn task(&self, id: TaskId) -> Result<Task> {
-        tasks::get(&self.conn, id)
-    }
-
-    /// The whole tree, depth-first, siblings in their chosen order.
-    pub fn tree(&self) -> Result<Vec<TaskNode>> {
-        tasks::tree(&self.conn)
-    }
-
-    /// Everything that happened to a task, oldest first.
-    pub fn history(&self, id: TaskId) -> Result<Vec<Event>> {
-        events::history(&self.conn, id)
     }
 }
 
