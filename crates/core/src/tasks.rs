@@ -53,7 +53,7 @@ pub(crate) fn get(conn: &Connection, id: TaskId) -> Result<Task> {
 }
 
 /// The next free position among `parent`'s children (rule 13: 1-based, gap-free).
-fn next_position(conn: &Connection, parent: Option<TaskId>) -> Result<u32> {
+pub(crate) fn next_position(conn: &Connection, parent: Option<TaskId>) -> Result<u32> {
     Ok(conn.query_row(
         "SELECT ifnull(max(position), 0) + 1 FROM tasks WHERE parent_id IS ?1",
         params![parent.map(|p| p.0)],
@@ -134,7 +134,7 @@ pub(crate) fn tree(conn: &Connection) -> Result<Vec<TaskNode>> {
         .map_err(Error::from)
 }
 
-fn ensure_repo_exists(conn: &Connection, id: RepoId) -> Result<()> {
+pub(crate) fn ensure_repo_exists(conn: &Connection, id: RepoId) -> Result<()> {
     let found: Option<i64> = conn
         .query_row("SELECT 1 FROM repos WHERE id = ?1", params![id.0], |r| {
             r.get(0)
