@@ -19,14 +19,9 @@ impl crate::Store {
         self.write(|tx| add(tx, id, waits_on, actor))
     }
 
-    /// Stops `task` waiting on `waits_on`; `Error::NotFound` if it wasn't.
-    pub fn remove_dependency(
-        &mut self,
-        task: TaskId,
-        waits_on: TaskId,
-        actor: &Actor,
-    ) -> Result<()> {
-        self.write(|tx| remove(tx, task, waits_on, actor))
+    /// Stops `id` waiting on `waits_on`; `Error::NotFound` if it wasn't.
+    pub fn remove_dependency(&mut self, id: TaskId, waits_on: TaskId, actor: &Actor) -> Result<()> {
+        self.write(|tx| remove(tx, id, waits_on, actor))
     }
 
     /// The tasks `id` still waits on: its blockers that are neither done nor dropped.
