@@ -33,7 +33,10 @@ Then, for the whole product:
 | 2 | Build `app` backend + wire real services | Done (merged; 941 Rust tests; 5.7 MB dmg, 457 ms cold start) |
 | 3 | UI polish pass from design QA (24 findings) + integration fixes | Done (merged; 173 unit/component + 135 Playwright incl. axe) |
 | 3 | Integration QA on the real app | Done (merged; 7 bugs fixed; real agent + real Do it verified; 958 Rust tests) |
-| 4 | Fixes from integration QA (R1, R2, R5) + final full-repo review | In progress |
+| 4 | Fixes from integration QA (R1, R2, R5) | In progress |
+| 4 | Final full-repo audit | Done: ready with caveats; B1 + 12 should-fix being fixed |
+| 5 | Audit fixes: core/sync/mcp/CLI/docs | In progress |
+| 5 | Audit fixes: app side + notifications | Next (after R5 lands) |
 | 3 | Integration: one app process hosts sync, launch and attention; the CLI and `airboss mcp` share the database | |
 | 3 | QA: real-user flows, performance targets, light and dark, keyboard-only | |
 | 4 | Polish and bug-fix iterations; README and install instructions | |
@@ -115,6 +118,19 @@ Then, for the whole product:
 - **R4** (131 MB idle at 2,000 tasks): accepted. The target is under 130 MB typically and under 140 MB at 2,000 tasks.
 - **R5** (a run that ends without a PR leaves the task `doing`, with nothing in Needs me): fix. A new Needs me kind, **"Agent stopped"**, appears when every linked thread of a `doing` task has stopped (idle, settled or gone; errored is covered by Failed run), there's no open PR, and nothing has changed for 10 minutes. Its actions are Open thread, Mark done, Set in review and Dismiss.
 - **Clean-up done:** the stray login item from the measurement runs, plus the QA throwaway T3 project, thread and worktree.
+
+## EM decisions on the final audit (26 Nov 2026)
+
+- **B1 (a link added by an agent can run code):** must fix before daily use. Strict URL allowlist: `file:///abs` with no host, query or fragment; the path canonicalized; only safe file types opened; everything else revealed in Finder. `t3code:` only as `threads/<env>/<id>`. `https:` only for opening in the browser.
+- **B2 (the app has never been used by a human):** this session can't capture the screen. A short manual checklist, `app/QA.md`, goes to the user.
+- **B3 (licence):** the user decides before open-sourcing. Recommendation: MIT.
+- **Should-fix 1–12 and the nits:** fix all of them, split by area. Core, sync, mcp, CLI and docs go to one engineer now. App-side fixes (undo correctness, reorder, reject write retry with a toast, the agents-ready check, the `zshrc` PATH check, the 0-byte CLI build) go to another once R5 lands.
+- **Week-1 gaps, added to v1:**
+  - **macOS notifications** for agent questions and approvals, failed runs and Agent stopped. On by default, can be turned off in Settings, and grouped per task.
+  - **`airboss backup <path>`.**
+  - **Uninstall steps** in the docs.
+  - Plan it needing the user's `plan-review` skill, and Slack needing Composio, are documented as requirements.
+- **Open-source hygiene:** integration-QA ids and account names get placeholders. The redundant `refs/original` were removed. The local-only refs (`refs/t3/*`, `backup/pre-attribution-rewrite`) stay, but never `git push --all` or `--mirror`.
 
 ## Done means
 
