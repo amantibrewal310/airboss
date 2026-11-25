@@ -60,7 +60,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
 
 ## Phase 2: Status that stays honest
 
-- [ ] **T4. Edit tasks and add notes** (S)
+- [x] **T4. Edit tasks and add notes** (S)
   - **Description:** `edit_task` (title, notes, repo) for `me` only. `add_note` for every actor, writing a `note` event.
   - **Acceptance:**
     - Rule 8, the `edit_task` and `add_note` rows: an agent editing gets `NotAllowed`.
@@ -70,7 +70,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
   - **Files:** `src/tasks.rs`, `src/permissions.rs`, `tests/rules.rs`
   - **Depends on:** T3
 
-- [ ] **T5. Links and PR state** (M)
+- [x] **T5. Links and PR state** (M)
   - **Description:**
     - `link`: linking the same thing twice returns the existing link.
     - `unlink`: `me` can remove any link; an agent only links it added.
@@ -84,7 +84,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
   - **Files:** `src/links.rs`, `src/permissions.rs`, `tests/links.rs`, `tests/rules.rs`
   - **Depends on:** T3
 
-- [ ] **T6. Status changes** (M)
+- [x] **T6. Status changes** (M)
   - **Description:** `set_status` with the rule 6 table as a pure function over `TaskFacts` (status, has a PR, all PRs merged or closed, any PR merged). Linking a PR to a `done` task as anyone but `me` moves it back to `in_review` (rule 7).
   - **Acceptance:**
     - Every row of the rule 6 table passes, and every case it rejects fails with the right error (`NotAllowed`, `InvalidTransition`, `NoteRequired`).
@@ -94,7 +94,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
   - **Files:** `src/status.rs`, `src/links.rs`, `tests/status.rs`
   - **Depends on:** T5
 
-- [ ] **T7. Proposals** (S)
+- [x] **T7. Proposals** (S)
   - **Description:**
     - When an agent calls `add_task`, the task is always created as `proposed`.
     - `proposed()` lists them.
