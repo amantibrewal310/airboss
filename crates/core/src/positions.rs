@@ -13,6 +13,21 @@ use crate::sql::SUBTREE_CTE;
 use crate::tx::Tx;
 use crate::{Error, Result, TaskId, fault};
 
+impl crate::Store {
+    /// Moves a task (and its subtree) under `new_parent` (None: top level) at `position`,
+    /// clamped into range. `me` only. Renumbers the old and new sibling groups and writes
+    /// one `moved` event, on the moved task only.
+    pub fn move_task(
+        &mut self,
+        id: TaskId,
+        new_parent: Option<TaskId>,
+        position: u32,
+        actor: &Actor,
+    ) -> Result<()> {
+        self.write(|tx| move_in(tx, id, new_parent, position, actor))
+    }
+}
+
 /// Renumbers `parent`'s children 1..n, keeping their current order (ties broken by id).
 /// Writes no events (rule 13).
 pub(crate) fn renumber(tx: &Tx<'_>, parent: Option<TaskId>) -> Result<()> {
@@ -163,21 +178,6 @@ fn move_in(
     )?;
 
     events::record(tx, id, EventKind::Moved, None, None, actor)
-}
-
-impl crate::Store {
-    /// Moves a task (and its subtree) under `new_parent` (None: top level) at `position`,
-    /// clamped into range. `me` only. Renumbers the old and new sibling groups and writes
-    /// one `moved` event, on the moved task only.
-    pub fn move_task(
-        &mut self,
-        id: TaskId,
-        new_parent: Option<TaskId>,
-        position: u32,
-        actor: &Actor,
-    ) -> Result<()> {
-        self.write(|tx| move_in(tx, id, new_parent, position, actor))
-    }
 }
 
 #[cfg(test)]

@@ -8,6 +8,29 @@ use crate::sql::{SUBTREE_CTE, query_all};
 use crate::tx::Tx;
 use crate::{Error, Result, TaskId, fault, tasks};
 
+impl crate::Store {
+    /// Moves a task to a new status if rule 6 lets `actor` make that change. The note is
+    /// the reason when blocking, and what was done when an agent finishes.
+    pub fn set_status(
+        &mut self,
+        id: TaskId,
+        to: Status,
+        note: Option<&str>,
+        actor: &Actor,
+    ) -> Result<Task> {
+        self.write(|tx| set_status(tx, id, to, note, actor))
+    }
+
+    /// Agents' proposals waiting for me to accept (`todo`) or reject (`dropped`), in tree order.
+    pub fn proposed(&self) -> Result<Vec<Task>> {
+        Ok(tasks::tree(&self.conn)?
+            .into_iter()
+            .map(|n| n.task)
+            .filter(|t| t.status == Status::Proposed)
+            .collect())
+    }
+}
+
 /// What rule 6 needs to know about a task, read inside the change's transaction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct TaskFacts {
@@ -138,29 +161,6 @@ fn drop_subtree(tx: &mut Tx<'_>, id: TaskId, actor: &Actor) -> Result<()> {
         apply(tx, task, Status::Dropped, Some(&body), actor)?;
     }
     fault::hit(fault::SUBTREE_DROPPED)
-}
-
-impl crate::Store {
-    /// Moves a task to a new status if rule 6 lets `actor` make that change. The note is
-    /// the reason when blocking, and what was done when an agent finishes.
-    pub fn set_status(
-        &mut self,
-        id: TaskId,
-        to: Status,
-        note: Option<&str>,
-        actor: &Actor,
-    ) -> Result<Task> {
-        self.write(|tx| set_status(tx, id, to, note, actor))
-    }
-
-    /// Agents' proposals waiting for me to accept (`todo`) or reject (`dropped`), in tree order.
-    pub fn proposed(&self) -> Result<Vec<Task>> {
-        Ok(tasks::tree(&self.conn)?
-            .into_iter()
-            .map(|n| n.task)
-            .filter(|t| t.status == Status::Proposed)
-            .collect())
-    }
 }
 
 #[cfg(test)]

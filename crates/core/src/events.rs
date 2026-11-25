@@ -7,6 +7,13 @@ use crate::sql::query_all;
 use crate::tx::Tx;
 use crate::{Error, EventId, Result, TaskId};
 
+impl crate::Store {
+    /// Everything that happened to a task, oldest first.
+    pub fn history(&self, id: TaskId) -> Result<Vec<Event>> {
+        history(&self.conn, id)
+    }
+}
+
 /// Records one event inside the change it describes (rule 21) and collects its id for the
 /// change notification.
 pub(crate) fn record(
