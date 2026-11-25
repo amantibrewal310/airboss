@@ -289,10 +289,17 @@ pub fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
+/// `AIRBOSS_DB`, when it names another database.
+fn db_override() -> Option<PathBuf> {
+    std::env::var_os("AIRBOSS_DB")
+        .filter(|p| !p.is_empty())
+        .map(PathBuf::from)
+}
+
 /// Where the database lives: `AIRBOSS_DB`, or `~/Library/Application Support/Airboss`.
 pub fn db_path() -> PathBuf {
-    if let Some(p) = std::env::var_os("AIRBOSS_DB").filter(|p| !p.is_empty()) {
-        return PathBuf::from(p);
+    if let Some(p) = db_override() {
+        return p;
     }
     let home = std::env::var_os("HOME")
         .map(PathBuf::from)
@@ -344,9 +351,10 @@ pub fn setup(
     let shell = TauriShell::new(handle.clone(), settings.hotkey.clone());
     *lock(&shell.accent) = macos::accent_hex();
 
-    // Open at login on first run, inside the bundle only (never for a dev binary).
+    // Open at login on first run, for the installed app on its own database only.
     if first_run {
-        settings.open_at_login = in_bundle();
+        settings.open_at_login =
+            settings::open_at_login_on_first_run(in_bundle(), db_override().is_some());
         if settings.open_at_login
             && let Err(e) = Shell::set_autostart(&shell, true)
         {
