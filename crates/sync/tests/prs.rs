@@ -261,6 +261,26 @@ fn a_link_whose_first_read_is_merged_finishes_its_task() {
 }
 
 #[test]
+fn a_link_made_already_merged_finishes_on_its_first_read() {
+    let core = Core::new();
+    let t = core.task("Ship it");
+    core.lock()
+        .link(
+            t,
+            airboss_core::NewLink::pr("acme/web#1").with_pr_state(PrState::Merged),
+            &Actor::Me,
+        )
+        .unwrap();
+    let mut rig = Rig::new(core, me_only().pr("acme/web#1", merged("me")));
+    rig.first_pass();
+    assert_eq!(
+        rig.core.status(t),
+        Status::Done,
+        "no open state anywhere; the first read fires"
+    );
+}
+
+#[test]
 fn a_task_i_reopen_stays_open() {
     let core = Core::new();
     let t = task_with_pr(&core, "acme/web#1");

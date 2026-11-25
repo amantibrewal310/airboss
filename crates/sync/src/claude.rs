@@ -182,6 +182,29 @@ fn view(s: &ClaudeSession, linked: bool, state: ThreadState) -> ThreadView {
     }
 }
 
+/// A linked session with no file: it ended.
+fn missing(id: &str) -> ThreadView {
+    ThreadView {
+        key: ThreadKey {
+            source: Source::Claude,
+            r#ref: id.to_string(),
+        },
+        linked: true,
+        state: ThreadState::Gone,
+        title: None,
+        request: None,
+        error: None,
+        run_id: None,
+        project_path: None,
+        branch: None,
+        worktree_path: None,
+        parent_ref: None,
+        child_count: 0,
+        last_activity_at: None,
+        stale: false,
+    }
+}
+
 /// The views for one Claude pass.
 ///
 /// - `open_linked`: the session ids linked to open tasks; each gets a view, `gone` when its
@@ -212,26 +235,7 @@ pub fn views(
         match by_id.get(id.as_str()) {
             Some((s, true)) => out.push(view(s, true, state_of(&s.status)?)),
             Some((s, false)) => out.push(view(s, true, ThreadState::Gone)),
-            None => {
-                let mut gone = view(
-                    &ClaudeSession {
-                        file: PathBuf::new(),
-                        pid: 0,
-                        session_id: id.clone(),
-                        cwd: None,
-                        entrypoint: None,
-                        name: None,
-                        status: String::new(),
-                        proc_start: String::new(),
-                        updated_at: None,
-                        status_updated_at: None,
-                    },
-                    true,
-                    ThreadState::Gone,
-                );
-                gone.title = None;
-                out.push(gone);
-            }
+            None => out.push(missing(id)),
         }
     }
     let mut untracked: Vec<&ClaudeSession> = by_id

@@ -109,6 +109,7 @@ pub struct Sync {
     t3: Sender<T3Msg>,
     gh: Sender<GhMsg>,
     client: Arc<Mutex<GhClient>>,
+    clock: Arc<dyn Clock>,
     threads: Mutex<Vec<(JoinHandle<()>, Receiver<()>)>>,
     stopped: std::sync::atomic::AtomicBool,
 }
@@ -224,6 +225,7 @@ pub fn start(cfg: SyncConfig, store: SharedStore, tools: Tools) -> Result<Arc<Sy
         t3: b.t3_tx,
         gh: b.gh_tx,
         client: b.client,
+        clock: b.clock,
         threads: Mutex::new(threads),
         stopped: std::sync::atomic::AtomicBool::new(false),
     }))
@@ -405,7 +407,7 @@ impl SyncService for Sync {
             ));
         }
         let mut client = worker::gh::lock_client(&self.client);
-        let now = SystemTime::now();
+        let now = self.clock.now();
         if client.accounts().is_empty() {
             client.read_accounts(now).map_err(|off| match off {
                 GhOff::Missing => ServiceError::new(

@@ -67,3 +67,62 @@ fn a_t3_pass_on_2000_threads_is_under_5_ms_at_p95() {
     );
     assert!(p95 < Duration::from_millis(5), "p95 {p95:?}");
 }
+
+/// One GitHub pass, 50 linked PRs, one account: one `gh` call, one rate-limit point, and
+/// our share of the work (building the query, parsing 50 PRs, comparing, writing rows).
+/// `FakeGh` builds its JSON answer inside the timed span, so this is an upper bound.
+#[test]
+#[ignore = "performance; run in release by hand"]
+fn a_github_pass_on_50_prs_is_one_call_and_under_150_ms() {
+    use std::sync::{Arc, Mutex, mpsc::channel};
+
+    use airboss_core::{Actor, NewLink, NewTask, Store};
+    use airboss_services::Refresh;
+    use airboss_sync::fake::{FakeGh, FakePr, TempDir};
+    use airboss_sync::gh::GhClient;
+    use airboss_sync::{Env, GhMsg, GhWorker, Hub, StoreSummary, SyncConfig};
+
+    let dir = TempDir::new();
+    let store = Arc::new(Mutex::new(
+        Store::open(&dir.path().join("airboss.db")).unwrap(),
+    ));
+    let mut gh = FakeGh::new().account("me", true).sees("me", "acme/web");
+    for n in 1..=50 {
+        let r = format!("acme/web#{n}");
+        let mut s = store.lock().unwrap();
+        let t = s
+            .add_task(NewTask::new(format!("Task {n}")), &Actor::Me)
+            .unwrap();
+        s.link(t.id, NewLink::pr(&r), &Actor::Me).unwrap();
+        gh = gh.pr(&r, FakePr::open("someone"));
+    }
+    let snapshot = store.lock().unwrap().snapshot().unwrap();
+    let summary = StoreSummary::from_change(&airboss_services::StoreChange {
+        events: Vec::new(),
+        snapshot: Arc::new(snapshot),
+    });
+    let env = Env::new(SyncConfig::defaults(dir.path()), store, Hub::new());
+    let (t3, _rx) = channel();
+    let now = airboss_services::time::from_ts("2026-11-26T12:00:00.000Z").unwrap();
+    let client = Arc::new(Mutex::new(GhClient::new(Box::new(gh.clone()))));
+    let mut w = GhWorker::new(env, client, t3, summary, now).unwrap();
+    w.start(now);
+    let mut times = Vec::new();
+    for i in 0..20u64 {
+        gh.clear_calls();
+        let at = now + Duration::from_secs(3 + 120 * i);
+        let t = Instant::now();
+        w.handle(GhMsg::Refresh(Refresh::Prs), at);
+        times.push(t.elapsed());
+        let reads = gh.reads();
+        assert_eq!(reads.len(), 1, "one gh process for 50 PRs");
+        assert_eq!(reads[0].prs.len(), 50);
+    }
+    times.sort();
+    println!(
+        "GitHub pass, 50 PRs, one account: median {:?}, max {:?}",
+        times[times.len() / 2],
+        times[times.len() - 1]
+    );
+    assert!(times[times.len() - 1] < Duration::from_millis(150));
+}

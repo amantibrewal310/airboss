@@ -56,7 +56,6 @@ pub struct T3Worker {
     claude_files: BTreeSet<PathBuf>,
     /// Liveness by (pid, procStart), from the last `ps`.
     claude_alive: HashMap<(u32, String), bool>,
-    watched: Vec<WatchTarget>,
 
     part: ThreadsPart,
     /// What `observed_threads` holds, so rows are written only on change.
@@ -142,7 +141,6 @@ impl T3Worker {
             noted,
             claude_files: BTreeSet::new(),
             claude_alive: HashMap::new(),
-            watched: Vec::new(),
             part,
             stored,
             saved_health: HashMap::new(),
@@ -445,7 +443,7 @@ impl T3Worker {
             self.part.projects = projects;
         }
         let changed_states = self.replace(Source::T3, views, now);
-        self.note_failures(now);
+        self.note_failures();
         self.find_listed_prs(&read.threads);
         self.part.t3.ok(now);
         self.save_health("t3");
@@ -509,7 +507,7 @@ impl T3Worker {
 
     /// "Run failed: …" on each open task of a linked thread whose latest run failed, once
     /// per failed run.
-    fn note_failures(&mut self, _now: SystemTime) {
+    fn note_failures(&mut self) {
         let failed: Vec<(ThreadKey, String, String)> = self
             .part
             .threads
@@ -698,7 +696,6 @@ impl T3Worker {
                 ));
             }
         }
-        self.watched = targets;
     }
 
     /// Writes a source's health when its state or reason changed.

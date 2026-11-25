@@ -243,7 +243,7 @@ impl GhWorker {
             }
         }
         self.part.gh.ok(now);
-        self.save_health(GH_SCOPE, now);
+        self.save_health(GH_SCOPE);
         let accounts: Vec<Account> = client.accounts().to_vec();
         self.sync_accounts(&accounts, now);
 
@@ -372,7 +372,7 @@ impl GhWorker {
                 // Its other PRs wait for the next pass.
                 queue.remove(&i);
             }
-            self.save_health_of(&login, now);
+            self.save_health_of(&login);
         }
         drop(client);
         self.apply(found, failed, &waiting, &viewer_ok, now);
@@ -574,7 +574,7 @@ impl GhWorker {
             }
             GhOff::Failed(why) => self.part.gh.fail(why, now),
         }
-        self.save_health(GH_SCOPE, now);
+        self.save_health(GH_SCOPE);
         self.publish(now);
     }
 
@@ -625,22 +625,22 @@ impl GhWorker {
         }
         self.part.accounts = next;
         for a in accounts {
-            self.save_health_of(&a.login, now);
+            self.save_health_of(&a.login);
         }
     }
 
-    fn save_health(&mut self, scope: &str, now: SystemTime) {
+    fn save_health(&mut self, scope: &str) {
         let h = self.part.gh.clone();
-        self.write_health(scope, &h, now);
+        self.write_health(scope, &h);
     }
 
-    fn save_health_of(&mut self, login: &str, now: SystemTime) {
+    fn save_health_of(&mut self, login: &str) {
         if let Some(h) = self.health(login).cloned() {
-            self.write_health(login, &h, now);
+            self.write_health(login, &h);
         }
     }
 
-    fn write_health(&mut self, scope: &str, h: &Health, _now: SystemTime) {
+    fn write_health(&mut self, scope: &str, h: &Health) {
         let key = (h.state, h.detail.clone());
         if self.saved_health.get(scope) == Some(&key) {
             return;
