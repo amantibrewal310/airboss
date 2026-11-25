@@ -237,7 +237,7 @@ export type NeedsChanged = { version: number, items: Array<NeedsItem>, count: nu
 /**
  * `services::NeedsGroup`, in display order.
  */
-export type NeedsGroup = "questions" | "reviews" | "failed_runs" | "proposed" | "ready" | "finish_it" | "quiet";
+export type NeedsGroup = "questions" | "reviews" | "failed_runs" | "stopped" | "proposed" | "ready" | "finish_it" | "quiet";
 
 /**
  * `services::NeedsItem`.
@@ -256,7 +256,7 @@ export type NeedsKey = string;
 /**
  * `services::NeedsKind`.
  */
-export type NeedsKind = "question" | "approval" | "review" | "failed_run" | "proposed" | "ready" | "finish_it" | "quiet";
+export type NeedsKind = "question" | "approval" | "review" | "failed_run" | "agent_stopped" | "proposed" | "ready" | "finish_it" | "quiet";
 
 /**
  * `services::NeedsList`.

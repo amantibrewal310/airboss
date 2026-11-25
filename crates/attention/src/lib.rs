@@ -10,6 +10,7 @@ mod db;
 mod hidden;
 mod kinds;
 mod quiet;
+mod stopped;
 mod worker;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -40,6 +41,9 @@ pub struct AttentionConfig {
     pub snooze_for: Duration,
     /// How long a task that became ready stays in Ready: 7 days.
     pub ready_window: Duration,
+    /// How long a `doing` task's agents must have been stopped, with nothing else changing,
+    /// before it shows as Agent stopped: 10 minutes (EM, 26 Nov 2026).
+    pub stopped_after: Duration,
     /// Items the menu-bar dropdown shows: 6.
     pub menu_items: usize,
     /// Changes this close together make one recompute: 150 ms.
@@ -54,6 +58,7 @@ impl Default for AttentionConfig {
             quiet_after: DAY * 5,
             snooze_for: DAY * 3,
             ready_window: DAY * 7,
+            stopped_after: Duration::from_secs(10 * 60),
             menu_items: 6,
             settle: Duration::from_millis(150),
         }

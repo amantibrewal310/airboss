@@ -52,12 +52,19 @@
     }
   }
 
-  const secondary = $derived(
+  /** The quieter actions beside the main one; `keys` shows its shortcut. */
+  const secondary = $derived<{ label: string; keys?: string; run: () => unknown }[]>(
     item.kind === 'proposed'
-      ? { label: 'Reject all', run: () => app.rejectProposals(item, proposals.map(([id]) => id)) }
+      ? [{ label: 'Reject all', run: () => app.rejectProposals(item, proposals.map(([id]) => id)) }]
       : item.kind === 'quiet'
-        ? { label: 'Snooze 3 days', run: () => app.snooze(item) }
-        : null,
+        ? [{ label: 'Snooze 3 days', run: () => app.snooze(item) }]
+        : item.kind === 'agent_stopped'
+          ? [
+              { label: 'Mark done', keys: 'space', run: () => app.markNeedDone(item) },
+              { label: 'Set in review', run: () => app.setNeedInReview(item) },
+              { label: 'Snooze 3 days', run: () => app.snooze(item) },
+            ]
+          : [],
   );
 </script>
 
@@ -91,7 +98,9 @@
     {/if}
     <div class="acts">
       <button bind:this={primary} type="button" class="pri" onclick={() => app.mainAction(item)}>{mainLabel(item.kind)} <Kbd keys="enter" onFill /></button>
-      {#if secondary}<button type="button" class="sec" onclick={secondary.run}>{secondary.label}</button>{/if}
+      {#each secondary as s (s.label)}
+        <button type="button" class="sec" onclick={s.run}>{s.label} {#if s.keys}<Kbd keys={s.keys} />{/if}</button>
+      {/each}
       <span class="sp"></span>
       <button type="button" class="ghost" onclick={() => app.dismiss(item)}>
         {item.kind === 'finish_it' ? 'Keep open' : 'Dismiss'} <Kbd keys="mod+backspace" joined />

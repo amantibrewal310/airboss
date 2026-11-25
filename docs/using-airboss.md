@@ -51,6 +51,7 @@ Needs me is the list of decisions waiting on you, in a fixed order. The menu-bar
 | Questions | An agent on one of your tasks asked a question or wants an approval | Open thread | Dismiss |
 | Reviews | A linked PR is open and isn't a draft, and no agent on its task is still running or waiting on you | Open PR | Dismiss |
 | Failed runs | A linked T3 thread's last run failed | Open thread | Dismiss |
+| Stopped | A task in progress whose agents have all stopped, with no open PR and nothing new for 10 minutes | Open thread | Mark done (Space), Set in review, Snooze 3 days, Dismiss |
 | Proposed | An agent proposed subtasks | Accept all | Accept, Edit or Reject each; Reject all |
 | Ready | A task's last blocker finished, in the last 7 days | Do it | Dismiss |
 | Finish it? | Every subtask of an open parent is done | Mark done | Keep open |

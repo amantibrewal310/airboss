@@ -10,7 +10,7 @@ A native-feeling Mac app that answers two questions at a glance: what is waiting
 
 **User stories** (one per design screen)
 
-- As me, I open the app and land on **Needs me**: questions, reviews, failed runs, proposals, newly ready tasks, parents to finish and quiet work, each with its main action on ↩.
+- As me, I open the app and land on **Needs me**: questions, reviews, failed runs, agents that stopped without a PR, proposals, newly ready tasks, parents to finish and quiet work, each with its main action on ↩.
 - As me, I scan **All tasks** as a tree of 2,000 tasks. Each row shows status, progress, live agent state, repos and when it last changed, and I can move through it without a mouse.
 - As me, I select a task and see its **panel**: what needs me, its properties, notes, threads and activity. ⌘↓ opens it as a **full page**, with the run-order **map** for a parent.
 - As me, I see every **plan** as a card with its progress, current wave and what's next.
@@ -135,7 +135,7 @@ app/
   src-tauri/
     Cargo.toml                   airboss-app
     tauri.conf.json  capabilities/main.json  capabilities/quickadd.json
-    icons/  tray/                app icon, menu-bar template icon, one red icon per Needs me kind
+    icons/  tray/                app icon, menu-bar template icon, one red icon per Needs me kind (Agent stopped: a circle with a pause)
     binaries/                    the airboss sidecar, copied at build time (git-ignored)
     resources/agent-note.md      what "Copy agent note" copies
     src/main.rs                  builder, plugins, windows, run loop
@@ -348,7 +348,7 @@ The stores are classes in `lib/state/*.svelte.ts`, one exported instance each, w
   | Action | Inverse |
   |---|---|
   | Dismiss, Keep open, Snooze | `attention.restore(key)` |
-  | Status change (Space, S, ⌘B, Mark done, Finish it) | `set_status` back to the previous status, with the previous blocked reason as the note if it was blocked |
+  | Status change (Space, S, ⌘B, Mark done, Finish it, Set in review) | `set_status` back to the previous status, with the previous blocked reason as the note if it was blocked |
   | Drop | the same, for the task and every open subtask the drop took with it (previous statuses come from the view model before the change) |
   | Move or reorder | `move_task` back to the previous parent and position |
   | Reject, Reject all | **deferred:** the reject is written 5 s later (or at quit). Until then the item and rows are hidden locally, and undo cancels it. `core` can't turn a task back into a proposal, so this is the only honest undo. |
@@ -488,11 +488,12 @@ Every screen keeps DESIGN.md's layout, sizes and motion. This section adds data,
   - `task_detail` for the selected item's task.
 - **Inbox:** the 420px list, grouped in DESIGN's fixed order. ↑↓ move, and the first item starts selected. A stale item is dimmed and says "May be out of date".
 - **Detail:** the card (kind, time, task, headline at 17px, actions), then the task's properties, notes and activity.
-- **Actions** (the main action is ↩ or ⌘↩; Dismiss is ⌘⌫):
+- **Actions** (the main action is ↩ or ⌘↩; Dismiss is ⌘⌫; Mark done is Space where the card offers it):
 
   | Kind | Main action | Others |
   |---|---|---|
   | Question, Approval, Failed run | Open thread (`open_thread` on the item's `ThreadKey`) | Dismiss |
+  | Agent stopped | Open thread (`open_thread` on the most recently active of the task's threads) | Mark done (`set_status` done, Space), Set in review (`set_status` in_review), Snooze 3 days, Dismiss. Mark done and Set in review toast with Undo |
   | Review | Open PR (`open_url`) | Dismiss |
   | Proposed | Accept all (`accept_proposals`) | Accept, Edit (rename in place, then accept), or Reject each; Reject all |
   | Ready | Do it (`do_it`) | Dismiss |
@@ -986,7 +987,7 @@ Single letters, Space and arrows act only in `list`, `panel` and `sidebar` (see 
 | ↑ ↓ | move | move | move by row of cards | map: within a wave |
 | → ← | open or fold; into the first child or up to the parent | | move by card | map: across waves |
 | ↩ | rename | main action | open page | map: open station |
-| Space | done / not done | | | |
+| Space | done / not done | Mark done (Agent stopped, Finish it?) | | |
 | S, 1–6 | status | | | |
 | R | link repos | | | |
 | ⌘↩ / ⇧⌘↩ | Do it / Plan it | main action | | the page's task or the selected station |

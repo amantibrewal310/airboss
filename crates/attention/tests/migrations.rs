@@ -37,6 +37,7 @@ fn a_good_row_of_every_kind_goes_in() {
         "ready",
         "finish",
         "quiet",
+        "stopped",
     ] {
         assert!(
             insert(&conn, &format!("{kind}:1"), kind, "dismissed", None),
@@ -98,7 +99,10 @@ fn opening_twice_applies_the_migration_once() {
         .unwrap()
         .collect::<Result<_, _>>()
         .unwrap();
-    assert_eq!(applied, vec![("attention".to_string(), 1)]);
+    assert_eq!(
+        applied,
+        vec![("attention".to_string(), 1), ("attention".to_string(), 2)]
+    );
     // core still opens the same file.
     airboss_core::Store::open(&dir.db()).unwrap();
 }
@@ -109,4 +113,47 @@ fn a_new_file_gets_cores_tables_and_ours() {
     HiddenStore::open(&dir.db()).unwrap();
     let store = airboss_core::Store::open(&dir.db()).unwrap();
     assert!(store.snapshot().unwrap().tree.is_empty());
+}
+
+#[test]
+fn version_two_keeps_every_row_from_version_one() {
+    let dir = TempDir::new();
+    // A file at attention v1, as 26 Nov 2026 shipped it, with one row.
+    let mut store = airboss_core::Store::open(&dir.db()).unwrap();
+    store
+        .migrate_module(
+            "attention",
+            &[airboss_core::Migration {
+                version: 1,
+                sql: include_str!("../src/migrations/001_attention.sql"),
+            }],
+        )
+        .unwrap();
+    drop(store);
+    let conn = Connection::open(dir.db()).unwrap();
+    assert!(insert(
+        &conn,
+        "quiet:9",
+        "quiet",
+        "snoozed",
+        Some("2026-11-29T00:00:00.000Z")
+    ));
+    assert!(!insert(&conn, "stopped:1", "stopped", "dismissed", None));
+    drop(conn);
+
+    let hidden = HiddenStore::open(&dir.db()).unwrap();
+    let rows = hidden.load().unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].key, key("quiet:9"));
+    assert!(rows[0].until.is_some());
+    let conn = Connection::open(dir.db()).unwrap();
+    assert!(insert(&conn, "stopped:1", "stopped", "dismissed", None));
+    let indexed: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE name = 'attention_hidden_task_idx'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(indexed, 1);
 }

@@ -136,6 +136,7 @@ fn kind_icon(kind: NeedsKind) -> Image<'static> {
         NeedsKind::Approval => tauri::include_image!("tray/needs-approval.png"),
         NeedsKind::Review => tauri::include_image!("tray/needs-review.png"),
         NeedsKind::FailedRun => tauri::include_image!("tray/needs-failed_run.png"),
+        NeedsKind::AgentStopped => tauri::include_image!("tray/needs-agent_stopped.png"),
         NeedsKind::Proposed => tauri::include_image!("tray/needs-proposed.png"),
         NeedsKind::Ready => tauri::include_image!("tray/needs-ready.png"),
         NeedsKind::FinishIt => tauri::include_image!("tray/needs-finish_it.png"),
@@ -279,6 +280,23 @@ mod tests {
         assert_eq!(m.header, "Needs me 8");
         assert_eq!(m.items.len(), 6);
         assert_eq!(m.items[0].label, "144  Agent in slot-picker asks · 10:32");
+        let stopped = NeedsItem {
+            key: NeedsKey("stopped:131:2026-11-25T10:32:00.000Z".into()),
+            kind: NeedsKind::AgentStopped,
+            group: NeedsKind::AgentStopped.group(),
+            headline: "Agent stopped · no PR yet".into(),
+            context: "fix-flaky-login stopped".into(),
+            task: TaskId(131),
+            ..list.items[0].clone()
+        };
+        let one = NeedsList {
+            items: vec![stopped],
+            count: 1,
+            ..NeedsList::default()
+        };
+        let m = model(&one, at("2026-11-25T18:00:00.000Z"), 0);
+        assert_eq!(m.items[0].kind, NeedsKind::AgentStopped);
+        assert_eq!(m.items[0].label, "131  fix-flaky-login stopped · 10:32");
         let empty = model(&NeedsList::default(), SystemTime::now(), 0);
         assert_eq!(empty.title, None);
         assert_eq!(empty.header, "Nothing needs you");

@@ -7,7 +7,7 @@ import type { NeedsGroup, NeedsItem, TaskId } from '../types';
 import { isOpen, ts, type MockState } from './model';
 import { indexTree, isReady, liveKids, openBlockers, visibleNeeds, type TreeIndex } from './viewmodel';
 
-export const GROUP_ORDER: NeedsGroup[] = ['questions', 'reviews', 'failed_runs', 'proposed', 'ready', 'finish_it', 'quiet'];
+export const GROUP_ORDER: NeedsGroup[] = ['questions', 'reviews', 'failed_runs', 'stopped', 'proposed', 'ready', 'finish_it', 'quiet'];
 
 export function sortNeeds(items: NeedsItem[]): NeedsItem[] {
   return [...items].sort(
@@ -30,6 +30,14 @@ function stillHolds(s: MockState, ix: TreeIndex, n: NeedsItem): NeedsItem | null
       const th = s.threads.get(`${n.target.thread.source}:${n.target.thread.ref}`);
       const want = n.kind === 'failed_run' ? 'errored' : 'needs_me';
       return th && th.view.state === want ? n : null;
+    }
+    case 'agent_stopped': {
+      // A doing task whose every linked thread stopped, with no open PR (SPEC-attention).
+      if (t.status !== 'doing') return null;
+      const threads = [...s.threads.values()].filter((th) => th.tasks.includes(n.task));
+      const stopped = threads.length > 0 && threads.every((th) => ['idle', 'settled', 'gone'].includes(th.view.state));
+      const openPr = [...s.prs.values()].some((p) => p.state === 'open' && s.links.some((l) => l.task === n.task && l.kind === 'pr' && l.ref === p.ref));
+      return stopped && !openPr ? n : null;
     }
     case 'review': {
       if (!isOpen(t.status) || !('pr' in n.target)) return null;

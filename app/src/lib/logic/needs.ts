@@ -6,6 +6,7 @@ export const KIND_LABEL: Record<NeedsKind, string> = {
   approval: 'Approval',
   review: 'Review',
   failed_run: 'Failed run',
+  agent_stopped: 'Agent stopped',
   proposed: 'Proposed subtasks',
   ready: 'Ready to start',
   finish_it: 'Finish it?',
@@ -25,6 +26,7 @@ export const KIND_ICON: Record<NeedsKind, IconName> = {
   approval: 'shield',
   review: 'pr',
   failed_run: 'failed',
+  agent_stopped: 'stopped',
   proposed: 'proposed',
   ready: 'play',
   finish_it: 'flag',
@@ -35,13 +37,14 @@ export const GROUP_LABEL: Record<NeedsGroup, string> = {
   questions: 'Questions',
   reviews: 'Reviews',
   failed_runs: 'Failed runs',
+  stopped: 'Stopped',
   proposed: 'Proposed',
   ready: 'Ready',
   finish_it: 'Finish it?',
   quiet: 'Quiet',
 };
 
-export const GROUP_ORDER: NeedsGroup[] = ['questions', 'reviews', 'failed_runs', 'proposed', 'ready', 'finish_it', 'quiet'];
+export const GROUP_ORDER: NeedsGroup[] = ['questions', 'reviews', 'failed_runs', 'stopped', 'proposed', 'ready', 'finish_it', 'quiet'];
 
 /** The main action (↩ / ⌘↩) for each kind. */
 export function mainLabel(kind: NeedsKind): string {
@@ -49,6 +52,7 @@ export function mainLabel(kind: NeedsKind): string {
     case 'question':
     case 'approval':
     case 'failed_run':
+    case 'agent_stopped':
       return 'Open thread';
     case 'review':
       return 'Open PR';
@@ -61,6 +65,11 @@ export function mainLabel(kind: NeedsKind): string {
     case 'quiet':
       return 'Open';
   }
+}
+
+/** Kinds whose card offers Mark done (Space in Needs me). */
+export function canMarkDone(kind: NeedsKind): boolean {
+  return kind === 'agent_stopped' || kind === 'finish_it';
 }
 
 /** The quieter action beside it: Dismiss for most, Keep open, Snooze 3 days, Reject all. */

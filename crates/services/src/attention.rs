@@ -66,6 +66,8 @@ pub enum NeedsKind {
     Approval,
     Review,
     FailedRun,
+    /// Every linked thread of a `doing` task stopped, with no open PR and nothing new for a while.
+    AgentStopped,
     Proposed,
     Ready,
     FinishIt,
@@ -79,6 +81,7 @@ impl NeedsKind {
             NeedsKind::Question | NeedsKind::Approval => NeedsGroup::Questions,
             NeedsKind::Review => NeedsGroup::Reviews,
             NeedsKind::FailedRun => NeedsGroup::FailedRuns,
+            NeedsKind::AgentStopped => NeedsGroup::Stopped,
             NeedsKind::Proposed => NeedsGroup::Proposed,
             NeedsKind::Ready => NeedsGroup::Ready,
             NeedsKind::FinishIt => NeedsGroup::FinishIt,
@@ -87,13 +90,15 @@ impl NeedsKind {
     }
 }
 
-/// The design's seven groups, declared in display order, so sorting by group is display order.
+/// The design's groups, declared in display order, so sorting by group is display order.
+/// Stopped (Agent stopped) sits right after Failed runs: both are a run that ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NeedsGroup {
     Questions,
     Reviews,
     FailedRuns,
+    Stopped,
     Proposed,
     Ready,
     FinishIt,

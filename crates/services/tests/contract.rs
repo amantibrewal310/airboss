@@ -37,7 +37,15 @@ fn every_thread_state_has_its_chip() {
 fn every_kind_has_its_group_and_groups_sort_in_display_order() {
     use NeedsKind::*;
     let got: Vec<NeedsGroup> = [
-        Question, Approval, Review, FailedRun, Proposed, Ready, FinishIt, Quiet,
+        Question,
+        Approval,
+        Review,
+        FailedRun,
+        AgentStopped,
+        Proposed,
+        Ready,
+        FinishIt,
+        Quiet,
     ]
     .into_iter()
     .map(NeedsKind::group)
@@ -49,6 +57,7 @@ fn every_kind_has_its_group_and_groups_sort_in_display_order() {
             NeedsGroup::Questions,
             NeedsGroup::Reviews,
             NeedsGroup::FailedRuns,
+            NeedsGroup::Stopped,
             NeedsGroup::Proposed,
             NeedsGroup::Ready,
             NeedsGroup::FinishIt,

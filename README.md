@@ -19,7 +19,7 @@ To-do apps don't know agent threads exist. Agent tools know threads, but not tas
 - **Capture from anywhere.** ⌃⌥N opens a quick-add box over any app. Paste a PR, issue, Slack or `t3code://` link into it and it's attached.
 - **Tasks of any size.** Every task can have subtasks, at any depth, linked to one or more repos. Subtasks can wait on each other, and a parent shows its run order in waves.
 - **Do it and Plan it.** ⌘↩ starts a T3 Code thread for the task, one per linked repo, each in its own worktree on a shared branch, with the task's notes as the brief. ⇧⌘↩ starts a planning thread, and the settled plan comes back as subtasks.
-- **Needs me first.** The home screen lists what is waiting on you: agent questions and approvals, PRs to review, failed runs, proposed subtasks, tasks that just became ready, parents whose subtasks are all done, and work quiet for 5 days. The menu-bar icon shows the count.
+- **Needs me first.** The home screen lists what is waiting on you: agent questions and approvals, PRs to review, failed runs, agents that stopped without a PR, proposed subtasks, tasks that just became ready, parents whose subtasks are all done, and work quiet for 5 days. The menu-bar icon shows the count.
 - **Status is read, not typed.** Agents report through an MCP server. A merged PR finishes its task. T3 Code's threads show whether an agent is working, waiting on you or stopped.
 - **Agents propose, you decide.** Agents can move their tasks along and propose new ones. Only you accept proposals, drop tasks, or finish a task whose PR hasn't merged.
 - **Keyboard first, and a real Mac app.** Native menus, a menu-bar item, open at login, dark and light, ⌘K to jump anywhere, ⌘Z to undo a slip, and a shortcut for every main action.

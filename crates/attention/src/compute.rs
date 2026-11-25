@@ -16,7 +16,7 @@ use airboss_services::{
     NeedsGroup, NeedsItem, NeedsKey, NeedsKind, SyncSnapshot, Target, ThreadState, Timestamp,
 };
 
-use crate::{AttentionConfig, kinds, quiet};
+use crate::{AttentionConfig, kinds, quiet, stopped};
 
 /// Everything `compute` reads: the latest `core` and `sync` snapshots.
 #[derive(Debug, Clone)]
@@ -97,6 +97,7 @@ pub(crate) fn compute_full(
     let mut wake = Wake::new(now);
     let mut all = Vec::new();
     kinds::threads(&ctx, &mut all);
+    stopped::stopped(&ctx, &mut all, &mut wake);
     kinds::reviews(&ctx, &mut all);
     kinds::proposed(&ctx, &mut all);
     kinds::ready(&ctx, &mut all);
@@ -125,6 +126,16 @@ pub(crate) fn compute_full(
             Some(Some(_)) => true,
         })
         .collect();
+    // Quiet gives way to a visible Agent stopped item on the same task: one reminder at a
+    // time. Dismissed, Agent stopped leaves the longer reminder to Quiet.
+    let stopped_on: HashSet<TaskId> = entries
+        .iter()
+        .filter(|e| e.item.kind == NeedsKind::AgentStopped)
+        .map(|e| e.item.task)
+        .collect();
+    if !stopped_on.is_empty() {
+        entries.retain(|e| !(e.item.kind == NeedsKind::Quiet && stopped_on.contains(&e.item.task)));
+    }
     for at in entries.iter().filter_map(|e| e.changes_at) {
         wake.at(at);
     }
