@@ -257,3 +257,55 @@ fn the_task_menu_shows_the_newest_undo() {
         .unwrap();
     assert!(last.contains(&format!("Mark done {}", t.0)), "{last}");
 }
+
+#[test]
+fn undoing_a_reject_is_never_refused_by_an_agents_change() {
+    let app = TestApp::new();
+    let p = app.add("P", None);
+    let x = proposal(&app, p, "x");
+    app.sync_vm();
+    tasks::reject_proposals(&app.state, M, vec![x], None).unwrap();
+    app.core(|s| {
+        s.add_note(x, "more detail", &Actor::Agent("t3/x".into()))
+            .unwrap()
+    });
+    app.sync_vm();
+    let r = tasks::undo(&app.state, M, None).unwrap();
+    assert!(r.message.starts_with("Undid"), "{}", r.message);
+    app.state.shutdown(Duration::from_secs(1));
+    assert_eq!(
+        status(&app, x),
+        Status::Proposed,
+        "the cancelled reject is never written"
+    );
+}
+
+#[test]
+fn only_proposals_can_be_rejected_and_an_accepted_one_is_left_alone() {
+    let app = TestApp::new();
+    let p = app.add("P", None);
+    let x = proposal(&app, p, "x");
+    app.sync_vm();
+    assert_eq!(
+        tasks::reject_proposals(&app.state, M, vec![p], None)
+            .unwrap_err()
+            .code,
+        ErrorCode::NotAllowed
+    );
+    tasks::reject_proposals(&app.state, M, vec![x], None).unwrap();
+    // Accepted in the meantime (from the CLI, say): the reject isn't written.
+    app.core(|s| s.set_status(x, Status::Todo, None, &Actor::Me).unwrap());
+    app.sync_vm();
+    app.state.shutdown(Duration::from_secs(1));
+    assert_eq!(status(&app, x), Status::Todo);
+}
+
+#[test]
+fn dropping_a_dropped_task_makes_no_undo_entry() {
+    let app = TestApp::new();
+    let t = app.add("T", None);
+    app.sync_vm();
+    tasks::set_status(&app.state, M, t, Status::Dropped, None).unwrap();
+    let again = tasks::set_status(&app.state, M, t, Status::Dropped, None).unwrap();
+    assert!(again.undo.is_none());
+}

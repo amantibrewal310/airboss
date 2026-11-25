@@ -6,7 +6,6 @@
 //! any service's `Changes` bump. They all go to one channel, read by the catch-up worker, which
 //! waits 30 ms after the last trigger and never more than 150 ms after the first.
 
-use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
@@ -151,13 +150,12 @@ impl AppState {
         self.catch_up()
     }
 
-    /// After a write: catch up inline and return the patch, or an empty one at the current
-    /// `seq` if the worker already sent it (or nothing changed).
+    /// After a write: catch up inline and return the patch. If there's nothing new (the write
+    /// changed nothing, or the worker caught up first and already sent it as `tree:patch`),
+    /// the answer is [`Patch::none`], which the UI always skips: an empty patch carrying the
+    /// worker's `seq` could arrive before that event and make the UI drop the real one.
     pub(crate) fn after_write(&self) -> AppResult<Patch> {
-        match self.catch_up()? {
-            Some(p) => Ok(p),
-            None => Ok(Patch::empty(self.seq())),
-        }
+        Ok(self.catch_up()?.unwrap_or_else(Patch::none))
     }
 
     /// Builds a new view model, diffs it, and sends what changed: `tree:patch`,
@@ -239,12 +237,22 @@ impl AppState {
         }
 
         if let Some(path) = self.core(|s| Ok(s.path())).ok().flatten() {
-            let weak = Arc::downgrade(self);
-            match crate::watcher::Watch::start(&path, tx.clone(), move |why| {
-                if let Some(me) = weak.upgrade() {
-                    me.report_problem("database", why, |p| p.db_moved = true);
-                }
-            }) {
+            let (moved, stopped) = (Arc::downgrade(self), Arc::downgrade(self));
+            let watch = crate::watcher::Watch::start(
+                &path,
+                tx.clone(),
+                move |why| {
+                    if let Some(me) = moved.upgrade() {
+                        me.report_problem("database", why, |p| p.db_moved = true);
+                    }
+                },
+                move || {
+                    if let Some(me) = stopped.upgrade() {
+                        me.live_updates_stopped("watcher");
+                    }
+                },
+            );
+            match watch {
                 Ok(w) => *lock(&self.watch) = Some(w),
                 Err(e) => self.report_problem(
                     "watcher",
@@ -391,33 +399,23 @@ fn worker(state: &AppState, rx: &Receiver<Trigger>) {
 /// restarted); after a second it stops, and the footer says live updates stopped.
 pub fn guarded(state: &Arc<AppState>, name: &'static str, body: impl FnMut(bool) + Send + 'static) {
     let weak = Arc::downgrade(state);
-    let mut body = body;
-    let spawned = std::thread::Builder::new()
-        .name(format!("airboss-{name}"))
-        .spawn(move || {
-            let mut panics = 0;
-            loop {
-                let restarted = panics > 0;
-                match catch_unwind(AssertUnwindSafe(|| body(restarted))) {
-                    Ok(()) => return,
-                    Err(_) => {
-                        panics += 1;
-                        log::error!("the {name} thread panicked ({panics})");
-                        if panics >= 2 {
-                            if let Some(me) = weak.upgrade() {
-                                me.report_problem(
-                                    name,
-                                    "Live updates stopped after an internal error. Restart Airboss.",
-                                    |p| p.live_stopped = true,
-                                );
-                            }
-                            return;
-                        }
-                    }
-                }
-            }
-        });
+    let spawned = crate::util::spawn_guarded(name, body, move || {
+        if let Some(me) = weak.upgrade() {
+            me.live_updates_stopped(name);
+        }
+    });
     if let Err(e) = spawned {
         log::error!("couldn't start the {name} thread: {e}");
+    }
+}
+
+impl AppState {
+    /// An app thread gave up after a second panic: the footer says so.
+    pub(crate) fn live_updates_stopped(&self, source: &str) {
+        self.report_problem(
+            source,
+            "Live updates stopped after an internal error. Restart Airboss.",
+            |p| p.live_stopped = true,
+        );
     }
 }

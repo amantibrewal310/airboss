@@ -102,3 +102,44 @@ fn commands_go_through_invoke_and_each_window_only_gets_its_own() {
     // …and the main window may not resize the panel.
     assert!(get_ipc_response(&main, request("quickadd_resize", json!({"height": 200}))).is_err());
 }
+
+#[test]
+fn quitting_through_exit_alone_shuts_down_once() {
+    let test = common::TestApp::new();
+    let parent = test.add("Parent", None);
+    let proposal = test.core(|s| {
+        s.add_task(
+            airboss_core::NewTask::new("Proposal").under(parent),
+            &airboss_core::Actor::Agent("t3/x".into()),
+        )
+        .unwrap()
+        .id
+    });
+    test.sync_vm();
+    airboss_app::commands::tasks::reject_proposals(
+        &test.state,
+        airboss_app::Caller::Main,
+        vec![proposal],
+        None,
+    )
+    .unwrap();
+    let app = mock_builder()
+        .manage(App::ready(test.state.clone()))
+        .build(tauri::generate_context!("tauri.conf.json", test = true))
+        .unwrap();
+    // ⌘Q (AppKit's terminate:) raises Exit without ExitRequested.
+    airboss_app::native::on_run_event(app.handle(), tauri::RunEvent::Exit);
+    airboss_app::native::on_run_event(app.handle(), tauri::RunEvent::Exit);
+    assert_eq!(
+        test.core(|s| s.task(proposal).unwrap().status),
+        airboss_core::Status::Dropped,
+        "the pending reject was written"
+    );
+    let shutdowns = test
+        .launch
+        .calls()
+        .iter()
+        .filter(|c| *c == "shutdown")
+        .count();
+    assert_eq!(shutdowns, 1, "every service is shut down exactly once");
+}

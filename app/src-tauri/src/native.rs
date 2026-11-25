@@ -10,7 +10,7 @@ use airboss_services::{NeedsList, SystemClock};
 use tauri::menu::MenuEvent;
 use tauri::tray::TrayIcon;
 use tauri::window::Color;
-use tauri::{AppHandle, Emitter, Manager, RunEvent, Theme, Window, WindowEvent, Wry};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, Runtime, Theme, Window, WindowEvent, Wry};
 use tauri_plugin_autostart::ManagerExt as _;
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_dialog::DialogExt;
@@ -175,6 +175,13 @@ impl Shell for Arc<TauriShell> {
             .map_err(|e| e.to_string())
     }
 
+    fn reveal(&self, path: &Path) -> Result<(), String> {
+        self.app
+            .opener()
+            .reveal_item_in_dir(path)
+            .map_err(|e| e.to_string())
+    }
+
     fn copy_text(&self, text: &str) -> Result<(), String> {
         self.app
             .clipboard()
@@ -271,7 +278,7 @@ impl Shell for Arc<TauriShell> {
 }
 
 /// Shows and focuses the main window (from the Dock, the menu bar or a second launch).
-pub fn show_main_window(app: &AppHandle<Wry>) {
+pub fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
     if let Some(w) = app.get_webview_window(MAIN) {
         let _ = w.unminimize();
         let _ = w.show();
@@ -522,7 +529,7 @@ fn menu_command(
         return;
     };
     let app = app.clone();
-    std::thread::spawn(move || match f(&state) {
+    std::thread::spawn(move || match crate::ipc::guarded_call(|| f(&state)) {
         Ok(()) => toast(&app, ok, ToastTone::Info),
         Err(e) => toast(&app, &e.message, ToastTone::Warning),
     });
@@ -596,13 +603,14 @@ pub fn on_menu_event(app: &AppHandle<Wry>, event: MenuEvent) {
 }
 
 /// The run loop: the Dock icon shows the main window, and quitting shuts down cleanly.
-pub fn on_run_event(app: &AppHandle<Wry>, event: RunEvent) {
+///
+/// ⌘Q, the Dock's Quit and logging out arrive as `Exit` only (AppKit's `terminate:`); the
+/// menu-bar menu's Quit (`app.exit`) sends `ExitRequested` first. Either shuts down once.
+pub fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: RunEvent) {
     match event {
         RunEvent::Reopen { .. } => show_main_window(app),
-        RunEvent::ExitRequested { .. } => {
-            if let Some(s) = app.try_state::<App>().and_then(|a| a.current())
-                && !s.stopping.load(Ordering::SeqCst)
-            {
+        RunEvent::ExitRequested { .. } | RunEvent::Exit => {
+            if let Some(s) = app.try_state::<App>().and_then(|a| a.current()) {
                 s.shutdown(Duration::from_secs(1));
             }
         }

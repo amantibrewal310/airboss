@@ -8,7 +8,7 @@ use airboss_core::{LinkKind, TaskId};
 use airboss_services::ThreadKey;
 use tauri_plugin_log::log;
 
-use crate::classify::{check_url, expand_home, file_url};
+use crate::classify::{check_url, expand_home, file_path, file_url, runs_something};
 use crate::dto::{
     CliStatus, CopyWhat, InstallCliResult, NavOpen, OpenTarget, QuickaddReset, path_text,
 };
@@ -74,8 +74,16 @@ pub fn open_url(s: &AppState, _c: Caller, target: OpenTarget) -> AppResult<()> {
     open_checked(s, &url)
 }
 
+/// Opens an allowed URL. A file that would run something when opened (an app, a script, an
+/// installer, a folder) is shown in Finder instead.
 fn open_checked(s: &AppState, url: &str) -> AppResult<()> {
     check_url(url)?;
+    if let Some(path) = file_path(url).filter(|p| runs_something(p)) {
+        return s
+            .shell
+            .reveal(&path)
+            .map_err(|e| AppError::internal(format!("couldn't show {}: {e}", path.display())));
+    }
     s.shell
         .open_url(url)
         .map_err(|e| AppError::internal(format!("couldn't open {url}: {e}")))
@@ -115,7 +123,22 @@ pub fn install_cli(s: &AppState, _c: Caller) -> AppResult<InstallCliResult> {
     let fail = |e: std::io::Error| AppError::internal(format!("install_cli: {e}"));
     std::fs::create_dir_all(&bin).map_err(fail)?;
     match std::fs::symlink_metadata(&link) {
-        Ok(m) if m.file_type().is_symlink() => std::fs::remove_file(&link).map_err(fail)?,
+        Ok(m) if m.file_type().is_symlink() => {
+            // Replace our own link (this app, or a copy of it that moved); never someone
+            // else's.
+            let target = std::fs::read_link(&link).map_err(fail)?;
+            let ours = target == sidecar || target.ends_with("Airboss.app/Contents/MacOS/airboss");
+            if !ours {
+                return Err(AppError::new(
+                    ErrorCode::AlreadyExists,
+                    format!(
+                        "~/.local/bin/airboss already links to {}. Remove it, then try again.",
+                        target.display()
+                    ),
+                ));
+            }
+            std::fs::remove_file(&link).map_err(fail)?;
+        }
         Ok(_) => {
             return Err(AppError::new(
                 ErrorCode::AlreadyExists,

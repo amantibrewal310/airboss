@@ -36,11 +36,13 @@ impl Drop for Watch {
 
 impl Watch {
     /// Watches `db`'s WAL and folder, sending [`Trigger::Core`] for every change.
-    /// `on_moved` is called once if the database file disappears or is replaced.
+    /// `on_moved` is called once if the database file disappears or is replaced, and
+    /// `on_stopped` if the thread gives up after a second panic.
     pub fn start(
         db: &Path,
         triggers: Sender<Trigger>,
         on_moved: impl Fn(&str) + Send + 'static,
+        on_stopped: impl FnOnce() + Send + 'static,
     ) -> notify::Result<Watch> {
         let db = db.to_path_buf();
         let folder = db
@@ -61,10 +63,10 @@ impl Watch {
         watcher.watch(&folder, RecursiveMode::NonRecursive)?;
         let mut wal_armed = arm(&mut watcher, &wal);
 
-        let thread = std::thread::Builder::new()
-            .name("airboss-watcher".into())
-            .spawn(move || {
-                let mut moved = false;
+        let mut moved = false;
+        let thread = crate::util::spawn_guarded(
+            "watcher",
+            move |_restarted| {
                 while let Ok(Msg::Event(res)) = rx.recv() {
                     let event = match res {
                         Ok(e) => e,
@@ -105,8 +107,10 @@ impl Watch {
                         return;
                     }
                 }
-            })
-            .map_err(notify::Error::io)?;
+            },
+            on_stopped,
+        )
+        .map_err(notify::Error::io)?;
         Ok(Watch {
             _thread: thread,
             stop: tx,

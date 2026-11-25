@@ -354,7 +354,9 @@ impl AppState {
     /// Quits cleanly: pending rejects are written, folds saved, and each service's
     /// `shutdown()` called on its own thread, waiting at most `limit` in total.
     pub fn shutdown(&self, limit: Duration) {
-        self.stopping.store(true, Ordering::SeqCst);
+        if self.stopping.swap(true, Ordering::SeqCst) {
+            return; // Already shut down (quit raises more than one event).
+        }
         self.write_rejects(true);
         self.rejects.wake();
         self.flush_folds();

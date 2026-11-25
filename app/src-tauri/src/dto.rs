@@ -692,12 +692,10 @@ pub struct Patch {
 }
 
 impl Patch {
-    /// A patch that changes nothing, at the current `seq` (the UI skips it).
-    pub fn empty(seq: u64) -> Patch {
-        Patch {
-            seq,
-            ..Patch::default()
-        }
+    /// A patch with nothing in it and `seq` 0, below every real patch's, so the UI (which
+    /// applies a patch only if its `seq` is greater than the last one applied) skips it.
+    pub fn none() -> Patch {
+        Patch::default()
     }
 
     /// Nothing in it.

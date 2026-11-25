@@ -171,15 +171,6 @@ impl Rejects {
         due
     }
 
-    /// The task ids of rejects not yet written, which the UI keeps hidden.
-    pub fn pending_ids(&self) -> Vec<TaskId> {
-        lock(&self.pending)
-            .0
-            .iter()
-            .flat_map(|r| r.ids.iter().copied())
-            .collect()
-    }
-
     /// Wakes the timer (at quit).
     pub fn wake(&self) {
         self.changed.notify_all();
@@ -195,6 +186,15 @@ impl AppState {
         }
         for r in &due {
             for id in &r.ids {
+                // Accepted (or changed) since the reject was queued: leave it.
+                match self.core(|s| s.task(*id)) {
+                    Ok(t) if t.status == Status::Proposed => {}
+                    Ok(_) | Err(airboss_core::Error::NotFound) => continue,
+                    Err(e) => {
+                        log::warn!("couldn't check {} before rejecting it: {e}", id.0);
+                        continue;
+                    }
+                }
                 let reason = r.reason.as_deref();
                 if let Err(e) =
                     self.core(|s| s.set_status(*id, Status::Dropped, reason, &Actor::Me))

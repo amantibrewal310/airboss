@@ -218,7 +218,7 @@ pub fn set_status(
             undo: None,
         });
     }
-    let inverse = before
+    let inverse: Vec<Inverse> = before
         .iter()
         .filter(|(_, prev, _)| *prev != Status::Dropped)
         .map(|(t, prev, reason)| Inverse::SetStatus {
@@ -231,6 +231,13 @@ pub fn set_status(
             },
         })
         .collect();
+    if inverse.is_empty() {
+        // e.g. dropping a task that was already dropped: nothing to put back.
+        return Ok(UndoableWrite {
+            patch: Some(patch),
+            undo: None,
+        });
+    }
     let tasks = before.iter().map(|(t, _, _)| *t).collect();
     let undo = s.push_undo(undo_label(id, from, status), inverse, tasks, after);
     Ok(UndoableWrite {
@@ -293,6 +300,19 @@ pub fn reject_proposals(
 ) -> AppResult<UndoableWrite> {
     if ids.is_empty() {
         return Err(AppError::new(ErrorCode::NotFound, "Nothing to reject."));
+    }
+    // Only proposals can be rejected (`core` would write a plain drop otherwise).
+    for id in &ids {
+        match s.row(*id) {
+            Some(r) if r.status == Status::Proposed => {}
+            Some(_) => {
+                return Err(AppError::new(
+                    ErrorCode::NotAllowed,
+                    format!("{} isn't a proposal any more.", id.0),
+                ));
+            }
+            None => return Err(AppError::task_gone(*id)),
+        }
     }
     let reject = s.rejects.add(
         ids.clone(),
@@ -493,7 +513,13 @@ pub fn undo(s: &AppState, _c: Caller, entry: Option<u64>) -> AppResult<UndoResul
         });
     };
     s.refresh_menus();
-    if !e.tasks.is_empty() {
+    // Cancelling a reject that hasn't been written touches nothing anyone else could have
+    // changed, so it's never refused.
+    let only_cancels = e
+        .inverse
+        .iter()
+        .all(|i| matches!(i, Inverse::CancelReject(_)));
+    if !e.tasks.is_empty() && !only_cancels {
         let later = s.core_as(Ctx::Read, |st| st.events_after(e.after))?;
         if let Some(ev) = later
             .iter()
@@ -503,32 +529,39 @@ pub fn undo(s: &AppState, _c: Caller, entry: Option<u64>) -> AppResult<UndoResul
         }
     }
     let mut touched_core = false;
-    for inv in &e.inverse {
-        match inv {
-            Inverse::SetStatus { id, status, note } => {
-                touched_core = true;
-                s.core_as(Ctx::Task(*id), |st| {
-                    st.set_status(*id, *status, note.as_deref(), &Actor::Me)
-                })?;
-            }
+    let mut failed = None;
+    for (done, inv) in e.inverse.iter().enumerate() {
+        let step = match inv {
+            Inverse::SetStatus { id, status, note } => s.core_as(Ctx::Task(*id), |st| {
+                st.set_status(*id, *status, note.as_deref(), &Actor::Me)
+                    .map(|_| ())
+            }),
             Inverse::Move {
                 id,
                 parent,
                 position,
-            } => {
-                touched_core = true;
-                s.core_as(Ctx::Move(*id), |st| {
-                    st.move_task(*id, *parent, *position, &Actor::Me)
-                })?;
-            }
-            Inverse::Restore(key) => s.services.attention.restore(key)?,
+            } => s.core_as(Ctx::Move(*id), |st| {
+                st.move_task(*id, *parent, *position, &Actor::Me)
+            }),
+            Inverse::Restore(key) => s.services.attention.restore(key).map_err(AppError::from),
             Inverse::CancelReject(id) => {
-                if !s.rejects.cancel(*id) {
-                    return Err(AppError::new(
+                if s.rejects.cancel(*id) {
+                    Ok(())
+                } else {
+                    Err(AppError::new(
                         ErrorCode::UndoRefused,
                         "That reject was already saved; nothing was undone.",
-                    ));
+                    ))
                 }
+            }
+        };
+        match step {
+            Ok(()) => {
+                touched_core |= matches!(inv, Inverse::SetStatus { .. } | Inverse::Move { .. });
+            }
+            Err(err) => {
+                failed = Some((done, err));
+                break;
             }
         }
     }
@@ -537,8 +570,84 @@ pub fn undo(s: &AppState, _c: Caller, entry: Option<u64>) -> AppResult<UndoResul
     } else {
         None
     };
-    Ok(UndoResult {
-        patch,
-        message: format!("Undid “{}”", e.label),
-    })
+    match failed {
+        // Nothing was undone: say why.
+        Some((0, err)) => Err(err),
+        Some((_, err)) => Ok(UndoResult {
+            patch,
+            message: format!("Partly undid “{}”: {}", e.label, err.message),
+        }),
+        None => Ok(UndoResult {
+            patch,
+            message: format!("Undid “{}”", e.label),
+        }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use std::sync::Arc;
+
+    use airboss_core::{EventId, NewTask, Store};
+    use airboss_services::fakes::{FakeAttention, FakeLaunch, FakeSync};
+
+    use super::*;
+    use crate::{AppConfig, RecordingShell, Services, share};
+
+    #[test]
+    fn an_undo_that_fails_partway_reports_what_it_did() {
+        let store = share(Store::open_in_memory().unwrap());
+        let services = Services {
+            sync: Arc::new(FakeSync::new()),
+            launch: Arc::new(FakeLaunch::new()),
+            attention: Arc::new(FakeAttention::new()),
+        };
+        let s = AppState::new(
+            store.clone(),
+            services,
+            Arc::new(RecordingShell::new()),
+            Arc::new(airboss_services::SystemClock),
+            AppConfig::new(Default::default(), None),
+        )
+        .unwrap();
+        let t = store
+            .lock()
+            .unwrap()
+            .add_task(NewTask::new("T"), &Actor::Me)
+            .unwrap()
+            .id;
+        store
+            .lock()
+            .unwrap()
+            .set_status(t, Status::Doing, None, &Actor::Me)
+            .unwrap();
+        s.catch_up().unwrap();
+        // The first inverse works; the second names a task that's gone.
+        s.push_undo(
+            "Drop 1".into(),
+            vec![
+                Inverse::SetStatus {
+                    id: t,
+                    status: Status::Todo,
+                    note: None,
+                },
+                Inverse::SetStatus {
+                    id: TaskId(999),
+                    status: Status::Todo,
+                    note: None,
+                },
+            ],
+            Vec::new(),
+            EventId(0),
+        );
+        let r = undo(&s, Caller::Main, None).unwrap();
+        assert_eq!(
+            r.message,
+            "Partly undid “Drop 1”: Task 999 no longer exists."
+        );
+        assert!(r.patch.unwrap().upserts.iter().any(|row| row.id == t));
+        assert_eq!(store.lock().unwrap().task(t).unwrap().status, Status::Todo);
+    }
 }

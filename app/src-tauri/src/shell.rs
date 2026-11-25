@@ -86,6 +86,8 @@ pub trait Shell: Send + Sync {
     fn resize_quickadd(&self, height: f64);
     /// Opens a URL the allowlist has already passed.
     fn open_url(&self, url: &str) -> Result<(), String>;
+    /// Shows a file or folder in Finder, without opening it.
+    fn reveal(&self, path: &std::path::Path) -> Result<(), String>;
     /// Puts text on the clipboard.
     fn copy_text(&self, text: &str) -> Result<(), String>;
     /// The folder picker; `None` when cancelled.
@@ -201,6 +203,10 @@ impl Shell for RecordingShell {
     }
     fn open_url(&self, url: &str) -> Result<(), String> {
         self.call(format!("open_url({url})"));
+        Ok(())
+    }
+    fn reveal(&self, path: &std::path::Path) -> Result<(), String> {
+        self.call(format!("reveal({})", path.display()));
         Ok(())
     }
     fn copy_text(&self, text: &str) -> Result<(), String> {

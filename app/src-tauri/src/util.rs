@@ -49,3 +49,33 @@ impl Debounced {
         }
     }
 }
+
+/// Runs a thread's loop in `catch_unwind`. After one panic it runs again (told it was
+/// restarted); after a second it stops and calls `gave_up`.
+pub fn spawn_guarded(
+    name: &str,
+    mut body: impl FnMut(bool) + Send + 'static,
+    gave_up: impl FnOnce() + Send + 'static,
+) -> std::io::Result<std::thread::JoinHandle<()>> {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+    let label = name.to_string();
+    std::thread::Builder::new()
+        .name(format!("airboss-{name}"))
+        .spawn(move || {
+            let mut panics = 0;
+            loop {
+                let restarted = panics > 0;
+                match catch_unwind(AssertUnwindSafe(|| body(restarted))) {
+                    Ok(()) => return,
+                    Err(_) => {
+                        panics += 1;
+                        log::error!("the {label} thread panicked ({panics})");
+                        if panics >= 2 {
+                            gave_up();
+                            return;
+                        }
+                    }
+                }
+            }
+        })
+}

@@ -8,7 +8,7 @@ use tauri_plugin_log::log;
 
 use crate::classify::classify;
 use crate::dto::{AddReposResult, Patch, path_text};
-use crate::errors::{AppError, AppResult, Ctx};
+use crate::errors::{AppError, AppResult, Ctx, ErrorCode};
 use crate::state::{AppState, Caller};
 
 /// The `origin` remote's URL from a repo's `.git/config`, if it has one.
@@ -31,6 +31,25 @@ pub fn origin_remote(folder: &Path) -> Option<String> {
     None
 }
 
+/// An absolute path to an existing folder, with symlinks resolved, so one folder is one repo.
+fn folder(p: &str) -> AppResult<PathBuf> {
+    let refuse = || {
+        AppError::new(
+            ErrorCode::InvalidTarget,
+            "Choose a folder to add as a repo.",
+        )
+    };
+    let path = Path::new(p);
+    if !path.is_absolute() {
+        return Err(refuse());
+    }
+    let path = path.canonicalize().map_err(|_| refuse())?;
+    if !path.is_dir() {
+        return Err(refuse());
+    }
+    Ok(path)
+}
+
 /// Adds each folder as a repo: its name from the folder, its remote from `.git/config`. A
 /// folder that can't be added fails the call after the others are added (their patch is sent
 /// as an event too).
@@ -38,7 +57,13 @@ pub fn add_repos(s: &AppState, _c: Caller, paths: Vec<String>) -> AppResult<AddR
     let mut added: Vec<Repo> = Vec::new();
     let mut failed: Option<AppError> = None;
     for p in paths {
-        let path = PathBuf::from(&p);
+        let path = match folder(&p) {
+            Ok(path) => path,
+            Err(e) => {
+                failed.get_or_insert(e.with_detail(p));
+                continue;
+            }
+        };
         let name = path
             .file_name()
             .and_then(|n| n.to_str())

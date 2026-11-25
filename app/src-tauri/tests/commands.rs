@@ -1318,3 +1318,128 @@ fn commands_run_by_name_with_json_as_invoke_sends_them() {
     assert!(app.call("no_such_command", serde_json::json!({})).is_err());
     let _ = Arc::strong_count(&app.state);
 }
+
+#[test]
+fn a_write_with_nothing_new_returns_a_patch_the_ui_always_skips() {
+    // The worker can catch up first and send the write's patch as `tree:patch`; the write's
+    // own answer must not carry that seq, or the UI (which applies a patch only if its seq is
+    // greater than the last applied) would drop the real patch if the answer came first.
+    let app = TestApp::new();
+    let t = app.add("T", None);
+    app.sync_vm();
+    app.core(|s| {
+        s.edit_task(
+            t,
+            airboss_core::TaskEdit::default().title("Renamed"),
+            &Actor::Me,
+        )
+        .unwrap()
+    });
+    let event = app.state.catch_up().unwrap().unwrap(); // the worker's tree:patch
+    let answer = tasks::rename_task(&app.state, M, t, "Renamed".into()).unwrap();
+    assert!(answer.upserts.is_empty());
+    assert_eq!(answer.seq, 0);
+    // The UI's rule, with the answer arriving first and the event second.
+    let mut applied = 0u64;
+    let mut apply = |seq: u64| {
+        if seq > applied {
+            applied = seq;
+            true
+        } else {
+            false
+        }
+    };
+    assert!(!apply(answer.seq));
+    assert!(apply(event.seq), "the real patch still applies");
+}
+
+#[test]
+fn file_links_that_would_run_something_are_shown_in_finder() {
+    use std::os::unix::fs::PermissionsExt;
+    let app = TestApp::new();
+    let dir = temp_dir("open");
+    let doc = dir.join("plan.md");
+    std::fs::write(&doc, "# plan").unwrap();
+    let script = dir.join("run me.command");
+    std::fs::write(&script, "#!/bin/sh\n").unwrap();
+    let exe = dir.join("tool");
+    std::fs::write(&exe, "#!/bin/sh\n").unwrap();
+    std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let bundle = dir.join("Thing.app");
+    std::fs::create_dir_all(&bundle).unwrap();
+    let url = |p: &Path| airboss_app::classify::file_url(p);
+    appcmd::open_url(&app.state, M, OpenTarget::Url(url(&doc))).unwrap();
+    for p in [&script, &exe, &bundle, &dir] {
+        appcmd::open_url(&app.state, M, OpenTarget::Url(url(p))).unwrap();
+    }
+    let calls = app.shell.calls();
+    assert!(calls.contains(&format!("open_url({})", url(&doc))));
+    for p in [&script, &exe, &bundle, &dir] {
+        assert!(
+            calls.contains(&format!("reveal({})", p.display())),
+            "{} should be revealed: {calls:?}",
+            p.display()
+        );
+        assert!(!calls.contains(&format!("open_url({})", url(p))));
+    }
+}
+
+#[test]
+fn add_repos_needs_an_absolute_path_to_a_folder() {
+    let app = TestApp::new();
+    let dir = temp_dir("repo-path");
+    let file = dir.join("not-a-folder");
+    std::fs::write(&file, "x").unwrap();
+    for bad in [
+        "relative/path".to_string(),
+        file.to_string_lossy().into(),
+        "/no/such/folder".into(),
+    ] {
+        assert_eq!(
+            err_code(repos::add_repos(&app.state, M, vec![bad.clone()])),
+            (
+                ErrorCode::InvalidTarget,
+                "Choose a folder to add as a repo.".into()
+            ),
+            "{bad}"
+        );
+    }
+    // A symlink and its folder are one repo.
+    let real = dir.join("real");
+    std::fs::create_dir_all(&real).unwrap();
+    let alias = dir.join("alias");
+    std::os::unix::fs::symlink(&real, &alias).unwrap();
+    let out = repos::add_repos(&app.state, M, vec![alias.to_string_lossy().into()]).unwrap();
+    assert_eq!(
+        out.repos[0].path,
+        real.canonicalize().unwrap().to_string_lossy()
+    );
+    assert_eq!(out.repos[0].name, "real");
+}
+
+#[test]
+fn install_cli_never_replaces_someone_elses_link() {
+    let app = TestApp::new();
+    let sidecar = temp_dir("bundle2").join("airboss");
+    std::fs::write(&sidecar, b"#!/bin/sh\n").unwrap();
+    app.shell.set_sidecar(Some(sidecar.clone()));
+    let bin = app.home.join(".local/bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    std::os::unix::fs::symlink("/opt/elsewhere/airboss", bin.join("airboss")).unwrap();
+    let (code, message) = err_code(appcmd::install_cli(&app.state, M));
+    assert_eq!(code, ErrorCode::AlreadyExists);
+    assert!(message.contains("/opt/elsewhere/airboss"), "{message}");
+    assert_eq!(
+        std::fs::read_link(bin.join("airboss")).unwrap(),
+        Path::new("/opt/elsewhere/airboss")
+    );
+    // A link left by a copy of the app that moved is ours to replace.
+    std::fs::remove_file(bin.join("airboss")).unwrap();
+    std::os::unix::fs::symlink(
+        "/Volumes/Old/Airboss.app/Contents/MacOS/airboss",
+        bin.join("airboss"),
+    )
+    .unwrap();
+    appcmd::install_cli(&app.state, M).unwrap();
+    assert_eq!(std::fs::read_link(bin.join("airboss")).unwrap(), sidecar);
+}

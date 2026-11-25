@@ -2,7 +2,7 @@
 
 The Rust side of module `app` from [CAPABILITIES.md](../CAPABILITIES.md): the crate `airboss-app` in `app/src-tauri`. It builds what [SPEC-app.md](../SPEC-app.md) (draft 2, approved) asks of Rust, on `core` v3 and the std-only contract in `crates/services`. The tasks and checkpoints are in [app-backend-todo.md](app-backend-todo.md). The Svelte UI is built in parallel in its own worktree; `sync`, `launch` and `attention` are built in parallel too, so this crate runs on the `fakes` of `crates/services` until integration.
 
-State: **planned 26 Nov 2026**.
+State: **built 26 Nov 2026**, on the UI's contract and the real services. Measurements are at the end.
 
 ## Overview
 
@@ -52,8 +52,8 @@ T15 self-review and fixes                              (last)
 
 ## Decisions (where the spec can't work as written, or left a gap)
 
-1. **Command arguments are snake_case** (`#[tauri::command(rename_all = "snake_case")]`), the same as every DTO field, so the UI calls `invoke('task_detail', { id, req, history_limit })`.
-2. **Read commands with a request number echo it.** `plans` returns `{ req, cards }` rather than a bare `Vec<PlanCard>`, as `task_detail` and `run_map` do.
+1. **The UI's contract wins** (`app/src/lib/api/contract.ts`, coordinator's instruction). Invoke arguments are Tauri's camelCase (`historyLimit`, `waitsOn`, `needsKey`); fields inside payloads are snake_case. Changes from Appendix A: `create_task` takes `{ task }`, `open_url` `{ target: {url} | {link} }`, `set_focus_context` `{ context }`; status, move, reorder, reject, dismiss and snooze return `UndoableWrite { patch, undo: {id, label} }`; `plans` returns `PlanCard[]` and `run_map` a `RunMap` without `req` (the UI tracks request numbers). Extras the UI asked for: `Bootstrap.cli`, `TaskDetail.history_more` and `suggested_prs`, `HistoryEntry.thread_title`, `CreateTaskResult.link_errors`.
+2. **Core and service values go to the UI as they serialise** (`Availability`, `Target`, `DoItPlace` externally tagged; `LaunchReport.failed` as tuples; actors as text), with TypeScript-only mirrors in `dto.rs`, so there's no second shape to keep in step.
 3. **A PR link's title can't be filled in by linking again:** `core`'s `link` returns the existing link unchanged. `add_link` links the PR at once; the background `lookup_pr` then corrects its state with `set_pr_state` (as me) if GitHub says merged or closed. The title shown comes from `sync`'s `PrView`.
 4. **Settings live next to the database** (`<db folder>/app-settings.json`), so a temporary `AIRBOSS_DB` isolates a dev run's settings as well.
 5. **First run turns autostart on only inside an `.app` bundle,** so `cargo run` and tests never register a LaunchAgent for a debug binary.
@@ -61,11 +61,20 @@ T15 self-review and fixes                              (last)
 7. **Lifted run-map edges are done** when every underlying blocker is done or dropped.
 8. **The Agents connection's "last report"** is the newest `last_event_at` among tree nodes whose `last_actor` is an agent (no extra `core` read).
 9. **Error codes are snake_case strings** (`"needs_choice"`, `"already_starting"` …), as `crates/services` serialises them. `AlreadyStarting` has the EM's message, "Already starting — check T3 in a moment."
-10. **Do it and Plan it results carry their toast** (`Started.toast`, built in Rust from `LaunchReport` with the spec's table), so quick add and the main window word them the same way.
+10. **Rust builds a launch toast only when the UI can't:** a Do it from quick add that failed shows the main window and a `toast` whose buttons name an api command and its arguments in call order. In the main window the UI builds toasts from `LaunchReport`.
 11. **A second launch with `--quick-add`** opens the quick-add panel through single-instance. It lets the hotkey path be timed without synthetic key events.
 12. **The menu-bar item's accessibility label** is its tooltip: Tauri 2.12 exposes no other label for a tray item.
 13. **`scripts/measure.sh` lives in `app/src-tauri/scripts/`,** inside this crate's folder.
 14. **The database failing to open at start** makes `bootstrap` return `db_unavailable` with the path and reason; calling `bootstrap` again is "Try again".
+15. **Display waves put a station held only by an outside task in the last wave.** SPEC-app's text says "or in wave 1", but its own test ("waves of 3, 2, 1 and 2") and DESIGN screen 03 put "Backfill old refunds" in wave 4; the design wins.
+16. **A service that fails to start is replaced by a stand-in** (`services.rs` `Down`) that answers with nothing and shows a broken connection row with the reason; the app always opens. The fakes are a dev-dependency now.
+17. **The main binary is `airboss-app`**, not `Airboss`: the sidecar is `airboss`, and the two would collide in `Contents/MacOS` on a case-insensitive disk.
+18. **AppKit window restoration is off** (`ApplePersistenceIgnoreState`): window-state restores the window, and after an unclean quit AppKit's modal "reopen windows?" alert blocked the launch before any window showed.
+19. **The 2,000-task fixture isn't committed** (about 850 KB of JSON); the UI's own perf seed covers the list, and `tests/perf.rs` times the Rust side at that size.
+21. **A write with nothing new answers with a `seq` 0 patch**, which the UI's `applyPatch` always skips; an empty patch at the current `seq` could arrive before the worker's `tree:patch` with that `seq` and make the UI drop it. No UI change is needed.
+22. **A `file://` link that would run something** (an app or other bundle, a folder, an executable, a script or installer type) is shown in Finder instead of opened, since agents can add links over MCP.
+23. **Undo cancelling a reject is never refused**, a reject is written only if the task is still a proposal, and an undo that fails partway says "Partly undid …" with what failed.
+20. **`Bootstrap.cli.on_path` reads the app's own `PATH`** (launchd's when opened from Finder), to keep start-up free of a login shell; `install_cli` asks the login shell.
 
 ## Risks and mitigations
 
@@ -86,3 +95,17 @@ Built in one thread, in order: every slice touches `state.rs`, `dto.rs` or `ipc.
 ## Open questions
 
 None.
+
+## Measurements (26 Nov 2026, Apple M4, 16 GB, macOS 27.2.1, release build)
+
+| Target | Measured | |
+|---|---|---|
+| Download under 15 MB | `.dmg` 5.74 MB (bundle 12.2 MB: app 8.8 MB, `airboss` 3.2 MB) | met |
+| Cold start under 1 s | median 457 ms of 10, launch through LaunchServices to `ui_ready`, 2,000 tasks (no `purge`: it needs root) | met |
+| Hotkey to quick add under 100 ms | median 9 ms, p95 13 ms of 20 (second launch with `--quick-add` to `quickadd_shown`) | met |
+| Idle CPU near 0% | 0.06% window shown, 0.08% hidden (60 s) | met |
+| Idle memory under 80 MB | 129 MB shown (app 51, WebContent 41 + 19, GPU 13, Networking 5); 119 MB with `--hidden` | **missed** |
+| Agent write visible under 300 ms | median 37 ms, max 50 ms (`tests/catchup.rs`, a second `Store`) | met |
+| Rebuild under 10 ms, write under 15 ms | p95: snapshot 5.0, rows and diff 0.5, catch_up 5.8, write 5.8, service rebuild 0.6 ms | met |
+
+WebKit alone is about 78 MB across its four processes before the app's own 51 MB, so the 10-minute quick-add release (SPEC-app "Memory") would save about 20 MB and still miss 80 MB. It isn't built; the target needs an EM decision.

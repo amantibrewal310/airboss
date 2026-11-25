@@ -126,6 +126,90 @@ pub fn file_url(path: &Path) -> String {
     out
 }
 
+/// The path a `file://` URL names, with `%XX` escapes decoded; `None` for any other URL.
+pub fn file_path(url: &str) -> Option<std::path::PathBuf> {
+    let rest = url.get(..7).filter(|s| s.eq_ignore_ascii_case("file://"))?;
+    let path = url[rest.len()..]
+        .strip_prefix("localhost")
+        .unwrap_or(&url[rest.len()..]);
+    let bytes = path.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let hex = |b: u8| (b as char).to_digit(16);
+        match (
+            bytes[i],
+            bytes.get(i + 1).copied().and_then(hex),
+            bytes.get(i + 2).copied().and_then(hex),
+        ) {
+            (b'%', Some(h), Some(l)) => {
+                out.push((h * 16 + l) as u8);
+                i += 3;
+            }
+            (b, _, _) => {
+                out.push(b);
+                i += 1;
+            }
+        }
+    }
+    Some(std::path::PathBuf::from(
+        String::from_utf8_lossy(&out).into_owned(),
+    ))
+}
+
+/// File types macOS runs, installs or opens elsewhere when "opened".
+const RUNS: &[&str] = &[
+    "app",
+    "command",
+    "terminal",
+    "tool",
+    "sh",
+    "zsh",
+    "bash",
+    "csh",
+    "ksh",
+    "pkg",
+    "mpkg",
+    "workflow",
+    "action",
+    "scpt",
+    "scptd",
+    "applescript",
+    "prefpane",
+    "bundle",
+    "plugin",
+    "kext",
+    "osax",
+    "jar",
+    "dmg",
+    "webloc",
+    "inetloc",
+    "fileloc",
+    "shortcut",
+    "mobileconfig",
+    "configprofile",
+    "py",
+    "pl",
+    "rb",
+];
+
+/// Whether opening `path` could run something: a folder or bundle, an executable, or a type
+/// in [`RUNS`]. Such links are revealed in Finder instead, because agents can add links.
+pub fn runs_something(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase);
+    if ext.as_deref().is_some_and(|e| RUNS.contains(&e)) {
+        return true;
+    }
+    match std::fs::metadata(path) {
+        Ok(m) => m.is_dir() || m.permissions().mode() & 0o111 != 0,
+        Err(_) => false,
+    }
+}
+
 /// The opener's allowlist: only `http`, `https`, `file` and `t3code`.
 pub fn check_url(url: &str) -> Result<(), AppError> {
     let scheme = url.split_once(':').map(|(s, _)| s.to_ascii_lowercase());

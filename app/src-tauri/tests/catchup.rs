@@ -151,9 +151,14 @@ fn the_wal_watch_re_arms_when_the_wal_is_deleted_and_recreated() {
     std::fs::write(&wal, b"one").unwrap();
     let (tx, rx) = mpsc::channel();
     let (moved_tx, moved_rx) = mpsc::channel();
-    let _watch = Watch::start(&db, tx, move |why| {
-        let _ = moved_tx.send(why.to_string());
-    })
+    let _watch = Watch::start(
+        &db,
+        tx,
+        move |why| {
+            let _ = moved_tx.send(why.to_string());
+        },
+        || {},
+    )
     .unwrap();
     let wait = |label: &str| {
         rx.recv_timeout(Duration::from_millis(500))
