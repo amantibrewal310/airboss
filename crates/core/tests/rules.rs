@@ -373,3 +373,100 @@ fn only_me_and_sync_gh_set_pr_state() {
         .unwrap();
     assert_eq!(s.links(t.id).unwrap()[0].pr_state, Some(PrState::Merged));
 }
+
+// Rule 6, proposals: only `me` accepts (-> todo) or rejects (-> dropped) them. Rejected
+// proposals are hidden from the tree but stay in history.
+
+fn titles(s: &Store) -> Vec<String> {
+    s.tree()
+        .unwrap()
+        .into_iter()
+        .map(|n| n.task.title)
+        .collect()
+}
+
+#[test]
+fn proposed_lists_every_proposal_in_tree_order() {
+    let mut s = store();
+    let parent = s.add_task(NewTask::new("Parent"), &Actor::Me).unwrap();
+    let top = s.add_task(NewTask::new("Top idea"), &agent()).unwrap();
+    let nested = s
+        .add_task(NewTask::new("Nested idea").under(parent.id), &agent())
+        .unwrap();
+    s.add_task(NewTask::new("Mine"), &Actor::Me).unwrap();
+    let ids: Vec<_> = s.proposed().unwrap().into_iter().map(|t| t.id).collect();
+    assert_eq!(ids, vec![nested.id, top.id]);
+}
+
+#[test]
+fn me_accepts_a_proposal_by_moving_it_to_todo() {
+    let mut s = store();
+    let p = s.add_task(NewTask::new("Idea"), &agent()).unwrap();
+    let t = s.set_status(p.id, Status::Todo, None, &Actor::Me).unwrap();
+    assert_eq!(t.status, Status::Todo);
+    assert!(s.proposed().unwrap().is_empty());
+    assert_eq!(titles(&s), vec!["Idea"]);
+}
+
+#[test]
+fn a_rejected_proposal_is_gone_from_the_tree_but_still_in_history() {
+    let mut s = store();
+    let kept = s.add_task(NewTask::new("Kept"), &Actor::Me).unwrap();
+    let p = s.add_task(NewTask::new("Bad idea"), &agent()).unwrap();
+    s.set_status(p.id, Status::Dropped, Some("out of scope"), &Actor::Me)
+        .unwrap();
+
+    assert_eq!(titles(&s), vec!["Kept"]);
+    assert!(s.proposed().unwrap().is_empty());
+    assert_eq!(s.task(p.id).unwrap().status, Status::Dropped);
+    let last = s.history(p.id).unwrap().pop().unwrap();
+    assert_eq!(
+        (last.kind, last.to_status, last.body.as_deref(), last.actor),
+        (
+            EventKind::Status,
+            Some(Status::Dropped),
+            Some("out of scope"),
+            Actor::Me
+        )
+    );
+
+    // A task of mine that I drop stays visible; only rejected proposals are hidden.
+    s.set_status(kept.id, Status::Dropped, None, &Actor::Me)
+        .unwrap();
+    assert_eq!(titles(&s), vec!["Kept"]);
+}
+
+#[test]
+fn rejecting_needs_no_reason() {
+    let mut s = store();
+    let p = s.add_task(NewTask::new("Idea"), &agent()).unwrap();
+    s.set_status(p.id, Status::Dropped, None, &Actor::Me)
+        .unwrap();
+    assert!(s.history(p.id).unwrap().pop().unwrap().body.is_none());
+    assert!(titles(&s).is_empty());
+}
+
+#[test]
+fn an_agent_cannot_move_its_own_proposal_anywhere() {
+    let mut s = store();
+    let p = s.add_task(NewTask::new("Idea"), &agent()).unwrap();
+    for to in [
+        Status::Proposed,
+        Status::Todo,
+        Status::Doing,
+        Status::InReview,
+        Status::Blocked,
+        Status::Done,
+        Status::Dropped,
+    ] {
+        let err = s
+            .set_status(p.id, to, Some("please"), &agent())
+            .unwrap_err();
+        assert!(
+            matches!(err, Error::NotAllowed | Error::InvalidTransition),
+            "{to}: {err:?}"
+        );
+    }
+    assert_eq!(s.task(p.id).unwrap().status, Status::Proposed);
+    assert_eq!(s.history(p.id).unwrap().len(), 1);
+}

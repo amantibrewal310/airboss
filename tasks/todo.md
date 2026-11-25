@@ -94,7 +94,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
   - **Files:** `src/status.rs`, `src/links.rs`, `tests/status.rs`
   - **Depends on:** T5
 
-- [ ] **T7. Proposals** (S)
+- [x] **T7. Proposals** (S)
   - **Description:**
     - When an agent calls `add_task`, the task is always created as `proposed`.
     - `proposed()` lists them.
