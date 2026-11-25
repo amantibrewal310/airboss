@@ -91,3 +91,31 @@ fn events_after_zero_returns_everything() {
     store.add_task(NewTask::new("B"), &Actor::Me).unwrap();
     assert_eq!(store.events_after(EventId(0)).unwrap().len(), 2);
 }
+
+#[test]
+fn an_event_id_is_never_handed_out_twice_even_after_its_task_is_deleted() {
+    let mut store = Store::open_in_memory().unwrap();
+    let keep = store.add_task(NewTask::new("Keep"), &Actor::Me).unwrap();
+    let doomed = store.add_task(NewTask::new("Doomed"), &Actor::Me).unwrap();
+    for text in ["one", "two", "three"] {
+        store.add_note(doomed.id, text, &Actor::Me).unwrap();
+    }
+    // The newest ids all belong to the doomed task; deleting it writes no event of its own.
+    let highest = store.latest_event_id().unwrap();
+    assert_eq!(ids_of(&store, doomed.id).last(), Some(&highest));
+    store.delete_task(doomed.id, &Actor::Me).unwrap();
+    assert!(store.latest_event_id().unwrap() < highest);
+
+    store.add_note(keep.id, "after", &Actor::Me).unwrap();
+    let new = *ids_of(&store, keep.id).last().unwrap();
+    assert!(
+        new > highest,
+        "{new:?} was handed out before (up to {highest:?})"
+    );
+    // So a reader holding `highest` as its cursor still sees the new event.
+    let caught_up = store.events_after(highest).unwrap();
+    assert_eq!(
+        caught_up.iter().map(|e| e.id).collect::<Vec<_>>(),
+        vec![new]
+    );
+}

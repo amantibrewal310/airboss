@@ -79,7 +79,7 @@ fn a_modules_migrations_run_once_each_across_handles() {
     assert_eq!(recorded(&conn, "sync"), vec![1, 2]);
     assert_eq!(
         recorded(&conn, "core"),
-        vec![1, 2],
+        vec![1, 2, 3],
         "core's own are untouched"
     );
     assert_eq!(count(&conn, "SELECT count(*) FROM sync_prs"), 1);
@@ -103,7 +103,7 @@ fn migrating_core_from_outside_is_refused() {
     let err = s.migrate_module("core", &[sneaky]).unwrap_err();
     assert!(matches!(err, Error::InvalidTarget), "{err:?}");
     let conn = raw(&s);
-    assert_eq!(recorded(&conn, "core"), vec![1, 2]);
+    assert_eq!(recorded(&conn, "core"), vec![1, 2, 3]);
     assert!(s.tree().is_ok(), "tasks is still there");
 }
 
@@ -212,4 +212,35 @@ fn data_version_works_in_memory() {
     let s = store();
     let v = s.data_version().unwrap();
     assert_eq!(s.data_version().unwrap(), v);
+}
+
+#[test]
+fn a_migration_that_breaks_a_foreign_key_is_rolled_back() {
+    let dir = TempDir::new();
+    let mut s = file_store(&dir);
+    let dangling = Migration {
+        version: 1,
+        sql: "CREATE TABLE sync_threads (task_id INTEGER NOT NULL REFERENCES tasks(id));
+              INSERT INTO sync_threads VALUES (999);",
+    };
+    assert!(s.migrate_module("sync", &[dangling]).is_err());
+    let conn = raw(&s);
+    assert!(recorded(&conn, "sync").is_empty());
+    assert_eq!(
+        count(
+            &conn,
+            "SELECT count(*) FROM sqlite_master WHERE name = 'sync_threads'"
+        ),
+        0
+    );
+    // Foreign keys are back on for the handle's own writes afterwards.
+    s.add_task(airboss_core::NewTask::new("x"), &airboss_core::Actor::Me)
+        .unwrap();
+    assert!(
+        s.add_task(
+            airboss_core::NewTask::new("orphan").under(airboss_core::TaskId(99)),
+            &airboss_core::Actor::Me
+        )
+        .is_err()
+    );
 }

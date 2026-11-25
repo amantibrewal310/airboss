@@ -64,6 +64,7 @@ crates/core/
   src/db.rs                Opening, settings, migrations
   src/migrations/001_core.sql
   src/migrations/002_pr_refs.sql   PR refs already stored, in the canonical form
+  src/migrations/003_event_ids.sql task_events rebuilt so event ids are never reused
   src/tasks.rs             Add, edit, move, delete, tree
   src/repos.rs             Repos, and the repos each task links to
   src/status.rs            Status changes and who may make them
@@ -81,9 +82,13 @@ Later modules get their own crates (`crates/mcp`, `crates/sync`, `crates/launch`
 
 ## Data model
 
-Six tables, plus `schema_migrations`. This is the full first migration. On 25 Nov 2026 it was loaded into a throwaway in-memory SQLite database: the valid rows went in, and each of the 10 constraint checks rejected its bad row.
+Six tables, plus `schema_migrations`. This is the full first migration, as migration 3 left it: `task_events.id` is `AUTOINCREMENT`. On 25 Nov 2026 it was loaded into a throwaway in-memory SQLite database: the valid rows went in, and each of the 10 constraint checks rejected its bad row.
 
-v2 edited `001_core.sql` in place instead of adding a migration 002, because no real database existed yet. **Once `mcp` ships, migrations are append-only:** every later change is a new numbered file. `mcp` shipped on 26 Nov 2026. v3 added `002_pr_refs.sql`, which changes no table: it rewrites PR refs already stored into the canonical form (rule 29).
+v2 edited `001_core.sql` in place instead of adding a migration 002, because no real database existed yet. **Once `mcp` ships, migrations are append-only:** every later change is a new numbered file. `mcp` shipped on 26 Nov 2026. v3 added two:
+- `002_pr_refs.sql` changes no table. It rewrites PR refs already stored into the canonical form (rule 29).
+- `003_event_ids.sql` rebuilds `task_events` with `id INTEGER PRIMARY KEY AUTOINCREMENT`, keeping every row, column, constraint and index, so no event id is ever handed out twice (rule 23). It follows SQLite's [procedure for other schema changes](https://sqlite.org/lang_altertable.html#otheralter).
+
+Every migration, any module's, runs with foreign keys off, since `PRAGMA foreign_keys` does nothing inside a transaction and a table rebuild would cascade or fail partway. It must pass `PRAGMA foreign_key_check` before it commits, and foreign keys go back on afterwards, whether it worked or not.
 
 ```sql
 CREATE TABLE schema_migrations (
@@ -130,7 +135,7 @@ CREATE TABLE task_repos (                -- one repo a task is linked to; a task
 CREATE INDEX task_repos_repo_idx ON task_repos(repo_id);
 
 CREATE TABLE task_events (               -- one change to one task
-  id         INTEGER PRIMARY KEY,        -- also the change cursor
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,  -- also the change cursor; never reused
   task_id    INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
   kind       TEXT NOT NULL CHECK (kind IN ('created','edited','moved','status','note','linked',
                                            'unlinked','link_state','waits_on_added','waits_on_removed',
@@ -287,6 +292,7 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
 21. **Every call writes one event for each task it changes, in the same transaction**, except when a PR event reopens a task (rule 7), which records the link or PR state and the reopen as two events, so history shows both. If the call fails, nothing is written, not even events. One call can change several things about one task. For example, a planned task created with its dependencies gets one `created` event, with the dependencies listed in its body. A call that changes nothing, such as setting the status a task already has or moving it to where it already is, writes no event. Dropping an already dropped task still drops anything open under it (rule 9).
 22. **Events are never edited.** They go only when their task is deleted. Rejected proposals are dropped, not deleted, so they stay in history (rule 6).
 23. **Every committed change tells the app.** `Store::subscribe()` returns a channel that receives the new event ids after each commit. `core` sends them itself after committing, so no SQLite hook is needed. The app updates from this signal, never by polling.
+    - **Event ids only grow, and are never handed out twice,** even after the newest events go with a deleted task. So an id held as a cursor for `events_after`, or read from `latest_event_id`, never misses a later event. Ids deleted before migration 3 that were higher than every id left then are the one exception: nothing recorded them.
     - `subscribe()` only hears this handle's own writes. A write from another process, such as `airboss mcp`, shows up in `data_version()`: SQLite's `PRAGMA data_version`, which changes when **another** connection commits to the file, and never for this handle's own commits. The app and sync watch the `-wal` file and check `data_version()` on focus and on wake.
 28. **Activity is read in bulk.**
     - `history_with_subtasks(id, limit)` returns up to `limit` events from the task and everything under it, newest first.
@@ -298,6 +304,7 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
 31. **Another module migrates only its own tables.** `migrate_module(module, migrations)` runs `module`'s pending migrations as `Store::open` runs `core`'s: each in its own IMMEDIATE transaction, recorded in `schema_migrations` under `module`, and never twice.
     - `core` is refused with `Error::InvalidTarget`, so nothing outside `core` can apply or skip a `core` migration. So is a blank module name, or versions that aren't whole numbers from 1 in strictly increasing order.
     - A failing migration leaves nothing of itself behind. Those before it in the list stay applied.
+    - Foreign keys are off while it runs, and it's refused if it leaves a row breaking one (`PRAGMA foreign_key_check`). So a `DELETE` in a migration doesn't cascade.
     - It writes no events and sends no notification.
 
 ## API shape
@@ -449,6 +456,7 @@ fn check_status_change(actor: &Actor, task: &TaskFacts, to: Status, note: Option
   - `migrate_module`: applied once, refused for `core`, a blank name and out-of-order versions, and a failing migration leaving nothing of itself
   - PR refs: mixed case, the URL form with a trailing path, query and fragment, the same PR in two forms making one link, `set_pr_state` and `tasks_for_link` by URL, malformed refs refused with nothing written, and `002_pr_refs.sql` rewriting refs stored before it
   - branch names: each rejected shape, and names at and just over 200 characters
+  - event ids: after the task holding the newest events is deleted, the next event's id is higher than every id handed out before; `003_event_ids.sql` keeping every row and column, the CHECKs, the index, the cascade and the sequence; a migration leaving a dangling foreign key rolled back
 - **Failure tests:** an error forced partway through a call leaves no rows and no events behind, and no notification goes out. They live in `src/` unit tests, because the fault-injection points exist only in test builds of the crate.
 - **Concurrency:** several `Store` handles on one file must write at once without "database is locked". Every write takes the lock up front (an IMMEDIATE transaction), and opening sets `busy_timeout` before anything else.
 - **Change notification:** one commit sends exactly the ids of the events it wrote.
@@ -516,6 +524,7 @@ v3:
 - [x] `migrate_module` runs another module's migrations once, and refuses `core`.
 - [x] Every PR ref is stored as lowercase `owner/repo#n`, URLs are accepted, and malformed refs are refused.
 - [x] `set_branch` refuses every branch name rule 25 rules out.
+- [x] Event ids are never handed out twice, even after a delete (`003_event_ids.sql`).
 - [x] `cargo test --workspace` and `cargo clippy --workspace --all-targets -- -D warnings` are clean, `mcp` included.
 
 ## Decisions (settled 25 Nov 2026)
@@ -563,6 +572,7 @@ The app and service specs asked for a few more things. The EM decided them in [t
 4. **Other modules' migrations.** A public `Migration` and `migrate_module(module, migrations)`, which refuses `core` (rule 31).
 5. **Canonical PR refs.** Lowercase `owner/repo#n`, with GitHub URLs accepted, and `002_pr_refs.sql` for refs stored before (rule 29).
 6. **Branch names** limited to `[A-Za-z0-9._/-]`, with git's worst shapes refused (rule 25).
+7. **Event ids are never reused.** `003_event_ids.sql` rebuilds `task_events` with `AUTOINCREMENT`, and the migration runner follows SQLite's procedure for schema changes: foreign keys off, `foreign_key_check`, foreign keys back on (rule 23). Found while building v3, and approved by the EM the same day.
 
 **Decisions made while building v3:**
 
@@ -573,10 +583,12 @@ The app and service specs asked for a few more things. The EM decided them in [t
 - A PR URL must start `https://github.com/` (any case). Other hosts and `http://` are `InvalidTarget`.
 - A PR number is a whole number from 1, so `#0` is refused, and leading zeros are dropped (`#012` is `#12`).
 - `mcp` says what a PR ref or a branch name may be when `core` refuses one, instead of its generic `InvalidTarget` message.
+- Migration 3 seeds `sqlite_sequence` by copying the rows with their ids: that sets it to `max(id)`, and the rename carries it. A test checks the sequence afterwards.
+- The runner turns foreign keys off around every migration, not only migration 3. Turning them off per migration would need a field on `Migration`, whose shape is fixed, and `foreign_key_check` still catches anything a migration breaks.
 
 ## Open questions
 
-- **Event ids can be reused.** `task_events.id` is a plain `INTEGER PRIMARY KEY`, so when the newest events go with a deleted task, SQLite hands their ids out again. A reader holding one of those ids as a cursor, or as `latest_event_id`, then misses the new events. Rule 23's "event ids only grow" needs `AUTOINCREMENT`, which takes a migration that rebuilds `task_events`. That's a schema change, so it waits for the EM. Until then, a reader that keeps an event id as a cursor for `events_after`, such as sync, can miss events after a delete. The app numbers its own updates, so its patches don't depend on event ids, but anything it reads with `events_after` has the same gap.
+None.
 
 ## Changes from draft 1
 

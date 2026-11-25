@@ -47,6 +47,10 @@ const CORE_MIGRATIONS: &[Migration] = &[
         version: 2,
         sql: include_str!("migrations/002_pr_refs.sql"),
     },
+    Migration {
+        version: 3,
+        sql: include_str!("migrations/003_event_ids.sql"),
+    },
 ];
 
 const CREATE_SCHEMA_MIGRATIONS: &str = "
@@ -104,29 +108,60 @@ fn prepare(mut conn: Connection) -> Result<Connection> {
 ///
 /// Each migration takes the write lock first (IMMEDIATE) and re-reads the version inside
 /// it, so two handles opening one file can't both apply the same migration.
+///
+/// Around each one it follows SQLite's procedure for schema changes: foreign keys go off
+/// first, since a table rebuild would otherwise cascade or fail partway, and `PRAGMA
+/// foreign_keys` does nothing inside a transaction (step 1). Before the commit,
+/// `foreign_key_check` must find nothing (step 10), and afterwards foreign keys go back
+/// to how they were, whether the migration worked or not (step 12).
 pub(crate) fn migrate(conn: &mut Connection, module: &str, migrations: &[Migration]) -> Result<()> {
     for m in migrations {
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        // Created inside the write lock: a plain CREATE IF NOT EXISTS reads, then writes,
-        // and that upgrade fails at once with "database is locked" when another handle is
-        // migrating, without waiting for busy_timeout.
-        tx.execute_batch(CREATE_SCHEMA_MIGRATIONS)?;
-        let applied: i64 = tx.query_row(
-            "SELECT ifnull(max(version), 0) FROM schema_migrations WHERE module = ?1",
-            params![module],
-            |row| row.get(0),
-        )?;
-        if m.version <= applied {
-            continue;
+        let enforced: bool = conn.pragma_query_value(None, "foreign_keys", |r| r.get(0))?;
+        if enforced {
+            conn.pragma_update(None, "foreign_keys", "OFF")?;
         }
-        tx.execute_batch(m.sql)?;
-        tx.execute(
-            "INSERT INTO schema_migrations (module, version) VALUES (?1, ?2)",
-            params![module, m.version],
-        )?;
-        tx.commit()?;
+        let applied = apply(conn, module, m, enforced);
+        let restored = match enforced {
+            true => conn.pragma_update(None, "foreign_keys", "ON"),
+            false => Ok(()),
+        };
+        applied?;
+        restored?;
     }
     Ok(())
+}
+
+/// One migration in its own transaction, unless it's already applied. With `check_keys`,
+/// it's refused if it leaves any row breaking a foreign key.
+fn apply(conn: &mut Connection, module: &str, m: &Migration, check_keys: bool) -> Result<()> {
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    // Created inside the write lock: a plain CREATE IF NOT EXISTS reads, then writes,
+    // and that upgrade fails at once with "database is locked" when another handle is
+    // migrating, without waiting for busy_timeout.
+    tx.execute_batch(CREATE_SCHEMA_MIGRATIONS)?;
+    let applied: i64 = tx.query_row(
+        "SELECT ifnull(max(version), 0) FROM schema_migrations WHERE module = ?1",
+        params![module],
+        |row| row.get(0),
+    )?;
+    if m.version <= applied {
+        return Ok(());
+    }
+    tx.execute_batch(m.sql)?;
+    if check_keys && tx.prepare("PRAGMA foreign_key_check")?.exists([])? {
+        return Err(Error::Db(rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CONSTRAINT_FOREIGNKEY),
+            Some(format!(
+                "{module} migration {} leaves rows breaking a foreign key",
+                m.version
+            )),
+        )));
+    }
+    tx.execute(
+        "INSERT INTO schema_migrations (module, version) VALUES (?1, ?2)",
+        params![module, m.version],
+    )?;
+    Ok(tx.commit()?)
 }
 
 #[cfg(test)]
@@ -175,7 +210,103 @@ mod tests {
     }
 
     /// `core`'s newest migration: every core migration, applied once.
-    const CORE_VERSION: i64 = 2;
+    const CORE_VERSION: i64 = 3;
+
+    type EventRow = (
+        i64,
+        i64,
+        String,
+        Option<String>,
+        Option<String>,
+        String,
+        String,
+    );
+
+    fn event_rows(conn: &Connection) -> Vec<EventRow> {
+        conn.prepare(
+            "SELECT id, task_id, kind, to_status, body, actor, at FROM task_events ORDER BY id",
+        )
+        .unwrap()
+        .query_map([], |r| {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+                r.get(6)?,
+            ))
+        })
+        .unwrap()
+        .collect::<std::result::Result<_, _>>()
+        .unwrap()
+    }
+
+    #[test]
+    fn migration_3_keeps_every_event_and_never_reuses_an_id() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        migrate(&mut conn, "core", &CORE_MIGRATIONS[..2]).unwrap();
+        conn.execute_batch(
+            "INSERT INTO tasks (title, position, origin, status, blocked_reason)
+               VALUES ('one', 1, 'me', 'todo', NULL), ('two', 2, 'me', 'blocked', 'why');
+             INSERT INTO task_events (id, task_id, kind, to_status, body, actor, at) VALUES
+               (1, 1, 'created', NULL, NULL, 'me', '2026-11-25T10:00:00.000Z'),
+               (2, 2, 'created', NULL, 'waits on #1', 'plan', '2026-11-25T10:00:01.000Z'),
+               (4, 2, 'status', 'blocked', 'why', 'agent:t3/a', '2026-11-25T10:00:02.000Z'),
+               (7, 1, 'note', NULL, 'a note', 'sync:gh', '2026-11-25T10:00:03.000Z'),
+               (9, 1, 'repo_linked', NULL, 'web', 'me', '2026-11-25T10:00:04.000Z');",
+        )
+        .unwrap();
+        let before = event_rows(&conn);
+
+        migrate(&mut conn, "core", CORE_MIGRATIONS).unwrap();
+        assert_eq!(core_version(&conn), CORE_VERSION);
+        assert_eq!(event_rows(&conn), before, "every row and column kept");
+
+        let sql = |name: &str| -> String {
+            conn.query_row(
+                "SELECT sql FROM sqlite_master WHERE name = ?1",
+                [name],
+                |r| r.get(0),
+            )
+            .unwrap()
+        };
+        assert!(sql("task_events").contains("id         INTEGER PRIMARY KEY AUTOINCREMENT"));
+        assert!(sql("task_events_task_idx").contains("task_events(task_id, id)"));
+        let seq: i64 = conn
+            .query_row(
+                "SELECT seq FROM sqlite_sequence WHERE name = 'task_events'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(seq, 9);
+        assert_eq!(pragma(&conn, "foreign_keys"), "1", "switched back on");
+
+        // Deleting the newest event's task doesn't free its id.
+        conn.execute_batch(
+            "DELETE FROM tasks WHERE id = 1;
+             INSERT INTO task_events (task_id, kind, actor) VALUES (2, 'note', 'me');",
+        )
+        .unwrap_err(); // a note needs a body: the CHECKs came across
+        conn.execute(
+            "INSERT INTO task_events (task_id, kind, body, actor) VALUES (2, 'note', 'n', 'me')",
+            [],
+        )
+        .unwrap();
+        assert_eq!(conn.last_insert_rowid(), 10);
+        // The cascade from tasks and the foreign key to tasks came across too.
+        assert!(event_rows(&conn).iter().all(|e| e.1 == 2));
+        assert!(
+            conn.execute(
+                "INSERT INTO task_events (task_id, kind, actor) VALUES (99, 'created', 'me')",
+                []
+            )
+            .is_err()
+        );
+    }
 
     #[test]
     fn migration_2_puts_stored_pr_refs_in_one_form() {
