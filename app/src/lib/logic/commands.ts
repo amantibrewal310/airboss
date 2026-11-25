@@ -78,6 +78,7 @@ export const COMMAND_IDS = [
   'needs_down',
   'needs_main',
   'needs_dismiss',
+  'needs_done',
   'plans_left',
   'plans_right',
   'plans_up',
@@ -146,6 +147,7 @@ export const COMMANDS: Command[] = [
   { id: 'needs_down', label: 'Next item', bind: [['down', 'nav']], views: ['needs'] },
   { id: 'needs_main', label: 'Main action', bind: [['enter', 'nav'], ['mod+enter', 'task']], views: ['needs'] },
   { id: 'needs_dismiss', label: 'Dismiss', bind: [['mod+backspace', 'task']], views: ['needs'] },
+  { id: 'needs_done', label: 'Mark done', bind: [['space', 'letter']], views: ['needs'] },
   // Plans
   { id: 'plans_left', label: 'Previous plan', bind: [['left', 'nav']], views: ['plans'] },
   { id: 'plans_right', label: 'Next plan', bind: [['right', 'nav']], views: ['plans'] },

@@ -39,6 +39,7 @@ import { resolve } from '../logic/commands';
 import { applyAccent, applyAppearance } from '../logic/theme';
 import { launchToast } from '../logic/launch';
 import { statusToast } from '../logic/copy';
+import { canMarkDone } from '../logic/needs';
 import { keepMapSelection, keepSelection, reveal as revealPlan, selectionAfterFold } from '../logic/selection';
 import {
   isListView,
@@ -63,7 +64,7 @@ import { UiStore, type Anchor, type Overlay } from './ui.svelte';
 export type ViewKind = 'list' | 'needs' | 'plans' | 'page';
 
 /** Commands a quick repeat of the last key must not run on whatever is selected next. */
-const SETTLE_GUARDED = new Set<CommandId>(['rename', 'needs_main', 'needs_dismiss', 'plans_open']);
+const SETTLE_GUARDED = new Set<CommandId>(['rename', 'needs_main', 'needs_dismiss', 'needs_done', 'plans_open']);
 
 const DEFAULT_SETTINGS: Settings = { hotkey: 'Control+Alt+N', open_at_login: true, appearance: 'system', folded: [] };
 
@@ -84,6 +85,8 @@ export class App {
   cli = $state.raw<CliStatus>({ installed: false, path: '~/.local/bin/airboss', on_path: true });
   ready = $state(false);
   fatal = $state.raw<AppError | null>(null);
+  /** The database broke after start (R2), rather than failing to open. */
+  fatalLost = $state(false);
   now = $state(clockNow());
   plans = $state.raw<PlanCard[]>([]);
   plansLoaded = $state(false);
@@ -176,6 +179,7 @@ export class App {
       on('toast', (t) => this.toastEvent(t)),
       on('appearance:changed', (a) => applyAccent(document.documentElement, a.accent)),
       on('error:background', (e) => (this.conn.background = e.message)),
+      on('db:unavailable', (e) => this.lost(e)),
     ]);
     const tick = () => (this.now = clockNow());
     setInterval(() => {
@@ -535,10 +539,18 @@ export class App {
     this.toasts.push({ text, tone, actions, ...(detail ? { detail } : {}) });
   }
 
+  /** The database broke while the app ran: the full-window state, until Airboss is quit. */
+  lost(e: AppError): void {
+    if (this.fatal) return;
+    this.fatalLost = true;
+    this.fatal = e;
+  }
+
   fail(e: unknown): void {
     const err = asAppError(e);
     // Appendix D: no toast; the button already says "Starting…".
     if (err.code === 'already_starting') return;
+    if (err.code === 'db_unavailable') return this.lost(err);
     this.toast(err.message, 'warn');
   }
 
@@ -967,6 +979,7 @@ export class App {
         case 'question':
         case 'approval':
         case 'failed_run':
+        case 'agent_stopped':
           if ('thread' in item.target) await api.openThread(item.target.thread);
           this.leave(item);
           break;
@@ -992,6 +1005,32 @@ export class App {
           this.reveal(item.task);
           break;
       }
+    } catch (e) {
+      this.needs.unhide(item.key);
+      this.fail(e);
+    }
+  }
+
+  /** Mark done (Space) on a kind that offers it: Agent stopped, Finish it?. As me, with Undo. */
+  async markNeedDone(item: NeedsItem | null = this.needsItem): Promise<void> {
+    if (!item || !canMarkDone(item.kind)) return;
+    if (item.kind === 'finish_it') return this.mainAction(item);
+    await this.setNeedStatus(item, 'done');
+  }
+
+  /** Agent stopped's "Set in review": the work is done and waits on a review outside Airboss. */
+  async setNeedInReview(item: NeedsItem | null = this.needsItem): Promise<void> {
+    if (!item || item.kind !== 'agent_stopped') return;
+    await this.setNeedStatus(item, 'in_review');
+  }
+
+  private async setNeedStatus(item: NeedsItem, status: 'done' | 'in_review'): Promise<void> {
+    if (!this.actOnce(item)) return;
+    this.leave(item);
+    try {
+      const w = await api.setStatus(item.task, status, null);
+      this.applyWrite(w.patch);
+      this.undoToast(statusToast(item.task, status), w);
     } catch (e) {
       this.needs.unhide(item.key);
       this.fail(e);
@@ -1401,6 +1440,8 @@ export class App {
         return void this.mainAction();
       case 'needs_dismiss':
         return void this.dismiss();
+      case 'needs_done':
+        return void this.markNeedDone();
       case 'plans_left':
         return this.movePlan(-1);
       case 'plans_right':

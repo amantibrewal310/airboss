@@ -292,3 +292,21 @@ fn a_live_hidden_row_is_never_pruned() {
     })
     .unwrap();
 }
+
+#[test]
+fn an_agent_stopped_row_is_saved_and_read_back_with_its_kind() {
+    let dir = TempDir::new();
+    let store = HiddenStore::open(&dir.db()).unwrap();
+    let stopped = HiddenRow {
+        key: key("stopped:7:2026-11-02T10:00:00.000Z"),
+        kind: NeedsKind::AgentStopped,
+        task: TaskId(7),
+        until: Some(at(4, 0)),
+    };
+    store.hide(&stopped).unwrap();
+    drop(store);
+    assert_eq!(
+        HiddenStore::open(&dir.db()).unwrap().load().unwrap(),
+        vec![stopped]
+    );
+}

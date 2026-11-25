@@ -1,8 +1,8 @@
 # Spec: attention
 
-Module `attention` from [CAPABILITIES.md](CAPABILITIES.md). State: **draft 2, approved by the EM on 26 Nov 2026**.
+Module `attention` from [CAPABILITIES.md](CAPABILITIES.md). State: **draft 2, approved by the EM on 26 Nov 2026**, plus the Agent stopped kind from the EM's decision on integration QA finding R5 (26 Nov 2026).
 
-It builds on [`core`](SPEC-core.md) v3 and on `SyncService`, and implements `AttentionService`. This spec also holds the **[shared contract](#shared-contract)**: every type and trait in `crates/services`, the one source for that crate's builder, for [SPEC-sync.md](SPEC-sync.md), [SPEC-launch.md](SPEC-launch.md) and the app. The item kinds, their order and their actions come from [DESIGN.md](DESIGN.md) ("Needs me") and its prototype. Changes since draft 1 are [at the end](#changes-in-draft-2).
+It builds on [`core`](SPEC-core.md) v3 and on `SyncService`, and implements `AttentionService`. This spec also holds the **[shared contract](#shared-contract)**: every type and trait in `crates/services`, the one source for that crate's builder, for [SPEC-sync.md](SPEC-sync.md), [SPEC-launch.md](SPEC-launch.md) and the app. The item kinds, their order and their actions come from [DESIGN.md](DESIGN.md) ("Needs me") and its prototype. Changes since draft 1 are [at the end](#changes-in-draft-2), and the Agent stopped addition [after them](#after-integration-qa-agent-stopped).
 
 ## Objective
 
@@ -10,7 +10,7 @@ It builds on [`core`](SPEC-core.md) v3 and on `SyncService`, and implements `Att
 
 **User stories**
 
-- As me, I open Airboss and see, in a fixed order: questions and approvals from agents, PRs to review, failed runs, proposed subtasks, tasks that just became ready, parents whose subtasks are all done, and work quiet for 5+ days.
+- As me, I open Airboss and see, in a fixed order: questions and approvals from agents, PRs to review, failed runs, agents that stopped without a PR, proposed subtasks, tasks that just became ready, parents whose subtasks are all done, and work quiet for 5+ days.
 - As me, I can dismiss an item, or snooze a quiet one for 3 days, and that survives a restart.
 - As me, the menu-bar count is always the length of that list, and Quiet items appear on time even if the Mac slept through the moment.
 
@@ -18,10 +18,10 @@ It builds on [`core`](SPEC-core.md) v3 and on `SyncService`, and implements `Att
 
 - **A library in the app process**, `crates/attention`, with one worker thread and one thread that waits on `sync`'s `Changes`. Driven by changes, plus one wake-up at the next known deadline (never more than 15 minutes away).
 - **One pure function decides everything:** `compute(inputs, hidden, now, config)` returns the items and the next deadline. Its inputs are the latest `StoreChange.snapshot` and `sync.snapshot()`, both `Arc`s. A change costs no `core` read at all.
-- **Eight kinds in the design's seven groups.** Untracked threads aren't a kind; the design has no group for them.
+- **Nine kinds in eight groups:** the design's seven, plus Stopped for Agent stopped (EM, 26 Nov 2026, integration QA R5: a run that ends without a PR otherwise leaves its task `doing` with nothing in Needs me until it turns Quiet). Untracked threads aren't a kind; the design has no group for them.
 - **Each item's key names one occurrence** (one request, one PR, one quiet stretch). Dismiss hides that key; a new occurrence has a new key and shows. Snooze is a dismissal with an end time.
 - **The count** is the number of visible items; the menu bar shows it and the first 6 items.
-- **Thresholds** (EM, 25 Nov): quiet after 5 days, snooze for 3 days, "became ready" shown for 7 days, and a PR isn't a review while an agent on its task is still running.
+- **Thresholds** (EM, 25 Nov): quiet after 5 days, snooze for 3 days, "became ready" shown for 7 days, and a PR isn't a review while an agent on its task is still running. Agent stopped waits 10 minutes (EM, 26 Nov).
 - **Time** is the wall clock (`SystemTime`). `woke()` recomputes at once, so a deadline passed during sleep shows on wake.
 
 ## Tech stack
@@ -41,6 +41,7 @@ pub struct AttentionConfig {
     pub quiet_after: Duration,   // 5 days
     pub snooze_for: Duration,    // 3 days (snooze with until = None)
     pub ready_window: Duration,  // 7 days
+    pub stopped_after: Duration, // 10 minutes: how long a doing task's agents stay stopped, with nothing changing, before Agent stopped
     pub menu_items: usize,       // 6
     pub settle: Duration,        // 150 ms: changes this close together make one recompute
 }
@@ -74,14 +75,14 @@ pub enum AttentionMsg { Store(Arc<CoreSnapshot>), Sync, Hide(NeedsKey, Option<Sy
 
 ## Data / SQL
 
-Migration `attention` version 1 (not shipped yet), run with `migrate_module("attention", …)` on its own connection at `Store::path()`. Loaded into an in-memory SQLite on 25 Nov 2026; each CHECK rejected its bad row.
+Migration `attention` version 1, run with `migrate_module("attention", …)` on its own connection at `Store::path()`. Loaded into an in-memory SQLite on 25 Nov 2026; each CHECK rejected its bad row.
 
 ```sql
 CREATE TABLE attention_hidden (           -- one dismissed or snoozed item
   item_key  TEXT PRIMARY KEY CHECK (length(item_key) > 0),
   task_id   INTEGER NOT NULL,             -- no foreign key: core owns tasks
   kind      TEXT NOT NULL CHECK (kind IN ('question','approval','review','failed_run',
-                                          'proposed','ready','finish','quiet')),
+                                          'proposed','ready','finish','quiet')),   -- v2 adds 'stopped'
   action    TEXT NOT NULL CHECK (action IN ('dismissed','snoozed')),
   until     TEXT,                         -- set exactly for snoozes
   hidden_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
@@ -89,6 +90,8 @@ CREATE TABLE attention_hidden (           -- one dismissed or snoozed item
 );
 CREATE INDEX attention_hidden_task_idx ON attention_hidden(task_id);
 ```
+
+Version 2 adds the kind `'stopped'` (Agent stopped) to the CHECK. SQLite can't change a CHECK in place, so it creates `attention_hidden_v2` with the new list, copies every row, drops the old table, renames the new one and creates the index again (`src/migrations/002_agent_stopped.sql`). A test opens a version 1 file with a row in it and checks the row survives.
 
 An item is hidden while a row with its key exists and `until` is null or later than now. A row whose key hasn't been live for 30 days is deleted, at most once a day during a recompute.
 
@@ -106,6 +109,7 @@ From `CoreSnapshot`: `tree` (statuses, titles, `last_event_at`, `subtree_last_ev
 | Approval (Questions) | the same, with an `Approval` request | `approval:<request id>` | request time | "Allow: {first line of the text}" · "Agent in {thread title} wants approval" | Open thread |
 | Review (Reviews) | a linked PR is `open`, not a draft, without a problem; its task is open; none of that task's threads is `Running` or `NeedsMe` | `review:<pr ref>` | `ready_since` | "PR #{n} · {title}" · "+{add} −{del} · checks {passing/failing/pending} · {approved/changes requested/review required}" | Open PR |
 | Failed run (Failed runs) | a linked T3 thread is `Errored`, and its task is open | `failed:<run id>` | the thread's `last_activity_at` | "{thread title} stopped: {error}" · "Thread stopped · {error}" | Open thread |
+| Agent stopped (Stopped) | the task is `doing`; it has at least one linked thread; every one is `Idle`, `Settled` or `Gone`; no linked PR is open (or of unknown state); and `stopped_after` (10 min) has passed since the last change | `stopped:<task id>:<last change>` | the last change: the newest of the task's own `last_event_at` and its threads' `last_activity_at` | "Agent stopped · no PR yet" (or "· no open PR" when its only PRs are closed or merged) · "{thread title} stopped", or "All {n} threads stopped" | Open thread (the most recently active one) |
 | Proposed (Proposed) | tree nodes with status `proposed`: one item per parent; a top-level proposal is its own item | `proposed:<parent id>:<largest proposed id>`, or `proposed:<id>` | newest `created_at` in the group | "The agent proposed {n} subtasks" · "{n} proposed subtasks" | Accept all, Reject all, or each |
 | Ready (Ready) | in `ready`, with at least one edge `(task, _)` (so every blocker finished), and `since` within `ready_window` | `ready:<task id>:<since>` | `since` | "Ready to start: {ids} {is/are} done" · "{ids} done · ready to start" | Do it |
 | Finish it? (Finish it?) | an open parent whose subtasks that aren't dropped are all `done`, with at least one | `finish:<parent id>:<since>` | latest `last_event_at` of those subtasks | "All {n} subtasks are done. Mark the parent done?" · "All {n} subtasks done" | Mark done, or Keep open (dismisses) |
@@ -115,11 +119,13 @@ From `CoreSnapshot`: `tree` (statuses, titles, `last_event_at`, `subtree_last_ev
 - **Proposed children count as not done,** so a parent with an open proposal isn't "Finish it?"; nor is a parent whose subtasks are all dropped. `core` never finishes a parent itself (rule 10).
 - **Ready names its blockers** from `edges`, in id order, up to two ("143 and 145 are done"); more read "3 tasks it waited on are done". If one blocker has a merged PR in `pr_tasks`, the context reads "143 merged · ready to start".
 - **Last activity**, for Quiet, is the latest across the task and every task under it of: `subtree_last_event_at` (which includes `sync`'s failed-run notes); each linked thread's `last_activity_at`, where a `Running` or `NeedsMe` thread counts as now; and each linked PR's `updated_at`. One bottom-up pass over `tree`; Quiet is then checked top-down, so a quiet parent hides its quiet subtasks.
+- **Agent stopped** is one item per `doing` task, not per thread, because its actions (Mark done, Set in review) act on the task. A thread linked to two `doing` tasks gives each its own item. It clears when any condition stops holding: an agent runs or asks again, a thread errors (a Failed run shows instead), a PR opens, or the task leaves `doing`. A thread `sync` has no view of yet counts as not stopped, and so does a PR whose state isn't known yet, so nothing shows before `sync`'s first read. The task's own `last_event_at` counts, not its subtree's: a subtask's change isn't a change to this task. A new stop after the agent was resumed has a newer last change, so a new key, and shows again after a dismiss.
+- **Quiet gives way to Agent stopped:** a Quiet item isn't shown for a task with a visible Agent stopped item, so one task never has both. Once Agent stopped is dismissed or snoozed, Quiet can show for it again.
 - **`stale`** is set on an item built from a `ThreadView` or `PrView` marked `stale`.
 
 ### Order
 
-Groups in the design's order: Questions, Reviews, Failed runs, Proposed, Ready, Finish it?, Quiet. Inside a group, newest `since` first; in Quiet, longest quiet first. Ties by task id, then key. `for_task` uses the same order.
+Groups in the design's order, with Stopped right after Failed runs (both are a run that ended): Questions, Reviews, Failed runs, Stopped, Proposed, Ready, Finish it?, Quiet. Inside a group, newest `since` first; in Quiet, longest quiet first. Ties by task id, then key. `for_task` uses the same order.
 
 ### What each action calls
 
@@ -129,9 +135,10 @@ Groups in the design's order: Questions, Reviews, Failed runs, Proposed, Ready, 
 | Accept, Accept all | `set_status(id, Todo, None, me)` per task |
 | Reject, Reject all | `set_status(id, Dropped, reason, me)`; `core` records a `rejected` event |
 | Do it | `launch.start(&StartRequest { task, mode: DoIt, place: TaskRepos, again: false })` |
-| Mark done | `set_status(parent, Done, None, me)` |
+| Mark done | `set_status(parent, Done, None, me)`; for Agent stopped, the task itself |
+| Set in review (Agent stopped) | `set_status(task, InReview, None, me)` |
 | Keep open, Dismiss (⌘⌫) | `dismiss(key)` |
-| Snooze 3 days | `snooze(key, None)` |
+| Snooze 3 days (Quiet, Agent stopped) | `snooze(key, None)` |
 | Undo | `restore(key)` |
 
 ### The count and "checked"
@@ -148,7 +155,7 @@ Groups in the design's order: Questions, Reviews, Failed runs, Proposed, Ready, 
 | `Recheck`, `Woke`, `Tick` | nothing | recompute with the wall clock |
 
 - Messages within `settle` (150 ms) of each other make one recompute.
-- `next_wake` is the earliest of: the next task turning quiet (its last activity plus `quiet_after`), a Ready item leaving its window, a snooze ending. `compute` asserts it's later than `now`; anything already due is in the list. The worker waits with `recv_timeout(min(next_wake − now, 15 min))`, so after a sleep the first `Tick` or `woke()` puts a newly quiet task in the list.
+- `next_wake` is the earliest of: the next task turning quiet (its last activity plus `quiet_after`), a Ready item leaving its window, a snooze ending, and a `doing` task whose agents have stopped reaching `stopped_after` since its last change. `compute` asserts it's later than `now`; anything already due is in the list. The worker waits with `recv_timeout(min(next_wake − now, 15 min))`, so after a sleep the first `Tick` or `woke()` puts a newly quiet task in the list.
 - The `Changes` waiter loops on `sync.changes().wait_past(seen, 15 min)` and sends `Sync` when the count moved.
 - **Wake-ups:** on each core or sync change (coalesced), at deadlines, and at most 4 an hour otherwise. **Idle CPU:** 0%; each wake-up is one `compute` (under 5 ms at 2,000 tasks).
 
@@ -180,10 +187,11 @@ Tests use a `FakeSync` (a `SyncService` returning chosen snapshots and bumping `
 
 - **`tests/kinds.rs`** calls `compute` directly: one test per kind showing, and one per rule hiding it (a question on a done task, a draft PR, a PR while its agent runs, a ready task with no edges, readiness older than the window, a parent with a proposed or only dropped subtasks, a quiet child under a quiet parent); the lowest-task-id rule; Ready naming blockers from `edges` and a merged PR.
 - **`tests/order.rs`:** group order, newest first, Quiet longest first, ties.
+- **`tests/stopped.rs`** (Agent stopped): a table of one case per rule (each stopped state, too early by 1 ms, a thread still running or waiting, one errored, no thread, an open, draft or unknown PR, only a closed PR, each other status); the last change counted from the task and every thread, not subtasks; `next_wake` at the 10 minutes and the config's value; one item per `doing` task; the order after Failed runs; Quiet giving way; a new stop being a new key; the worker's `Tick` at the deadline and `Woke` after a sleep.
 - **`tests/time.rs`:** exactly 5 days; `next_wake` equals last activity plus 5 days and is later than `now`; a sleep of 6 days, then `Woke`, puts the task in Quiet at once; a snooze ending; the 15-minute cap with nothing due.
 - **`tests/hidden.rs`** (temporary file): dismiss hides until the key changes; snooze until `until`; `restore`; rows survive reopening; pruning after 30 days.
 - **`tests/worker.rs`** drives `AttentionWorker::handle(msg, now)`: a `Store` message makes no `core` call (the store handle panics if touched after start); a burst of 20 messages makes one recompute; `version` and `changes()` move only on a visible change.
-- **`tests/migrations.rs`:** each CHECK; opening twice applies once.
+- **`tests/migrations.rs`:** each CHECK; opening twice applies once; version 2 keeps version 1's rows and accepts `stopped`.
 - **Performance** (`#[ignore]`): `compute` on a generated tree of 2,000 tasks, with the machine recorded.
 
 ## Project structure
@@ -193,7 +201,8 @@ crates/attention/
   Cargo.toml                 airboss-attention
   src/lib.rs                 Attention (AttentionService), start, AttentionConfig
   src/compute.rs  src/kinds.rs  src/quiet.rs   compute; one function per kind; last activity per subtree
-  src/hidden.rs  src/db.rs   attention_hidden; own connection and migration (src/migrations/001_attention.sql)
+  src/stopped.rs             Agent stopped
+  src/hidden.rs  src/db.rs   attention_hidden; own connection and migrations (src/migrations/001_attention.sql, 002_agent_stopped.sql)
   src/worker.rs              AttentionWorker::handle, the thread loop, the Changes waiter
   tests/…                    as listed above
 ```
@@ -201,7 +210,7 @@ crates/attention/
 ## Boundaries
 
 - **Always:** derive items only from the snapshots and `attention_hidden`; keep `compute` pure; recompute only on a message or at `next_wake`.
-- **Ask first:** a new kind or group (the design fixes seven groups); changing a default threshold; a new crate.
+- **Ask first:** a new kind or group (the design fixes eight groups, Stopped included); changing a default threshold; a new crate.
 - **Never:** change a task, link or status; read `core` after start; run `gh` or `t3` or read T3's files; poll; show untracked threads as items.
 
 ## Success criteria
@@ -210,17 +219,19 @@ crates/attention/
 - [ ] The list follows the design's group order, and the count equals its length.
 - [ ] Dismiss and snooze survive a restart; a new occurrence shows again.
 - [ ] A question asked in a linked thread is in Needs me within 3 s of T3 writing it, and leaves when it's answered.
+- [ ] A `doing` task whose agents all stopped with no PR shows as Agent stopped 10 minutes after the last change, on time after a sleep, and leaves when an agent runs, a PR opens or the task moves on.
 - [ ] A task with no activity for 5 days shows as Quiet on time, including after the Mac slept through the moment; its quiet subtasks don't.
 - [ ] A change costs no `core` read, and `compute` meets 5 ms for 2,000 tasks on this Mac.
 
 ## Shared contract
 
-`crates/services` (`airboss-services`): types and traits only. It depends on `airboss-core` (ids, `Repo`, `PrState`, `Event`, `CoreSnapshot`) and `serde`, uses `std` only (no tokio, no threads), and has no logic beyond `Changes`, `PrRef`, `ThreadState::chip`, `NeedsKind::group`, the `SyncSnapshot` helpers and `time`. The value types derive `Clone`, `Debug` and `Serialize`; `SyncSnapshot` derives `Clone` and `Debug` only. Field names are the ones the app spec's draft 2 reads.
+`crates/services` (`airboss-services`): types and traits only. It depends on `airboss-core` (ids, `Repo`, `PrState`, `Event`, `CoreSnapshot`) and `serde`, uses `std` only (no tokio, no threads), and has no logic beyond `Changes`, `PrRef`, `ThreadState::chip`, `NeedsKind::group`, the `SyncSnapshot` helpers, `time` and `log` (integration QA R1: `log::line(source, message)` goes to stderr until the app calls `log::set_sink`, then to the app's log file; every service logs through it). The value types derive `Clone`, `Debug` and `Serialize`; `SyncSnapshot` derives `Clone` and `Debug` only. Field names are the ones the app spec's draft 2 reads.
 
 ```rust
 pub type SharedStore = Arc<Mutex<airboss_core::Store>>;
 pub type Timestamp = String;                     // UTC text in core's format, "2026-11-25T17:19:07.841Z"
 pub mod time { pub fn to_ts(t: SystemTime) -> Timestamp; pub fn from_ts(ts: &str) -> Option<SystemTime>; }
+pub mod log { pub type Sink = fn(&str, &str); pub fn set_sink(s: Sink) -> bool; pub fn has_sink() -> bool; pub fn line(source: &str, message: &str); }
 pub trait Clock: Send + Sync { fn now(&self) -> SystemTime; }
 pub struct SystemClock;                          // impl Clock: SystemTime::now()
 
@@ -354,9 +365,9 @@ pub struct NeedsItem {
     pub proposed: Vec<(TaskId, String)>,                // Proposed only
     pub stale: bool,
 }
-pub enum NeedsKind { Question, Approval, Review, FailedRun, Proposed, Ready, FinishIt, Quiet }
+pub enum NeedsKind { Question, Approval, Review, FailedRun, AgentStopped, Proposed, Ready, FinishIt, Quiet }
 impl NeedsKind { pub fn group(self) -> NeedsGroup; }
-pub enum NeedsGroup { Questions, Reviews, FailedRuns, Proposed, Ready, FinishIt, Quiet }   // display order
+pub enum NeedsGroup { Questions, Reviews, FailedRuns, Stopped, Proposed, Ready, FinishIt, Quiet }   // display order
 pub enum Target { Thread(ThreadKey), Pr { r#ref: PrRef, url: Option<String> }, Task(TaskId) }
 ```
 
@@ -377,3 +388,14 @@ pub enum Target { Thread(ThreadKey), Pr { r#ref: PrRef, url: Option<String> }, T
 3. **Time:** wall-clock deadlines, `next_wake > now` asserted, a 15-minute cap, `woke()`; Quiet appears on time after a sleep.
 4. **Testability:** `AttentionWorker::handle(msg, now)`; `FakeSync` instead of `sync`'s fakes; no dependency on the `airboss-sync` crate.
 5. **Shared contract** added here: every type in `crates/services`, with the field names the app's draft 2 reads.
+
+## After integration QA: Agent stopped
+
+The EM's decision on finding R5 (26 Nov 2026), in `tasks/program.md`:
+
+1. **A new kind, Agent stopped**, in a new group, Stopped, right after Failed runs. `NeedsKind::AgentStopped` serialises as `agent_stopped`, `NeedsGroup::Stopped` as `stopped`, and its hidden rows' kind is `stopped`.
+2. **`AttentionConfig.stopped_after`**, 10 minutes by default, and a deadline in `next_wake` when it runs out.
+3. **Migration `attention` version 2** adds `'stopped'` to the kind CHECK, keeping every row.
+4. **Quiet gives way** to a visible Agent stopped item on the same task.
+5. **Actions:** Open thread (main), Mark done and Set in review (as me), Snooze 3 days and Dismiss.
+

@@ -10,7 +10,7 @@ A native-feeling Mac app that answers two questions at a glance: what is waiting
 
 **User stories** (one per design screen)
 
-- As me, I open the app and land on **Needs me**: questions, reviews, failed runs, proposals, newly ready tasks, parents to finish and quiet work, each with its main action on ↩.
+- As me, I open the app and land on **Needs me**: questions, reviews, failed runs, agents that stopped without a PR, proposals, newly ready tasks, parents to finish and quiet work, each with its main action on ↩.
 - As me, I scan **All tasks** as a tree of 2,000 tasks. Each row shows status, progress, live agent state, repos and when it last changed, and I can move through it without a mouse.
 - As me, I select a task and see its **panel**: what needs me, its properties, notes, threads and activity. ⌘↓ opens it as a **full page**, with the run-order **map** for a parent.
 - As me, I see every **plan** as a card with its progress, current wave and what's next.
@@ -57,7 +57,7 @@ Versions are the latest stable on crates.io and npm on 25 Nov 2026, pinned exact
 | `tauri-plugin-opener` | 2.7.3 | PRs, docs, Slack and `t3code://` links |
 | `tauri-plugin-clipboard-manager` | 2.5.0 | Copy task number, agent note, setup command |
 | `tauri-plugin-dialog` | 2.8.4 | Folder picker for "Add another folder…" |
-| `tauri-plugin-log` | 2.10.2 | `~/Library/Logs/Airboss/app.log` |
+| `tauri-plugin-log` | 2.10.2 | `~/Library/Logs/Airboss/app.log`, rotated at 1 MB, keeping 3 files. The services' lines (`airboss_services::log::line`) and panics on any thread go there too (`logs::install`), since stderr is `/dev/null` when the app opens from Finder. Nothing in the app process writes to stderr directly (`tests/logs.rs` checks the sources) |
 | `tauri-nspanel` | 2.1.1 | Quick add as a non-activating panel over full-screen apps |
 | `notify` | 9.0.0, `default-features = false`, feature `macos_kqueue` | kqueue on the WAL file and its folder. FSEvents is not used. |
 | `objc2` 0.6.5, `objc2-foundation` 0.3.2, `objc2-app-kit` 0.3.2 | the versions Tauri already links | System accent colour and the wake notification, in one module, `src/macos.rs` |
@@ -135,7 +135,7 @@ app/
   src-tauri/
     Cargo.toml                   airboss-app
     tauri.conf.json  capabilities/main.json  capabilities/quickadd.json
-    icons/  tray/                app icon, menu-bar template icon, one red icon per Needs me kind
+    icons/  tray/                app icon, menu-bar template icon, one red icon per Needs me kind (Agent stopped: a circle with a pause)
     binaries/                    the airboss sidecar, copied at build time (git-ignored)
     resources/agent-note.md      what "Copy agent note" copies
     src/main.rs                  builder, plugins, windows, run loop
@@ -348,7 +348,7 @@ The stores are classes in `lib/state/*.svelte.ts`, one exported instance each, w
   | Action | Inverse |
   |---|---|
   | Dismiss, Keep open, Snooze | `attention.restore(key)` |
-  | Status change (Space, S, ⌘B, Mark done, Finish it) | `set_status` back to the previous status, with the previous blocked reason as the note if it was blocked |
+  | Status change (Space, S, ⌘B, Mark done, Finish it, Set in review) | `set_status` back to the previous status, with the previous blocked reason as the note if it was blocked |
   | Drop | the same, for the task and every open subtask the drop took with it (previous statuses come from the view model before the change) |
   | Move or reorder | `move_task` back to the previous parent and position |
   | Reject, Reject all | **deferred:** the reject is written 5 s later (or at quit). Until then the item and rows are hidden locally, and undo cancels it. `core` can't turn a task back into a proposal, so this is the only honest undo. |
@@ -372,6 +372,7 @@ The stores are classes in `lib/state/*.svelte.ts`, one exported instance each, w
 | A service (`gh` signed out, T3 missing, watcher failed) | The connections footer turns orange and names it, and the popover gives the fix. Never a stream of toasts. |
 | Do it, when the main window is hidden (from quick add) | On any failure or partial failure, Rust shows the main window, selects the task and shows the toast. A success shows nothing. |
 | The database won't open at start | A full-window state: "Airboss can't open its database", the path, the reason, "Show in Finder" and "Try again". |
+| The database breaks while the app runs (integration QA R2) | The same state, headed "Airboss's database stopped working", with "Show in Finder" only: the fix is to quit and reopen. Two cheap signs (`dbhealth.rs`): a `core` call failing with an I/O or corruption error (`Error::is_storage_failure`: SQLite's `IOERR`, `CORRUPT`, `NOTADB` or `CANTOPEN`, not busy or locked), and one `stat` on each catch-up showing the `-wal` file gone or replaced (another device or inode than the one the app holds). The app sends `db:unavailable` once, and from then on every command except `open_url`, `ui_ready`, `show_main`, `set_focus_context` and the quick-add panel's answers fails with `db_unavailable`, so nothing is saved into a database that will lose it. SQLite isn't repaired. |
 
 Red is never used for errors (The Red Is Mine Rule).
 
@@ -488,11 +489,12 @@ Every screen keeps DESIGN.md's layout, sizes and motion. This section adds data,
   - `task_detail` for the selected item's task.
 - **Inbox:** the 420px list, grouped in DESIGN's fixed order. ↑↓ move, and the first item starts selected. A stale item is dimmed and says "May be out of date".
 - **Detail:** the card (kind, time, task, headline at 17px, actions), then the task's properties, notes and activity.
-- **Actions** (the main action is ↩ or ⌘↩; Dismiss is ⌘⌫):
+- **Actions** (the main action is ↩ or ⌘↩; Dismiss is ⌘⌫; Mark done is Space where the card offers it):
 
   | Kind | Main action | Others |
   |---|---|---|
   | Question, Approval, Failed run | Open thread (`open_thread` on the item's `ThreadKey`) | Dismiss |
+  | Agent stopped | Open thread (`open_thread` on the most recently active of the task's threads) | Mark done (`set_status` done, Space), Set in review (`set_status` in_review), Snooze 3 days, Dismiss. Mark done and Set in review toast with Undo |
   | Review | Open PR (`open_url`) | Dismiss |
   | Proposed | Accept all (`accept_proposals`) | Accept, Edit (rename in place, then accept), or Reject each; Reject all |
   | Ready | Do it (`do_it`) | Dismiss |
@@ -976,6 +978,7 @@ Writes return `Patch` (shown as → P). All `core` calls act as `me`, with one l
 | `toast` | `{text, actions, undo?}` | Rust needs a toast the UI didn't ask for (a Do it result after the panel closed) |
 | `appearance:changed` | `{accent?, theme}` | the system accent or appearance changed |
 | `error:background` | `{source, message}` | the watcher or an app thread failed; also updates the footer |
+| `db:unavailable` | `AppError` (`db_unavailable`, message, detail `"<path>: <reason>"`) | the database broke while the app ran (once); the UI shows the database problem state |
 
 ## Appendix C: Keyboard map and focus rules
 
@@ -986,7 +989,7 @@ Single letters, Space and arrows act only in `list`, `panel` and `sidebar` (see 
 | ↑ ↓ | move | move | move by row of cards | map: within a wave |
 | → ← | open or fold; into the first child or up to the parent | | move by card | map: across waves |
 | ↩ | rename | main action | open page | map: open station |
-| Space | done / not done | | | |
+| Space | done / not done | Mark done (Agent stopped, Finish it?) | | |
 | S, 1–6 | status | | | |
 | R | link repos | | | |
 | ⌘↩ / ⇧⌘↩ | Do it / Plan it | main action | | the page's task or the selected station |
@@ -1026,4 +1029,6 @@ Global, from any app: the quick-add hotkey (⌃⌥N by default), on Pressed only
 | `AlreadyStarting` | (no toast; the button already says "Starting…") |
 | Undo refused | "144 changed since; nothing was undone." |
 | `Internal` | "Something went wrong inside Airboss; details are in the log." |
+| `DbUnavailable`, at start | "Airboss can't open its database", with `"<path>: <reason>"` as detail |
+| `DbUnavailable`, while running | "Quit Airboss (⌘Q) and open it again. Changes made since the problem began may not have been saved. Troubleshooting has more." |
 | A `ServiceError` | its own `message`, from the service's spec |

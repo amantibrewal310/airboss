@@ -5,6 +5,7 @@ import { expect, test, type Page } from '@playwright/test';
  * dark and in light: 24 baselines at 1440 × 900 with animations off, on the `design` fixture
  * (the design's sample data). They were compared with the design PNGs by eye; after that they
  * guard against regressions. Screen 08 (the native menu-bar menu) is checked by hand (QA.md).
+ * Screen 14, the Agent stopped card (R5), has no design PNG: it follows the other Needs me cards.
  */
 
 type Screen = { name: string; url: string; steps?: (page: Page) => Promise<void> };
@@ -69,6 +70,14 @@ const SCREENS: Screen[] = [
   { name: '11-nothing-needs-you', url: '/?fixture=nothing' },
   { name: '12-t3-missing', url: '/?fixture=t3missing&view=all&select=144' },
   { name: '13-light-mode', url: '/?fixture=design&view=all&select=144' },
+  {
+    // R5: not a design screen; the Agent stopped card on the `stopped` fixture.
+    name: '14-agent-stopped',
+    url: '/?fixture=stopped',
+    steps: async (page) => {
+      await page.getByRole('option', { name: /Agent stopped: 202/ }).click();
+    },
+  },
 ];
 
 for (const theme of ['dark', 'light'] as const) {

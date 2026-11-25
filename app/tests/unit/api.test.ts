@@ -12,7 +12,7 @@ needs_restore undo recheck_connections copy_text install_cli get_settings set_se
 set_focus_context ui_ready quickadd_shown quickadd_hide quickadd_resize show_main`.split(/\s+/);
 
 const APPENDIX_B = `tree:patch needs:changed connections:changed menu:action nav:open quickadd:reset toast
-appearance:changed error:background`.split(/\s+/);
+appearance:changed error:background db:unavailable`.split(/\s+/);
 
 function recording() {
   const calls: { command: string; args: unknown }[] = [];

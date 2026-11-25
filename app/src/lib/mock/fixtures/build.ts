@@ -236,6 +236,7 @@ const GROUP: Record<NeedsItem['kind'], NeedsItem['group']> = {
   approval: 'questions',
   review: 'reviews',
   failed_run: 'failed_runs',
+  agent_stopped: 'stopped',
   proposed: 'proposed',
   ready: 'ready',
   finish_it: 'finish_it',

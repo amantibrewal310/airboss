@@ -7,10 +7,16 @@ use airboss_core::{Migration, Store};
 use rusqlite::Connection;
 
 /// `attention`'s migrations, oldest first. Never edit a shipped one; add a new version.
-pub(crate) const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    sql: include_str!("migrations/001_attention.sql"),
-}];
+pub(crate) const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        sql: include_str!("migrations/001_attention.sql"),
+    },
+    Migration {
+        version: 2,
+        sql: include_str!("migrations/002_agent_stopped.sql"),
+    },
+];
 
 /// Why the table couldn't be opened, for the log.
 pub(crate) type OpenError = String;

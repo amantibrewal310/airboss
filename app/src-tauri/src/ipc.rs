@@ -85,14 +85,25 @@ pub fn guarded_call<T>(f: impl FnOnce() -> AppResult<T>) -> AppResult<T> {
     }
 }
 
+/// In the database problem state (R2), every command but the few that state needs answers
+/// with it, so nothing is saved into a database that will lose it.
+fn gate(s: &AppState, command: &str) -> AppResult<()> {
+    match s.db_problem() {
+        Some(e) if !crate::dbhealth::WHILE_BROKEN.contains(&command) => Err(e),
+        _ => Ok(()),
+    }
+}
+
 /// Runs a command body off the main thread.
 async fn run<T: Send + 'static>(
     app: App,
+    command: &'static str,
     f: impl FnOnce(&Arc<AppState>) -> AppResult<T> + Send + 'static,
 ) -> AppResult<T> {
     tauri::async_runtime::spawn_blocking(move || {
         guarded_call(|| {
             let s = app.get()?;
+            gate(&s, command)?;
             f(&s)
         })
     })
@@ -127,7 +138,7 @@ macro_rules! commands {
             ) -> Result<$ret, AppError> {
                 let caller = Caller::from_label(window.label());
                 let app = app.inner().clone();
-                run(app, move |s| $path(s, caller $(, $arg)*)).await
+                run(app, stringify!($name), move |s| $path(s, caller $(, $arg)*)).await
             }
         )*
 
@@ -150,6 +161,7 @@ macro_rules! commands {
                 $( stringify!($name) => {
                     #[allow(unused_variables)]
                     let a: $Args = serde_json::from_value(args).map_err(bad_args)?;
+                    gate(s, command)?;
                     let out = guarded_call(|| $path(s, caller $(, a.$arg)*))?;
                     serde_json::to_value(out).map_err(|e| AppError::internal(e.to_string()))
                 } )*

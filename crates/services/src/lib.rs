@@ -2,7 +2,8 @@
 //!
 //! Types and traits only, from the "Shared contract" section of `SPEC-attention.md`. It uses
 //! `std` alone (no tokio, no threads) and has no logic beyond [`Changes`], [`PrRef`],
-//! [`ThreadState::chip`], [`NeedsKind::group`], the [`SyncSnapshot`] helpers and [`time`].
+//! [`ThreadState::chip`], [`NeedsKind::group`], the [`SyncSnapshot`] helpers, [`time`] and
+//! [`log`], the one line every service logs through.
 //!
 //! Enums serialise as snake_case strings; [`PrRef`], [`NeedsKey`] and [`Timestamp`] as plain
 //! strings. See `README.md` for the choices made where the specs left a gap.
@@ -10,6 +11,7 @@
 mod attention;
 mod changes;
 mod launch;
+pub mod log;
 mod pr_ref;
 mod sync;
 pub mod time;

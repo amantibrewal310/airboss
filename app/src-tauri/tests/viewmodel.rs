@@ -217,6 +217,54 @@ fn needs_items_set_the_dot_the_ready_pill_quiet_days_and_staleness() {
 }
 
 #[test]
+fn an_agent_stopped_item_sets_the_dot_beside_the_stopped_chip() {
+    let mut s = store();
+    let a = add(&mut s, "A", None);
+    status(&mut s, a, Status::Doing);
+    let key = ThreadKey {
+        source: Source::T3,
+        r#ref: "t-a".into(),
+    };
+    let mut sync = SyncSnapshot::default();
+    sync.thread_tasks.insert(key.clone(), vec![a]);
+    sync.threads.insert(
+        key.clone(),
+        ThreadView {
+            key,
+            linked: true,
+            state: ThreadState::Idle,
+            title: Some("t-a".into()),
+            request: None,
+            error: None,
+            run_id: None,
+            project_path: None,
+            branch: None,
+            worktree_path: None,
+            parent_ref: None,
+            child_count: 0,
+            last_activity_at: Some(common::NOW.into()),
+            stale: false,
+        },
+    );
+    let needs = NeedsList {
+        count: 1,
+        items: vec![needs_item(
+            "stopped:a",
+            NeedsKind::AgentStopped,
+            a,
+            common::NOW,
+        )],
+        checked_at: None,
+        version: 1,
+    };
+    let v = vm_with(&s, sync, needs);
+    let row = &v.rows[&a];
+    assert!(row.needs && !row.needs_stale);
+    assert_eq!(row.live, Some(Chip::Stopped));
+    assert!(!row.ready_pill && row.quiet_days.is_none());
+}
+
+#[test]
 fn diff_sends_upserts_and_removals_and_order_only_when_it_changed() {
     let mut s = store();
     let a = add(&mut s, "A", None);

@@ -105,6 +105,14 @@ fn enums_are_snake_case_strings() {
             "\"failed_run\"",
         ),
         (
+            serde_json::to_string(&NeedsKind::AgentStopped).unwrap(),
+            "\"agent_stopped\"",
+        ),
+        (
+            serde_json::to_string(&NeedsGroup::Stopped).unwrap(),
+            "\"stopped\"",
+        ),
+        (
             serde_json::to_string(&NeedsGroup::FinishIt).unwrap(),
             "\"finish_it\"",
         ),
@@ -350,7 +358,15 @@ fn attention_values_round_trip() {
     round_trip(&NeedsList::default());
     use NeedsKind::*;
     for kind in [
-        Question, Approval, Review, FailedRun, Proposed, Ready, FinishIt, Quiet,
+        Question,
+        Approval,
+        Review,
+        FailedRun,
+        AgentStopped,
+        Proposed,
+        Ready,
+        FinishIt,
+        Quiet,
     ] {
         round_trip(&kind);
         round_trip(&kind.group());

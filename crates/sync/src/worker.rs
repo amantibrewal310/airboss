@@ -214,7 +214,7 @@ impl Env {
     }
 }
 
-/// Logs one line to stderr, where the app collects its services' output.
+/// Logs one line through the services' log, which the app sends to its log file.
 pub(crate) fn log(what: &str) {
-    eprintln!("airboss-sync: {what}");
+    airboss_services::log::line("airboss-sync", what);
 }

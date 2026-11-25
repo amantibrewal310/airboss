@@ -16,9 +16,9 @@ import { fullSeed } from './full';
 import { perfSeed } from './perf';
 import { SeedBuilder } from './build';
 
-export type FixtureName = 'design' | 'full' | 'perf' | 'empty' | 'welcome' | 't3missing' | 'nothing' | 'dberror';
+export type FixtureName = 'design' | 'full' | 'perf' | 'empty' | 'welcome' | 't3missing' | 'nothing' | 'dberror' | 'stopped';
 
-export const FIXTURES: readonly FixtureName[] = ['design', 'full', 'perf', 'empty', 'welcome', 't3missing', 'nothing', 'dberror'];
+export const FIXTURES: readonly FixtureName[] = ['design', 'full', 'perf', 'empty', 'welcome', 't3missing', 'nothing', 'dberror', 'stopped'];
 
 export function isFixtureName(name: string): name is FixtureName {
   return (FIXTURES as readonly string[]).includes(name);
@@ -71,6 +71,29 @@ export function loadFixture(name: FixtureName): MockSeed {
           ...CONNECTED.filter((c) => c.name !== 'Agents'),
         ];
       }
+      return seed;
+    }
+    case 'stopped': {
+      // R5: Refund service's agent settled 20 minutes ago with no PR, so 202 is Agent stopped.
+      const seed = designSeed();
+      seed.name = 'stopped';
+      const since = new Date(Date.parse(seed.now) - 20 * 60_000).toISOString();
+      const thread = seed.threads.find((t) => t.view.key.ref === 'refund-service')!;
+      thread.view = { ...thread.view, state: 'settled', last_activity_at: since };
+      const at = seed.needs.findIndex((n) => n.kind === 'failed_run') + 1;
+      seed.needs.splice(at, 0, {
+        key: `stopped:202:${since}`,
+        kind: 'agent_stopped',
+        group: 'stopped',
+        task: 202,
+        task_title: 'Refund service',
+        since,
+        headline: 'Agent stopped · no PR yet',
+        context: 'refund-service stopped',
+        target: { thread: { source: 't3', ref: 'refund-service' } },
+        proposed: [],
+        stale: false,
+      });
       return seed;
     }
     case 'dberror': {

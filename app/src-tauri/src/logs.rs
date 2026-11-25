@@ -1,9 +1,43 @@
-//! How much of the app log is kept: `~/Library/Logs/Airboss/app.log` plus the last two.
+//! The app log, `~/Library/Logs/Airboss/app.log`: what goes into it, and how much is kept.
 //!
-//! The log plugin's default keeps one file of 40 KB and deletes it when it's full, so the
-//! history a support question needs was gone at the first rotation.
+//! - **Everything goes in.** An app opened from Finder has stderr on `/dev/null`, so the
+//!   services' lines (sync, launch, attention) and panics on any thread are sent to the log
+//!   instead ([`install`]). Nothing else in the app process writes to stderr.
+//! - **The file and the last two are kept.** The log plugin's default keeps one file of 40 KB
+//!   and deletes it when it's full, so the history a support question needs was gone at the
+//!   first rotation.
 
 use tauri_plugin_log::RotationStrategy;
+use tauri_plugin_log::log;
+
+/// Sends the services' log lines and every panic's message to the app log. Call it once, at
+/// start; lines logged before the log plugin is set up are dropped, and the services only
+/// start after it.
+pub fn install() {
+    airboss_services::log::set_sink(service_line);
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let thread = std::thread::current();
+        let payload = info.payload();
+        let what = payload
+            .downcast_ref::<&str>()
+            .copied()
+            .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+            .unwrap_or("(no message)");
+        let at = info
+            .location()
+            .map(|l| format!(" at {}:{}", l.file(), l.line()))
+            .unwrap_or_default();
+        log::error!(target: "panic", "thread {} panicked: {what}{at}", thread.name().unwrap_or("unnamed"));
+        // Still on stderr too, for a run from a terminal.
+        previous(info);
+    }));
+}
+
+/// One service line, as a warning: services log only what went wrong or what they recovered.
+fn service_line(source: &str, message: &str) {
+    log::warn!(target: source, "{message}");
+}
 
 /// A log file is rotated at 1 MB …
 pub const MAX_FILE_BYTES: u128 = 1_000_000;
