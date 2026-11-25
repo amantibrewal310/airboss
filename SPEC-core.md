@@ -498,6 +498,7 @@ The app design ([DESIGN.md](DESIGN.md), "Needs from the core data model") asked 
 - Unlinking a repo that isn't linked is `NotFound`, like removing a dependency that isn't there.
 - A plan sent again doesn't touch an existing step's repos (rule 24).
 - A blank branch name clears the branch, since no git branch can be blank (rule 25).
+- A blank link title is stored as no title. Linking the same thing again returns the link as it was, title included.
 - An outside blocker reaches a subtask through a sibling too, so every `waiting_outside` entry names at least one blocker (rule 18).
 - "Newest" and "last" go by event id, as everywhere else; times are only shown (rules 26 and 28).
 

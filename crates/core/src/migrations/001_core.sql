@@ -65,6 +65,7 @@ CREATE TABLE links (
   kind       TEXT NOT NULL CHECK (kind IN ('t3_thread','claude_session','pr','slack','doc','github_issue')),
   ref        TEXT NOT NULL CHECK (length(ref) > 0),
   url        TEXT,
+  title      TEXT,
   pr_state   TEXT CHECK (pr_state IN ('open','merged','closed')),
   linked_by  TEXT NOT NULL,
   linked_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),

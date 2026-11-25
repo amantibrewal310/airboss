@@ -431,6 +431,8 @@ pub struct Link {
     pub url: Option<String>,
     /// Set exactly for PR links (rule 3).
     pub pr_state: Option<PrState>,
+    /// What the app shows, e.g. "#booking thread"; `None` means show the ref.
+    pub title: Option<String>,
     pub linked_by: Actor,
     pub linked_at: String,
 }
@@ -442,6 +444,8 @@ pub struct NewLink {
     pub r#ref: String,
     pub url: Option<String>,
     pub pr_state: Option<PrState>,
+    #[serde(default)]
+    pub title: Option<String>,
 }
 
 impl NewLink {
@@ -452,6 +456,7 @@ impl NewLink {
             r#ref: r#ref.into(),
             url: None,
             pr_state: None,
+            title: None,
         }
     }
 
@@ -463,6 +468,12 @@ impl NewLink {
     /// Adds the web page it lives at.
     pub fn with_url(mut self, url: impl Into<String>) -> NewLink {
         self.url = Some(url.into());
+        self
+    }
+
+    /// Names the link for display, e.g. "booking-flow.md"; a blank title is no title.
+    pub fn with_title(mut self, title: impl Into<String>) -> NewLink {
+        self.title = Some(title.into());
         self
     }
 
