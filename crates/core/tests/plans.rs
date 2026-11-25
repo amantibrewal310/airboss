@@ -535,8 +535,17 @@ fn a_migration_plan_runs_in_the_expected_waves() {
     // Inside Phase 2 everything waits, directly or not, on Phase 1, outside it.
     let inner = s.run_order(phase("p2")).unwrap();
     assert!(inner.waves.is_empty());
+    let outside: Vec<(TaskId, Vec<TaskId>)> = inner
+        .waiting_outside
+        .iter()
+        .map(|w| (w.task.id, w.blockers.clone()))
+        .collect();
+    let phase1 = vec![phase("p1.schema"), phase("p1.flag")];
     assert_eq!(
-        ids(&inner.waiting_outside),
-        vec![phase("p2.write"), phase("p2.backfill")]
+        outside,
+        vec![
+            (phase("p2.write"), phase1.clone()),
+            (phase("p2.backfill"), phase1)
+        ]
     );
 }

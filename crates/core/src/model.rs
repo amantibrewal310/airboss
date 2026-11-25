@@ -500,10 +500,19 @@ pub struct RunOrder {
     /// Siblings keep their order within a wave.
     pub waves: Vec<Vec<Task>>,
     /// Subtasks that wait, directly or through a sibling, on an open task outside the parent.
-    pub waiting_outside: Vec<Task>,
+    pub waiting_outside: Vec<OutsideWait>,
     /// Subtasks that can't be placed in a wave because their lifted dependencies form a
     /// loop, or wait on one, in sibling order. Kept apart so the rest of the order shows.
     pub tangled: Vec<Task>,
+}
+
+/// A subtask held back by open tasks outside its parent (rule 18).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OutsideWait {
+    pub task: Task,
+    /// The open tasks outside the parent that hold it, directly, through its subtree, or
+    /// through a sibling it waits on; sorted by id.
+    pub blockers: Vec<TaskId>,
 }
 
 /// What a plan step waits on: another step in the same plan, or a task that already exists.

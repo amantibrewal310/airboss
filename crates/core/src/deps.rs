@@ -1,12 +1,12 @@
 //! Dependencies between tasks: adding and removing them, the loop check, waiting and run
 //! order (rules 14–18).
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use rusqlite::{Connection, params};
 
 use crate::events;
-use crate::model::{Actor, Dependencies, EventKind, RunOrder, Status, Task};
+use crate::model::{Actor, Dependencies, EventKind, OutsideWait, RunOrder, Status, Task};
 use crate::permissions::{Call, allowed};
 use crate::sql::{SUBTREE_CTE, query_all};
 use crate::tasks::{self, TASK_COLUMNS, ensure_exists};
@@ -222,14 +222,15 @@ pub(crate) fn on_task_deleting(tx: &mut Tx<'_>, id: TaskId, actor: &Actor) -> Re
 }
 
 /// Every dependency between two open tasks that starts in `?1`'s subtree, lifted to the
-/// direct subtasks the two ends sit under. A null blocker side means the blocker is outside.
+/// direct subtasks the two ends sit under. A null blocker side means the blocker is outside,
+/// and the third column names it.
 const LIFTED_SQL: &str = "
 WITH RECURSIVE sub(id, top) AS (
     SELECT id, id FROM tasks WHERE parent_id = ?1
     UNION ALL
     SELECT t.id, sub.top FROM tasks t JOIN sub ON t.parent_id = sub.id
 )
-SELECT DISTINCT s.top, b.top
+SELECT DISTINCT s.top, b.top, CASE WHEN b.top IS NULL THEN d.waits_on_id END
 FROM sub s
 JOIN tasks st ON st.id = s.id
 JOIN task_deps d ON d.task_id = s.id
@@ -260,7 +261,8 @@ fn run_order(conn: &Connection, parent: TaskId) -> Result<RunOrder> {
     // `unblocks[y]` lists the subtasks waiting on y.
     let mut unblocks: Vec<Vec<usize>> = vec![Vec::new(); n];
     let mut waits_for = vec![0usize; n];
-    let mut outside = vec![false; n];
+    // The open tasks outside the parent holding each subtask; empty while nothing does.
+    let mut outside: Vec<BTreeSet<TaskId>> = vec![BTreeSet::new(); n];
     let mut stmt = conn.prepare(LIFTED_SQL)?;
     let mut rows = stmt.query(params![parent.0])?;
     while let Some(row) = rows.next()? {
@@ -269,7 +271,9 @@ fn run_order(conn: &Connection, parent: TaskId) -> Result<RunOrder> {
             continue;
         };
         match row.get::<_, Option<i64>>(1)? {
-            None => outside[x] = true,
+            None => {
+                outside[x].insert(TaskId(row.get(2)?));
+            }
             Some(y) => {
                 if let Some(&y) = index.get(&TaskId(y))
                     && y != x
@@ -304,28 +308,35 @@ fn run_order(conn: &Connection, parent: TaskId) -> Result<RunOrder> {
         tangled[i] = false;
     }
 
-    // Waiting on a subtask that waits outside is waiting outside too. Waves are in
-    // dependency order, so one pass reaches everything downstream.
+    // Waiting on a subtask that waits outside is waiting outside too, on the same blockers.
+    // Waves are in dependency order, so one pass reaches everything downstream.
     for &y in waves.iter().flatten() {
-        if outside[y] {
+        if !outside[y].is_empty() {
+            let held = outside[y].clone();
             for &x in &unblocks[y] {
-                outside[x] = true;
+                outside[x].extend(&held);
             }
         }
     }
-    let pick = |ids: &[usize], want_outside: bool| -> Vec<Task> {
-        ids.iter()
-            .filter(|&&i| !tangled[i] && outside[i] == want_outside)
-            .map(|&i| children[i].clone())
-            .collect()
-    };
+    let placed = |i: &usize| !tangled[*i];
     Ok(RunOrder {
         waves: waves
             .iter()
-            .map(|w| pick(w, false))
+            .map(|w| {
+                w.iter()
+                    .filter(|&i| placed(i) && outside[*i].is_empty())
+                    .map(|&i| children[i].clone())
+                    .collect::<Vec<_>>()
+            })
             .filter(|w| !w.is_empty())
             .collect(),
-        waiting_outside: pick(&(0..n).collect::<Vec<_>>(), true),
+        waiting_outside: (0..n)
+            .filter(|i| placed(i) && !outside[*i].is_empty())
+            .map(|i| OutsideWait {
+                task: children[i].clone(),
+                blockers: outside[i].iter().copied().collect(),
+            })
+            .collect(),
         tangled: (0..n)
             .filter(|&i| tangled[i])
             .map(|i| children[i].clone())

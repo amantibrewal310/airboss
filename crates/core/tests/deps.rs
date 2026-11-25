@@ -431,7 +431,42 @@ fn a_subtask_with_an_open_blocker_outside_waits_outside() {
 
     let order = s.run_order(p).unwrap();
     assert_eq!(wave_ids(&order), vec![vec![b]]);
-    assert_eq!(ids(&order.waiting_outside), vec![a, c]);
+    assert_eq!(
+        outside(&order),
+        vec![(a, vec![elsewhere]), (c, vec![elsewhere])]
+    );
+}
+
+/// Each `waiting_outside` entry with its blockers.
+fn outside(order: &RunOrder) -> Vec<(TaskId, Vec<TaskId>)> {
+    order
+        .waiting_outside
+        .iter()
+        .map(|w| (w.task.id, w.blockers.clone()))
+        .collect()
+}
+
+#[test]
+fn outside_blockers_are_named_directly_through_steps_and_through_siblings() {
+    let mut s = store();
+    let [x, y, z, done] = ["X", "Y", "Z", "Done"].map(|t| top(&mut s, t));
+    let p = top(&mut s, "Project");
+    let [a, b, c, d] = ["A", "B", "C", "D"].map(|t| under(&mut s, p, t));
+    let b1 = under(&mut s, b, "B1");
+    let b2 = under(&mut s, b, "B2");
+    // A waits on Z and X directly; B through its steps on Y and X; a finished blocker
+    // holds nothing. C waits on A and B, so on all three; D is free.
+    for (task, on) in [(a, z), (a, x), (b1, y), (b2, x), (b2, done), (c, a), (c, b)] {
+        s.add_dependency(task, on, &Actor::Me).unwrap();
+    }
+    set_status(&mut s, done, Status::Done);
+
+    let order = s.run_order(p).unwrap();
+    assert_eq!(wave_ids(&order), vec![vec![d]]);
+    assert_eq!(
+        outside(&order),
+        vec![(a, vec![x, z]), (b, vec![x, y]), (c, vec![x, y, z])]
+    );
 }
 
 #[test]
