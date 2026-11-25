@@ -34,8 +34,26 @@ pub(crate) fn open_file(path: &Path) -> Result<Connection> {
     // don't fail when two handles open the same file at once.
     conn.busy_timeout(Duration::from_millis(2000))?;
     // WAL must be set outside any transaction; it persists in the file.
-    conn.pragma_update(None, "journal_mode", "WAL")?;
+    set_wal(&conn)?;
     prepare(conn)
+}
+
+/// Switches the file to WAL. While another handle is opening the same new file, SQLite can
+/// refuse the switch with "database is locked" without calling the busy handler, so retry for
+/// up to the same 2 seconds `busy_timeout` would wait.
+fn set_wal(conn: &Connection) -> Result<()> {
+    let deadline = std::time::Instant::now() + Duration::from_millis(2000);
+    loop {
+        match conn.pragma_update(None, "journal_mode", "WAL") {
+            Err(rusqlite::Error::SqliteFailure(e, _))
+                if e.code == rusqlite::ErrorCode::DatabaseBusy
+                    && std::time::Instant::now() < deadline =>
+            {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            other => return Ok(other?),
+        }
+    }
 }
 
 /// Opens a private in-memory database, for tests and throwaway use.
@@ -57,9 +75,12 @@ fn prepare(mut conn: Connection) -> Result<Connection> {
 /// Each migration takes the write lock first (IMMEDIATE) and re-reads the version inside
 /// it, so two handles opening one file can't both apply the same migration.
 pub(crate) fn migrate(conn: &mut Connection, module: &str, migrations: &[Migration]) -> Result<()> {
-    conn.execute_batch(CREATE_SCHEMA_MIGRATIONS)?;
     for m in migrations {
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        // Created inside the write lock: a plain CREATE IF NOT EXISTS reads, then writes,
+        // and that upgrade fails at once with "database is locked" when another handle is
+        // migrating, without waiting for busy_timeout.
+        tx.execute_batch(CREATE_SCHEMA_MIGRATIONS)?;
         let applied: i64 = tx.query_row(
             "SELECT ifnull(max(version), 0) FROM schema_migrations WHERE module = ?1",
             params![module],

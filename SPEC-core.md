@@ -158,7 +158,7 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
 - **"Has a PR"** and **"all PRs merged"** come from `links`.
 - **Positions** are stored, because order is something I choose, not something that can be worked out.
 
-**No UNIQUE constraint on `(parent_id, position)`.** SQLite checks uniqueness row by row while renumbering, so a renumber would fail partway. It also treats null parents as all different, so the constraint couldn't protect top-level tasks anyway. Gap-free positions are enforced in code (rule 20) and tested.
+**No UNIQUE constraint on `(parent_id, position)`.** SQLite checks uniqueness row by row while renumbering, so a renumber would fail partway. It also treats null parents as all different, so the constraint couldn't protect top-level tasks anyway. Gap-free positions are enforced in code (rule 13) and tested.
 
 **Actors:** `me`, `agent:<thread ref>`, `sync:gh`, `sync:t3`, `plan` and `launch`. `core` trusts the actor it's given. Proving who the caller is belongs to `mcp`: the agent token can only act as `agent:…`, and acting as `plan` needs its own token. The `mcp` spec will define both.
 
