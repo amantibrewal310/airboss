@@ -154,3 +154,75 @@ fn a_busy_database_is_only_a_failed_save() {
     assert_eq!(problems(&app), 0);
     app.call("bootstrap", json!({})).unwrap();
 }
+
+/// A newer Airboss migrated the file while this one has it open (core refuses every write
+/// then): the "Update Airboss" state, not a stream of "Couldn't save" toasts.
+#[test]
+fn a_database_a_newer_airboss_migrated_shows_the_update_state() {
+    let (app, db) = file_app("newer");
+    let t = app.add("T", None);
+    app.call("bootstrap", json!({})).unwrap();
+    rusqlite::Connection::open(&db)
+        .unwrap()
+        .execute(
+            "INSERT INTO schema_migrations (module, version) VALUES ('core', 99)",
+            [],
+        )
+        .unwrap();
+    let e = app
+        .call("rename_task", json!({"id": t.0, "title": "Renamed"}))
+        .unwrap_err();
+    assert_eq!(e.code, ErrorCode::DbTooNew);
+    assert_eq!(
+        e.message,
+        "A newer Airboss has updated this database. Install it, then open Airboss again."
+    );
+    let sent = problem(&app, Duration::from_secs(1)).expect("db:unavailable");
+    assert_eq!(sent.code, ErrorCode::DbTooNew);
+    assert_eq!(problems(&app), 1);
+    // From then on every command answers with it, as in the database problem state.
+    assert_eq!(
+        app.call("bootstrap", json!({})).unwrap_err().code,
+        ErrorCode::DbTooNew
+    );
+}
+
+/// The same at start: the error core gives `Store::open` reads as "Update Airboss".
+#[test]
+fn opening_a_database_a_newer_airboss_migrated_says_to_update() {
+    let db = temp_dir("newer-open").join("airboss.db");
+    drop(Store::open(&db).unwrap());
+    rusqlite::Connection::open(&db)
+        .unwrap()
+        .execute(
+            "INSERT INTO schema_migrations (module, version) VALUES ('core', 99)",
+            [],
+        )
+        .unwrap();
+    let e = airboss_app::native::open_error(&db, Store::open(&db).err().unwrap());
+    assert_eq!(e.code, ErrorCode::DbTooNew);
+    assert!(e.detail.unwrap().starts_with(&db.display().to_string()));
+    // Any other failure is the plain "can't open" state.
+    let other = airboss_app::native::open_error(&db, airboss_core::Error::NotFound);
+    assert_eq!(
+        (other.code, other.message.as_str()),
+        (ErrorCode::DbUnavailable, "Airboss can't open its database")
+    );
+}
+
+/// No HOME and no AIRBOSS_DB: core's clear error, never a relative path.
+#[test]
+fn no_place_for_the_database_is_the_cant_open_state_with_core_s_reason() {
+    let why = airboss_core::Error::Db(rusqlite::Error::SqliteFailure(
+        ffi::Error::new(ffi::SQLITE_CANTOPEN),
+        Some("HOME isn't set, so there's no default database; set AIRBOSS_DB".into()),
+    ));
+    let e = airboss_app::native::db_location(Err(why)).unwrap_err();
+    assert_eq!(e.code, ErrorCode::DbUnavailable);
+    assert_eq!(e.message, "Airboss can't open its database");
+    assert!(e.detail.unwrap().contains("set AIRBOSS_DB"));
+    assert_eq!(
+        airboss_app::native::db_location(Ok("/x/airboss.db".into())).unwrap(),
+        PathBuf::from("/x/airboss.db")
+    );
+}

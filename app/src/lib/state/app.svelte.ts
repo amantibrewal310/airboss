@@ -554,7 +554,7 @@ export class App {
     const err = asAppError(e);
     // Appendix D: no toast; the button already says "Starting…".
     if (err.code === 'already_starting') return;
-    if (err.code === 'db_unavailable') return this.lost(err);
+    if (err.code === 'db_unavailable' || err.code === 'db_too_new') return this.lost(err);
     this.toast(err.message, 'warn');
   }
 

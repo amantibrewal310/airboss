@@ -1229,6 +1229,27 @@ fn the_path_check_reads_zshrc_and_reaches_the_ui() {
     assert!(detail::bootstrap(&app.state, M).unwrap().cli.on_path);
 }
 
+/// attention's "Needs me · Didn't start" row (its table didn't open) reaches the footer.
+#[test]
+fn a_needs_me_that_didnt_start_shows_in_the_footer() {
+    let app = TestApp::new();
+    app.attention.set_connections(vec![Connection {
+        name: "Needs me".into(),
+        ok: false,
+        state: "Didn't start".into(),
+        detail: "Its table couldn't open: disk I/O error".into(),
+        fix: Some("Quit and reopen Airboss. If it happens again, see app.log.".into()),
+    }]);
+    app.state.catch_up_services();
+    let rows = app.state.connection_rows();
+    let row = rows.iter().find(|r| r.name == "Needs me").unwrap();
+    assert!(!row.ok && row.state == "Didn't start", "{row:?}");
+    assert!(app.shell.events().iter().any(|e| matches!(
+        e,
+        UiEvent::ConnectionsChanged(c) if c.connections.iter().any(|r| r.name == "Needs me")
+    )));
+}
+
 /// The newest agent report is found at start, behind later events of mine.
 #[test]
 fn the_last_agent_report_is_found_at_start() {

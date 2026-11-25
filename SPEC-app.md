@@ -375,7 +375,8 @@ The stores are classes in `lib/state/*.svelte.ts`, one exported instance each, w
 | A form (New task, link, blocked reason) | Inline under the field. Create is disabled only for an empty title. |
 | A service (`gh` signed out, T3 missing, watcher failed) | The connections footer turns orange and names it, and the popover gives the fix. Never a stream of toasts. |
 | Do it, when the main window is hidden (from quick add) | On any failure or partial failure, Rust shows the main window, selects the task and shows the toast. A success shows nothing. |
-| The database won't open at start | A full-window state: "Airboss can't open its database", the path, the reason, "Show in Finder" and "Try again". |
+| The database won't open at start | A full-window state: "Airboss can't open its database", the path, the reason, "Show in Finder" and "Try again". The path comes from core's `default_db_path()` (`AIRBOSS_DB`, or Application Support), so with neither `AIRBOSS_DB` nor `HOME` this state shows core's reason ("HOME isn't set … set AIRBOSS_DB") instead of a relative path, and settings aren't saved. |
+| A newer Airboss migrated the database (core's `Error::is_newer_database`, checked before the generic database message) | At start, or on the first write it refuses while the app runs: a full-window "**Update Airboss**" state with "A newer Airboss has updated this database. Install it, then open Airboss again.", the path, and "Show in Finder" (no Try again). Like the database problem state, it's sent once as `db:unavailable` (code `db_too_new`), and every command but the window plumbing answers with it. |
 | The database breaks while the app runs (integration QA R2) | The same state, headed "Airboss's database stopped working", with "Show in Finder" only: the fix is to quit and reopen. Two cheap signs (`dbhealth.rs`): a `core` call failing with an I/O or corruption error (`Error::is_storage_failure`: SQLite's `IOERR`, `CORRUPT`, `NOTADB` or `CANTOPEN`, not busy or locked), and one `stat` on each catch-up showing the `-wal` file gone or replaced (another device or inode than the one the app holds). The app sends `db:unavailable` once, and from then on every command except `open_url`, `ui_ready`, `show_main`, `set_focus_context` and the quick-add panel's answers fails with `db_unavailable`, so nothing is saved into a database that will lose it. SQLite isn't repaired. |
 
 Red is never used for errors (The Red Is Mine Rule).
@@ -416,6 +417,7 @@ Every screen keeps DESIGN.md's layout, sizes and motion. This section adds data,
   | GitHub | `sync`'s GitHub connection |
   | Agents | the app: whether the CLI works, and the time of the newest `agent:*` event. "Ready" needs `~/.local/bin/airboss` to lead, through the link, to a non-empty executable file; a dangling link (an Airboss.app that moved) is "Link broken". Ready's line reads "Last report 3m ago", or "No agent has reported yet." The time is tracked from catch-up's events, starting from the newest agent event found at start (the last 256 events, then 4,096, then all), and sent as `agent_report` with `connections:changed` |
   | Claude Code | `sync`'s Claude connection, shown only when it's broken |
+  | Needs me | `attention`'s "Didn't start" row, only when its table couldn't open |
 
 - The search and pencil icons at the top open Jump and New task.
 
@@ -1056,6 +1058,7 @@ Global, from any app: the quick-add hotkey (⌃⌥N by default), on Pressed only
 | Undo refused | "144 changed since; nothing was undone." |
 | `Internal` | "Something went wrong inside Airboss; details are in the log." |
 | `DbUnavailable`, at start | "Airboss can't open its database", with `"<path>: <reason>"` as detail |
+| `DbTooNew` | "A newer Airboss has updated this database. Install it, then open Airboss again." (headed "Update Airboss") |
 | `DbUnavailable`, while running | "Quit Airboss (⌘Q) and open it again. Changes made since the problem began may not have been saved. Troubleshooting has more." |
 | `UrlNotAllowed` | "Airboss only opens https links, files and T3 threads." |
 | A file link whose file is gone | "That file no longer exists." (or "Airboss can't reach that file.") |

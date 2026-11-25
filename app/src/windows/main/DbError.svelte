@@ -11,17 +11,22 @@
   let { error, lost = false }: { error: AppError; lost?: boolean } = $props();
   /** `detail` is "<path>: <reason>"; the reason may have a slash of its own ("disk I/O error"). */
   const folder = $derived((error.detail ?? '').split(': ')[0]!.replace(/\/[^/]*$/, ''));
+  /** A file URL the opener accepts: each segment escaped, so a space or `#` stays part of the path. */
+  const folderUrl = $derived(`file://${folder.split('/').map(encodeURIComponent).join('/')}`);
+  /** A newer Airboss updated the database: this one writes nothing, whenever it's found. */
+  const tooNew = $derived(error.code === 'db_too_new');
+  const headline = $derived(tooNew ? 'Update Airboss' : lost ? "Airboss's database stopped working" : "Airboss can't open its database");
 </script>
 
 <div class="db" role="alert">
   <div class="col">
     <svg width="24" height="24" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="none" stroke="var(--st-blocked)" stroke-width="1.4" /><path d="M8 4.8v3.6" stroke="var(--st-blocked)" stroke-width="1.4" stroke-linecap="round" /><circle cx="8" cy="10.9" r="0.85" fill="var(--st-blocked)" /></svg>
-    <h1>{lost ? "Airboss's database stopped working" : "Airboss can't open its database"}</h1>
+    <h1>{headline}</h1>
     {#if error.detail}<code>{error.detail}</code>{/if}
     <p>{error.message}</p>
     <div class="btns">
-      <Button onclick={() => api.openUrl({ url: `file://${folder}` }).catch(() => {})}>Show in Finder</Button>
-      {#if !lost}<Button variant="primary" onclick={() => location.reload()}>Try again</Button>{/if}
+      <Button onclick={() => api.openUrl({ url: folderUrl }).catch(() => {})}>Show in Finder</Button>
+      {#if !lost && !tooNew}<Button variant="primary" onclick={() => location.reload()}>Try again</Button>{/if}
     </div>
   </div>
 </div>

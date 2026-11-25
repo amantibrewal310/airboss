@@ -105,5 +105,7 @@ describe('connections', () => {
     expect(footerText([c('T3 Code', false, 'Not found')], null)).toEqual({ ok: false, text: 'T3 Code not found' });
     expect(footerText([c('T3 Code', false, 'Not found'), c('GitHub', false, 'Not signed in')], null).text).toBe('2 connections need setup');
     expect(footerText([], 'Database moved').text).toBe('Database moved');
+    // attention's own row when its table can't open.
+    expect(footerText(mergeConnections([c('Needs me', false, "Didn't start")], 'unknown'), null).text).toBe("Needs me didn't start");
   });
 });
