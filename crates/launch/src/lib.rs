@@ -6,5 +6,7 @@
 //! `tasks/launch-plan.md`.
 
 mod db;
+mod process;
 
 pub use db::MIGRATIONS;
+pub use process::{CmdOutput, ProcessRunner, REMOVED_VARS, child_env};

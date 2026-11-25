@@ -22,7 +22,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
   - **Files:** `Cargo.toml`, `crates/launch/Cargo.toml`, `src/lib.rs`, `src/db.rs`, `src/migrations/001_launch.sql`, `tests/migrations.rs`
   - **Depends on:** none
 
-- [ ] **T2. The process runner** (S)
+- [x] **T2. The process runner** (S)
   - **Description:** `process.rs`: argv-only `Command`, stdin written then closed, working directory, child environment minus `T3CODE_THREAD_ID`, `CLAUDE_CODE_SESSION_ID` and `AIRBOSS_THREAD`, and a timeout that kills the child.
   - **Acceptance:** against `tests/fixtures/fake-t3`: argv and stdin arrive byte for byte, shell metacharacters included, and nothing they name runs; exit codes; the removed variables; a missing binary is `NotFound`; the timeout kills the child and returns quickly.
   - **Verify:** `tests/process.rs`.
