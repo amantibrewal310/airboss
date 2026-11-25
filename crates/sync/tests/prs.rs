@@ -624,6 +624,43 @@ fn a_pr_on_a_thread_is_linked_only_after_github_read_it_with_githubs_state() {
 }
 
 #[test]
+fn a_pr_on_a_thread_whose_link_failed_is_linked_on_a_later_pass() {
+    let core = Core::new();
+    let t = core.task("Thread task");
+    core.link(t, LinkKind::T3Thread, "t-prs");
+    let f = prs_fixture(&core, t);
+    let gh = me_only().pr("acme/web#7", FakePr::open("me"));
+    let mut rig = Rig::with_t3(core, gh, f);
+    // `core` refuses every new link this pass, as a busy database would.
+    let raw = rusqlite::Connection::open(rig.core.dir.path().join("airboss.db")).unwrap();
+    raw.execute_batch(
+        "CREATE TRIGGER refuse_links BEFORE INSERT ON links
+         BEGIN SELECT RAISE(ABORT, 'refused for the test'); END;",
+    )
+    .unwrap();
+    rig.first_pass();
+    let pr_links = |rig: &Rig| -> Vec<String> {
+        rig.core
+            .lock()
+            .links(t)
+            .unwrap()
+            .into_iter()
+            .filter(|l| l.kind == LinkKind::Pr)
+            .map(|l| l.r#ref)
+            .collect()
+    };
+    assert!(pr_links(&rig).is_empty());
+
+    raw.execute_batch("DROP TRIGGER refuse_links;").unwrap();
+    rig.send(GhMsg::Tick, at(3 + FIVE_MIN));
+    assert_eq!(
+        pr_links(&rig),
+        vec!["acme/web#7"],
+        "still waiting, so tried again"
+    );
+}
+
+#[test]
 fn a_pr_i_unlink_is_not_added_again() {
     let core = Core::new();
     let t = core.task("Thread task");

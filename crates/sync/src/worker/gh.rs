@@ -503,6 +503,9 @@ impl GhWorker {
                     })
                     .map(|l| l.task)
                     .collect();
+                // Seen only once every task has it, so a link `core` refused (a busy file)
+                // is tried again next pass. Linking again returns the existing link.
+                let mut all_linked = true;
                 for task in tasks {
                     let mut new = NewLink::pr(r.as_str()).with_pr_state(gh);
                     if let Some(url) = d.url.clone().or_else(|| w.url.clone()) {
@@ -518,8 +521,14 @@ impl GhWorker {
                                 check.insert(task);
                             }
                         }
-                        Err(e) => log(&format!("couldn't link PR {r} to task {}: {e}", task.0)),
+                        Err(e) => {
+                            all_linked = false;
+                            log(&format!("couldn't link PR {r} to task {}: {e}", task.0));
+                        }
                     }
+                }
+                if !all_linked {
+                    continue;
                 }
                 if let Err(e) = self.db.waiting_to_seen(thread, r) {
                     log(&format!(
