@@ -14,6 +14,11 @@ impl crate::Store {
         history(&self.conn, id)
     }
 
+    /// The highest event id, or `EventId(0)` when there are no events (rule 30).
+    pub fn latest_event_id(&self) -> Result<EventId> {
+        latest_id(&self.conn)
+    }
+
     /// Up to `limit` events from a task and everything under it, newest first: a parent's
     /// activity feed (rule 28).
     pub fn history_with_subtasks(&self, id: TaskId, limit: u32) -> Result<Vec<Event>> {
@@ -102,6 +107,14 @@ pub(crate) fn subtree_history(conn: &Connection, task: TaskId, limit: u32) -> Re
         params![task.0, limit],
         from_row,
     )
+}
+
+pub(crate) fn latest_id(conn: &Connection) -> Result<EventId> {
+    Ok(EventId(conn.query_row(
+        "SELECT ifnull(max(id), 0) FROM task_events",
+        [],
+        |r| r.get(0),
+    )?))
 }
 
 /// Every event with an id above `cursor`, in id order.

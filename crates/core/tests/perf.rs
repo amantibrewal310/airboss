@@ -134,6 +134,49 @@ fn perf_tree_of_2000_tasks_with_1000_dependencies() {
 
 #[test]
 #[ignore]
+fn perf_snapshot_of_2000_tasks_with_1000_dependencies() {
+    let dir = TempDir::new();
+    let mut store = Store::open(&dir.0.join("airboss.db")).unwrap();
+    big_tree(&mut store);
+
+    let runs = 1000;
+    let samples = (0..runs)
+        .map(|_| {
+            let t = Instant::now();
+            let snap = store.snapshot().unwrap();
+            let elapsed = t.elapsed();
+            assert!(snap.tree.len() >= 2000);
+            assert_eq!(snap.edges.len(), 1000);
+            assert!(!snap.ready.is_empty() && snap.ready.len() < snap.tree.len());
+            assert!(snap.latest_event_id.0 > 3000);
+            elapsed
+        })
+        .collect();
+    report("snapshot()", p95(samples), Duration::from_millis(8), runs);
+}
+
+#[test]
+#[ignore]
+fn perf_ready_on_2000_tasks() {
+    let dir = TempDir::new();
+    let mut store = Store::open(&dir.0.join("airboss.db")).unwrap();
+    big_tree(&mut store);
+
+    let runs = 1000;
+    let samples = (0..runs)
+        .map(|_| {
+            let t = Instant::now();
+            let ready = store.ready().unwrap();
+            let elapsed = t.elapsed();
+            assert!(!ready.is_empty());
+            elapsed
+        })
+        .collect();
+    report("ready()", p95(samples), Duration::from_millis(8), runs);
+}
+
+#[test]
+#[ignore]
 fn perf_add_task() {
     let dir = TempDir::new();
     let mut store = Store::open(&dir.0.join("airboss.db")).unwrap();

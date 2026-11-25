@@ -498,6 +498,19 @@ pub struct ReadyTask {
     pub since: String,
 }
 
+/// Everything the app and the services redraw from, read at one moment (rule 30).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CoreSnapshot {
+    /// The same as `tree()`.
+    pub tree: Vec<TaskNode>,
+    /// Every `(waiting, waits_on)` pair, the same as `dependency_edges()`.
+    pub edges: Vec<(TaskId, TaskId)>,
+    /// The same as `ready()`, worked out from `tree`.
+    pub ready: Vec<ReadyTask>,
+    /// The newest event id when the snapshot was read; `EventId(0)` when there are none.
+    pub latest_event_id: EventId,
+}
+
 /// Every dependency of one task, both ways, finished tasks included (rule 27).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Dependencies {

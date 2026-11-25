@@ -14,6 +14,7 @@ mod permissions;
 mod plans;
 mod positions;
 mod repos;
+mod snapshot;
 mod sql;
 mod status;
 mod tasks;
@@ -31,8 +32,8 @@ pub use model::TaskEdit;
 pub use model::{
     Actor, Event, EventKind, NewTask, Origin, Repo, Status, Task, TaskNode, UnknownValue,
 };
+pub use model::{CoreSnapshot, Dependencies, OutsideWait, ReadyTask, RunOrder};
 pub use model::{DepRef, PlanResult, PlanTask};
-pub use model::{Dependencies, OutsideWait, ReadyTask, RunOrder};
 pub use model::{Link, LinkKind, NewLink, PrState};
 
 macro_rules! id_type {
