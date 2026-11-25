@@ -698,7 +698,7 @@ Targets from CAPABILITIES, measured by `scripts/measure.sh` on this Mac, in a re
 
 | Target | How it's met | How it's measured |
 |---|---|---|
-| Download under 15 MB | release profile; one Inter subset; no JS libraries; main bundle under 150 KB and quick add under 40 KB minified | size of the `.dmg` from `tauri build --bundles dmg`, sidecar included |
+| Download under 15 MB | release profile; one Inter subset; no JS libraries; main bundle under 300 KB and quick add under 100 KB minified (revised 26 Nov 2026; see tasks/program.md) | size of the `.dmg` from `tauri build --bundles dmg`, sidecar included |
 | Idle memory under 130 MB (revised 26 Nov 2026 from 80 MB; see tasks/program.md) | two web views, a native tray menu, `$state.raw` rows | see below |
 | Idle CPU near 0% | no polling; app threads block on channels and condvars; a minute tick only while visible; the live pulse animates only `transform` and `opacity` | `top -l 31 -s 2` over 60 s: average under 0.5% with no working chip on screen, under 1% with one, 0% with the window hidden |
 | Cold start under 1 s | window created hidden; one `bootstrap`; shown on `ui_ready` | Rust logs from process start (`sysctl kern.proc` start time) to `ui_ready`; median of 10 cold starts after `purge` |
