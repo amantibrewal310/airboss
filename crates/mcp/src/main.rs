@@ -7,8 +7,9 @@ use std::path::PathBuf;
 use clap::{Args, Parser, Subcommand};
 
 use airboss_core::{LinkKind, NewLink, Status};
-use airboss_mcp::cli::{self, SetStatus, Style, Target};
+use airboss_mcp::cli::{self, SetStatus, Target};
 use airboss_mcp::identity::Identity;
+use airboss_mcp::render::Style;
 use airboss_mcp::tools::LinkKindName;
 
 /// A to-do list where agents do the work.

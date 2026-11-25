@@ -362,7 +362,7 @@ pub fn list_tasks(store: &Store, who: &Identity, args: ListTasks) -> Result<Task
 /// Everything about one task an agent needs to start or continue it.
 pub fn get_task(store: &Store, args: GetTask) -> Result<TaskDetail, ToolError> {
     let id = TaskId(args.id);
-    let fail = |e| explain(store, &airboss_core::Actor::Me, e, &Subject::task(id));
+    let fail = |e| explain(store, &Actor::Me, e, &Subject::task(id));
     let task = store.task(id).map_err(fail)?;
     let names = RepoNames::load(store)?;
     let links = store.links(id).map_err(fail)?;
@@ -386,9 +386,11 @@ pub fn get_task(store: &Store, args: GetTask) -> Result<TaskDetail, ToolError> {
         .skip(history_total.saturating_sub(HISTORY_LIMIT))
         .map(EventView::from)
         .collect();
-    let open = |t: &&airboss_core::Task| !matches!(t.status, Status::Done | Status::Dropped);
     Ok(TaskDetail {
-        waiting: deps.waits_on.iter().any(|t| open(&t)),
+        waiting: deps
+            .waits_on
+            .iter()
+            .any(|t| !matches!(t.status, Status::Done | Status::Dropped)),
         task: TaskView::new(task, &names),
         links: links.into_iter().map(LinkView::from).collect(),
         history: recent,

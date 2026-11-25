@@ -1,6 +1,6 @@
 # Spec: mcp
 
-Module `mcp` from [CAPABILITIES.md](CAPABILITIES.md). State: **approved 25 Nov 2026**, aligned with `core` v2 the same day (see [v2 alignment](#v2-alignment-25-nov-2026)).
+Module `mcp` from [CAPABILITIES.md](CAPABILITIES.md). State: **approved 25 Nov 2026**, aligned with `core` v2 the same day (see [v2 alignment](#v2-alignment-25-nov-2026)); **built** in `crates/mcp` on 26 Nov 2026 (see [decisions made while building](#decisions-made-while-building)).
 
 It builds on [`core`](SPEC-core.md), which holds every rule about who may change what. `mcp` adds no rules of its own. It decides **who is calling** and passes that on to `core`.
 
@@ -68,7 +68,7 @@ cargo fmt --check
 
 ```
 claude mcp add --scope user airboss -- /path/to/airboss mcp
-codex mcp add airboss -- /path/to/airboss mcp      # plus AIRBOSS_THREAD if Codex hides the thread id
+codex mcp add airboss -- /path/to/airboss mcp      # then env_vars = ["T3CODE_THREAD_ID"] in ~/.codex/config.toml
 ```
 
 ## Project structure
@@ -76,6 +76,7 @@ codex mcp add airboss -- /path/to/airboss mcp      # plus AIRBOSS_THREAD if Code
 ```
 crates/mcp/
   Cargo.toml               airboss-mcp, binary "airboss"
+  src/lib.rs               The database path, and the modules below as a library the tests call
   src/main.rs              Command-line parsing; `mcp` starts the server, everything else is a CLI command
   src/identity.rs          Actor from the environment
   src/server.rs            MCP server: tool list, server instructions, error mapping
@@ -210,13 +211,13 @@ pub fn update_task(store: &mut Store, actor: &Actor, args: UpdateTask) -> Result
 
 ## Success criteria
 
-- [ ] All six tools work over real stdio from a test client, and `tools/list` shows exactly these six with input schemas.
-- [ ] An agent can't act as `me` through any tool, and its proposals arrive as `proposed`.
-- [ ] Every `core` error reaches the agent as a one-sentence message that says what to do.
-- [ ] `import_plan` refuses a plan file that doesn't exist, links the file it imports, and records which thread sent it.
-- [ ] Every CLI command works against a temporary database and supports `--json`.
-- [ ] Two `airboss mcp` processes and one CLI command can write at once without errors.
-- [ ] Every performance target is met on my Mac, with the machine recorded.
+- [x] All six tools work over real stdio from a test client, and `tools/list` shows exactly these six with input schemas.
+- [x] An agent can't act as `me` through any tool, and its proposals arrive as `proposed`.
+- [x] Every `core` error reaches the agent as a one-sentence message that says what to do.
+- [x] `import_plan` refuses a plan file that doesn't exist, links the file it imports, and records which thread sent it.
+- [x] Every CLI command works against a temporary database and supports `--json`.
+- [x] Two `airboss mcp` processes and one CLI command can write at once without errors.
+- [x] Every performance target is met on my Mac, with the machine recorded.
 - [ ] Installed with `claude mcp add`, a real T3 thread can list, link itself and update a task, checked by hand once.
 
 ## Not verified yet
@@ -236,6 +237,21 @@ Checked on 25 Nov 2026, before the code was written (build task T1):
 Still open, checked by hand once installed (last success criterion):
 
 - Whether T3 sets `T3CODE_THREAD_ID` per thread for Codex threads the way it does for Claude Code ones. The probes above set it by hand.
+
+## Decisions made while building
+
+Where the build differs from, or fills in, the text above:
+
+- **A library target.** `src/lib.rs` makes the modules callable from `tests/tools.rs`; `main.rs` only parses arguments. The CLI's text helpers (status marks, columns, colour) live in `render.rs`, as the project structure says.
+- **`list_tasks` returns `{tasks, total, truncated}`**, so an agent sees how many matched before the 200 cap. With no `status`, it leaves out done and dropped tasks, as `airboss ls` does; otherwise old work would crowd out current work at the cap.
+- **`get_task` also returns `waiting` and `history_total`**, so an agent knows whether it can start and whether there's history beyond the last 20.
+- **`import_plan` records the sender in a note, not the `created` event body.** `core`'s `add_tasks` takes no body, and `core` is closed for this module. Each task the import creates gets a note right after its `created` event, written by the agent itself: "Imported by agent:t3/97b5… from /path/plan.md". Re-sending a plan creates nothing and adds no notes.
+- **`update_task`'s schema offers only `doing`, `in_review`, `blocked` and `done`**, the statuses an agent may set, so agents don't try the others. `core` still decides each change.
+- **`propose_tasks` checks first, then adds.** `core` has no batch add for agents, so the count, titles, repo names and the parent are all checked before the first task is added. Only a database failure can stop it partway, and then the error lists what was already proposed.
+- **Error messages:** one per `core::Error` variant, picked out by what the call tried where a variant covers two situations (`NotAllowed`: a task with a PR, or a status only the user sets; `NoteRequired`: blocked or done; `InvalidTarget`: a closed parent, or a dependency on a parent or subtask; `Loop`: a move or a dependency). Arguments that don't match the schema are reported by rmcp as a tool error, `failed to deserialize parameters: …`, which names the bad field or value.
+- **`AIRBOSS_THREAD`** may be written `t3/<id>` or `claude/<id>`; then `mine` and linking this thread work too. A leading `agent:` is ignored.
+- **Tool annotations:** `list_tasks` and `get_task` are marked read-only; `link` and `import_plan` idempotent; none is destructive.
+- **CLI details:** `airboss branch <task> --clear` clears a branch; `airboss ls --ready` shows since when each task has been ready; `airboss log` shows the last 50 events unless given `--after`; `ls` keeps a done or dropped parent when something under it is open, so the tree keeps its shape. Waiting is drawn as todo's ring with a "waiting" pill, and proposed as the dotted ring.
 
 ## Open questions
 

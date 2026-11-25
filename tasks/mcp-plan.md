@@ -2,6 +2,8 @@
 
 Module `mcp` from [CAPABILITIES.md](../CAPABILITIES.md). It builds what's in [SPEC-mcp.md](../SPEC-mcp.md), aligned with `core` v2 on 25 Nov 2026. The tasks and their checkpoints are in [mcp-todo.md](mcp-todo.md).
 
+State: **built 26 Nov 2026**. All 11 tasks and 4 checkpoints done.
+
 ## Overview
 
 `mcp` is one Rust crate, `airboss-mcp`, that builds one binary, `airboss`. `airboss mcp` is a per-thread MCP server over stdio with six tools. Every other subcommand is a small CLI that acts as `me`. Both go through `airboss_core::Store` and never touch SQL.

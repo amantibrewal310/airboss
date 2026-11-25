@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
-use std::io::{IsTerminal, Write as _};
+use std::io::Write as _;
 
 use std::path::Path;
 
@@ -16,8 +16,9 @@ use airboss_core::{
 use serde::Serialize;
 
 use crate::render::{
-    EventView, LinkView, NodeView, RepoNames, Subject, TaskDetail, TaskList, TaskRef, TaskView,
-    ToolError, explain,
+    EventView, LinkView, NodeView, RepoNames, Style, Subject, TaskDetail, TaskList, TaskRef,
+    TaskView, ToolError, cut, explain, id_text, mark, pad, right, short_time, status_label,
+    status_mark, width,
 };
 use crate::tools::{self, GetTask};
 
@@ -26,98 +27,6 @@ const TITLE_WIDTH: usize = 56;
 
 /// How many events `airboss log` shows when not given `--after`.
 pub const LOG_DEFAULT: usize = 50;
-
-/// Whether to colour output.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Style {
-    pub color: bool,
-}
-
-impl Style {
-    /// Colour only when stdout is a terminal and `NO_COLOR` is unset or empty.
-    pub fn decide(stdout_is_tty: bool, no_color: Option<&str>) -> Style {
-        Style {
-            color: stdout_is_tty && no_color.is_none_or(str::is_empty),
-        }
-    }
-
-    pub fn detect() -> Style {
-        let no_color = std::env::var("NO_COLOR").ok();
-        Style::decide(std::io::stdout().is_terminal(), no_color.as_deref())
-    }
-
-    fn paint(self, code: &str, text: &str) -> String {
-        if self.color && !text.is_empty() {
-            format!("\x1b[{code}m{text}\x1b[0m")
-        } else {
-            text.to_string()
-        }
-    }
-
-    fn dim(self, text: &str) -> String {
-        self.paint("2", text)
-    }
-
-    fn bold(self, text: &str) -> String {
-        self.paint("1", text)
-    }
-}
-
-/// How a status looks: DESIGN.md's shape, its colour, and its name. `waiting` is a todo
-/// task with an open blocker, which has its own look though it's never set.
-pub fn mark(status: Status, waiting: bool) -> (&'static str, &'static str, &'static str) {
-    match status {
-        Status::Todo if waiting => ("○", "38;5;245", "Waiting"),
-        Status::Todo => ("○", "38;5;245", "Todo"),
-        Status::Proposed => ("◌", "38;5;245", "Proposed"),
-        Status::Doing => ("◑", "38;5;214", "In progress"),
-        Status::InReview => ("◕", "38;5;35", "In review"),
-        Status::Blocked => ("⊖", "38;5;208", "Blocked"),
-        Status::Done => ("●", "38;5;105", "Done"),
-        Status::Dropped => ("⊗", "38;5;240", "Dropped"),
-    }
-}
-
-fn status_mark(style: Style, status: Status, waiting: bool) -> String {
-    let (shape, color, _) = mark(status, waiting);
-    style.paint(color, shape)
-}
-
-fn status_label(style: Style, status: Status, waiting: bool) -> String {
-    let (shape, color, name) = mark(status, waiting);
-    style.paint(color, &format!("{shape} {name}"))
-}
-
-fn width(text: &str) -> usize {
-    text.chars().count()
-}
-
-fn pad(text: &str, to: usize) -> String {
-    let mut out = text.to_string();
-    out.extend(std::iter::repeat_n(' ', to.saturating_sub(width(text))));
-    out
-}
-
-fn cut(text: &str, to: usize) -> String {
-    if width(text) <= to {
-        text.to_string()
-    } else {
-        let mut out: String = text.chars().take(to.saturating_sub(1)).collect();
-        out.push('…');
-        out
-    }
-}
-
-/// `2026-11-25T10:00:12.345Z` as `2026-11-25 10:00`, for reading.
-pub fn short_time(at: &str) -> String {
-    at.get(..16)
-        .map(|t| t.replacen('T', " ", 1))
-        .unwrap_or_else(|| at.to_string())
-}
-
-fn id_text(id: TaskId) -> String {
-    format!("#{}", id.0)
-}
 
 /// One row of the tree, before it's laid out.
 struct Row {
@@ -172,10 +81,6 @@ fn table(rows: &[Row], style: Style) -> String {
         out.push('\n');
     }
     out
-}
-
-fn right(text: &str, to: usize) -> String {
-    format!("{}{text}", " ".repeat(to.saturating_sub(width(text))))
 }
 
 /// The tree as `airboss ls` prints it. Done and dropped tasks are left out unless `all`,
@@ -976,58 +881,5 @@ pub fn print(text: &str) -> Result<(), String> {
             Err(format!("couldn't write output: {e}"))
         }
         _ => Ok(()),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #![allow(clippy::unwrap_used)]
-
-    use super::*;
-
-    #[test]
-    fn colour_only_on_a_terminal_without_no_color() {
-        assert!(Style::decide(true, None).color);
-        assert!(Style::decide(true, Some("")).color);
-        assert!(!Style::decide(true, Some("1")).color);
-        assert!(!Style::decide(false, None).color);
-    }
-
-    #[test]
-    fn plain_style_writes_no_escape_codes() {
-        let plain = Style { color: false };
-        assert_eq!(status_mark(plain, Status::Doing, false), "◑");
-        let color = Style { color: true };
-        assert_eq!(
-            status_mark(color, Status::Doing, false),
-            "\x1b[38;5;214m◑\x1b[0m"
-        );
-    }
-
-    #[test]
-    fn every_status_has_its_own_mark_and_name() {
-        let all = [
-            (Status::Todo, false),
-            (Status::Todo, true),
-            (Status::Proposed, false),
-            (Status::Doing, false),
-            (Status::InReview, false),
-            (Status::Blocked, false),
-            (Status::Done, false),
-            (Status::Dropped, false),
-        ];
-        let names: std::collections::HashSet<_> = all.iter().map(|(s, w)| mark(*s, *w).2).collect();
-        assert_eq!(names.len(), all.len());
-    }
-
-    #[test]
-    fn long_titles_are_cut_with_an_ellipsis() {
-        assert_eq!(cut("abcdef", 4), "abc…");
-        assert_eq!(cut("abc", 4), "abc");
-    }
-
-    #[test]
-    fn times_read_as_date_and_minute() {
-        assert_eq!(short_time("2026-11-25T10:00:12.345Z"), "2026-11-25 10:00");
     }
 }
