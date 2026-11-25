@@ -5,7 +5,11 @@
 //! changes no task. Everything it shows follows from one pure function, [`compute`]. See
 //! `SPEC-attention.md` at the repo root.
 
+// Until every kind is in, some helpers are unused.
+#[allow(dead_code)]
 mod compute;
+mod kinds;
+mod quiet;
 
 use std::time::Duration;
 
