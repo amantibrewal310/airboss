@@ -6,7 +6,7 @@
   import StatusIcon from '../../lib/components/StatusIcon.svelte';
   import type { NeedsItem, TaskId } from '../../lib/types';
   import { useApp } from '../../lib/state/context';
-  import { KIND_ICON, KIND_LABEL, mainLabel } from '../../lib/logic/needs';
+  import { headlineOf, KIND_ICON, KIND_LABEL, mainLabel } from '../../lib/logic/needs';
   import { relative } from '../../lib/logic/time';
   import Props from './detail/Props.svelte';
   import Notes from './detail/Notes.svelte';
@@ -71,7 +71,7 @@
         {#if item.stale}<span class="stale-note">{'· May be out of date'}</span>{/if}
       </span>
     </div>
-    <p class="q">{item.headline}</p>
+    <p class="q">{headlineOf(item)}</p>
     {#if item.kind === 'proposed' && proposals.length}
       <div class="props-list">
         {#each proposals as [id, title] (id)}
@@ -93,7 +93,7 @@
       <button bind:this={primary} type="button" class="pri" onclick={() => app.mainAction(item)}>{mainLabel(item.kind)} <Kbd keys="enter" onFill /></button>
       {#if secondary}<button type="button" class="sec" onclick={secondary.run}>{secondary.label}</button>{/if}
       <span class="sp"></span>
-      <button type="button" class="ghost" onclick={() => app.dismiss(item, item.kind === 'finish_it' ? 'Kept open' : 'Dismissed')}>
+      <button type="button" class="ghost" onclick={() => app.dismiss(item)}>
         {item.kind === 'finish_it' ? 'Keep open' : 'Dismiss'} <Kbd keys="mod+backspace" joined />
       </button>
     </div>
@@ -106,7 +106,7 @@
       {:else}
         <Props {row} detail={fresh ? detail : null} />
         <Notes task={row.id} body={fresh ? detail!.task.body : null} empty="No notes on this task." />
-        {#if fresh}<Activity task={row.id} history={detail!.history} more={detail!.history_more} />{/if}
+        {#if fresh}<Activity task={row.id} history={detail!.history} more={detail!.history_more} links={detail!.links} />{/if}
       {/if}
     </div>
   {/if}

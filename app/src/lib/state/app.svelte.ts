@@ -38,6 +38,7 @@ import { keyOf, Sequencer } from '../logic/keymap';
 import { resolve } from '../logic/commands';
 import { applyAccent, applyAppearance } from '../logic/theme';
 import { launchToast } from '../logic/launch';
+import { statusToast } from '../logic/copy';
 import { keepMapSelection, keepSelection, reveal as revealPlan, selectionAfterFold } from '../logic/selection';
 import {
   isListView,
@@ -45,7 +46,6 @@ import {
   isView,
   parentsList,
   sidebarCounts,
-  SHAPE_LABEL,
   visibleItems,
   viewCount,
   viewTitle,
@@ -135,6 +135,7 @@ export class App {
       this.conn.set(b.connections, b.availability);
       this.settings = b.settings;
       this.cli = b.cli;
+      this.conn.cliInstalled = b.cli.installed;
       this.ui.folded = new Set(b.settings.folded);
       applyAccent(document.documentElement, b.accent);
       this.applyAppearance();
@@ -527,7 +528,8 @@ export class App {
 
   fail(e: unknown): void {
     const err = asAppError(e);
-    if (err.code === 'already_starting') return this.toast('Already starting — check T3 in a moment.');
+    // Appendix D: no toast; the button already says "Starting…".
+    if (err.code === 'already_starting') return;
     this.toast(err.message, 'warn');
   }
 
@@ -586,7 +588,7 @@ export class App {
       const w = await api.toggleDone(r.id);
       this.applyWrite(w.patch);
       const now = this.tasks.get(r.id);
-      this.undoToast(now?.status === 'done' ? `${r.id} marked done` : `${r.id} marked not done`, w, undefined, [r.id]);
+      this.undoToast(now?.status === 'done' ? `Marked ${r.id} done` : `Marked ${r.id} not done`, w, undefined, [r.id]);
     } catch (e) {
       this.fail(e);
     }
@@ -604,7 +606,7 @@ export class App {
     try {
       const w = await api.setStatus(id, status, status === 'blocked' ? note : null);
       this.applyWrite(w.patch);
-      if (w.patch) this.undoToast(`${id} → ${SHAPE_LABEL[status]}`, w, undefined, [id]);
+      if (w.patch) this.undoToast(statusToast(id, status), w, undefined, [id]);
     } catch (e) {
       this.fail(e);
     }
@@ -691,7 +693,7 @@ export class App {
   async addDependency(id: TaskId, on: TaskId): Promise<void> {
     try {
       this.applyWrite(await api.addDependency(id, on));
-      this.toast(`${id} now waits on ${on}`);
+      this.toast(`Made ${id} wait on ${on}`);
     } catch (e) {
       this.fail(e);
     }
@@ -949,7 +951,7 @@ export class App {
           this.leave(item);
           const w = await api.setStatus(item.task, 'done', null);
           this.applyWrite(w.patch);
-          this.undoToast(`${item.task} marked done`, w);
+          this.undoToast(`Marked ${item.task} done`, w);
           break;
         }
         case 'quiet':
@@ -962,12 +964,13 @@ export class App {
     }
   }
 
-  async dismiss(item: NeedsItem | null = this.needsItem, text = 'Dismissed'): Promise<void> {
+  /** Dismiss a Needs me item; on Finish it? this is Keep open. */
+  async dismiss(item: NeedsItem | null = this.needsItem): Promise<void> {
     if (!item || !this.actOnce(item)) return;
     this.leave(item);
     try {
       const w = await api.needsDismiss(item.key);
-      this.undoToast(text, w, { key: item.key });
+      this.undoToast(item.kind === 'finish_it' ? `Kept ${item.task} open` : `Dismissed ${item.task}`, w, { key: item.key });
     } catch (e) {
       this.needs.unhide(item.key);
       this.fail(e);
@@ -979,7 +982,7 @@ export class App {
     this.leave(item);
     try {
       const w = await api.needsSnooze(item.key, null);
-      this.undoToast('Snoozed for 3 days', w, { key: item.key });
+      this.undoToast(`Snoozed ${item.task} for 3 days`, w, { key: item.key });
     } catch (e) {
       this.needs.unhide(item.key);
       this.fail(e);
@@ -1121,6 +1124,7 @@ export class App {
     try {
       const r = await api.installCli();
       this.cli = { installed: true, path: r.path, on_path: r.on_path };
+      this.conn.cliInstalled = true;
       this.toast(r.on_path ? `Installed airboss at ${r.path}` : `Installed at ${r.path}. Add ~/.local/bin to your PATH.`);
     } catch (e) {
       this.fail(e);

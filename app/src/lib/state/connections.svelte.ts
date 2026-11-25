@@ -6,8 +6,10 @@ export class ConnectionsStore {
   availability = $state.raw<Availability>('unknown');
   /** "Database moved" or "Live updates stopped…", from `error:background`. */
   background = $state<string | null>(null);
+  /** Whether the `airboss` command-line tool is installed; the Agents row needs it. */
+  cliInstalled = $state(true);
 
-  merged = $derived(mergeConnections(this.rows, this.availability));
+  merged = $derived(mergeConnections(this.rows, this.availability, { cliInstalled: this.cliInstalled }));
   footer = $derived(footerText(this.merged, this.background));
   /** Do it and Plan it are on. Unknown counts as on until launch says otherwise. */
   t3Ready = $derived(this.availability === 'unknown' || t3Available(this.availability));

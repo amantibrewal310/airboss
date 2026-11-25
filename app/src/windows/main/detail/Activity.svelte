@@ -1,13 +1,22 @@
 <script lang="ts">
   import Avatar from '../../../lib/components/Avatar.svelte';
-  import type { HistoryEntry, TaskId } from '../../../lib/types';
+  import type { HistoryEntry, LinkDto, TaskId } from '../../../lib/types';
   import { useApp } from '../../../lib/state/context';
   import { phrase } from '../../../lib/logic/activity';
   import { feedTime } from '../../../lib/logic/time';
 
   /** The activity feed (with subtasks' events) and the note input. ↩ adds the note, ⇧↩ adds a line. */
-  let { task, history, more }: { task: TaskId; history: HistoryEntry[]; more: boolean } = $props();
+  let { task, history, more, links = [] }: { task: TaskId; history: HistoryEntry[]; more: boolean; links?: LinkDto[] } = $props();
   const app = useApp();
+  /** Thread title → the folder it runs in, for "Started thread slot-picker in booking-web". */
+  const folders = $derived(
+    new Map(
+      links
+        .filter((l) => l.thread?.project_path)
+        .map((l) => [l.thread!.title ?? l.title ?? l.ref, l.thread!.project_path!.replace(/\/+$/, '').split('/').pop() ?? null] as const),
+    ),
+  );
+  const ctx = { repoOf: (thread: string) => folders.get(thread) ?? null };
   let note = $state('');
   let area: HTMLTextAreaElement | undefined = $state();
 
@@ -40,7 +49,7 @@
       <li class="ev">
         <Avatar actor={e.actor} size={18} />
         <span class="tx">
-          {#each phrase(e, task) as s, i (i)}{#if s.strong}<b>{s.text}</b>{:else}{s.text}{/if}{/each}
+          {#each phrase(e, task, ctx) as s, i (i)}{#if s.strong}<b>{s.text}</b>{:else}{s.text}{/if}{/each}
         </span>
         <span class="tm">{feedTime(e.at, app.now)}</span>
       </li>

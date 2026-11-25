@@ -81,7 +81,7 @@ describe('activity phrases', () => {
     expect(text(phrase(e({ kind: 'note', actor: 'agent:slot-picker', thread_title: 'slot-picker', body: 'Asked about the picker' }), 144))).toBe(
       'Agent in slot-picker: Asked about the picker',
     );
-    expect(text(phrase(e({ kind: 'linked', actor: 'launch', body: 'T3 · slot-picker' }), 144))).toBe('Launch started thread slot-picker');
+    expect(text(phrase(e({ kind: 'linked', actor: 'launch', body: 'T3 · slot-picker' }), 144))).toBe('Started thread slot-picker');
   });
 
   it('starts a subtask’s events with its id', () => {

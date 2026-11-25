@@ -35,7 +35,14 @@ export function actorName(e: Pick<HistoryEntry, 'actor' | 'thread_title'>): Segm
   return [{ text: a }];
 }
 
-function verb(e: HistoryEntry, self: boolean): Segment[] {
+export interface PhraseContext {
+  /** The repo folder a thread runs in, by thread title, for "Started thread X in booking-web". */
+  repoOf?: (thread: string) => string | null;
+}
+
+const isLaunchThread = (e: HistoryEntry) => e.kind === 'linked' && e.actor === 'launch' && !!e.body?.startsWith('T3 · ');
+
+function verb(e: HistoryEntry, self: boolean, ctx: PhraseContext): Segment[] {
   const it = self ? 'this' : '';
   const sp = (s: string) => (it ? `${s} ${it}` : s);
   switch (e.kind) {
@@ -53,10 +60,12 @@ function verb(e: HistoryEntry, self: boolean): Segment[] {
     }
     case 'note':
       return [{ text: e.body ? `: ${e.body}` : 'left a note' }];
-    case 'linked':
-      return e.actor === 'launch' && e.body?.startsWith('T3 · ')
-        ? [{ text: 'started thread ' }, { text: e.body.slice(5), strong: true }]
-        : [{ text: 'linked ' }, { text: e.body ?? 'a link', strong: true }];
+    case 'linked': {
+      if (!isLaunchThread(e)) return [{ text: 'linked ' }, { text: e.body ?? 'a link', strong: true }];
+      const thread = e.body!.slice(5);
+      const repo = ctx.repoOf?.(thread) ?? null;
+      return [{ text: 'Started thread ' }, { text: thread, strong: true }, ...(repo ? [{ text: ' in ' }, { text: repo, strong: true }] : [])];
+    }
     case 'unlinked':
       return [{ text: 'unlinked ' }, { text: e.body ?? 'a link', strong: true }];
     case 'link_state':
@@ -74,11 +83,16 @@ function verb(e: HistoryEntry, self: boolean): Segment[] {
   }
 }
 
-/** The whole line, for the task `task` (its own events read "this"; a subtask's start with its id). */
-export function phrase(e: HistoryEntry, task: TaskId): Segment[] {
+/**
+ * The whole line, for the task `task` (its own events read "this"; a subtask's start with its id).
+ * A thread Launch started reads as the action, "Started thread slot-picker in booking-web"; the
+ * avatar still says it was Launch.
+ */
+export function phrase(e: HistoryEntry, task: TaskId, ctx: PhraseContext = {}): Segment[] {
   const self = e.task === task;
   const lead: Segment[] = self ? actorName(e) : [{ text: String(e.task), strong: true }];
-  const v = verb(e, self);
+  const v = verb(e, self, ctx);
+  if (isLaunchThread(e)) return self ? v : [...lead, { text: ' · ' }, ...v];
   if (!self && e.kind !== 'status' && e.kind !== 'note') return [...lead, { text: ' · ' }, ...actorName(e), { text: ' ' }, ...v];
   if (!self && e.kind === 'note') return [...lead, { text: ' · ' }, ...actorName(e), ...v];
   return e.kind === 'note' ? [...lead, ...v] : [...lead, { text: ' ' }, ...v];

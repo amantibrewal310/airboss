@@ -52,7 +52,7 @@
               <Subtasks {map} progress={row.progress} width={columnWidth - 80} />
             {/if}
             {#if fresh}
-              <div class="activity"><Activity task={row.id} history={detail!.history} more={detail!.history_more} /></div>
+              <div class="activity"><Activity task={row.id} history={detail!.history} more={detail!.history_more} links={detail!.links} /></div>
             {/if}
           {/if}
         </article>

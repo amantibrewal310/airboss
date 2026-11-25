@@ -12,6 +12,14 @@ export const KIND_LABEL: Record<NeedsKind, string> = {
   quiet: 'Quiet 5+ days',
 };
 
+/** The headline as the card shows it, under the kind label: "Ready to start: 143 is done" → "143 is done". */
+export function headlineOf(item: { kind: NeedsKind; headline: string }): string {
+  const lead = `${KIND_LABEL[item.kind]}: `;
+  if (!item.headline.startsWith(lead)) return item.headline;
+  const rest = item.headline.slice(lead.length);
+  return rest.charAt(0).toUpperCase() + rest.slice(1);
+}
+
 export const KIND_ICON: Record<NeedsKind, IconName> = {
   question: 'question',
   approval: 'shield',

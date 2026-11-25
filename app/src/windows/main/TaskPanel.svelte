@@ -58,7 +58,7 @@
         {/if}
         {#if fresh}
           <Threads links={detail!.links} />
-          <Activity task={row.id} history={detail!.history} more={detail!.history_more} />
+          <Activity task={row.id} history={detail!.history} more={detail!.history_more} links={detail!.links} />
         {/if}
       {/if}
     </div>
