@@ -467,6 +467,12 @@ pub fn setup(
 /// A second launch: `--quick-add` opens quick add; anything else shows the main window. The
 /// single-instance plugin calls this from its own thread, so the work moves to the main one.
 pub fn second_launch(app: &AppHandle<Wry>, args: &[String]) {
+    if crate::trace::simulated_wake(args) {
+        if let Some(s) = app.try_state::<App>().and_then(|a| a.current()) {
+            s.trigger(Trigger::Wake);
+        }
+        return;
+    }
     let quick_add = args.iter().any(|a| a == "--quick-add");
     let handle = app.clone();
     let run = app.run_on_main_thread(move || {

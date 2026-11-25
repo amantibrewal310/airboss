@@ -241,3 +241,24 @@ fn an_app_thread_restarts_once_after_a_panic_and_stops_after_a_second() {
             .any(|e| matches!(e, UiEvent::ErrorBackground(_)))
     );
 }
+
+#[test]
+fn a_wake_tells_every_service_then_checks_data_version() {
+    let (app, db) = file_app("wake");
+    let woke = |calls: Vec<String>| calls.iter().any(|c| c == "woke");
+    app.state.trigger(airboss_app::catchup::Trigger::Wake);
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while !(woke(app.sync.calls()) && woke(app.launch.calls()) && woke(app.attention.calls())) {
+        assert!(Instant::now() < deadline, "not every service was told");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    // A write made while asleep is in the view model after the wake (the watcher may bring
+    // it in first; either way nothing is missed).
+    let t = other(&db)
+        .add_task(NewTask::new("while asleep"), &Actor::Me)
+        .unwrap();
+    let seq = app.state.seq();
+    app.state.trigger(airboss_app::catchup::Trigger::Wake);
+    let p = patch_after(&app, seq, Duration::from_secs(1)).expect("a patch after the wake");
+    assert!(p.upserts.iter().any(|r| r.id == t.id));
+}

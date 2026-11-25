@@ -21,6 +21,10 @@ use crate::tray::TrayModel;
 /// The variable that turns the trace on.
 pub const VAR: &str = "AIRBOSS_TRACE";
 
+/// With the trace on, a second launch with this argument acts as if the Mac woke (the
+/// services' `woke()` and a `data_version` check), since sleep can't be scripted.
+pub const WAKE_ARG: &str = "--trace-wake";
+
 /// The most ids one line lists before it says how many more there are.
 const MAX_IDS: usize = 20;
 
@@ -33,6 +37,15 @@ pub fn on(value: Option<&OsStr>) -> bool {
 pub fn enabled() -> bool {
     static ON: OnceLock<bool> = OnceLock::new();
     *ON.get_or_init(|| on(std::env::var_os(VAR).as_deref()))
+}
+
+/// Whether a second launch's arguments ask for a simulated wake (only with the trace on).
+pub fn simulated_wake(args: &[String]) -> bool {
+    enabled() && asks_wake(args)
+}
+
+fn asks_wake(args: &[String]) -> bool {
+    args.iter().any(|a| a == WAKE_ARG)
 }
 
 fn emit_line(line: &str) {
@@ -221,6 +234,14 @@ mod tests {
             describe(&UiEvent::TreePatch(p)),
             "tree:patch seq=2 upserts=[1:todo:working] removed=[] created=[] order=same repos=same"
         );
+    }
+
+    #[test]
+    fn only_the_wake_argument_asks_for_a_wake() {
+        let args = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert!(asks_wake(&args(&["airboss-app", "--trace-wake"])));
+        assert!(!asks_wake(&args(&["airboss-app", "--quick-add"])));
+        assert!(!asks_wake(&args(&["airboss-app"])));
     }
 
     #[test]
