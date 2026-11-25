@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, TransactionBehavior, params};
 
 use crate::Result;
 
@@ -30,6 +30,9 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 /// Opens a database file, applying settings and `core`'s pending migrations.
 pub(crate) fn open_file(path: &Path) -> Result<Connection> {
     let conn = Connection::open(path)?;
+    // Wait for other handles before anything else, so switching to WAL and migrating
+    // don't fail when two handles open the same file at once.
+    conn.busy_timeout(Duration::from_millis(2000))?;
     // WAL must be set outside any transaction; it persists in the file.
     conn.pragma_update(None, "journal_mode", "WAL")?;
     prepare(conn)
@@ -41,24 +44,30 @@ pub(crate) fn open_memory() -> Result<Connection> {
 }
 
 fn prepare(mut conn: Connection) -> Result<Connection> {
+    conn.busy_timeout(Duration::from_millis(2000))?;
     // NORMAL is safe with WAL and skips a disk sync on every commit.
     conn.pragma_update(None, "synchronous", "NORMAL")?;
     conn.pragma_update(None, "foreign_keys", "ON")?;
-    conn.busy_timeout(Duration::from_millis(2000))?;
     migrate(&mut conn, "core", CORE_MIGRATIONS)?;
     Ok(conn)
 }
 
 /// Applies `module`'s migrations newer than the newest one recorded for that module.
+///
+/// Each migration takes the write lock first (IMMEDIATE) and re-reads the version inside
+/// it, so two handles opening one file can't both apply the same migration.
 pub(crate) fn migrate(conn: &mut Connection, module: &str, migrations: &[Migration]) -> Result<()> {
     conn.execute_batch(CREATE_SCHEMA_MIGRATIONS)?;
-    let applied: i64 = conn.query_row(
-        "SELECT ifnull(max(version), 0) FROM schema_migrations WHERE module = ?1",
-        params![module],
-        |row| row.get(0),
-    )?;
-    for m in migrations.iter().filter(|m| m.version > applied) {
-        let tx = conn.transaction()?;
+    for m in migrations {
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let applied: i64 = tx.query_row(
+            "SELECT ifnull(max(version), 0) FROM schema_migrations WHERE module = ?1",
+            params![module],
+            |row| row.get(0),
+        )?;
+        if m.version <= applied {
+            continue;
+        }
         tx.execute_batch(m.sql)?;
         tx.execute(
             "INSERT INTO schema_migrations (module, version) VALUES (?1, ?2)",
@@ -240,6 +249,29 @@ mod tests {
             )
             .unwrap();
         assert_eq!((tables, recorded), (0, 0));
+    }
+
+    #[test]
+    fn many_handles_opening_one_new_file_at_once_all_succeed() {
+        let (_dir, path) = temp_db();
+        let handles: Vec<_> = (0..6)
+            .map(|_| {
+                let p = path.clone();
+                std::thread::spawn(move || open_file(&p).map(|_| ()))
+            })
+            .collect();
+        for h in handles {
+            h.join().unwrap().unwrap();
+        }
+        let conn = open_file(&path).unwrap();
+        let rows: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM schema_migrations WHERE module = 'core'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(rows, 1);
     }
 
     /// The 10 constraint checks from the spec's schema test, in Rust.

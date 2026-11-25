@@ -19,20 +19,26 @@ fn a_new_task_starts_as_todo_at_the_end_of_its_siblings() {
 }
 
 #[test]
-fn tasks_nest_five_levels_deep_and_the_tree_reads_back_in_order() {
+fn tasks_nest_five_levels_deep_and_the_tree_reads_back_depth_first() {
     let mut store = Store::open_in_memory().unwrap();
     let mut parent = None;
     let mut ids = vec![];
     for level in 1..=5 {
-        let t = store
-            .add_task(titled(&format!("Level {level}")).under(parent), &Actor::Me)
-            .unwrap();
+        let new = titled(&format!("Level {level}"));
+        let new = match parent {
+            Some(p) => new.under(p),
+            None => new,
+        };
+        let t = store.add_task(new, &Actor::Me).unwrap();
         ids.push(t.id);
         parent = Some(t.id);
     }
     let sibling = store
         .add_task(titled("Second top-level"), &Actor::Me)
         .unwrap();
+
+    // Top-level tasks and nested tasks are numbered separately.
+    assert_eq!(sibling.position, 2);
 
     let tree = store.tree().unwrap();
     let order: Vec<_> = tree
@@ -55,15 +61,13 @@ fn tasks_nest_five_levels_deep_and_the_tree_reads_back_in_order() {
 }
 
 #[test]
-fn children_read_back_in_position_order_not_insert_order() {
+fn children_get_consecutive_positions_under_their_parent() {
     let mut store = Store::open_in_memory().unwrap();
     let p = store.add_task(titled("Parent"), &Actor::Me).unwrap();
     for t in ["A", "B", "C"] {
-        store
-            .add_task(titled(t).under(Some(p.id)), &Actor::Me)
-            .unwrap();
+        store.add_task(titled(t).under(p.id), &Actor::Me).unwrap();
     }
-    let titles: Vec<_> = store
+    let children: Vec<_> = store
         .tree()
         .unwrap()
         .into_iter()
@@ -71,9 +75,26 @@ fn children_read_back_in_position_order_not_insert_order() {
         .map(|n| (n.task.title, n.task.position))
         .collect();
     assert_eq!(
-        titles,
+        children,
         vec![("A".into(), 1), ("B".into(), 2), ("C".into(), 3)]
     );
+}
+
+#[test]
+fn positions_past_nine_sort_as_numbers_not_text() {
+    let mut store = Store::open_in_memory().unwrap();
+    for n in 1..=11 {
+        store
+            .add_task(titled(&format!("Task {n}")), &Actor::Me)
+            .unwrap();
+    }
+    let positions: Vec<u32> = store
+        .tree()
+        .unwrap()
+        .iter()
+        .map(|n| n.task.position)
+        .collect();
+    assert_eq!(positions, (1..=11).collect::<Vec<u32>>());
 }
 
 #[test]

@@ -1,13 +1,17 @@
 //! The values `core` hands out and takes in.
 
 use std::fmt;
+use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
 use crate::{EventId, RepoId, TaskId};
 
 /// Who is making a change. `core` trusts it; `mcp` proves it.
+///
+/// Serializes as its stored text form, e.g. `"me"` or `"agent:t3/97b5c8b5"`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(into = "String", try_from = "String")]
 pub enum Actor {
     /// The person using Airboss.
     Me,
@@ -23,20 +27,49 @@ pub enum Actor {
     Launch,
 }
 
-impl Actor {
-    /// Reads the stored text form back; `None` for anything unknown.
-    pub fn parse(text: &str) -> Option<Actor> {
+/// A stored text value `core` doesn't recognise.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnknownValue(pub String);
+
+impl fmt::Display for UnknownValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "unknown value {:?}", self.0)
+    }
+}
+
+impl std::error::Error for UnknownValue {}
+
+impl FromStr for Actor {
+    type Err = UnknownValue;
+
+    /// Reads the stored text form back. An agent needs a non-empty thread ref.
+    fn from_str(text: &str) -> Result<Actor, UnknownValue> {
         match text {
-            "me" => Some(Actor::Me),
-            "sync:gh" => Some(Actor::SyncGh),
-            "sync:t3" => Some(Actor::SyncT3),
-            "plan" => Some(Actor::Plan),
-            "launch" => Some(Actor::Launch),
+            "me" => Ok(Actor::Me),
+            "sync:gh" => Ok(Actor::SyncGh),
+            "sync:t3" => Ok(Actor::SyncT3),
+            "plan" => Ok(Actor::Plan),
+            "launch" => Ok(Actor::Launch),
             _ => text
                 .strip_prefix("agent:")
-                .filter(|r| !r.is_empty())
-                .map(|r| Actor::Agent(r.to_string())),
+                .filter(|r| !r.trim().is_empty())
+                .map(|r| Actor::Agent(r.to_string()))
+                .ok_or_else(|| UnknownValue(text.to_string())),
         }
+    }
+}
+
+impl From<Actor> for String {
+    fn from(actor: Actor) -> String {
+        actor.to_string()
+    }
+}
+
+impl TryFrom<String> for Actor {
+    type Error = UnknownValue;
+
+    fn try_from(text: String) -> Result<Actor, UnknownValue> {
+        text.parse()
     }
 }
 
@@ -80,7 +113,7 @@ impl Status {
         }
     }
 
-    pub(crate) fn parse(text: &str) -> Option<Status> {
+    fn parse(text: &str) -> Option<Status> {
         Some(match text {
             "proposed" => Status::Proposed,
             "todo" => Status::Todo,
@@ -91,6 +124,20 @@ impl Status {
             "dropped" => Status::Dropped,
             _ => return None,
         })
+    }
+}
+
+impl fmt::Display for Status {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for Status {
+    type Err = UnknownValue;
+
+    fn from_str(text: &str) -> Result<Status, UnknownValue> {
+        Status::parse(text).ok_or_else(|| UnknownValue(text.to_string()))
     }
 }
 
@@ -156,9 +203,9 @@ impl NewTask {
         }
     }
 
-    /// Places the task under `parent` (`None` keeps it top-level).
-    pub fn under(mut self, parent: Option<TaskId>) -> NewTask {
-        self.parent = parent;
+    /// Places the task under `parent`.
+    pub fn under(mut self, parent: TaskId) -> NewTask {
+        self.parent = Some(parent);
         self
     }
 

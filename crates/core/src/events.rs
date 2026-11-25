@@ -3,18 +3,24 @@
 use rusqlite::{Connection, Row, params};
 
 use crate::model::{Actor, Event, EventKind, Status};
+use crate::tx::Tx;
 use crate::{Error, EventId, Result, TaskId};
 
-/// Records one event. Always called inside the transaction of the change it describes (rule 21).
+/// Records one event inside the change it describes (rule 21) and collects its id for the
+/// change notification.
 pub(crate) fn record(
-    conn: &Connection,
+    tx: &mut Tx<'_>,
     task: TaskId,
     kind: EventKind,
     to_status: Option<Status>,
     body: Option<&str>,
     actor: &Actor,
 ) -> Result<EventId> {
-    conn.execute(
+    // An actor that can't be read back would break this task's history for good.
+    if matches!(actor, Actor::Agent(r) if r.trim().is_empty()) {
+        return Err(Error::NotAllowed);
+    }
+    tx.execute(
         "INSERT INTO task_events (task_id, kind, to_status, body, actor) VALUES (?1, ?2, ?3, ?4, ?5)",
         params![
             task.0,
@@ -24,7 +30,9 @@ pub(crate) fn record(
             actor.to_string()
         ],
     )?;
-    Ok(EventId(conn.last_insert_rowid()))
+    let id = EventId(tx.last_insert_rowid());
+    tx.push_event(id);
+    Ok(id)
 }
 
 pub(crate) const EVENT_COLUMNS: &str = "id, task_id, kind, to_status, body, actor, at";
@@ -39,11 +47,11 @@ pub(crate) fn from_row(row: &Row<'_>) -> rusqlite::Result<Event> {
         task: TaskId(row.get(1)?),
         kind: EventKind::parse(&kind).ok_or_else(|| bad_text(2, &kind))?,
         to_status: match to_status {
-            Some(s) => Some(Status::parse(&s).ok_or_else(|| bad_text(3, &s))?),
+            Some(s) => Some(s.parse().map_err(|_| bad_text(3, &s))?),
             None => None,
         },
         body: row.get(4)?,
-        actor: Actor::parse(&actor).ok_or_else(|| bad_text(5, &actor))?,
+        actor: actor.parse().map_err(|_| bad_text(5, &actor))?,
         at: row.get(6)?,
     })
 }
