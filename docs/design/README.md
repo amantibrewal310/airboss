@@ -19,7 +19,7 @@ The Paper file has four pages: Foundations, App screens, Overlays and States. It
 | ![Task page with run order](screens/03-task-page-run-order.png) | ![Plans](screens/04-plans.png) |
 | Task page: progress and the run-order map | Plans: every parent task with its progress |
 | ![New task](screens/05-new-task.png) | ![Jump](screens/06-jump.png) |
-| New task (⌃⌥Space from anywhere, C or ⌥N in the app) | Jump to a task or run a command (⌘K) |
+| New task (⌃⌥N from anywhere, C or ⌥N in the app) | Jump to a task or run a command (⌘K) |
 | ![Status and right-click menus](screens/07-status-and-context-menus.png) | ![Menu bar](screens/08-menu-bar.png) |
 | Status picker (S) and right-click menu | Menu-bar icon and dropdown |
 | ![Shortcuts](screens/09-shortcuts.png) | ![First run](screens/10-first-run.png) |

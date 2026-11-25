@@ -91,15 +91,15 @@ Versions are the latest stable on crates.io and npm on 25 Nov 2026, pinned exact
 ## Commands
 
 ```
-cd app && npm ci
-npm run tauri dev                          # the app; set AIRBOSS_DB for a throwaway database
-npm run dev:mock                           # the UI in a browser, mock backend, http://localhost:5173
-npm run tauri build -- --bundles dmg       # release .dmg (builds the airboss sidecar first)
-npm run check                              # svelte-check and tsc
-npm test                                   # Vitest: unit (Node) and component (WebKit)
-npm run test:e2e                           # Playwright smoke test and screenshot baselines on the mock build
+cd app && pnpm install --frozen-lockfile
+pnpm tauri dev                          # the app; set AIRBOSS_DB for a throwaway database
+pnpm dev:mock                           # the UI in a browser, mock backend, http://localhost:5173
+pnpm tauri build -- --bundles dmg       # release .dmg (builds the airboss sidecar first)
+pnpm check                              # svelte-check and tsc
+pnpm test                                  # Vitest: unit (Node) and component (WebKit)
+pnpm test:e2e                           # Playwright smoke test and screenshot baselines on the mock build
 cargo test -p airboss-app -p airboss-services
-cargo test -p airboss-app -- --ignored perf             # rebuild, diff and write timings
+cargo test -p airboss-app --release -- --ignored perf             # rebuild, diff and write timings
 cargo test -p airboss-app --test fixtures               # regenerates mock fixtures, scripted writes, TS types
 cargo run -p airboss-app --example seed -- --tasks 2000 --db /tmp/ab.db
 cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --check
@@ -699,7 +699,7 @@ Targets from CAPABILITIES, measured by `scripts/measure.sh` on this Mac, in a re
 | Target | How it's met | How it's measured |
 |---|---|---|
 | Download under 15 MB | release profile; one Inter subset; no JS libraries; main bundle under 150 KB and quick add under 40 KB minified | size of the `.dmg` from `tauri build --bundles dmg`, sidecar included |
-| Idle memory under 80 MB | two web views, a native tray menu, `$state.raw` rows | see below |
+| Idle memory under 130 MB (revised 26 Nov 2026 from 80 MB; see tasks/program.md) | two web views, a native tray menu, `$state.raw` rows | see below |
 | Idle CPU near 0% | no polling; app threads block on channels and condvars; a minute tick only while visible; the live pulse animates only `transform` and `opacity` | `top -l 31 -s 2` over 60 s: average under 0.5% with no working chip on screen, under 1% with one, 0% with the window hidden |
 | Cold start under 1 s | window created hidden; one `bootstrap`; shown on `ui_ready` | Rust logs from process start (`sysctl kern.proc` start time) to `ui_ready`; median of 10 cold starts after `purge` |
 | Hotkey to quick add under 100 ms | panel created and reset ahead of time; showing it does no I/O | Rust logs from the `Pressed` callback to `quickadd_shown`, which the UI sends on the window's `focus` event; 95th percentile of 20 presses |

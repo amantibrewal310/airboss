@@ -459,7 +459,7 @@ Raised cards, 12px corners, hairline border; hover lifts 1px and darkens the bor
 - **Jump (⌘K):** 640px, 13% from the top. A 52px input at 15px, then tasks and commands in 38px rows with their key caps. With no match, ↩ creates the text as a new task.
 - **Quick add:** 680px. Title (18px), notes, then property pills (status, "Repos · optional" multi-select, parent). Tab opens repos, Shift-Tab parent. Pasting a chat link attaches it as a link and keeps the rest as the title.
 - **Toasts:** bottom right, raised, with an indigo spark icon; they rise 6px in and leave after 2.8s.
-- **Menu-bar dropdown:** 360px, the Needs me count and up to six items, then Open (⌘0) and Quick add (⌃⌥Space).
+- **Menu-bar dropdown:** 360px, the Needs me count and up to six items, then Open (⌘0) and Quick add (⌃⌥N).
 
 ### Keyboard map
 Single-letter keys only work when no field has focus. Every shortcut also lives in the Task and View menus.
@@ -478,7 +478,7 @@ Single-letter keys only work when no field has focus. Every shortcut also lives 
 | ⌘↓ / ⌘↑ | Open the full page / go back |
 | Esc | Close the page, then clear map selection, then close the panel |
 | C or ⌥N | New task |
-| ⌃⌥Space | Quick add from any app |
+| ⌃⌥N | Quick add from any app (changeable in Settings) |
 | G then N, L, R, A, P | Needs me, Plans, Ready, All tasks, In progress |
 | ⌘0 | Open Airboss on Needs me |
 | ⌘O | Open the latest thread or PR |
