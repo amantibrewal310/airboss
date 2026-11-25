@@ -1,0 +1,15 @@
+[package]
+name = "airboss-core"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+description = "Task tree, history, links and dependencies for Airboss, stored in SQLite."
+
+[dependencies]
+rusqlite = { version = "0.43", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+
+[lints]
+workspace = true

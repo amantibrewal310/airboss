@@ -14,7 +14,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
 
 ## Phase 1: Foundation
 
-- [ ] **T1. Workspace and empty crate** (S)
+- [x] **T1. Workspace and empty crate** (S)
   - **Description:** Set up a Cargo workspace with `rust-toolchain.toml` pinning Rust 1.100 and the `crates/core` library crate (`airboss-core`, edition 2024). Add the `core::Error` enum (`NotFound`, `NotAllowed`, `InvalidTransition`, `NoteRequired`, `InvalidTarget`, `Loop`, `DuplicateKey`, `Db`) and wrapper types for ids (`TaskId`, `EventId`, `LinkId`, `RepoId`).
   - **Acceptance:**
     - `cargo build` uses Rust 1.100.
@@ -23,7 +23,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
   - **Files:** `Cargo.toml`, `rust-toolchain.toml`, `crates/core/Cargo.toml`, `crates/core/src/lib.rs`, `crates/core/src/error.rs`
   - **Depends on:** none
 
-- [ ] **T2. Open the database and run migrations** (M)
+- [x] **T2. Open the database and run migrations** (M)
   - **Description:**
     - `Store::open(path)` and `Store::open_in_memory()` apply the settings outside any transaction: WAL, `synchronous = NORMAL`, foreign keys on, `busy_timeout = 2000`.
     - They run any pending `core` migrations from `001_core.sql`, which holds the schema exactly as in the spec.
@@ -38,7 +38,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
   - **Files:** `src/db.rs`, `src/migrations/001_core.sql`, `src/lib.rs`, `tests/db.rs`
   - **Depends on:** T1
 
-- [ ] **T3. Add a task, read it back, see its history** (M)
+- [x] **T3. Add a task, read it back, see its history** (M)
   - **Description:** The first vertical slice:
     - `add_task` as `me`: the task lands at the end of its siblings and gets a `created` event.
     - `task`, `tree` (in order) and `history`.
@@ -55,12 +55,12 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
 
 ### Checkpoint 1: Foundation
 
-- [ ] All tests pass; clippy and fmt are clean.
-- [ ] Review the API's look and feel with you before the rules pile on.
+- [x] All tests pass; clippy and fmt are clean.
+- [x] Review the API's look and feel with you before the rules pile on.
 
 ## Phase 2: Status that stays honest
 
-- [ ] **T4. Edit tasks and add notes** (S)
+- [x] **T4. Edit tasks and add notes** (S)
   - **Description:** `edit_task` (title, notes, repo) for `me` only. `add_note` for every actor, writing a `note` event.
   - **Acceptance:**
     - Rule 8, the `edit_task` and `add_note` rows: an agent editing gets `NotAllowed`.
@@ -70,7 +70,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
   - **Files:** `src/tasks.rs`, `src/permissions.rs`, `tests/rules.rs`
   - **Depends on:** T3
 
-- [ ] **T5. Links and PR state** (M)
+- [x] **T5. Links and PR state** (M)
   - **Description:**
     - `link`: linking the same thing twice returns the existing link.
     - `unlink`: `me` can remove any link; an agent only links it added.
@@ -84,7 +84,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
   - **Files:** `src/links.rs`, `src/permissions.rs`, `tests/links.rs`, `tests/rules.rs`
   - **Depends on:** T3
 
-- [ ] **T6. Status changes** (M)
+- [x] **T6. Status changes** (M)
   - **Description:** `set_status` with the rule 6 table as a pure function over `TaskFacts` (status, has a PR, all PRs merged or closed, any PR merged). Linking a PR to a `done` task as anyone but `me` moves it back to `in_review` (rule 7).
   - **Acceptance:**
     - Every row of the rule 6 table passes, and every case it rejects fails with the right error (`NotAllowed`, `InvalidTransition`, `NoteRequired`).
@@ -94,7 +94,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
   - **Files:** `src/status.rs`, `src/links.rs`, `tests/status.rs`
   - **Depends on:** T5
 
-- [ ] **T7. Proposals** (S)
+- [x] **T7. Proposals** (S)
   - **Description:**
     - When an agent calls `add_task`, the task is always created as `proposed`.
     - `proposed()` lists them.
@@ -109,12 +109,12 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
 
 ### Checkpoint 2: Status
 
-- [ ] All tests pass.
-- [ ] Walk through the rule 6 and rule 8 tables with you against the tests. Every row has a test.
+- [x] All tests pass.
+- [x] Walk through the rule 6 and rule 8 tables with you against the tests. Every row has a test.
 
 ## Phase 3: Tree shape
 
-- [ ] **T8. Move tasks and keep positions gap-free** (M)
+- [x] **T8. Move tasks and keep positions gap-free** (M)
   - **Description:** `move_task` (`me` only).
     - Rule 11: no cycles.
     - Rule 12: no moving under a `proposed`, `done` or `dropped` parent. The same check applies when adding a task.
@@ -127,7 +127,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
   - **Files:** `src/tasks.rs`, `src/positions.rs`, `tests/tree.rs`
   - **Depends on:** T3 (and T6 for the parent-status checks)
 
-- [ ] **T9. Drop a subtree, delete a task** (S)
+- [x] **T9. Drop a subtree, delete a task** (S)
   - **Description:**
     - Dropping a task (`me` only) also drops its open subtasks, with one event each; `done` subtasks stay `done` (rule 9).
     - `delete_task` is `me` only: it cascades (rule 5) and renumbers the siblings.
@@ -140,12 +140,12 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
 
 ### Checkpoint 3: Tree
 
-- [ ] All tests pass.
-- [ ] Rules 1–13 and 21–22 each have a named test.
+- [x] All tests pass.
+- [x] Rules 1–13 and 21–22 each have a named test.
 
 ## Phase 4: Dependencies and plans
 
-- [ ] **T10. Dependencies, loops and waiting** (M)
+- [x] **T10. Dependencies, loops and waiting** (M)
   - **Description:**
     - `add_dependency` and `remove_dependency` (`me` and `plan` only), each writing an event on the waiting task.
     - Rule 14: a recursive query checks for loops across the whole tree.
@@ -160,7 +160,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
   - **Files:** `src/deps.rs`, `src/tasks.rs`, `tests/deps.rs`
   - **Depends on:** T3 (and T9 for the delete case)
 
-- [ ] **T11. Run order** (S)
+- [x] **T11. Run order** (S)
   - **Description:** `run_order(parent)` returns `{ waves, waiting_outside }` (rule 18).
     - Dependencies between deeper tasks count as dependencies between the parent's direct subtasks.
     - Kahn's algorithm makes the waves, and tasks keep their sibling order within a wave.
@@ -175,7 +175,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
   - **Files:** `src/deps.rs`, `tests/deps.rs`
   - **Depends on:** T10
 
-- [ ] **T12. Plans arrive as trees** (M)
+- [x] **T12. Plans arrive as trees** (M)
   - **Description:** `add_tasks(parent, plan, actor)` for `me` and `plan`.
     - It takes a tree of `PlanTask` items, each with a `key`, children and `depends_on` entries (another key in the same plan, or an existing task id).
     - Every check runs before anything is written (rule 19).
@@ -192,12 +192,12 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
 
 ### Checkpoint 4: Dependencies and plans
 
-- [ ] All tests pass.
-- [ ] You review the run-order results for a real plan, such as the Toffee migration phases, written as a test fixture.
+- [x] All tests pass.
+- [x] You review the run-order results for a real plan, such as the Toffee migration phases, written as a test fixture.
 
 ## Phase 5: Finish
 
-- [ ] **T13. Change notification and the event cursor** (S)
+- [x] **T13. Change notification and the event cursor** (S)
   - **Description:**
     - `subscribe()` returns a channel that receives the new event ids after each commit (rule 23).
     - `events_after(cursor)` returns history in event-id order.
@@ -210,7 +210,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
   - **Files:** `src/events.rs`, `src/lib.rs`, `tests/events.rs`
   - **Depends on:** T12, so that every write path exists
 
-- [ ] **T14. Performance checks** (S)
+- [x] **T14. Performance checks** (S)
   - **Description:** Add `tests/perf.rs` (`#[ignore]`, release mode, a file-backed database). It times 1,000 runs of each check in the spec and prints the 95th percentile next to the machine (model, chip and macOS version).
   - **Acceptance:** each target in the spec's table is met on your Mac. Any miss is fixed, or brought to you before the target is changed.
   - **Verify:** `cargo test -p airboss-core --release -- --ignored perf`, with the output pasted into the PR or commit.
@@ -219,6 +219,6 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
 
 ### Checkpoint 5: core complete
 
-- [ ] Every success criterion in `SPEC-core.md` is checked off, with the test that proves it.
-- [ ] `CAPABILITIES.md` is updated to show `core` as built.
-- [ ] Review with you, then `code-review-and-quality` and `code-simplification` before calling `core` done.
+- [x] Every success criterion in `SPEC-core.md` is checked off, with the test that proves it.
+- [x] `CAPABILITIES.md` is updated to show `core` as built.
+- [x] `code-review-and-quality` and `code-simplification` done by fresh reviewers; every finding fixed (you delegated the checkpoint reviews on 25 Nov).

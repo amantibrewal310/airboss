@@ -1,6 +1,6 @@
 # Spec: core
 
-Module `core` from [CAPABILITIES.md](CAPABILITIES.md). State: **approved 25 Nov 2026** (draft 2).
+Module `core` from [CAPABILITIES.md](CAPABILITIES.md). State: **approved 25 Nov 2026** (draft 2); **built** the same day in `crates/core`.
 
 Draft 2 folds in a review by a reader who had not seen draft 1 (25 Nov 2026). The [changes from draft 1](#changes-from-draft-1) are listed at the end.
 
@@ -158,7 +158,7 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
 - **"Has a PR"** and **"all PRs merged"** come from `links`.
 - **Positions** are stored, because order is something I choose, not something that can be worked out.
 
-**No UNIQUE constraint on `(parent_id, position)`.** SQLite checks uniqueness row by row while renumbering, so a renumber would fail partway. It also treats null parents as all different, so the constraint couldn't protect top-level tasks anyway. Gap-free positions are enforced in code (rule 20) and tested.
+**No UNIQUE constraint on `(parent_id, position)`.** SQLite checks uniqueness row by row while renumbering, so a renumber would fail partway. It also treats null parents as all different, so the constraint couldn't protect top-level tasks anyway. Gap-free positions are enforced in code (rule 13) and tested.
 
 **Actors:** `me`, `agent:<thread ref>`, `sync:gh`, `sync:t3`, `plan` and `launch`. `core` trusts the actor it's given. Proving who the caller is belongs to `mcp`: the agent token can only act as `agent:…`, and acting as `plan` needs its own token. The `mcp` spec will define both.
 
@@ -185,8 +185,8 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
    | `launch` | `todo`, `blocked` | `doing` | When it starts a thread for the task |
    | `sync:t3`, `plan` | (none) | (none) | They never change status |
 
-   `proposed` is left only by `me`: accepting moves it to `todo`, and rejecting moves it to `dropped` with an optional reason. Rejected proposals stay in history and are hidden from the tree.
-7. **A PR linked after the fact reopens the task.** If an actor other than `me` links a PR to a `done` task, the task moves to `in_review` in the same change. Code can't stay done while its PR is unmerged.
+   `proposed` is left only by `me`: accepting moves it to `todo`, and rejecting moves it to `dropped` with an optional reason. Rejected proposals stay in history and are hidden from the tree. Only a true rejection is hidden: a proposal I accepted and later dropped stays visible, and so does an open proposal dropped along with its parent (rule 9).
+7. **An open PR reopens a done task.** If an actor other than `me` links an `open` PR to a `done` task, the task moves to `in_review` in the same change. A PR linked already `merged` or `closed` reopens nothing. And when `set_pr_state` records a PR as `open` again, every `done` task linked to it moves to `in_review`, with a `status` event after the `link_state` event, by the same actor. Code can't stay done while its PR is unmerged.
 
 ### Who may do everything else (enforced by code)
 
@@ -194,6 +194,7 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
 
    | Call | `me` | an agent | `plan` | `sync:gh` | `sync:t3` | `launch` |
    |---|---|---|---|---|---|---|
+   | `add_repo` | yes | (no) | (no) | (no) | (no) | (no) |
    | `add_task` | yes, as `todo` | yes, always as `proposed` | (no) | (no) | (no) | (no) |
    | `add_tasks` (a plan) | yes | (no) | yes | (no) | (no) | (no) |
    | `edit_task` (title, notes, repo) | yes | (no) | (no) | (no) | (no) | (no) |
@@ -225,6 +226,7 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
     - A dependency between tasks deeper down counts as a dependency between their top-level ancestors under that parent. For example, if a step in Phase 2 waits on a step in Phase 1, Phase 2 waits on Phase 1.
     - Kahn's algorithm makes the waves: wave 1 is every open subtask that waits on nothing under the parent, wave 2 is everything that waits only on wave 1, and so on. Within a wave, tasks keep their sibling order.
     - A subtask that also waits on an open task outside the parent goes in a separate `waiting_outside` group at the end, not in a wave.
+    - Lifting can make subtasks wait on each other in a loop even when their steps don't, for example when Phase 1 and Phase 2 each have a step waiting on the other phase. Kahn's algorithm can't place those subtasks, or anything waiting on them; these go in a `tangled` group, so the rest of the order still shows. They keep their sibling order.
     - `done` and `dropped` subtasks are left out.
     - Run order is only shown. Nothing starts by itself.
 
@@ -238,7 +240,7 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
 
 ### History (enforced by code)
 
-21. **Every call writes one event for each task it changes, in the same transaction.** If the call fails, nothing is written, not even events. One call can change several things about one task. For example, a planned task created with its dependencies gets one `created` event, with the dependencies listed in its body.
+21. **Every call writes one event for each task it changes, in the same transaction**, except when a PR event reopens a task (rule 7), which records the link or PR state and the reopen as two events, so history shows both. If the call fails, nothing is written, not even events. One call can change several things about one task. For example, a planned task created with its dependencies gets one `created` event, with the dependencies listed in its body. A call that changes nothing, such as setting the status a task already has or moving it to where it already is, writes no event. Dropping an already dropped task still drops anything open under it (rule 9).
 22. **Events are never edited.** They go only when their task is deleted. Rejected proposals are dropped, not deleted, so they stay in history (rule 6).
 23. **Every committed change tells the app.** `Store::subscribe()` returns a channel that receives the new event ids after each commit. `core` sends them itself after committing, so no SQLite hook is needed. The app updates from this signal, never by polling.
 
@@ -281,18 +283,18 @@ impl Store {
     pub fn links(&self, id: TaskId) -> Result<Vec<Link>>;
 
     // dependencies
-    pub fn add_dependency(&mut self, task: TaskId, waits_on: TaskId, actor: &Actor) -> Result<()>;
-    pub fn remove_dependency(&mut self, task: TaskId, waits_on: TaskId, actor: &Actor) -> Result<()>;
+    pub fn add_dependency(&mut self, id: TaskId, waits_on: TaskId, actor: &Actor) -> Result<()>;
+    pub fn remove_dependency(&mut self, id: TaskId, waits_on: TaskId, actor: &Actor) -> Result<()>;
     pub fn waits_on(&self, id: TaskId) -> Result<Vec<Task>>;   // its open blockers
     pub fn ready(&self) -> Result<Vec<Task>>;                  // `todo`, no open blockers
-    pub fn run_order(&self, parent: TaskId) -> Result<RunOrder>;  // { waves, waiting_outside }
+    pub fn run_order(&self, parent: TaskId) -> Result<RunOrder>;  // { waves, waiting_outside, tangled }
 }
 
 pub struct PlanTask { key: String, title: String, body: Option<String>, repo: Option<RepoId>,
                       depends_on: Vec<DepRef>, children: Vec<PlanTask> }
 pub enum DepRef { Key(String), Task(TaskId) }
 
-pub enum Error { NotFound, NotAllowed, InvalidTransition, NoteRequired, InvalidTarget, Loop,
+pub enum Error { EmptyTitle, AlreadyExists, NotFound, NotAllowed, InvalidTransition, NoteRequired, InvalidTarget, Loop,
                  DuplicateKey, Db(rusqlite::Error) }
 ```
 
@@ -346,7 +348,8 @@ fn check_status_change(actor: &Actor, task: &TaskFacts, to: Status, note: Option
   - the same plan twice, which changes nothing
   - a revised plan with one renamed step and one new step, which adds only the new step
   - a plan containing a loop, which writes nothing
-- **Failure tests:** an error forced partway through a call leaves no rows and no events behind, and no notification goes out.
+- **Failure tests:** an error forced partway through a call leaves no rows and no events behind, and no notification goes out. They live in `src/` unit tests, because the fault-injection points exist only in test builds of the crate.
+- **Concurrency:** several `Store` handles on one file must write at once without "database is locked". Every write takes the lock up front (an IMMEDIATE transaction), and opening sets `busy_timeout` before anything else.
 - **Change notification:** one commit sends exactly the ids of the events it wrote.
 - **Performance checks** run in release mode, `#[ignore]`d by default, on a file-backed database with `synchronous = NORMAL`. The numbers are the 95th percentile over 1,000 runs. Each run prints the machine (model, chip and macOS version) next to the numbers.
 
@@ -377,18 +380,18 @@ fn check_status_change(actor: &Actor, task: &TaskFacts, to: Status, note: Option
 
 ## Success criteria
 
-- [ ] `cargo test -p airboss-core` passes, with tests for every rule, every row of the rule 6 table and every "no" in the rule 8 table.
-- [ ] An agent can't accept its own proposal, reopen a `done` or `dropped` task, drop a task, or finish a task that has a PR.
-- [ ] `sync:gh` finishes a task only when none of its PRs is open and at least one has merged.
-- [ ] Linking a PR to a `done` task moves it back to `in_review`.
-- [ ] Rejected proposals are `dropped`, are hidden from `tree()`, and are still in history.
-- [ ] Dependency loops of any length are rejected, including across parents, and nothing is written.
-- [ ] `run_order` returns the expected waves for the diamond, the cross-phase case and the outside-blocker case.
-- [ ] Running a plan twice changes nothing, and a revised plan adds only its new steps.
-- [ ] A call that fails partway leaves no rows, no events and no notification.
-- [ ] Each performance check meets its target, with the machine recorded next to the numbers.
-- [ ] `clippy -D warnings` and `fmt --check` are clean.
-- [ ] Opening an existing database runs only the pending `core` migrations, once, and keeps the data.
+- [x] `cargo test -p airboss-core` passes, with tests for every rule, every row of the rule 6 table and every "no" in the rule 8 table.
+- [x] An agent can't accept its own proposal, reopen a `done` or `dropped` task, drop a task, or finish a task that has a PR.
+- [x] `sync:gh` finishes a task only when none of its PRs is open and at least one has merged.
+- [x] Linking an open PR to a `done` task, or reopening its PR, moves it back to `in_review`.
+- [x] Rejected proposals are `dropped`, are hidden from `tree()`, and are still in history.
+- [x] Dependency loops of any length are rejected, including across parents, and nothing is written.
+- [x] `run_order` returns the expected waves for the diamond, the cross-phase case and the outside-blocker case.
+- [x] Running a plan twice changes nothing, and a revised plan adds only its new steps.
+- [x] A call that fails partway leaves no rows, no events and no notification.
+- [x] Each performance check meets its target, with the machine recorded next to the numbers.
+- [x] `clippy -D warnings` and `fmt --check` are clean.
+- [x] Opening an existing database runs only the pending `core` migrations, once, and keeps the data.
 
 ## Decisions (settled 25 Nov 2026)
 
