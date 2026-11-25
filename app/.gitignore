@@ -3,5 +3,5 @@ dist/
 dist-mock/
 tests/e2e/.results/
 playwright-report/
-.vitest-attachments/
+.vitest/
 __screenshots__/
