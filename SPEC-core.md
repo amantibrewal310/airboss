@@ -1,6 +1,6 @@
 # Spec: core
 
-Module `core` from [CAPABILITIES.md](CAPABILITIES.md). State: **approved 25 Nov 2026** (draft 2); **built** the same day in `crates/core`. **v2** (what the app design needs) was decided and built the same evening; see [v2](#v2-25-nov-2026). **v3** (what the app and service specs need) followed on 26 Nov 2026; see [v3](#v3-26-nov-2026).
+Module `core` from [CAPABILITIES.md](CAPABILITIES.md). State: **approved 25 Nov 2026** (draft 2); **built** the same day in `crates/core`. **v2** (what the app design needs) was decided and built the same evening; see [v2](#v2-25-nov-2026). **v3** (what the app and service specs need) was decided and built on 26 Nov 2026; see [v3](#v3-26-nov-2026).
 
 Draft 2 folds in a review by a reader who had not seen draft 1 (25 Nov 2026). The [changes from draft 1](#changes-from-draft-1) are listed at the end.
 
@@ -510,13 +510,13 @@ v2:
 
 v3:
 
-- [ ] `snapshot()` returns the tree, edges, ready list and newest event id from one read transaction, building the tree once, in under 8 ms on the 2,000-task tree.
-- [ ] `ready()` builds the tree once.
-- [ ] `dependency_edges`, `latest_event_id`, `data_version`, `links_of_kind` and `path` work as rules 23, 30 and 31 say.
-- [ ] `migrate_module` runs another module's migrations once, and refuses `core`.
-- [ ] Every PR ref is stored as lowercase `owner/repo#n`, URLs are accepted, and malformed refs are refused.
-- [ ] `set_branch` refuses every branch name rule 25 rules out.
-- [ ] `cargo test --workspace` and `cargo clippy --workspace --all-targets -- -D warnings` are clean, `mcp` included.
+- [x] `snapshot()` returns the tree, edges, ready list and newest event id from one read transaction, building the tree once, in under 8 ms on the 2,000-task tree: 6.2 ms at the 95th percentile, with `ready()` at 6.1 ms and `tree()` at 4.3 ms, on a Mac16,1 (Apple M4), macOS 27.2.1 (26 Nov 2026).
+- [x] `ready()` builds the tree once.
+- [x] `dependency_edges`, `latest_event_id`, `data_version`, `links_of_kind` and `path` work as rules 23, 30 and 31 say.
+- [x] `migrate_module` runs another module's migrations once, and refuses `core`.
+- [x] Every PR ref is stored as lowercase `owner/repo#n`, URLs are accepted, and malformed refs are refused.
+- [x] `set_branch` refuses every branch name rule 25 rules out.
+- [x] `cargo test --workspace` and `cargo clippy --workspace --all-targets -- -D warnings` are clean, `mcp` included.
 
 ## Decisions (settled 25 Nov 2026)
 
@@ -571,10 +571,12 @@ The app and service specs asked for a few more things. The EM decided them in [t
 - `migrate_module` also refuses a blank module name and versions out of order, since either would make `schema_migrations` lie.
 - Branch names follow only the rules the EM listed. Git has more (no `//`, no `@{`), and `git` itself refuses those when `launch` runs it.
 - A PR URL must start `https://github.com/` (any case). Other hosts and `http://` are `InvalidTarget`.
+- A PR number is a whole number from 1, so `#0` is refused, and leading zeros are dropped (`#012` is `#12`).
+- `mcp` says what a PR ref or a branch name may be when `core` refuses one, instead of its generic `InvalidTarget` message.
 
 ## Open questions
 
-- **Event ids can be reused.** `task_events.id` is a plain `INTEGER PRIMARY KEY`, so when the newest events go with a deleted task, SQLite hands their ids out again. A reader holding one of those ids as a cursor, or as `latest_event_id`, then misses the new events. Rule 23's "event ids only grow" needs `AUTOINCREMENT`, which takes a migration that rebuilds `task_events`. That's a schema change, so it waits for the EM. Until then, `events_after` and `latest_event_id` can't be trusted across a delete. The app uses its own patch sequence number, so it isn't affected.
+- **Event ids can be reused.** `task_events.id` is a plain `INTEGER PRIMARY KEY`, so when the newest events go with a deleted task, SQLite hands their ids out again. A reader holding one of those ids as a cursor, or as `latest_event_id`, then misses the new events. Rule 23's "event ids only grow" needs `AUTOINCREMENT`, which takes a migration that rebuilds `task_events`. That's a schema change, so it waits for the EM. Until then, a reader that keeps an event id as a cursor for `events_after`, such as sync, can miss events after a delete. The app numbers its own updates, so its patches don't depend on event ids, but anything it reads with `events_after` has the same gap.
 
 ## Changes from draft 1
 
