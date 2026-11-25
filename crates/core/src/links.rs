@@ -164,8 +164,8 @@ pub(crate) fn tasks_for_link(
 impl crate::Store {
     /// Attaches an outside thing to a task. Linking the same thing twice returns the
     /// existing link, so callers can link without checking first.
-    pub fn link(&mut self, task: TaskId, new: NewLink, actor: &Actor) -> Result<Link> {
-        self.write(|tx| link(tx, task, new, actor))
+    pub fn link(&mut self, id: TaskId, new: NewLink, actor: &Actor) -> Result<Link> {
+        self.write(|tx| link(tx, id, new, actor))
     }
 
     /// Removes a link. An agent may only remove links it added.
@@ -190,8 +190,8 @@ impl crate::Store {
     }
 
     /// A task's links, oldest first.
-    pub fn links(&self, task: TaskId) -> Result<Vec<Link>> {
-        links(&self.conn, task)
+    pub fn links(&self, id: TaskId) -> Result<Vec<Link>> {
+        links(&self.conn, id)
     }
 }
 

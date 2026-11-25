@@ -13,9 +13,9 @@ use crate::tx::Tx;
 use crate::{Error, Result, TaskId, fault};
 
 impl crate::Store {
-    /// Makes `task` wait on `waits_on`. Adding a pair that already exists changes nothing.
-    pub fn add_dependency(&mut self, task: TaskId, waits_on: TaskId, actor: &Actor) -> Result<()> {
-        self.write(|tx| add(tx, task, waits_on, actor))
+    /// Makes `id` wait on `waits_on`. Adding a pair that already exists changes nothing.
+    pub fn add_dependency(&mut self, id: TaskId, waits_on: TaskId, actor: &Actor) -> Result<()> {
+        self.write(|tx| add(tx, id, waits_on, actor))
     }
 
     /// Stops `task` waiting on `waits_on`; `Error::NotFound` if it wasn't.

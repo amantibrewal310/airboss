@@ -283,7 +283,7 @@ impl Store {
     pub fn links(&self, id: TaskId) -> Result<Vec<Link>>;
 
     // dependencies
-    pub fn add_dependency(&mut self, task: TaskId, waits_on: TaskId, actor: &Actor) -> Result<()>;
+    pub fn add_dependency(&mut self, id: TaskId, waits_on: TaskId, actor: &Actor) -> Result<()>;
     pub fn remove_dependency(&mut self, task: TaskId, waits_on: TaskId, actor: &Actor) -> Result<()>;
     pub fn waits_on(&self, id: TaskId) -> Result<Vec<Task>>;   // its open blockers
     pub fn ready(&self) -> Result<Vec<Task>>;                  // `todo`, no open blockers
