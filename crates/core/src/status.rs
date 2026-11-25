@@ -103,7 +103,13 @@ pub(crate) fn set_status(
 ) -> Result<Task> {
     let note = note.filter(|n| !n.trim().is_empty());
     check_status_change(actor, &facts(tx, id)?, to, note)?;
-    apply(tx, id, to, note, actor)?;
+    // A change that changes nothing writes nothing, like an empty edit.
+    let before = tasks::get(tx, id)?;
+    let reason = if to == Status::Blocked { note } else { None };
+    if before.status != to || before.blocked_reason.as_deref() != reason {
+        apply(tx, id, to, note, actor)?;
+    }
+    // Still runs when the task was already dropped, to catch anything reopened under it.
     if to == Status::Dropped {
         drop_subtree(tx, id, actor)?;
     }

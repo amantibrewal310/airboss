@@ -128,6 +128,18 @@ fn move_in(
         ensure_plan_key_free(tx, new_parent, key)?;
     }
 
+    // A move that leaves the task where it is writes nothing (rule 21).
+    if old_parent == new_parent {
+        let n: u32 = tx.query_row(
+            "SELECT count(*) FROM tasks WHERE parent_id IS ?1",
+            params![old_parent.map(|p| p.0)],
+            |r| r.get(0),
+        )?;
+        if position.clamp(1, n) == task.position {
+            return Ok(());
+        }
+    }
+
     // Park the task at the end of its new group, then close the gaps in both groups.
     tx.execute(
         "UPDATE tasks SET parent_id = ?1, position = ?2 WHERE id = ?3",

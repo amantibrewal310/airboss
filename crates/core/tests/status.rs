@@ -35,8 +35,8 @@ fn task_in(from: Status, prs: &[PrState]) -> (Store, TaskId) {
     (s, id)
 }
 
-/// Checks one case: the change lands with a `status` event, or fails with `expected` and
-/// leaves the task and its history untouched.
+/// Checks one case: the change lands with a `status` event (none if it changes nothing),
+/// or fails with `expected` and leaves the task and its history untouched.
 fn case(
     from: Status,
     prs: &[PrState],
@@ -55,6 +55,11 @@ fn case(
             assert_eq!(task.status, to, "{label}");
             assert_eq!(s.task(id).unwrap(), task, "{label}");
             let history = s.history(id).unwrap();
+            let reason = if to == Blocked { note } else { None };
+            if before.0.status == to && before.0.blocked_reason.as_deref() == reason {
+                assert_eq!(history, before.1, "{label}: a no-op writes nothing");
+                return;
+            }
             assert_eq!(history.len(), before.1.len() + 1, "{label}");
             let last = history.last().unwrap();
             assert_eq!(
@@ -459,4 +464,35 @@ fn a_pr_reopened_on_github_leaves_open_work_alone() {
         s.history(id).unwrap().last().unwrap().kind,
         EventKind::LinkState
     );
+}
+
+// Rule 21: a status change that changes nothing writes nothing.
+
+#[test]
+fn setting_the_status_a_task_already_has_writes_no_event() {
+    for (from, note) in [
+        (Todo, None),
+        (Doing, Some("still at it")),
+        (Done, None),
+        (Blocked, Some("setup")),
+    ] {
+        let (mut s, id) = task_in(from, &[]);
+        let before = s.history(id).unwrap();
+        let rx = s.subscribe();
+        let t = s.set_status(id, from, note, &Actor::Me).unwrap();
+        assert_eq!(t.status, from);
+        assert_eq!(s.history(id).unwrap(), before, "{from}");
+        assert!(rx.try_recv().is_err(), "{from}: no notification");
+    }
+}
+
+#[test]
+fn blocking_again_with_a_new_reason_is_a_change() {
+    let (mut s, id) = task_in(Blocked, &[]);
+    let before = s.history(id).unwrap().len();
+    let t = s
+        .set_status(id, Blocked, Some("new reason"), &Actor::Me)
+        .unwrap();
+    assert_eq!(t.blocked_reason.as_deref(), Some("new reason"));
+    assert_eq!(s.history(id).unwrap().len(), before + 1);
 }
