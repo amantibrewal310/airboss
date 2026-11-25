@@ -104,6 +104,27 @@ fn dropping_a_three_level_subtree_drops_every_open_task_and_keeps_done_ones() {
 }
 
 #[test]
+fn dropping_a_dropped_parent_again_drops_what_was_reopened_under_it() {
+    let mut s = store();
+    let p = top(&mut s, "P");
+    let child = under(&mut s, p, "Child");
+    s.set_status(p, Status::Dropped, None, &Actor::Me).unwrap();
+    set(&mut s, child, Status::Todo);
+    let parent_events = event_count(&s, p);
+    let child_events = event_count(&s, child);
+
+    s.set_status(p, Status::Dropped, None, &Actor::Me).unwrap();
+
+    assert_eq!(status(&s, child), Status::Dropped);
+    assert_eq!(event_count(&s, child), child_events + 1);
+    assert_eq!(
+        event_count(&s, p),
+        parent_events,
+        "the parent itself is unchanged"
+    );
+}
+
+#[test]
 fn dropping_a_leaf_drops_only_the_leaf() {
     let mut s = store();
     let p = top(&mut s, "P");

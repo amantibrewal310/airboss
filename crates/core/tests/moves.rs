@@ -450,6 +450,25 @@ fn a_move_writes_one_moved_event_on_the_moved_task_only() {
     }
 }
 
+#[test]
+fn a_move_that_changes_nothing_writes_no_event() {
+    let mut s = store();
+    let a = add(&mut s, "A", None);
+    let ak = children(&mut s, "a", Some(a), 3);
+    let loner = add(&mut s, "loner", None);
+    let before = snapshot(&s);
+    let rx = s.subscribe();
+
+    // Same parent and position, including requests that clamp back to where it is.
+    moved(&mut s, ak[1], Some(a), 2);
+    moved(&mut s, ak[2], Some(a), 99);
+    moved(&mut s, ak[0], Some(a), 0);
+    moved(&mut s, loner, None, 2);
+
+    assert_eq!(snapshot(&s), before);
+    assert!(rx.try_recv().is_err(), "no notification");
+}
+
 // ---- Property: 500 random moves keep every group 1..n ----
 
 /// A tiny linear congruential generator, so the test needs no `rand`.
