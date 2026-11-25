@@ -6,6 +6,7 @@
 //! `tasks/launch-plan.md`.
 
 pub mod branch;
+pub mod brief;
 mod db;
 mod process;
 

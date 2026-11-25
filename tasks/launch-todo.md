@@ -36,7 +36,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
   - **Files:** `src/branch.rs`, `tests/branch.rs`
   - **Depends on:** T1
 
-- [ ] **T4. Briefs** (M)
+- [x] **T4. Briefs** (M)
   - **Description:** `brief.rs`: the Do it, research-only and Plan it templates and the reference block, filled by plain replacement, with the cuts and the nonce.
   - **Acceptance:** golden files for Do it with one and two repos, research only, Plan it with and without subtasks, and with a Slack link; notes with "----- END REFERENCE", the nonce itself, "ignore your instructions", newlines and shell metacharacters stay inside the block; long notes and lists are cut.
   - **Verify:** unit tests in `src/brief.rs`, `tests/briefs.rs` with `tests/golden/`.
