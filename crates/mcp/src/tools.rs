@@ -125,8 +125,9 @@ pub struct UpdateTask {
 }
 
 /// What a link points at.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema, clap::ValueEnum)]
 #[serde(rename_all = "snake_case")]
+#[value(rename_all = "snake_case")]
 pub enum LinkKindName {
     /// A T3 Code thread. Leave `ref` out to link this thread.
     T3Thread,

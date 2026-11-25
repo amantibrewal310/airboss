@@ -294,3 +294,286 @@ fn a_link_to_a_thread_shows_in_show() {
     let text = ok(&dir.db(), &["show", "1"]);
     assert!(text.contains("Links     t3_thread  abc"), "{text}");
 }
+
+// ---- writes ----
+
+#[test]
+fn add_makes_a_todo_task_with_parent_repos_and_body() {
+    let dir = TempDir::new();
+    let db = dir.db();
+    ok(&db, &["repo", "add", "web", "/src/web"]);
+    ok(&db, &["repo", "add", "api", "/src/api"]);
+    assert_eq!(ok(&db, &["add", "Booking"]), "Added ○ #1 Booking\n");
+    assert_eq!(
+        ok(
+            &db,
+            &[
+                "add", "Schema", "--under", "1", "--repo", "web", "--repo", "api", "--body", "why"
+            ]
+        ),
+        "Added ○ #2 Schema under #1 in api, web\n"
+    );
+    let v = json(&db, &["add", "Third"]);
+    assert_eq!(v["id"], 3);
+    assert_eq!(v["status"], "todo");
+    assert_eq!(v["origin"], "me");
+    let detail = json(&db, &["show", "2"]);
+    assert_eq!(detail["task"]["body"], "why");
+    assert_eq!(detail["task"]["parent"], 1);
+}
+
+#[test]
+fn add_with_an_unknown_repo_lists_the_registered_ones() {
+    let dir = TempDir::new();
+    ok(&dir.db(), &["repo", "add", "web", "/src/web"]);
+    assert_eq!(
+        fails(&dir.db(), &["add", "X", "--repo", "wbe"]),
+        "There's no repo named \"wbe\". Registered repos: web."
+    );
+    assert_eq!(
+        fails(&dir.db(), &["add", " "]),
+        "Give every task a title that isn't blank."
+    );
+}
+
+#[test]
+fn set_done_and_drop_change_status() {
+    let dir = TempDir::new();
+    let db = dir.db();
+    for t in ["A", "B", "C", "D"] {
+        ok(&db, &["add", t]);
+    }
+    ok(&db, &["add", "C1", "--under", "3"]);
+    assert_eq!(
+        ok(&db, &["set", "1", "doing"]),
+        "◑ #1 A is now in progress\n"
+    );
+    assert_eq!(
+        ok(&db, &["set", "1", "in_review"]),
+        "◕ #1 A is now in review\n"
+    );
+    assert_eq!(
+        ok(&db, &["set", "2", "blocked", "--note", "waiting on copy"]),
+        "⊖ #2 B is now blocked\n"
+    );
+    assert_eq!(
+        fails(&db, &["set", "4", "blocked"]),
+        "Say why it's blocked in `note`."
+    );
+    assert_eq!(
+        ok(&db, &["done", "1", "--note", "shipped"]),
+        "● #1 A is now done\n"
+    );
+    assert_eq!(
+        ok(&db, &["drop", "3"]),
+        "⊗ #3 C is now dropped, with 1 open subtask\n"
+    );
+    assert_eq!(json(&db, &["show", "5"])["task"]["status"], "dropped");
+    assert_eq!(json(&db, &["set", "1", "todo"])["status"], "todo");
+    assert_eq!(json(&db, &["done", "4"])["status"], "done");
+}
+
+#[test]
+fn accept_and_reject_only_take_proposals() {
+    let dir = TempDir::new();
+    let db = dir.db();
+    {
+        let mut s = Store::open(&db).unwrap();
+        let agent = Actor::Agent("t3/x".into());
+        s.add_task(NewTask::new("Idea one"), &agent).unwrap();
+        s.add_task(NewTask::new("Idea two"), &agent).unwrap();
+    }
+    ok(&db, &["add", "Mine"]);
+    assert_eq!(
+        ok(&db, &["accept", "1"]),
+        "Accepted ○ #1 Idea one; it's todo now\n"
+    );
+    assert_eq!(
+        ok(&db, &["reject", "2", "--note", "not now"]),
+        "Rejected ⊗ #2 Idea two; it's dropped and hidden from the tree\n"
+    );
+    assert!(!ok(&db, &["ls", "--all"]).contains("Idea two"));
+    assert_eq!(
+        fails(&db, &["accept", "3"]),
+        "Task #3 isn't a proposal; it's todo. Use airboss set, done or drop instead."
+    );
+    let s = Store::open(&db).unwrap();
+    let last = s.history(TaskId(2)).unwrap().pop().unwrap();
+    assert_eq!(last.body.as_deref(), Some("not now"));
+}
+
+#[test]
+fn edit_changes_title_and_notes() {
+    let dir = TempDir::new();
+    let db = dir.db();
+    ok(&db, &["add", "Old", "--body", "notes"]);
+    assert_eq!(
+        ok(&db, &["edit", "1", "--title", "New"]),
+        "Edited ○ #1 New\n"
+    );
+    let v = json(&db, &["edit", "1", "--body", ""]);
+    assert!(v.get("body").is_none(), "{v}");
+    assert_eq!(fails(&db, &["edit", "1"]), "Give --title, --body, or both.");
+}
+
+#[test]
+fn mv_moves_and_reorders() {
+    let dir = TempDir::new();
+    let db = dir.db();
+    for t in ["A", "B", "C"] {
+        ok(&db, &["add", t]);
+    }
+    assert_eq!(
+        ok(&db, &["mv", "3", "--under", "1"]),
+        "Moved ○ #3 C under #1, position 1\n"
+    );
+    assert_eq!(
+        ok(&db, &["mv", "2", "--pos", "1"]),
+        "Moved ○ #2 B at the top level, position 1\n"
+    );
+    assert_eq!(
+        ok(&db, &["mv", "3", "--top", "--pos", "1"]),
+        "Moved ○ #3 C at the top level, position 1\n"
+    );
+    ok(&db, &["mv", "1", "--under", "3"]);
+    assert_eq!(
+        fails(&db, &["mv", "3", "--under", "1"]),
+        "Task #1 is inside #3, so #3 can't move under it."
+    );
+    assert!(!run(&db, &["mv", "3"]).status.success());
+}
+
+#[test]
+fn wait_and_unwait() {
+    let dir = TempDir::new();
+    let db = dir.db();
+    ok(&db, &["add", "Design"]);
+    ok(&db, &["add", "Build"]);
+    assert_eq!(
+        ok(&db, &["wait", "2", "--on", "1"]),
+        "○ #2 Build now waits on ○ #1 Design\n"
+    );
+    assert!(ok(&db, &["ls"]).contains("waiting"));
+    assert_eq!(
+        fails(&db, &["wait", "1", "--on", "2"]),
+        "That would make a loop of tasks waiting on each other. Remove one of the dependencies."
+    );
+    assert_eq!(
+        ok(&db, &["unwait", "2", "--on", "1"]),
+        "○ #2 Build no longer waits on ○ #1 Design\n"
+    );
+    assert_eq!(
+        fails(&db, &["unwait", "2", "--on", "1"]),
+        "Task #2 doesn't wait on #1."
+    );
+    assert_eq!(
+        fails(&db, &["wait", "2", "--on", "9"]),
+        "There's no task #9. List the tasks to find the right id."
+    );
+}
+
+#[test]
+fn link_attaches_a_pr_with_url_and_title() {
+    let dir = TempDir::new();
+    let db = dir.db();
+    ok(&db, &["add", "Code"]);
+    assert_eq!(
+        ok(&db, &["link", "1", "pr", "acme/web#42"]),
+        "Linked pr acme/web#42 to ○ #1 Code\n"
+    );
+    let v = json(
+        &db,
+        &[
+            "link",
+            "1",
+            "doc",
+            "/plans/a.md",
+            "--title",
+            "a.md",
+            "--url",
+            "https://x",
+        ],
+    );
+    assert_eq!(v["kind"], "doc");
+    assert_eq!(v["title"], "a.md");
+    assert_eq!(v["linked_by"], "me");
+    assert!(!run(&db, &["link", "1", "wiki", "x"]).status.success());
+}
+
+#[test]
+fn repo_add_link_and_unlink() {
+    let dir = TempDir::new();
+    let db = dir.db();
+    let src = dir.0.join("checkout");
+    std::fs::create_dir_all(&src).unwrap();
+    let src = src.canonicalize().unwrap();
+    let out = ok(
+        &db,
+        &[
+            "repo",
+            "add",
+            "web",
+            src.to_str().unwrap(),
+            "--remote",
+            "git@x:web.git",
+        ],
+    );
+    assert_eq!(out, format!("Added repo web at {}\n", src.display()));
+    let v = json(&db, &["repo", "add", "api", "/src/api"]);
+    assert_eq!(v["name"], "api");
+    assert_eq!(
+        fails(&db, &["repo", "add", "web", "/elsewhere"]),
+        "That name or path is already registered. List the repos to see it."
+    );
+
+    ok(&db, &["add", "Task"]);
+    assert_eq!(
+        ok(&db, &["repo", "link", "1", "web"]),
+        "○ #1 Task is linked to web\n"
+    );
+    assert_eq!(
+        ok(&db, &["repo", "link", "1", "api"]),
+        "○ #1 Task is linked to api, web\n"
+    );
+    assert_eq!(
+        json(&db, &["repo", "unlink", "1", "web"])["repos"],
+        serde_json::json!(["api"])
+    );
+    assert_eq!(
+        ok(&db, &["repo", "unlink", "1", "api"]),
+        "○ #1 Task has no repos now\n"
+    );
+    assert_eq!(
+        fails(&db, &["repo", "unlink", "1", "api"]),
+        "Task #1 isn't linked to the repo \"api\"."
+    );
+}
+
+#[test]
+fn branch_sets_and_clears() {
+    let dir = TempDir::new();
+    let db = dir.db();
+    ok(&db, &["add", "Task"]);
+    assert_eq!(
+        ok(&db, &["branch", "1", "booking-flow"]),
+        "○ #1 Task is on branch booking-flow\n"
+    );
+    assert_eq!(json(&db, &["show", "1"])["task"]["branch"], "booking-flow");
+    assert_eq!(
+        ok(&db, &["branch", "1", "--clear"]),
+        "○ #1 Task has no branch now\n"
+    );
+    assert!(!run(&db, &["branch", "1"]).status.success());
+}
+
+#[test]
+fn every_write_is_recorded_as_me() {
+    let dir = TempDir::new();
+    let db = dir.db();
+    ok(&db, &["add", "Task"]);
+    ok(&db, &["set", "1", "doing"]);
+    let log = json(&db, &["log"]);
+    for e in log.as_array().unwrap() {
+        assert_eq!(e["actor"], "me");
+    }
+}

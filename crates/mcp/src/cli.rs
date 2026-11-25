@@ -7,11 +7,17 @@ use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::io::{IsTerminal, Write as _};
 
-use airboss_core::{Event, EventId, EventKind, Repo, Status, Store, TaskId, TaskNode};
+use std::path::Path;
+
+use airboss_core::{
+    Actor, Event, EventId, EventKind, NewLink, NewTask, Repo, Status, Store, TaskEdit, TaskId,
+    TaskNode,
+};
 use serde::Serialize;
 
 use crate::render::{
-    EventView, LinkView, NodeView, RepoNames, TaskDetail, TaskList, TaskRef, ToolError,
+    EventView, LinkView, NodeView, RepoNames, Subject, TaskDetail, TaskList, TaskRef, TaskView,
+    ToolError, explain,
 };
 use crate::tools::{self, GetTask};
 
@@ -444,16 +450,28 @@ fn link_line(style: Style, l: &LinkView, kind_w: usize) -> String {
 
 /// What an event did, in a few words.
 fn what(e: &EventView) -> String {
-    match (e.kind, e.to_status) {
-        (EventKind::Status, Some(to)) => format!("→ {}", mark(to, false).2.to_lowercase()),
-        (kind, _) => format!("{kind:?}").chars().fold(String::new(), |mut s, c| {
-            if c.is_uppercase() && !s.is_empty() {
-                s.push(' ');
-            }
-            s.push(c.to_ascii_lowercase());
-            s
-        }),
-    }
+    let word = match (e.kind, e.to_status) {
+        (EventKind::Status, Some(to)) => return format!("→ {}", mark(to, false).2.to_lowercase()),
+        (EventKind::Status, None) => "status",
+        (EventKind::Created, _) => "created",
+        (EventKind::Edited, _) => "edited",
+        (EventKind::Moved, _) => "moved",
+        (EventKind::Note, _) => "note",
+        (EventKind::Linked, _) => "linked",
+        (EventKind::Unlinked, _) => "unlinked",
+        (EventKind::LinkState, _) => "PR state",
+        (EventKind::WaitsOnAdded, _) => "waits on",
+        (EventKind::WaitsOnRemoved, _) => "stopped waiting",
+        (EventKind::Rejected, _) => "rejected",
+        (EventKind::RepoLinked, _) => "repo linked",
+        (EventKind::RepoUnlinked, _) => "repo unlinked",
+    };
+    word.to_string()
+}
+
+/// An event's body, without a lead-in that repeats [`what`], e.g. "waits on #2".
+fn body_after<'a>(what: &str, body: &'a str) -> &'a str {
+    body.strip_prefix(what).map(str::trim_start).unwrap_or(body)
 }
 
 fn events_table(events: &[&EventView], style: Style, with_task: bool) -> String {
@@ -481,7 +499,8 @@ fn events_table(events: &[&EventView], style: Style, with_task: bool) -> String 
             pad(&what(e), what_w)
         );
         if let Some(body) = &e.body {
-            let _ = write!(line, "  {}", body.lines().next().unwrap_or_default());
+            let first = body.lines().next().unwrap_or_default();
+            let _ = write!(line, "  {}", body_after(&what(e), first));
         }
         out.push_str(line.trim_end());
         out.push('\n');
@@ -538,6 +557,402 @@ pub fn repo_ls(store: &Store, json: bool, style: Style) -> Result<String, ToolEr
         out.push('\n');
     }
     Ok(out)
+}
+
+// ---- writes, all as `me` ----
+
+const ME: &Actor = &Actor::Me;
+
+fn fail(store: &Store, about: Subject) -> impl Fn(airboss_core::Error) -> ToolError + '_ {
+    move |e| explain(store, ME, e, &about)
+}
+
+fn view(store: &Store, id: TaskId) -> Result<TaskView, ToolError> {
+    let task = store.task(id).map_err(fail(store, Subject::task(id)))?;
+    Ok(TaskView::new(task, &RepoNames::load(store)?))
+}
+
+/// `○ #12 Fix booking typo`.
+fn task_line(style: Style, t: &TaskView) -> String {
+    format!(
+        "{} {} {}",
+        status_mark(style, t.status, false),
+        id_text(t.id),
+        t.title
+    )
+}
+
+/// Prints a changed task as JSON, or as `text` around its one-line summary.
+fn done_with(
+    t: &TaskView,
+    json: bool,
+    text: impl FnOnce(&TaskView) -> String,
+) -> Result<String, ToolError> {
+    if json {
+        to_json(t)
+    } else {
+        Ok(format!("{}\n", text(t)))
+    }
+}
+
+/// What `airboss add` takes.
+pub struct Add<'a> {
+    pub title: &'a str,
+    pub under: Option<i64>,
+    pub repos: &'a [String],
+    pub body: Option<&'a str>,
+}
+
+/// `airboss add`: a new task, `todo`, at the end of its siblings.
+pub fn add(
+    store: &mut Store,
+    args: Add<'_>,
+    json: bool,
+    style: Style,
+) -> Result<String, ToolError> {
+    let repos = store.repos().map_err(ToolError::from_core)?;
+    let mut new = NewTask::new(args.title);
+    new.parent = args.under.map(TaskId);
+    new.body = args
+        .body
+        .filter(|b| !b.trim().is_empty())
+        .map(str::to_string);
+    for id in tools::repo_ids(&repos, args.repos)? {
+        new = new.in_repo(id);
+    }
+    let about = Subject {
+        parent: new.parent,
+        ..Subject::default()
+    };
+    let task = store.add_task(new, ME).map_err(fail(store, about))?;
+    let t = TaskView::new(task, &RepoNames::new(&repos));
+    done_with(&t, json, |t| {
+        let mut line = format!("Added {}", task_line(style, t));
+        if let Some(p) = t.parent {
+            let _ = write!(line, " under {}", id_text(p));
+        }
+        if !t.repos.is_empty() {
+            let _ = write!(line, " in {}", t.repos.join(", "));
+        }
+        line
+    })
+}
+
+/// A status `airboss set` takes; done and dropped have their own commands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum SetStatus {
+    Todo,
+    Doing,
+    #[value(name = "in_review", alias = "in-review")]
+    InReview,
+    Blocked,
+}
+
+impl From<SetStatus> for Status {
+    fn from(s: SetStatus) -> Status {
+        match s {
+            SetStatus::Todo => Status::Todo,
+            SetStatus::Doing => Status::Doing,
+            SetStatus::InReview => Status::InReview,
+            SetStatus::Blocked => Status::Blocked,
+        }
+    }
+}
+
+/// `airboss set`, `done` and `drop`. Dropping drops the open tasks under it too.
+pub fn set(
+    store: &mut Store,
+    id: i64,
+    to: Status,
+    note: Option<&str>,
+    json: bool,
+    style: Style,
+) -> Result<String, ToolError> {
+    let id = TaskId(id);
+    let open_under = if to == Status::Dropped {
+        open_subtasks(store, id)?
+    } else {
+        0
+    };
+    let about = Subject {
+        to: Some(to),
+        ..Subject::task(id)
+    };
+    store
+        .set_status(id, to, note, ME)
+        .map_err(fail(store, about))?;
+    let t = view(store, id)?;
+    done_with(&t, json, |t| {
+        let name = mark(t.status, false).2.to_lowercase();
+        let mut line = format!("{} is now {name}", task_line(style, t));
+        if open_under > 0 {
+            let s = if open_under == 1 { "" } else { "s" };
+            let _ = write!(line, ", with {open_under} open subtask{s}");
+        }
+        line
+    })
+}
+
+fn open_subtasks(store: &Store, id: TaskId) -> Result<usize, ToolError> {
+    let nodes = store.tree().map_err(ToolError::from_core)?;
+    let Some(start) = nodes.iter().position(|n| n.task.id == id) else {
+        return Ok(0);
+    };
+    let depth = nodes[start].depth;
+    Ok(nodes[start + 1..]
+        .iter()
+        .take_while(|n| n.depth > depth)
+        .filter(|n| !matches!(n.task.status, Status::Done | Status::Dropped))
+        .count())
+}
+
+/// `airboss accept` and `reject`: only for an agent's proposal.
+pub fn decide(
+    store: &mut Store,
+    id: i64,
+    accept: bool,
+    note: Option<&str>,
+    json: bool,
+    style: Style,
+) -> Result<String, ToolError> {
+    let id = TaskId(id);
+    let before = view(store, id)?;
+    if before.status != Status::Proposed {
+        return Err(ToolError::new(format!(
+            "Task #{} isn't a proposal; it's {}. Use airboss set, done or drop instead.",
+            id.0, before.status
+        )));
+    }
+    let to = if accept {
+        Status::Todo
+    } else {
+        Status::Dropped
+    };
+    store.set_status(id, to, note, ME).map_err(fail(
+        store,
+        Subject {
+            to: Some(to),
+            ..Subject::task(id)
+        },
+    ))?;
+    let t = view(store, id)?;
+    done_with(&t, json, |t| {
+        if accept {
+            format!("Accepted {}; it's todo now", task_line(style, t))
+        } else {
+            format!(
+                "Rejected {}; it's dropped and hidden from the tree",
+                task_line(style, t)
+            )
+        }
+    })
+}
+
+/// `airboss edit`: the title, the notes, or both. An empty `--body` clears the notes.
+pub fn edit(
+    store: &mut Store,
+    id: i64,
+    title: Option<&str>,
+    body: Option<&str>,
+    json: bool,
+    style: Style,
+) -> Result<String, ToolError> {
+    let id = TaskId(id);
+    if title.is_none() && body.is_none() {
+        return Err(ToolError::new("Give --title, --body, or both."));
+    }
+    let mut change = TaskEdit::default();
+    if let Some(t) = title {
+        change = change.title(t);
+    }
+    if let Some(b) = body {
+        change = change.body(Some(b).filter(|b| !b.trim().is_empty()));
+    }
+    store
+        .edit_task(id, change, ME)
+        .map_err(fail(store, Subject::task(id)))?;
+    let t = view(store, id)?;
+    done_with(&t, json, |t| format!("Edited {}", task_line(style, t)))
+}
+
+/// Where `airboss mv` puts a task.
+pub enum Target {
+    /// Under this task.
+    Under(i64),
+    /// At the top level.
+    Top,
+    /// Where it is, only reordered.
+    Same,
+}
+
+/// `airboss mv`: a new parent, a new position, or both. Left out, the position is the end.
+pub fn mv(
+    store: &mut Store,
+    id: i64,
+    target: Target,
+    pos: Option<u32>,
+    json: bool,
+    style: Style,
+) -> Result<String, ToolError> {
+    let id = TaskId(id);
+    let current = view(store, id)?;
+    let parent = match target {
+        Target::Under(p) => Some(TaskId(p)),
+        Target::Top => None,
+        Target::Same => current.parent,
+    };
+    let about = Subject {
+        parent,
+        ..Subject::task(id)
+    };
+    store
+        .move_task(id, parent, pos.unwrap_or(u32::MAX), ME)
+        .map_err(fail(store, about))?;
+    let t = view(store, id)?;
+    let position = store.task(id).map(|t| t.position).unwrap_or_default();
+    done_with(&t, json, |t| {
+        let place = match t.parent {
+            Some(p) => format!("under {}", id_text(p)),
+            None => "at the top level".into(),
+        };
+        format!("Moved {} {place}, position {position}", task_line(style, t))
+    })
+}
+
+/// `airboss wait` and `unwait`.
+pub fn wait(
+    store: &mut Store,
+    id: i64,
+    on: i64,
+    add: bool,
+    json: bool,
+    style: Style,
+) -> Result<String, ToolError> {
+    let (id, on) = (TaskId(id), TaskId(on));
+    let about = Subject {
+        others: vec![on],
+        ..Subject::task(id)
+    };
+    let done = if add {
+        store.add_dependency(id, on, ME)
+    } else {
+        store.remove_dependency(id, on, ME)
+    };
+    done.map_err(|e| match e {
+        airboss_core::Error::NotFound
+            if !add && store.task(id).is_ok() && store.task(on).is_ok() =>
+        {
+            ToolError::new(format!("Task #{} doesn't wait on #{}.", id.0, on.0))
+        }
+        e => explain(store, ME, e, &about),
+    })?;
+    let t = view(store, id)?;
+    let blocker = view(store, on)?;
+    done_with(&t, json, |t| {
+        let verb = if add {
+            "now waits on"
+        } else {
+            "no longer waits on"
+        };
+        format!(
+            "{} {verb} {}",
+            task_line(style, t),
+            task_line(style, &blocker)
+        )
+    })
+}
+
+/// `airboss link`.
+pub fn link(
+    store: &mut Store,
+    id: i64,
+    new: NewLink,
+    json: bool,
+    style: Style,
+) -> Result<String, ToolError> {
+    let id = TaskId(id);
+    let link = store
+        .link(id, new, ME)
+        .map_err(fail(store, Subject::task(id)))?;
+    if json {
+        return to_json(&LinkView::from(link));
+    }
+    let t = view(store, id)?;
+    Ok(format!(
+        "Linked {} {} to {}\n",
+        link.kind,
+        link.r#ref,
+        task_line(style, &t)
+    ))
+}
+
+/// `airboss repo add`. A relative path is taken from the current directory.
+pub fn repo_add(
+    store: &mut Store,
+    name: &str,
+    path: &Path,
+    remote: Option<&str>,
+    json: bool,
+) -> Result<String, ToolError> {
+    let path = path
+        .canonicalize()
+        .or_else(|_| std::env::current_dir().map(|d| d.join(path)))
+        .map_err(|e| ToolError::new(format!("Couldn't resolve {}: {e}", path.display())))?;
+    let repo = store
+        .add_repo(name.trim(), &path, remote, ME)
+        .map_err(ToolError::from_core)?;
+    if json {
+        return to_json(&repo);
+    }
+    Ok(format!("Added repo {} at {}\n", repo.name, repo.path))
+}
+
+/// `airboss repo link` and `repo unlink`.
+pub fn repo_link(
+    store: &mut Store,
+    id: i64,
+    name: &str,
+    add: bool,
+    json: bool,
+    style: Style,
+) -> Result<String, ToolError> {
+    let id = TaskId(id);
+    let repos = store.repos().map_err(ToolError::from_core)?;
+    let repo = tools::repo_ids(&repos, &[name.to_string()])?[0];
+    let about = Subject {
+        repo: Some(name.trim().to_string()),
+        ..Subject::task(id)
+    };
+    let done = if add {
+        store.link_repo(id, repo, ME)
+    } else {
+        store.unlink_repo(id, repo, ME)
+    };
+    done.map_err(fail(store, about))?;
+    let t = view(store, id)?;
+    done_with(&t, json, |t| match t.repos.as_slice() {
+        [] => format!("{} has no repos now", task_line(style, t)),
+        names => format!("{} is linked to {}", task_line(style, t), names.join(", ")),
+    })
+}
+
+/// `airboss branch`: sets the branch every thread for the task shares, or clears it.
+pub fn branch(
+    store: &mut Store,
+    id: i64,
+    name: Option<&str>,
+    json: bool,
+    style: Style,
+) -> Result<String, ToolError> {
+    let id = TaskId(id);
+    let task = store
+        .set_branch(id, name, ME)
+        .map_err(fail(store, Subject::task(id)))?;
+    let t = TaskView::new(task, &RepoNames::load(store)?);
+    done_with(&t, json, |t| match &t.branch {
+        Some(b) => format!("{} is on branch {b}", task_line(style, t)),
+        None => format!("{} has no branch now", task_line(style, t)),
+    })
 }
 
 pub fn to_json<T: Serialize>(value: &T) -> Result<String, ToolError> {

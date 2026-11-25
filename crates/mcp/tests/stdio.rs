@@ -210,10 +210,10 @@ fn a_database_it_cannot_open_is_one_line_on_stderr_and_exit_code_1() {
 }
 
 #[test]
-fn two_servers_write_at_once_without_errors() {
+fn two_servers_and_the_cli_write_at_once_without_errors() {
     let dir = TempDir::new();
     let id = seed(&dir.db(), &["Shared"])[0];
-    let writers: Vec<_> = ["one", "two"]
+    let mut writers: Vec<_> = ["one", "two"]
         .into_iter()
         .map(|thread| {
             let db = dir.db();
@@ -231,9 +231,20 @@ fn two_servers_write_at_once_without_errors() {
             })
         })
         .collect();
+    let db = dir.db();
+    writers.push(std::thread::spawn(move || {
+        for i in 0..15 {
+            let out = common::run(
+                &db,
+                &["add", &format!("cli {i}"), "--under", &id.0.to_string()],
+            );
+            assert!(out.status.success(), "cli {i}: {}", common::stderr(&out));
+        }
+    }));
     for w in writers {
         w.join().unwrap();
     }
     let s = Store::open(&dir.db()).unwrap();
     assert_eq!(s.history(id).unwrap().len(), 1 + 80);
+    assert_eq!(s.tree().unwrap().len(), 1 + 15);
 }
