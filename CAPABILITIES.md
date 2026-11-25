@@ -17,6 +17,8 @@ The direction behind it is in [docs/idea.md](docs/idea.md).
 
 Dependencies point one way only. A module may use only the modules it depends on.
 
+**Shared crate, not a module:** `crates/services` (`airboss-services`) holds the contract between the app and `sync`, `launch` and `attention`: their shared types and traits, `std` only. Its source of truth is the [shared contract](SPEC-attention.md#shared-contract) in SPEC-attention.md, and its choices are in [crates/services/README.md](crates/services/README.md). Every one of those modules may depend on it.
+
 ## Stack
 
 - **One process**, a Tauri 2.12 app:
@@ -48,6 +50,7 @@ A module counts as done only after these are measured on a real Mac.
 |---|---|---|
 | `core` | [SPEC-core.md](SPEC-core.md) | **Built 25 Nov 2026** (`crates/core`, 218 tests, all performance targets met); plan in [tasks/plan.md](tasks/plan.md) |
 | `mcp` | [SPEC-mcp.md](SPEC-mcp.md) | **Built 26 Nov 2026** (`crates/mcp`, 107 tests, all performance targets met) |
+| `services` (shared crate) | [SPEC-attention.md, shared contract](SPEC-attention.md#shared-contract) | **Built 26 Nov 2026** (`crates/services`, 36 tests, with fakes behind the `fakes` feature) |
 | `app` | [SPEC-app.md](SPEC-app.md) | Draft 1, waiting for review |
 | `launch` | [SPEC-launch.md](SPEC-launch.md) | Draft 1, waiting for review |
 | `sync` | [SPEC-sync.md](SPEC-sync.md) | Draft 1, waiting for review |
