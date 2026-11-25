@@ -1,6 +1,6 @@
 # Spec: core
 
-Module `core` from [CAPABILITIES.md](CAPABILITIES.md). State: **approved 25 Nov 2026** (draft 2); **built** the same day in `crates/core`. **v2** (what the app design needs) was decided and built the same evening; see [v2](#v2-25-nov-2026).
+Module `core` from [CAPABILITIES.md](CAPABILITIES.md). State: **approved 25 Nov 2026** (draft 2); **built** the same day in `crates/core`. **v2** (what the app design needs) was decided and built the same evening; see [v2](#v2-25-nov-2026). **v3** (what the app and service specs need) followed on 26 Nov 2026; see [v3](#v3-26-nov-2026).
 
 Draft 2 folds in a review by a reader who had not seen draft 1 (25 Nov 2026). The [changes from draft 1](#changes-from-draft-1) are listed at the end.
 
@@ -76,13 +76,13 @@ crates/core/
   tests/perf.rs            #[ignore] performance checks
 ```
 
-Later modules get their own crates (`crates/mcp`, `crates/sync`, `crates/launch`) plus `app/`. A module that needs tables owns its migrations and records them in the shared `schema_migrations` table under its own module name. For example, `launch` keeps the T3 project for each repo in its own table.
+Later modules get their own crates (`crates/mcp`, `crates/sync`, `crates/launch`) plus `app/`. A module that needs tables owns its migrations and records them in the shared `schema_migrations` table under its own module name. For example, `launch` keeps the T3 project for each repo in its own table. It opens its own `Store` on `path()` and runs them with `migrate_module` (rule 31).
 
 ## Data model
 
 Six tables, plus `schema_migrations`. This is the full first migration. On 25 Nov 2026 it was loaded into a throwaway in-memory SQLite database: the valid rows went in, and each of the 10 constraint checks rejected its bad row.
 
-v2 edited `001_core.sql` in place instead of adding a migration 002, because no real database existed yet. **Once `mcp` ships, migrations are append-only:** every later change is a new numbered file.
+v2 edited `001_core.sql` in place instead of adding a migration 002, because no real database existed yet. **Once `mcp` ships, migrations are append-only:** every later change is a new numbered file. `mcp` shipped on 26 Nov 2026. v3 added `002_pr_refs.sql`, which changes no table: it rewrites PR refs already stored into the canonical form (rule 29).
 
 ```sql
 CREATE TABLE schema_migrations (
@@ -239,6 +239,16 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
     - `Task.repos` lists a task's own repos, sorted by repo name. `tree()` carries the same list. A parent shows only its own; the union over its subtree is the app's job.
     - A plan sent again leaves an existing step's repos as they are, like its title (rule 20). `plan` links more with `link_repo`.
 25. **A task has at most one branch,** shared by every thread `launch` starts for it. Null means no branch yet. `set_branch` writes one `edited` event whose body names the branch, e.g. `branch: booking-flow`, or `branch cleared`. A blank name clears it. Setting the branch it already has writes nothing.
+    - A name, once trimmed, uses only `A–Z`, `a–z`, `0–9`, `.`, `_`, `/` and `-`, and is at most 200 characters long.
+    - It can't contain `..`, start with `-` or `/`, or end with `/` or `.lock`.
+    - Anything else is `Error::InvalidTarget`, and nothing is written. `launch` passes the name to `git` and `t3`, so it must never read as an option or a path outside the repo.
+
+### Links (enforced by code)
+
+29. **A PR has one ref.** `link`, `set_pr_state` and `tasks_for_link` take a PR as `owner/repo#n`, in any case, or as its GitHub URL, `https://github.com/owner/repo/pull/n`, with or without a trailing path, query or fragment. They store and compare `owner/repo#n` in lowercase, with `n` a whole number from 1 and no leading zeros. Anything else is `Error::InvalidTarget`. So the same PR linked as a URL and as `Owner/Repo#12` is one link, and `sync:gh` finds it whichever form it was given.
+    - `owner` and `repo` use only letters, digits, `.`, `_` and `-`, and neither is `.` or `..`.
+    - Event bodies name the canonical ref.
+    - Other link kinds keep their ref as given.
 
 ### Tree and order (enforced by code)
 
@@ -276,10 +286,18 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
 21. **Every call writes one event for each task it changes, in the same transaction**, except when a PR event reopens a task (rule 7), which records the link or PR state and the reopen as two events, so history shows both. If the call fails, nothing is written, not even events. One call can change several things about one task. For example, a planned task created with its dependencies gets one `created` event, with the dependencies listed in its body. A call that changes nothing, such as setting the status a task already has or moving it to where it already is, writes no event. Dropping an already dropped task still drops anything open under it (rule 9).
 22. **Events are never edited.** They go only when their task is deleted. Rejected proposals are dropped, not deleted, so they stay in history (rule 6).
 23. **Every committed change tells the app.** `Store::subscribe()` returns a channel that receives the new event ids after each commit. `core` sends them itself after committing, so no SQLite hook is needed. The app updates from this signal, never by polling.
+    - `subscribe()` only hears this handle's own writes. A write from another process, such as `airboss mcp`, shows up in `data_version()`: SQLite's `PRAGMA data_version`, which changes when **another** connection commits to the file, and never for this handle's own commits. The app and sync watch the `-wal` file and check `data_version()` on focus and on wake.
 28. **Activity is read in bulk.**
     - `history_with_subtasks(id, limit)` returns up to `limit` events from the task and everything under it, newest first.
     - Each `tree()` node carries its own newest event's time and actor (`last_event_at`, `last_actor`), and the newest event time anywhere in its subtree (`subtree_last_event_at`), for "quiet for 5+ days". Newest goes by event id.
     - `tree()` works these out with one query and one pass in Rust, never a query per node. A task with no events at all can only come from a hand-edited file, and fails the read.
+30. **A snapshot is one consistent read.** `snapshot()` reads the tree, every dependency edge, the ready list and the newest event id inside one read transaction, so all four describe the same moment even while another process writes. It builds the tree once, and works the ready list out from that tree. `ready()` does the same on its own, so it never builds the tree twice either.
+    - `edges` and `dependency_edges()` list every `(waiting, waits_on)` pair, finished tasks included, sorted by the waiting task and then the blocker.
+    - `latest_event_id` is the highest event id, or `EventId(0)` when there are no events.
+31. **Another module migrates only its own tables.** `migrate_module(module, migrations)` runs `module`'s pending migrations as `Store::open` runs `core`'s: each in its own IMMEDIATE transaction, recorded in `schema_migrations` under `module`, and never twice.
+    - `core` is refused with `Error::InvalidTarget`, so nothing outside `core` can apply or skip a `core` migration. So is a blank module name, or versions that aren't whole numbers from 1 in strictly increasing order.
+    - A failing migration leaves nothing of itself behind. Those before it in the list stay applied.
+    - It writes no events and sends no notification.
 
 ## API shape
 
@@ -291,7 +309,10 @@ pub struct Store { /* one rusqlite::Connection */ }
 impl Store {
     pub fn open(path: &Path) -> Result<Store>;           // applies settings, runs core's migrations
     pub fn open_in_memory() -> Result<Store>;
+    pub fn path(&self) -> Option<PathBuf>;              // the file's absolute path; None in memory
     pub fn subscribe(&mut self) -> Receiver<Vec<EventId>>;
+    pub fn data_version(&self) -> Result<i64>;          // changes when ANOTHER connection commits
+    pub fn migrate_module(&mut self, module: &str, migrations: &[Migration]) -> Result<()>;  // "core": InvalidTarget
 
     // repos
     pub fn add_repo(&mut self, name: &str, path: &Path, remote: Option<&str>, actor: &Actor) -> Result<Repo>;
@@ -315,6 +336,8 @@ impl Store {
     pub fn history(&self, id: TaskId) -> Result<Vec<Event>>;                            // oldest first
     pub fn history_with_subtasks(&self, id: TaskId, limit: u32) -> Result<Vec<Event>>;  // newest first
     pub fn events_after(&self, cursor: EventId) -> Result<Vec<Event>>;
+    pub fn latest_event_id(&self) -> Result<EventId>;   // EventId(0) when empty
+    pub fn snapshot(&self) -> Result<CoreSnapshot>;     // one read transaction; tree built once
 
     // links
     pub fn link(&mut self, id: TaskId, link: NewLink, actor: &Actor) -> Result<Link>;   // linking twice returns the existing link
@@ -322,12 +345,14 @@ impl Store {
     pub fn set_pr_state(&mut self, pr_ref: &str, state: PrState, actor: &Actor) -> Result<Vec<TaskId>>;
     pub fn tasks_for_link(&self, kind: LinkKind, r#ref: &str) -> Result<Vec<TaskId>>;
     pub fn links(&self, id: TaskId) -> Result<Vec<Link>>;
+    pub fn links_of_kind(&self, kind: LinkKind) -> Result<Vec<Link>>;   // every task's, by link id
 
     // dependencies
     pub fn add_dependency(&mut self, id: TaskId, waits_on: TaskId, actor: &Actor) -> Result<()>;
     pub fn remove_dependency(&mut self, id: TaskId, waits_on: TaskId, actor: &Actor) -> Result<()>;
     pub fn waits_on(&self, id: TaskId) -> Result<Vec<Task>>;   // its open blockers
     pub fn dependencies(&self, id: TaskId) -> Result<Dependencies>;  // both ways, finished ones too
+    pub fn dependency_edges(&self) -> Result<Vec<(TaskId, TaskId)>>; // every (waiting, waits_on), finished ones too
     pub fn ready(&self) -> Result<Vec<ReadyTask>>;             // `todo`, no open blockers, with since
     pub fn run_order(&self, parent: TaskId) -> Result<RunOrder>;  // { waves, waiting_outside, tangled }
 }
@@ -343,6 +368,9 @@ pub struct Dependencies { waits_on: Vec<Task>, blocks: Vec<Task> }
 pub struct ReadyTask { task: Task, since: String }
 pub struct RunOrder { waves: Vec<Vec<Task>>, waiting_outside: Vec<OutsideWait>, tangled: Vec<Task> }
 pub struct OutsideWait { task: Task, blockers: Vec<TaskId> }
+pub struct CoreSnapshot { tree: Vec<TaskNode>, edges: Vec<(TaskId, TaskId)>, ready: Vec<ReadyTask>,
+                          latest_event_id: EventId }
+pub struct Migration { version: i64, sql: &'static str }
 
 pub struct PlanTask { key: String, title: String, body: Option<String>, repos: Vec<RepoId>,
                       depends_on: Vec<DepRef>, children: Vec<PlanTask> }
@@ -412,6 +440,14 @@ fn check_status_change(actor: &Actor, task: &TaskFacts, to: Status, note: Option
   - `waiting_outside` blockers: direct, through a step, and through a sibling
   - tree activity: own newest event and actor, and a subtree's newest event coming up from a grandchild
   - `ready` since: creation time with no blockers, and the last blocker's finish time otherwise
+- **v3 tests:**
+  - `snapshot()` matches `tree()`, `dependency_edges()`, `ready()` and `latest_event_id()` read one by one, and `EventId(0)` on an empty store
+  - `dependency_edges` with a finished blocker included
+  - `data_version`: two `Store` handles on one file; it changes after the other handle commits, and not after its own
+  - `links_of_kind` across several tasks; `path()` for a file and for memory
+  - `migrate_module`: applied once, refused for `core`, a blank name and out-of-order versions, and a failing migration leaving nothing of itself
+  - PR refs: mixed case, the URL form with a trailing path, query and fragment, the same PR in two forms making one link, `set_pr_state` and `tasks_for_link` by URL, malformed refs refused with nothing written, and `002_pr_refs.sql` rewriting refs stored before it
+  - branch names: each rejected shape, and names at and just over 200 characters
 - **Failure tests:** an error forced partway through a call leaves no rows and no events behind, and no notification goes out. They live in `src/` unit tests, because the fault-injection points exist only in test builds of the crate.
 - **Concurrency:** several `Store` handles on one file must write at once without "database is locked". Every write takes the lock up front (an IMMEDIATE transaction), and opening sets `busy_timeout` before anything else.
 - **Change notification:** one commit sends exactly the ids of the events it wrote.
@@ -420,6 +456,8 @@ fn check_status_change(actor: &Actor, task: &TaskFacts, to: Status, note: Option
   | What | Target |
   |---|---|
   | `tree()`: 2,000 tasks with waiting flags, repos, activity and 1,000 dependencies | under 10 ms |
+  | `snapshot()`: tree, edges, ready and latest event id, on that 2,000-task tree | under 8 ms |
+  | `ready()`, on that 2,000-task tree | under 8 ms |
   | `add_task` | under 1 ms |
   | `set_status`, event included | under 1 ms |
   | `add_dependency`, loop check included, on that 2,000-task tree | under 2 ms |
@@ -469,6 +507,16 @@ v2:
 - [x] `ready()` says since when each task has been ready.
 - [x] Every new write path has an atomicity test.
 
+v3:
+
+- [ ] `snapshot()` returns the tree, edges, ready list and newest event id from one read transaction, building the tree once, in under 8 ms on the 2,000-task tree.
+- [ ] `ready()` builds the tree once.
+- [ ] `dependency_edges`, `latest_event_id`, `data_version`, `links_of_kind` and `path` work as rules 23, 30 and 31 say.
+- [ ] `migrate_module` runs another module's migrations once, and refuses `core`.
+- [ ] Every PR ref is stored as lowercase `owner/repo#n`, URLs are accepted, and malformed refs are refused.
+- [ ] `set_branch` refuses every branch name rule 25 rules out.
+- [ ] `cargo test --workspace` and `cargo clippy --workspace --all-targets -- -D warnings` are clean, `mcp` included.
+
 ## Decisions (settled 25 Nov 2026)
 
 - **Sibling order:** whole numbers, renumbered on every add, move and delete (rule 13).
@@ -504,9 +552,28 @@ The app design ([DESIGN.md](DESIGN.md), "Needs from the core data model") asked 
 - "Newest" and "last" go by event id, as everywhere else; times are only shown (rules 26 and 28).
 - A task freed by removing or deleting its blocker is ready since that removal, not since its creation (rule 26).
 
+## v3 (26 Nov 2026)
+
+The app and service specs asked for a few more things. The EM decided them in [tasks/program.md](tasks/program.md) ("EM decisions on the spec reviews"), and they're folded into the rules, API and tests above.
+
+1. **One consistent read.** `snapshot() -> CoreSnapshot { tree, edges, ready, latest_event_id }`, under 8 ms on the 2,000-task tree, so services and the app never build the tree several times per change. `ready()` builds the tree once too (rule 30).
+2. **Smaller reads.** `dependency_edges()`, `latest_event_id()`, `links_of_kind(kind)` and `path()` (rule 30).
+3. **Writes from other processes.** `data_version()` (rule 23).
+4. **Other modules' migrations.** A public `Migration` and `migrate_module(module, migrations)`, which refuses `core` (rule 31).
+5. **Canonical PR refs.** Lowercase `owner/repo#n`, with GitHub URLs accepted, and `002_pr_refs.sql` for refs stored before (rule 29).
+6. **Branch names** limited to `[A-Za-z0-9._/-]`, with git's worst shapes refused (rule 25).
+
+**Decisions made while building v3:**
+
+- `path()` is SQLite's absolute path for the file, not the path as given to `open`, so a service opening its own `Store` on it doesn't depend on the working directory.
+- `002_pr_refs.sql` lowercases PR refs stored in `owner/repo#n` form. Where a task already has the lowercase twin, the old row goes and the twin's state stays. Rows in URL form were never valid, so it leaves them alone.
+- `migrate_module` also refuses a blank module name and versions out of order, since either would make `schema_migrations` lie.
+- Branch names follow only the rules the EM listed. Git has more (no `//`, no `@{`), and `git` itself refuses those when `launch` runs it.
+- A PR URL must start `https://github.com/` (any case). Other hosts and `http://` are `InvalidTarget`.
+
 ## Open questions
 
-None. The review's points are all handled above. Who proves an actor's identity belongs to the `mcp` spec.
+- **Event ids can be reused.** `task_events.id` is a plain `INTEGER PRIMARY KEY`, so when the newest events go with a deleted task, SQLite hands their ids out again. A reader holding one of those ids as a cursor, or as `latest_event_id`, then misses the new events. Rule 23's "event ids only grow" needs `AUTOINCREMENT`, which takes a migration that rebuilds `task_events`. That's a schema change, so it waits for the EM. Until then, `events_after` and `latest_event_id` can't be trusted across a delete. The app uses its own patch sequence number, so it isn't affected.
 
 ## Changes from draft 1
 
