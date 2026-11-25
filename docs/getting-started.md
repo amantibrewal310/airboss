@@ -22,7 +22,7 @@ Optional, and each one turns on more:
 git clone https://github.com/amantibrewal310/airboss.git
 cd airboss/app
 pnpm install
-pnpm tauri build --bundles app
+pnpm tauri build --config src-tauri/tauri.bundle.conf.json --bundles app
 ```
 
 The build compiles the interface, the `airboss` CLI and the app in release mode. The first build takes a few minutes. The app lands in `target/release/bundle/macos/Airboss.app`, at the repo root.

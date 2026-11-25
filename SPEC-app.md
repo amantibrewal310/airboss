@@ -84,6 +84,7 @@ Versions are the latest stable on crates.io and npm on 25 Nov 2026, pinned exact
 - **The `airboss` CLI** is a sidecar, not a Cargo dependency.
   - `beforeBuildCommand` builds `airboss-mcp` in release.
   - It copies the result to `src-tauri/binaries/airboss-aarch64-apple-darwin` for `bundle.externalBin`.
+  - `bundle.externalBin` lives only in `tauri.bundle.conf.json`, which the release build passes (`pnpm bundle`, that is `tauri build --config src-tauri/tauri.bundle.conf.json`). tauri-build copies a configured sidecar next to every binary it builds, so in `tauri.conf.json` it put an empty stand-in over `target/debug/airboss` on any `cargo build` or `cargo test` (final audit). `build.rs` writes no stand-in, and `tests/build_config.rs` keeps it that way.
 - **Release profile:** `lto = "fat"`, `codegen-units = 1`, `opt-level = "s"`, `strip = true`, `panic = "unwind"` (see [Locking and panics](#locking-and-panics)).
 - **Unsafe code:** the app crate overrides the workspace's `forbid` with `deny`, and allows unsafe only in `src/macos.rs`, with a `SAFETY:` comment on each block.
 - **Platform:** Apple silicon only (`aarch64-apple-darwin`), signed ad hoc.
@@ -94,7 +95,7 @@ Versions are the latest stable on crates.io and npm on 25 Nov 2026, pinned exact
 cd app && pnpm install --frozen-lockfile
 pnpm tauri dev                          # the app; set AIRBOSS_DB for a throwaway database
 pnpm dev:mock                           # the UI in a browser, mock backend, http://localhost:5173
-pnpm tauri build -- --bundles dmg       # release .dmg (builds the airboss sidecar first)
+pnpm bundle --bundles app,dmg           # release .app and .dmg, with the airboss sidecar (tauri.bundle.conf.json)
 pnpm check                              # svelte-check and tsc
 pnpm test                                  # Vitest: unit (Node) and component (WebKit)
 pnpm test:e2e                           # Playwright smoke test and screenshot baselines on the mock build
@@ -721,7 +722,7 @@ Targets from CAPABILITIES, measured by `scripts/measure.sh` on this Mac, in a re
 
 | Target | How it's met | How it's measured |
 |---|---|---|
-| Download under 15 MB | release profile; one Inter subset; no JS libraries; main bundle under 300 KB and quick add under 100 KB minified (revised 26 Nov 2026; see tasks/program.md) | size of the `.dmg` from `tauri build --bundles dmg`, sidecar included |
+| Download under 15 MB | release profile; one Inter subset; no JS libraries; main bundle under 300 KB and quick add under 100 KB minified (revised 26 Nov 2026; see tasks/program.md) | size of the `.dmg` from `pnpm bundle --bundles dmg`, sidecar included |
 | Idle memory under 130 MB (revised 26 Nov 2026 from 80 MB; see tasks/program.md) | two web views, a native tray menu, `$state.raw` rows | see below |
 | Idle CPU near 0% | no polling; app threads block on channels and condvars; a minute tick only while visible; the live pulse animates only `transform` and `opacity` | `top -l 31 -s 2` over 60 s: average under 0.5% with no working chip on screen, under 1% with one, 0% with the window hidden |
 | Cold start under 1 s | window created hidden; one `bootstrap`; shown on `ui_ready` | Rust logs from process start (`sysctl kern.proc` start time) to `ui_ready`; median of 10 cold starts after `purge` |
