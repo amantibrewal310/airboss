@@ -13,6 +13,7 @@ mod prs;
 mod secret;
 pub mod t3;
 pub mod threads;
+pub mod watch;
 mod worker;
 
 pub use db::{MIGRATIONS, MODULE, SyncDb};
