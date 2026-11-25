@@ -1,6 +1,6 @@
 # Spec: core
 
-Module `core` from [CAPABILITIES.md](CAPABILITIES.md). State: **draft 2, waiting for review**.
+Module `core` from [CAPABILITIES.md](CAPABILITIES.md). State: **approved 25 Nov 2026** (draft 2).
 
 Draft 2 folds in a review by a reader who had not seen draft 1 (25 Nov 2026). The [changes from draft 1](#changes-from-draft-1) are listed at the end.
 

@@ -46,7 +46,7 @@ A module counts as done only after these are measured on a real Mac.
 
 | Module | Spec | State |
 |---|---|---|
-| `core` | [SPEC-core.md](SPEC-core.md) | Draft, waiting for review |
+| `core` | [SPEC-core.md](SPEC-core.md) | Approved 25 Nov 2026; plan in [tasks/plan.md](tasks/plan.md) |
 | `mcp` | not written yet | |
 | `app` | not written yet | |
 | `launch` | not written yet | |
