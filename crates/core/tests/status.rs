@@ -379,3 +379,30 @@ fn a_pr_linked_to_open_work_leaves_its_status_alone() {
     s.link(id, NewLink::pr("acme/web#7"), &agent()).unwrap();
     assert_eq!(s.task(id).unwrap().status, Doing);
 }
+
+// Rule 21's exception: a PR event that reopens a task records the link and the reopen as
+// two events, so history shows both.
+
+#[test]
+fn a_reopening_link_writes_the_link_and_the_reopen_as_two_events_in_that_order() {
+    let (mut s, id) = task_in(Done, &[]);
+    let rx = s.subscribe();
+    s.link(id, NewLink::pr("acme/web#7"), &Actor::SyncGh)
+        .unwrap();
+
+    let ids = rx.try_recv().unwrap();
+    let history = s.history(id).unwrap();
+    let new = &history[history.len() - 2..];
+    assert_eq!(ids, new.iter().map(|e| e.id).collect::<Vec<_>>());
+    let got: Vec<_> = new
+        .iter()
+        .map(|e| (e.kind, e.to_status, e.actor.clone()))
+        .collect();
+    assert_eq!(
+        got,
+        vec![
+            (EventKind::Linked, None, Actor::SyncGh),
+            (EventKind::Status, Some(InReview), Actor::SyncGh),
+        ]
+    );
+}

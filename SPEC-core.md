@@ -239,7 +239,7 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
 
 ### History (enforced by code)
 
-21. **Every call writes one event for each task it changes, in the same transaction.** If the call fails, nothing is written, not even events. One call can change several things about one task. For example, a planned task created with its dependencies gets one `created` event, with the dependencies listed in its body.
+21. **Every call writes one event for each task it changes, in the same transaction**, except when a PR event reopens a task (rule 7), which records the link or PR state and the reopen as two events, so history shows both. If the call fails, nothing is written, not even events. One call can change several things about one task. For example, a planned task created with its dependencies gets one `created` event, with the dependencies listed in its body.
 22. **Events are never edited.** They go only when their task is deleted. Rejected proposals are dropped, not deleted, so they stay in history (rule 6).
 23. **Every committed change tells the app.** `Store::subscribe()` returns a channel that receives the new event ids after each commit. `core` sends them itself after committing, so no SQLite hook is needed. The app updates from this signal, never by polling.
 
