@@ -111,7 +111,7 @@ fn move_in(
     let task = crate::tasks::get(tx, id)?;
     let old_parent = task.parent;
     if let Some(target) = new_parent {
-        crate::tasks::ensure_exists(tx, target)?;
+        // A missing target passes the loop check and is `NotFound` from `ensure_open_parent`.
         ensure_not_in_subtree(tx, id, target)?;
         ensure_open_parent(tx, target)?;
         ensure_no_ancestor_dependency(tx, id, target)?;
