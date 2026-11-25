@@ -8,6 +8,7 @@ use std::path::PathBuf;
 
 use airboss_core::Store;
 
+pub mod cli;
 pub mod identity;
 pub mod render;
 pub mod server;
