@@ -281,16 +281,23 @@ fn only_me_edits_tasks() {
     assert_eq!(s.history(t.id).unwrap().len(), 1);
 }
 
-// Rule 8, `add_note`: every actor adds notes (as `permissions.rs` has it). Rule 4: a note has text.
+// Rule 8, `add_note`: every actor except `plan` adds notes. Rule 4: a note has text.
 
 #[test]
-fn every_actor_adds_a_note_event_with_its_text() {
+fn plan_cannot_add_notes() {
+    let mut s = store();
+    let t = s.add_task(NewTask::new("x"), &Actor::Me).unwrap();
+    let err = s.add_note(t.id, "from the plan", &Actor::Plan).unwrap_err();
+    assert!(matches!(err, Error::NotAllowed), "{err:?}");
+}
+
+#[test]
+fn every_other_actor_adds_a_note_event_with_its_text() {
     let mut s = store();
     let t = s.add_task(NewTask::new("x"), &Actor::Me).unwrap();
     let actors = [
         Actor::Me,
         agent(),
-        Actor::Plan,
         Actor::SyncGh,
         Actor::SyncT3,
         Actor::Launch,

@@ -35,7 +35,9 @@ pub(crate) fn allowed(call: Call, actor: &Actor) -> Result<()> {
         AddRepo | EditTask | MoveTask | DeleteTask => *actor == Me,
         AddTask | Unlink => matches!(actor, Me | Agent(_)),
         AddPlan | ChangeDependency => matches!(actor, Me | Plan),
-        AddNote | Link => true,
+        // A plan arrives as a tree of tasks; it has nothing to say about one afterwards.
+        AddNote => *actor != Plan,
+        Link => true,
         SetPrState => matches!(actor, Me | SyncGh),
     };
     if ok { Ok(()) } else { Err(Error::NotAllowed) }
@@ -66,7 +68,13 @@ mod tests {
             (Call::AddTask, vec![me.clone(), agent.clone()]),
             (Call::AddPlan, vec![me.clone(), Actor::Plan]),
             (Call::EditTask, vec![me.clone()]),
-            (Call::AddNote, every_actor()),
+            (
+                Call::AddNote,
+                every_actor()
+                    .into_iter()
+                    .filter(|a| *a != Actor::Plan)
+                    .collect(),
+            ),
             (Call::MoveTask, vec![me.clone()]),
             (Call::DeleteTask, vec![me.clone()]),
             (Call::Link, every_actor()),
