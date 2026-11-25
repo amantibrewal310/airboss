@@ -1,6 +1,6 @@
 # Spec: mcp
 
-Module `mcp` from [CAPABILITIES.md](CAPABILITIES.md). State: **draft 1, waiting for review**.
+Module `mcp` from [CAPABILITIES.md](CAPABILITIES.md). State: **approved 25 Nov 2026**, aligned with `core` v2 the same day (see [v2 alignment](#v2-alignment-25-nov-2026)).
 
 It builds on [`core`](SPEC-core.md), which holds every rule about who may change what. `mcp` adds no rules of its own. It decides **who is calling** and passes that on to `core`.
 
@@ -94,15 +94,15 @@ Six tools, kept few on purpose: fewer tools means agents pick the right one more
 
 | Tool | Arguments | What it does (`core` call) | Returns |
 |---|---|---|---|
-| `list_tasks` | `repo?`, `status?` (list), `mine?` (bool), `query?` (text in the title) | Reads `tree()` and filters it. `mine` keeps tasks linked to this thread. | `[{id, title, status, parent, depth, waiting, repo}]`, at most 200, plus `truncated` |
-| `get_task` | `id` | `task`, `links`, the last 20 entries of `history`, `waits_on`, the direct subtasks, and `run_order` if it has subtasks | One object with all of that |
+| `list_tasks` | `repos?` (list of names), `status?` (list), `mine?` (bool), `ready?` (bool), `query?` (text in the title) | Reads `tree()` and filters it. `repos` keeps tasks linked to any of them. `mine` keeps tasks linked to this thread. `ready` keeps what `ready()` returns: `todo` tasks with no open blockers. | `[{id, title, status, parent, depth, waiting, repos}]`, at most 200, plus `truncated` |
+| `get_task` | `id` | `task` (with its repos by name and its `branch`), `links` (with titles), the last 20 entries of `history`, `dependencies` both ways (what it waits on and what waits on it, finished ones included), the direct subtasks, and `run_order` if it has subtasks (`waves`, `waiting_outside` with each entry's blockers, `tangled`) | One object with all of that |
 | `update_task` | `id`, `status?`, `note?` | `set_status` when `status` is given (the note becomes the reason); otherwise `add_note`. At least one of the two is required. | The task after the change |
-| `link` | `id`, `kind`, `ref?`, `url?`, `pr_state?` | `link`. When `kind` is `t3_thread` or `claude_session` and `ref` is left out, it links **this** thread. | The link |
-| `propose_tasks` | `parent?`, `tasks: [{title, body?, repo?}]` (1–20) | `add_task` as the agent, once per item, so every one starts as `proposed` | The proposed tasks |
-| `import_plan` | `plan_file`, `parent?`, `plan` (a tree: `key`, `title`, `body?`, `repo?`, `depends_on?`, `children?`) | Checks that `plan_file` exists, then calls `add_tasks` as `plan` and links the file to the plan's top-level tasks | `{created, existing, keys}` |
+| `link` | `id`, `kind`, `ref?`, `url?`, `pr_state?`, `title?` | `link`, with `title` as the link's display name. When `kind` is `t3_thread` or `claude_session` and `ref` is left out, it links **this** thread. | The link |
+| `propose_tasks` | `parent?`, `tasks: [{title, body?, repos?}]` (1–20) | `add_task` as the agent, once per item, so every one starts as `proposed` | The proposed tasks |
+| `import_plan` | `plan_file`, `parent?`, `plan` (a tree: `key`, `title`, `body?`, `repos?`, `depends_on?`, `children?`) | Checks that `plan_file` exists, then calls `add_tasks` as `plan` and links the file to the plan's top-level tasks | `{created, existing, keys}` |
 
-- **Repos are named, not numbered,** in tool arguments (`"repo": "hub-ui"`). An unknown repo name is an error that lists the registered repos.
-- **There are no tools** to delete, move, edit titles, add dependencies outside a plan, accept proposals, or set PR state. Those are mine (the CLI, later the app) or belong to `sync`.
+- **Repos are named, not numbered,** in tool arguments and results (`"repos": ["hub-ui", "booking-api"]`). A task can have several. An unknown repo name is an error that lists the registered repos.
+- **There are no tools** to delete, move, edit titles, change a task's repos or branch, add dependencies outside a plan, accept proposals, or set PR state. Those are mine (the CLI, later the app) or belong to `sync`.
 - **Errors** come back as MCP tool errors with one sentence that tells the agent what to do next. For example:
   - `NotAllowed`: "Agents can't finish a task that has a PR; it finishes when the PR merges. Set it to in_review instead."
   - `NoteRequired`: "Say what you did in `note` when finishing a task."
@@ -121,17 +121,19 @@ Six tools, kept few on purpose: fewer tools means agents pick the right one more
 ## CLI (acts as `me`)
 
 ```
-airboss add "Fix booking typo" [--under 12] [--repo hub-ui] [--body "…"]
-airboss ls [--all]                    # the tree; --all includes done and dropped
-airboss show 12                       # task, links, history, what it waits on, run order
+airboss add "Fix booking typo" [--under 12] [--repo hub-ui]… [--body "…"]   # --repo again for more
+airboss ls [--all] [--ready]          # the tree; --all includes done and dropped
+airboss show 12                       # task, repos, branch, links, history, dependencies both ways, run order
 airboss set 12 doing|in_review|blocked|todo [--note "…"]
 airboss done 12 [--note "…"]
 airboss drop 12 [--note "…"]
 airboss accept 14 | airboss reject 15 [--note "…"]
-airboss edit 12 [--title "…"] [--body "…"] [--repo hub-ui]
+airboss edit 12 [--title "…"] [--body "…"]
+airboss repo link 12 hub-ui | airboss repo unlink 12 hub-ui
+airboss branch 12 booking-flow | airboss branch 12 --clear
 airboss mv 12 [--under 9 | --top] [--pos 2]
 airboss wait 12 --on 9 | airboss unwait 12 --on 9
-airboss link 12 pr owner/repo#42 [--url …]
+airboss link 12 pr owner/repo#42 [--url …] [--title …]
 airboss repo add hub-ui ~/Workspace/…/hub-ui [--remote …] | airboss repo ls
 airboss log [--after <event id>]      # recent history, newest last
 airboss mcp                           # the MCP server over stdio (agents only)
@@ -219,6 +221,17 @@ pub fn update_task(store: &mut Store, actor: &Actor, args: UpdateTask) -> Result
 
 - **Codex threads:** whether Codex passes `T3CODE_THREAD_ID` through to a stdio server. Its `mcp add` takes explicit `--env` variables, and the help doesn't say whether it inherits the thread's own environment. This gets checked in the first build task. If it doesn't, Codex threads set `AIRBOSS_THREAD` in their MCP config, and identity falls back as the table above says.
 - **Exact `rmcp` 3.11 calls** for a stdio server with `#[tool]` macros. Confirmed so far: the features exist (`server`, `macros`, `transport-io`). The rest gets checked against the crate's source and docs before the code is written.
+
+## v2 alignment (25 Nov 2026)
+
+`core` v2 landed before `mcp` was built. What changed here, and nothing else:
+
+- **Several repos per task.** Tool arguments take `repos`, a list of names, instead of `repo`. Results list a task's repos by name. Agents still can't change a task's repos.
+- **`get_task`** returns `dependencies` in both directions (from `dependencies(id)`) instead of `waits_on`, the task's `branch`, link titles, and the outside blockers in `run_order.waiting_outside`.
+- **`list_tasks`** takes `ready` (from `ready()`).
+- **`link`** takes `title`.
+- **CLI:** `airboss edit --repo` becomes `airboss repo link|unlink <task> <name>`, and `airboss branch <task> <name>` sets the branch (`--clear` clears it). `airboss add --repo` can be given more than once, and `airboss ls --ready` lists what can start now.
+- Still six tools.
 
 ## Open questions
 
