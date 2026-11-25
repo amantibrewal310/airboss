@@ -64,6 +64,12 @@ fn missing_gh_and_signed_out() {
     assert_eq!(c.read_accounts(now()), Err(GhOff::Missing));
     let mut c = GhClient::new(Box::new(FakeGh::new()));
     assert_eq!(c.read_accounts(now()), Err(GhOff::SignedOut));
+    let mut c = GhClient::new(Box::new(FakeGh::new().broken_account("old")));
+    assert_eq!(
+        c.read_accounts(now()),
+        Err(GhOff::SignedOut),
+        "no success account"
+    );
 }
 
 #[test]

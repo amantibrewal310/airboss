@@ -471,6 +471,11 @@ impl GhClient {
         &self.accounts
     }
 
+    /// Whether any account is signed in, as of the last read.
+    pub fn signed_in(&self) -> bool {
+        self.accounts.iter().any(|a| a.ok)
+    }
+
     /// When the accounts were last read.
     pub fn read_at(&self) -> Option<SystemTime> {
         self.read_at
@@ -491,7 +496,8 @@ impl GhClient {
         self.tokens
             .retain(|login, _| accounts.iter().any(|a| &a.login == login));
         self.accounts = accounts;
-        if self.accounts.is_empty() {
+        // No account in `success` state is the same as none at all.
+        if !self.accounts.iter().any(|a| a.ok) {
             return Err(GhOff::SignedOut);
         }
         Ok(())

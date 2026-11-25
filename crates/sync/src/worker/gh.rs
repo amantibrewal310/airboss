@@ -235,7 +235,7 @@ impl GhWorker {
         let client = self.client.clone();
         let mut client = lock_client(&client);
         let accounts_due = client.read_at().is_none_or(|t| now >= t + ACCOUNTS_EVERY);
-        if self.reread_accounts || accounts_due || client.accounts().is_empty() {
+        if self.reread_accounts || accounts_due || !client.signed_in() {
             self.reread_accounts = false;
             if let Err(off) = client.read_accounts(now) {
                 drop(client);

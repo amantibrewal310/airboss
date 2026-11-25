@@ -748,6 +748,17 @@ fn without_gh_pr_sync_is_off_and_nothing_else_changes() {
 }
 
 #[test]
+fn every_account_failing_is_signed_out_and_stays_off() {
+    let core = Core::new();
+    task_with_pr(&core, "acme/web#1");
+    let mut rig = Rig::new(core, FakeGh::new().broken_account("old"));
+    rig.first_pass();
+    rig.send(GhMsg::Tick, at(3 + FIVE_MIN));
+    let c = rig.github();
+    assert_eq!((c.ok, c.state.as_str()), (false, "Not signed in"));
+}
+
+#[test]
 fn signed_out_says_so() {
     let core = Core::new();
     task_with_pr(&core, "acme/web#1");

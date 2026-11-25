@@ -408,7 +408,7 @@ impl SyncService for Sync {
         }
         let mut client = worker::gh::lock_client(&self.client);
         let now = self.clock.now();
-        if client.accounts().is_empty() {
+        if !client.signed_in() {
             client.read_accounts(now).map_err(|off| match off {
                 GhOff::Missing => ServiceError::new(
                     ErrorCode::GhMissing,
