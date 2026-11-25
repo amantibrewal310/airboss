@@ -3,6 +3,7 @@
 //! Every other module reads and writes tasks only through [`Store`].
 //! See `SPEC-core.md` at the repo root for the rules enforced here.
 
+mod backup;
 mod db;
 mod delete;
 mod deps;

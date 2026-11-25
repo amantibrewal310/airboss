@@ -903,6 +903,33 @@ pub fn repo_rm(store: &mut Store, name: &str, json: bool) -> Result<String, Tool
     })
 }
 
+/// What `airboss backup --json` prints.
+#[derive(Serialize)]
+struct BackedUp {
+    path: String,
+}
+
+/// `airboss backup`: a consistent copy of the whole database, through SQLite's online backup.
+pub fn backup(store: &Store, to: &Path, force: bool, json: bool) -> Result<String, ToolError> {
+    let to = std::path::absolute(to)
+        .map_err(|e| ToolError::new(format!("Couldn't resolve {}: {e}", to.display())))?;
+    store.backup(&to, force).map_err(|e| match e {
+        Error::AlreadyExists => ToolError::new(format!(
+            "There's already a file at {}. Pick another path, or give --force to replace it.",
+            to.display()
+        )),
+        Error::InvalidTarget => {
+            ToolError::new("That's the database itself. Back it up to another path.")
+        }
+        e => ToolError::new(format!("Couldn't back up to {}: {e}", to.display())),
+    })?;
+    let path = to.display().to_string();
+    if json {
+        return to_json(&BackedUp { path });
+    }
+    Ok(format!("Backed up the database to {path}\n"))
+}
+
 /// `airboss repo link` and `repo unlink`.
 pub fn repo_link(
     store: &mut Store,

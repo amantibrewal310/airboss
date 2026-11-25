@@ -261,6 +261,19 @@ $ airboss log
 
 The actor column says who made each change: `me`, `agent:<thread>`, `sync:gh`, `sync:t3`, `plan` or `launch`.
 
+## Backup
+
+### `airboss backup <PATH> [--force]`
+
+Writes a copy of the whole database to `PATH`: tasks, history, links, and what sync, Do it and Needs me keep. It uses SQLite's online backup, so the copy is one consistent moment even while the app and agents are writing, and nobody has to stop. A file already at `PATH` is kept unless you give `--force`, and the database itself is never overwritten.
+
+```console
+$ airboss backup ~/Backups/airboss-2026-11-26.db
+Backed up the database to /Users/you/Backups/airboss-2026-11-26.db
+```
+
+To restore, quit Airboss, then copy the backup over `~/Library/Application Support/Airboss/airboss.db` and delete the `airboss.db-wal` and `airboss.db-shm` beside it. To look inside a backup without touching your tasks, point the CLI at it: `AIRBOSS_DB=~/Backups/airboss-2026-11-26.db airboss ls`.
+
 ## For agents
 
 ### `airboss mcp`

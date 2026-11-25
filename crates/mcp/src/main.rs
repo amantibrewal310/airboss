@@ -28,6 +28,7 @@ Examples:
   airboss ls
   airboss set 12 doing
   airboss accept 14
+  airboss backup ~/Backups/airboss.db
 
 Tasks live in ~/Library/Application Support/Airboss/airboss.db.
 Set AIRBOSS_DB to use another file.";
@@ -211,6 +212,16 @@ enum Command {
         /// Show every event after this event id instead of the last 50.
         #[arg(long, value_name = "EVENT")]
         after: Option<i64>,
+        #[command(flatten)]
+        out: Out,
+    },
+    /// Write a copy of the database to a file, safely, even while the app and agents use it.
+    Backup {
+        /// Where to write it, e.g. ~/Backups/airboss.db.
+        path: PathBuf,
+        /// Replace the file if there's one there already.
+        #[arg(long)]
+        force: bool,
         #[command(flatten)]
         out: Out,
     },
@@ -398,6 +409,7 @@ fn run(command: Command) -> Result<String, String> {
             cli::branch(store, id, name, out.json, style)
         }
         Command::Log { after, out } => cli::log(store, after, out.json, style),
+        Command::Backup { path, force, out } => cli::backup(store, &path, force, out.json),
         Command::Repo(repo) => match repo {
             RepoCommand::Add {
                 name,

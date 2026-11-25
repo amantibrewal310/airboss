@@ -314,6 +314,10 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
 32. **A database from a newer Airboss is refused.** When `schema_migrations` records a version of a module newer than the binary knows, `Store::open` (for `core`) and `migrate_module` (for that module) fail, and nothing is read or written. An open `Store` checks `core`'s version inside every write transaction too, so a long-running `airboss mcp` stops writing once a newer app has migrated the file.
     - The error is `Error::Db`, so callers that match every variant don't change, and `Error::is_newer_database()` recognises it. Its text is `NEWER_DATABASE`: "This database was created by a newer Airboss. Update the `airboss` command."
 
+34. **A backup is one consistent moment.** `backup(to, overwrite)` copies the whole file, every module's tables included, with SQLite's online backup in a single step, so it neither tears under another process's writes nor blocks them.
+    - It writes to a hidden file beside `to`, then renames it over `to`, so a failure leaves `to` as it was and nothing else behind.
+    - A file already at `to` is `Error::AlreadyExists` unless `overwrite`; then any `-wal` and `-shm` left beside the old file go too. The store's own file, however it's spelled, is always `Error::InvalidTarget`.
+
 ## API shape
 
 This is the public interface the other modules call. Exact signatures are settled during planning.
@@ -328,6 +332,7 @@ impl Store {
     pub fn subscribe(&mut self) -> Receiver<Vec<EventId>>;
     pub fn data_version(&self) -> Result<i64>;          // changes when ANOTHER connection commits
     pub fn migrate_module(&mut self, module: &str, migrations: &[Migration]) -> Result<()>;  // "core": InvalidTarget
+    pub fn backup(&self, to: &Path, overwrite: bool) -> Result<()>;  // rule 34
 
     // repos
     pub fn add_repo(&mut self, name: &str, path: &Path, remote: Option<&str>, actor: &Actor) -> Result<Repo>;
@@ -607,6 +612,14 @@ The final audit of `main` found gaps that need `core`. They're folded into the r
 1. **A newer database is refused** (rule 32). An older `airboss mcp`, still running after an update, wrote a PR ref the newer app never matched.
 2. **One place for the database path.** `default_db_path()` and `DB_VAR` replace the CLI's and the app's own copies. With no `HOME` the CLI errored while the app used a relative path; now both get the same error.
 3. **Repos can be edited and removed** (rules 8 and 33). A wrong first-run folder or a moved checkout needed SQLite to fix.
+4. **Backup.** `backup(to, overwrite)`, through `rusqlite`'s `backup` feature (rule 34), for `airboss backup`.
+
+**Success criteria for v4:**
+
+- [x] A file with a newer `core` or module migration is refused at open, and an open store refuses writes once a newer Airboss migrates the file (`a_database_a_newer_airboss_migrated_is_refused_and_left_alone`, `an_open_store_refuses_writes_once_a_newer_airboss_migrated_the_file`).
+- [x] `default_db_path` honours `AIRBOSS_DB`, and with no `HOME` is an error, never a relative path.
+- [x] `edit_repo` and `remove_repo` are `me`'s only; removing writes one `repo_unlinked` event per task and is all or nothing.
+- [x] A backup opens as the same tasks and history, leaves out uncommitted writes, keeps an existing file unless told, and never targets the database itself.
 
 ## Open questions
 

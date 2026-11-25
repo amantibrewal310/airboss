@@ -745,3 +745,34 @@ fn with_no_home_and_no_airboss_db_it_says_what_to_set() {
         "no file anywhere"
     );
 }
+
+#[test]
+fn backup_writes_a_copy_and_keeps_an_existing_file_unless_forced() {
+    let dir = TempDir::new();
+    let db = dir.db();
+    seed(&db);
+    let copy = dir.0.join("backup.db");
+    let copy_text = copy.to_str().unwrap();
+    assert_eq!(
+        ok(&db, &["backup", copy_text]),
+        format!("Backed up the database to {copy_text}\n")
+    );
+    assert_eq!(ok(&copy, &["ls", "--all"]), ok(&db, &["ls", "--all"]));
+    assert_eq!(
+        fails(&db, &["backup", copy_text]),
+        format!(
+            "There's already a file at {copy_text}. Pick another path, or give --force to \
+             replace it."
+        )
+    );
+    ok(&db, &["add", "Later"]);
+    assert_eq!(
+        json(&db, &["backup", copy_text, "--force"])["path"],
+        copy_text
+    );
+    assert_eq!(ok(&copy, &["ls"]), ok(&db, &["ls"]));
+    assert_eq!(
+        fails(&db, &["backup", db.to_str().unwrap(), "--force"]),
+        "That's the database itself. Back it up to another path."
+    );
+}

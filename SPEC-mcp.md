@@ -139,6 +139,7 @@ airboss repo add hub-ui ~/Workspace/…/hub-ui [--remote …] | airboss repo ls
 airboss repo edit hub-ui [--name …] [--path …] [--remote … | --no-remote]
 airboss repo rm hub-ui                # unlinks it from its tasks first
 airboss log [--after <event id>]      # recent history, newest last
+airboss backup ~/Backups/airboss.db [--force]   # a consistent copy, while everything runs
 airboss mcp                           # the MCP server over stdio (agents only)
 ```
 
