@@ -328,3 +328,162 @@ fn links_of_kind_lists_every_tasks_links_of_that_kind_by_id() {
     assert_eq!(threads[0].task, a);
     assert!(s.links_of_kind(LinkKind::Slack).unwrap().is_empty());
 }
+
+// Rule 29: a PR has one ref, lowercase `owner/repo#n`, whichever form it came in.
+
+#[test]
+fn a_pr_ref_in_mixed_case_is_stored_in_lowercase() {
+    let mut s = store();
+    let t = task(&mut s, "Booking");
+    let link = s.link(t, NewLink::pr("Acme/Web#42"), &Actor::Me).unwrap();
+    assert_eq!(link.r#ref, "acme/web#42");
+    let last = s.history(t).unwrap().pop().unwrap();
+    assert_eq!(last.body.as_deref(), Some("pr acme/web#42"));
+}
+
+#[test]
+fn a_pr_url_is_stored_as_its_ref() {
+    for url in [
+        "https://github.com/Acme/Web/pull/12",
+        "https://github.com/acme/web/pull/12/",
+        "https://github.com/acme/web/pull/12/files",
+        "https://github.com/acme/web/pull/12/commits/4f2a9c1?w=1",
+        "https://github.com/acme/web/pull/12#discussion_r123",
+        "HTTPS://GitHub.com/ACME/web/pull/12?tab=checks#top",
+        "  https://github.com/acme/web/pull/12  ",
+        "acme/web#012",
+    ] {
+        let mut s = store();
+        let t = task(&mut s, "Booking");
+        let link = s.link(t, NewLink::pr(url), &Actor::Me).unwrap();
+        assert_eq!(link.r#ref, "acme/web#12", "{url}");
+    }
+}
+
+#[test]
+fn the_same_pr_in_two_forms_is_one_link() {
+    let mut s = store();
+    let t = task(&mut s, "Booking");
+    let first = s
+        .link(
+            t,
+            NewLink::pr("https://github.com/Acme/Web/pull/12/files"),
+            &Actor::Me,
+        )
+        .unwrap();
+    let again = s.link(t, NewLink::pr("ACME/web#12"), &Actor::Me).unwrap();
+    assert_eq!(again, first);
+    assert_eq!(s.links(t).unwrap().len(), 1);
+    assert_eq!(kinds(&s, t), vec![EventKind::Created, EventKind::Linked]);
+}
+
+#[test]
+fn set_pr_state_and_tasks_for_link_accept_either_form() {
+    let mut s = store();
+    let t = task(&mut s, "Booking");
+    s.link(t, NewLink::pr("acme/web#12"), &Actor::Me).unwrap();
+    assert_eq!(
+        s.tasks_for_link(LinkKind::Pr, "https://github.com/ACME/Web/pull/12")
+            .unwrap(),
+        vec![t]
+    );
+    assert_eq!(
+        s.tasks_for_link(LinkKind::Pr, "Acme/Web#12").unwrap(),
+        vec![t]
+    );
+    let changed = s
+        .set_pr_state(
+            "https://github.com/Acme/web/pull/12?x=1",
+            PrState::Merged,
+            &Actor::SyncGh,
+        )
+        .unwrap();
+    assert_eq!(changed, vec![t]);
+    assert_eq!(s.links(t).unwrap()[0].pr_state, Some(PrState::Merged));
+    let last = s.history(t).unwrap().pop().unwrap();
+    assert_eq!(last.body.as_deref(), Some("acme/web#12 merged"));
+}
+
+const MALFORMED_PR_REFS: &[&str] = &[
+    "",
+    "   ",
+    "acme/web",
+    "acme#12",
+    "acme/web#",
+    "acme/web#0",
+    "acme/web#-3",
+    "acme/web#12a",
+    "acme/web#1 2",
+    "acme/web#99999999999999999999999",
+    "acme web/site#1",
+    "acme/we@b#1",
+    "acme/web/extra#1",
+    "/web#1",
+    "acme/#1",
+    "../web#1",
+    "acme/..#1",
+    "acme/.#1",
+    "https://github.com/acme/web/issues/12",
+    "https://github.com/acme/web/pull/",
+    "https://github.com/acme/web/pull/x",
+    "https://github.com/acme/web",
+    "https://github.com/acme/web/pull/12abc",
+    "https://gitlab.com/acme/web/pull/12",
+    "http://github.com/acme/web/pull/12",
+    "https://github.com.evil.example/acme/web/pull/12",
+    "github.com/acme/web/pull/12",
+];
+
+#[test]
+fn a_malformed_pr_ref_is_refused_and_nothing_is_written() {
+    let mut s = store();
+    let t = task(&mut s, "Booking");
+    for bad in MALFORMED_PR_REFS {
+        let err = s.link(t, NewLink::pr(*bad), &Actor::Me).unwrap_err();
+        assert!(matches!(err, Error::InvalidTarget), "{bad:?}: {err:?}");
+        let err = s
+            .set_pr_state(bad, PrState::Merged, &Actor::SyncGh)
+            .unwrap_err();
+        assert!(matches!(err, Error::InvalidTarget), "{bad:?}: {err:?}");
+        let err = s.tasks_for_link(LinkKind::Pr, bad).unwrap_err();
+        assert!(matches!(err, Error::InvalidTarget), "{bad:?}: {err:?}");
+    }
+    assert!(s.links(t).unwrap().is_empty());
+    assert_eq!(kinds(&s, t), vec![EventKind::Created]);
+}
+
+#[test]
+fn a_refused_actor_is_told_so_before_its_ref_is_checked() {
+    let mut s = store();
+    let err = s
+        .set_pr_state("not a ref", PrState::Merged, &agent("t3/a"))
+        .unwrap_err();
+    assert!(matches!(err, Error::NotAllowed), "{err:?}");
+}
+
+#[test]
+fn other_link_kinds_keep_their_ref_as_given() {
+    let mut s = store();
+    let t = task(&mut s, "Booking");
+    let issue = s
+        .link(
+            t,
+            NewLink::new(LinkKind::GithubIssue, "Acme/Web#7"),
+            &Actor::Me,
+        )
+        .unwrap();
+    let doc = s
+        .link(
+            t,
+            NewLink::new(LinkKind::Doc, "Docs/Booking-Flow.md"),
+            &Actor::Me,
+        )
+        .unwrap();
+    assert_eq!(issue.r#ref, "Acme/Web#7");
+    assert_eq!(doc.r#ref, "Docs/Booking-Flow.md");
+    assert_eq!(
+        s.tasks_for_link(LinkKind::Doc, "Docs/Booking-Flow.md")
+            .unwrap(),
+        vec![t]
+    );
+}

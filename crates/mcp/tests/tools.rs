@@ -1054,3 +1054,31 @@ fn import_plan_names_an_unknown_repo() {
         "There's no repo named \"web\". No repos are registered yet; leave `repos` out."
     );
 }
+
+#[test]
+fn link_with_a_malformed_pr_ref_says_what_a_pr_ref_looks_like() {
+    let mut s = store();
+    let id = add(&mut s, "work");
+    let args = Link {
+        r#ref: Some("acme/web/42".into()),
+        ..link_args(id, LinkKindName::Pr)
+    };
+    let err = tools::link(&mut s, &t3(), args).unwrap_err().to_string();
+    assert!(err.contains("owner/repo#42"), "{err}");
+    assert!(
+        err.contains("https://github.com/owner/repo/pull/42"),
+        "{err}"
+    );
+}
+
+#[test]
+fn link_takes_a_pr_url_and_reports_the_canonical_ref() {
+    let mut s = store();
+    let id = add(&mut s, "work");
+    let args = Link {
+        r#ref: Some("https://github.com/Acme/Web/pull/42/files".into()),
+        ..link_args(id, LinkKindName::Pr)
+    };
+    let got = tools::link(&mut s, &t3(), args).unwrap();
+    assert_eq!(got.r#ref, "acme/web#42");
+}

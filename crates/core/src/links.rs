@@ -86,16 +86,79 @@ fn get(conn: &Connection, id: LinkId) -> Result<Link> {
     .ok_or(Error::NotFound)
 }
 
+/// The one form a PR ref is stored and compared in (rule 29): lowercase `owner/repo#n`,
+/// from either that form in any case or a GitHub PR URL, which may go on with a path, a
+/// query or a fragment. Anything else is `Error::InvalidTarget`.
+pub(crate) fn canonical_pr_ref(input: &str) -> Result<String> {
+    const GITHUB: &str = "https://github.com/";
+    let input = input.trim();
+    let url_path = input
+        .get(..GITHUB.len())
+        .filter(|start| start.eq_ignore_ascii_case(GITHUB))
+        .map(|_| &input[GITHUB.len()..]);
+    let (owner, repo, number) = match url_path {
+        Some(rest) => {
+            // `split` always yields at least one piece.
+            let path = rest.split(['?', '#']).next().unwrap_or_default();
+            let mut parts = path.split('/');
+            match (parts.next(), parts.next(), parts.next(), parts.next()) {
+                (Some(owner), Some(repo), Some(pull), Some(n))
+                    if pull.eq_ignore_ascii_case("pull") =>
+                {
+                    (owner, repo, n)
+                }
+                _ => return Err(Error::InvalidTarget),
+            }
+        }
+        None => {
+            let (path, n) = input.split_once('#').ok_or(Error::InvalidTarget)?;
+            let (owner, repo) = path.split_once('/').ok_or(Error::InvalidTarget)?;
+            (owner, repo, n)
+        }
+    };
+    let name_ok = |name: &str| {
+        !name.is_empty()
+            && name != "."
+            && name != ".."
+            && name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    };
+    let number: u64 = match number {
+        n if !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()) => {
+            n.parse().map_err(|_| Error::InvalidTarget)?
+        }
+        _ => return Err(Error::InvalidTarget),
+    };
+    if !name_ok(owner) || !name_ok(repo) || number == 0 {
+        return Err(Error::InvalidTarget);
+    }
+    Ok(format!(
+        "{}/{}#{number}",
+        owner.to_ascii_lowercase(),
+        repo.to_ascii_lowercase()
+    ))
+}
+
+/// A link's ref as stored: canonical for PRs (rule 29), as given for everything else.
+fn stored_ref(kind: LinkKind, r#ref: &str) -> Result<String> {
+    match kind {
+        LinkKind::Pr => canonical_pr_ref(r#ref),
+        _ => Ok(r#ref.to_string()),
+    }
+}
+
 /// Attaches `new` to the task, or returns the link that's already there (no event).
 pub(crate) fn link(tx: &mut Tx<'_>, task: TaskId, new: NewLink, actor: &Actor) -> Result<Link> {
     allowed(Call::Link, actor)?;
+    let r#ref = stored_ref(new.kind, &new.r#ref)?;
     ensure_exists(tx, task)?;
     let existing = tx
         .query_row(
             &format!(
                 "SELECT {LINK_COLUMNS} FROM links WHERE task_id = ?1 AND kind = ?2 AND ref = ?3"
             ),
-            params![task.0, new.kind.as_str(), new.r#ref],
+            params![task.0, new.kind.as_str(), r#ref],
             from_row,
         )
         .optional()?;
@@ -118,7 +181,7 @@ pub(crate) fn link(tx: &mut Tx<'_>, task: TaskId, new: NewLink, actor: &Actor) -
         params![
             task.0,
             new.kind.as_str(),
-            new.r#ref,
+            r#ref,
             new.url,
             pr_state.map(PrState::as_str),
             title,
@@ -127,7 +190,7 @@ pub(crate) fn link(tx: &mut Tx<'_>, task: TaskId, new: NewLink, actor: &Actor) -
     )?;
     let id = LinkId(tx.last_insert_rowid());
     fault::hit(fault::LINK_INSERTED)?;
-    let body = format!("{} {}", new.kind, new.r#ref);
+    let body = format!("{} {}", new.kind, r#ref);
     events::record(tx, task, EventKind::Linked, None, Some(&body), actor)?;
     // Rule 7: code can't stay done while an open PR someone else just linked is unreviewed.
     if new.kind == LinkKind::Pr
@@ -135,7 +198,7 @@ pub(crate) fn link(tx: &mut Tx<'_>, task: TaskId, new: NewLink, actor: &Actor) -
         && *actor != Actor::Me
         && crate::tasks::get(tx, task)?.status == Status::Done
     {
-        let why = format!("reopened: PR {} linked after done", new.r#ref);
+        let why = format!("reopened: PR {ref} linked after done", ref = r#ref);
         status::apply(tx, task, Status::InReview, Some(&why), actor)?;
     }
     get(tx, id)
@@ -164,6 +227,7 @@ pub(crate) fn set_pr_state(
     actor: &Actor,
 ) -> Result<Vec<TaskId>> {
     allowed(Call::SetPrState, actor)?;
+    let pr_ref = &canonical_pr_ref(pr_ref)?;
     let tasks = query_all(
         tx,
         "SELECT task_id FROM links WHERE kind = 'pr' AND ref = ?1 AND pr_state <> ?2
@@ -206,7 +270,7 @@ pub(crate) fn tasks_for_link(
     query_all(
         conn,
         "SELECT task_id FROM links WHERE kind = ?1 AND ref = ?2 ORDER BY task_id",
-        params![kind.as_str(), r#ref],
+        params![kind.as_str(), stored_ref(kind, r#ref)?],
         |r| r.get(0).map(TaskId),
     )
 }

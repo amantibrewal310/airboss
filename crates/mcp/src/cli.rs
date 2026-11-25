@@ -10,8 +10,8 @@ use std::io::Write as _;
 use std::path::Path;
 
 use airboss_core::{
-    Actor, Event, EventId, EventKind, NewLink, NewTask, Repo, Status, Store, TaskEdit, TaskId,
-    TaskNode,
+    Actor, Error, Event, EventId, EventKind, LinkKind, NewLink, NewTask, Repo, Status, Store,
+    TaskEdit, TaskId, TaskNode,
 };
 use serde::Serialize;
 
@@ -780,9 +780,11 @@ pub fn link(
     style: Style,
 ) -> Result<String, ToolError> {
     let id = TaskId(id);
-    let link = store
-        .link(id, new, ME)
-        .map_err(fail(store, Subject::task(id)))?;
+    let is_pr = new.kind == LinkKind::Pr;
+    let link = store.link(id, new, ME).map_err(|e| match e {
+        Error::InvalidTarget if is_pr => ToolError::bad_pr_ref(),
+        e => explain(store, ME, e, &Subject::task(id)),
+    })?;
     if json {
         return to_json(&LinkView::from(link));
     }

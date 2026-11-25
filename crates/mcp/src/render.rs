@@ -262,6 +262,14 @@ impl ToolError {
         ToolError(message.into())
     }
 
+    /// `core` refused a PR ref (core rule 29): say what one looks like.
+    pub fn bad_pr_ref() -> ToolError {
+        ToolError::new(
+            "A PR is owner/repo#42 or its GitHub URL, like \
+             https://github.com/owner/repo/pull/42.",
+        )
+    }
+
     /// A `core` error with nothing more known about the call; prefer [`explain`].
     pub fn from_core(err: Error) -> ToolError {
         ToolError(message(&err, &Facts::default()))

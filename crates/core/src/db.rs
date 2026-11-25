@@ -38,10 +38,16 @@ fn check_module_migrations(module: &str, migrations: &[Migration]) -> Result<()>
 }
 
 /// `core`'s migrations, oldest first. Never edit a shipped one; add a new version.
-const CORE_MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    sql: include_str!("migrations/001_core.sql"),
-}];
+const CORE_MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        sql: include_str!("migrations/001_core.sql"),
+    },
+    Migration {
+        version: 2,
+        sql: include_str!("migrations/002_pr_refs.sql"),
+    },
+];
 
 const CREATE_SCHEMA_MIGRATIONS: &str = "
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -168,6 +174,49 @@ mod tests {
         }
     }
 
+    /// `core`'s newest migration: every core migration, applied once.
+    const CORE_VERSION: i64 = 2;
+
+    #[test]
+    fn migration_2_puts_stored_pr_refs_in_one_form() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        migrate(&mut conn, "core", &CORE_MIGRATIONS[..1]).unwrap();
+        conn.execute_batch(
+            "INSERT INTO tasks (title, position, origin) VALUES ('one', 1, 'me'), ('two', 2, 'me'),
+                                                                ('three', 3, 'me');
+             INSERT INTO links (task_id, kind, ref, pr_state, linked_by) VALUES
+               (1, 'pr', 'Acme/Web#1', 'open', 'me'),
+               (2, 'pr', 'Acme/Web#2', 'merged', 'me'),
+               (2, 'pr', 'acme/web#2', 'open', 'me'),
+               (3, 'pr', 'https://github.com/A/B/pull/3', 'open', 'me');
+             INSERT INTO links (task_id, kind, ref, linked_by) VALUES (1, 'doc', 'Notes.md', 'me');",
+        )
+        .unwrap();
+        migrate(&mut conn, "core", CORE_MIGRATIONS).unwrap();
+        assert_eq!(core_version(&conn), CORE_VERSION);
+
+        let rows: Vec<(i64, String, Option<String>)> = conn
+            .prepare("SELECT task_id, ref, pr_state FROM links ORDER BY task_id, id")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        let open = Some("open".to_string());
+        assert_eq!(
+            rows,
+            vec![
+                (1, "acme/web#1".into(), open.clone()),
+                (1, "Notes.md".into(), None),
+                // The lowercase twin stays, with its own state.
+                (2, "acme/web#2".into(), open.clone()),
+                // Never valid; left as it was.
+                (3, "https://github.com/A/B/pull/3".into(), open),
+            ]
+        );
+    }
+
     fn core_version(conn: &Connection) -> i64 {
         conn.query_row(
             "SELECT max(version) FROM schema_migrations WHERE module = 'core'",
@@ -214,7 +263,7 @@ mod tests {
         ] {
             assert!(names.iter().any(|n| n == expected), "missing {expected}");
         }
-        assert_eq!(core_version(&conn), 1);
+        assert_eq!(core_version(&conn), CORE_VERSION);
     }
 
     #[test]
@@ -233,7 +282,7 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(rows, 1);
+        assert_eq!(rows, CORE_VERSION);
         let repos: i64 = conn
             .query_row("SELECT count(*) FROM repos", [], |r| r.get(0))
             .unwrap();
@@ -262,7 +311,7 @@ mod tests {
             migrate(&mut conn, "sync", &sync).unwrap();
         }
         let conn = open_file(&path).unwrap();
-        assert_eq!(core_version(&conn), 1);
+        assert_eq!(core_version(&conn), CORE_VERSION);
         let sync_rows: i64 = conn
             .query_row(
                 "SELECT count(*) FROM schema_migrations WHERE module = 'sync'",
@@ -318,7 +367,7 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(rows, 1);
+        assert_eq!(rows, CORE_VERSION);
     }
 
     /// The 10 constraint checks from the spec's schema test, in Rust.

@@ -63,6 +63,7 @@ crates/core/
   src/lib.rs               Public API: Store and its types
   src/db.rs                Opening, settings, migrations
   src/migrations/001_core.sql
+  src/migrations/002_pr_refs.sql   PR refs already stored, in the canonical form
   src/tasks.rs             Add, edit, move, delete, tree
   src/repos.rs             Repos, and the repos each task links to
   src/status.rs            Status changes and who may make them
