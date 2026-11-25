@@ -12,6 +12,8 @@ path = "src/main.rs"
 
 [dependencies]
 airboss-core = { path = "../core" }
+serde = { version = "1.0.229", features = ["derive"] }
+schemars = "1.2.3"
 clap = { version = "4.6.10", features = ["derive"] }
 
 [lints]

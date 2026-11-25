@@ -5,3 +5,5 @@
 //! See `SPEC-mcp.md` at the repo root.
 
 pub mod identity;
+pub mod render;
+pub mod tools;
