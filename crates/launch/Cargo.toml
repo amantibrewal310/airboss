@@ -8,7 +8,10 @@ description = "Do it and Plan it for Airboss: starts T3 threads for tasks, once 
 
 [dependencies]
 airboss-core = { path = "../core" }
+airboss-services = { path = "../services" }
 rusqlite = { version = "0.43.0", features = ["bundled"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
 
 [lints]
 workspace = true

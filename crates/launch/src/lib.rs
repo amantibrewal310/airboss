@@ -8,7 +8,11 @@
 pub mod branch;
 pub mod brief;
 mod db;
+#[allow(dead_code)] // The start loop uses the rest; removed once it lands.
+mod errors;
 mod process;
+pub mod t3cli;
 
 pub use db::MIGRATIONS;
+pub use errors::T3_MISSING;
 pub use process::{CmdOutput, ProcessRunner, REMOVED_VARS, child_env};

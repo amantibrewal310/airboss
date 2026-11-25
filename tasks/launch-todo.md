@@ -43,7 +43,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
   - **Files:** `src/brief.rs`, `tests/briefs.rs`, `tests/golden/*`
   - **Depends on:** T1
 
-- [ ] **T5. `t3` argv and answers** (S)
+- [x] **T5. `t3` argv and answers** (S)
   - **Description:** `t3cli.rs` and `errors.rs`: argv for Do it, Plan it, research only and `project add`; titles; reading the JSON answer; mapping stderr to `ErrorCode`s and whether a row stays pending.
   - **Acceptance:** every stderr row of the spec's table; exit 127 and a missing binary; a timeout; non-JSON stdout; a kill by signal.
   - **Verify:** unit tests in `src/t3cli.rs`.
@@ -52,7 +52,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
 
 ### Checkpoint 1
 
-- [ ] The pure pieces are tested; clippy and fmt are clean.
+- [x] The pure pieces are tested; clippy and fmt are clean.
 
 ## Phase 2: Starting threads
 

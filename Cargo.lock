@@ -16,7 +16,10 @@ name = "airboss-launch"
 version = "0.1.0"
 dependencies = [
  "airboss-core",
+ "airboss-services",
  "rusqlite",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
