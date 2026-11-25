@@ -4,7 +4,8 @@
 use std::path::Path;
 
 use airboss_core::{
-    Actor, Error, EventKind, NewTask, Origin, RepoId, Status, Store, TaskEdit, TaskId,
+    Actor, Error, EventKind, LinkKind, NewLink, NewTask, Origin, PrState, RepoId, Status, Store,
+    TaskEdit, TaskId,
 };
 
 fn store() -> Store {
@@ -325,4 +326,50 @@ fn a_note_on_a_missing_task_is_not_found() {
     let mut s = store();
     let err = s.add_note(TaskId(3), "hi", &Actor::Me).unwrap_err();
     assert!(matches!(err, Error::NotFound), "{err:?}");
+}
+
+// Rule 8, `unlink` and `set_pr_state`: one test per "no".
+
+#[test]
+fn plan_sync_and_launch_cannot_unlink() {
+    let mut s = store();
+    let t = s.add_task(NewTask::new("x"), &Actor::Me).unwrap();
+    for actor in [Actor::Plan, Actor::SyncGh, Actor::SyncT3, Actor::Launch] {
+        let link = s
+            .link(
+                t.id,
+                NewLink::new(LinkKind::Doc, format!("{actor}.md")),
+                &actor,
+            )
+            .unwrap();
+        let err = s.unlink(link.id, &actor).unwrap_err();
+        assert!(matches!(err, Error::NotAllowed), "{actor}: {err:?}");
+    }
+    assert_eq!(s.links(t.id).unwrap().len(), 4);
+}
+
+#[test]
+fn an_agent_cannot_unlink_a_link_it_did_not_add() {
+    let mut s = store();
+    let t = s.add_task(NewTask::new("x"), &Actor::Me).unwrap();
+    let link = s.link(t.id, NewLink::pr("acme/web#1"), &Actor::Me).unwrap();
+    let err = s.unlink(link.id, &agent()).unwrap_err();
+    assert!(matches!(err, Error::NotAllowed), "{err:?}");
+}
+
+#[test]
+fn only_me_and_sync_gh_set_pr_state() {
+    let mut s = store();
+    let t = s.add_task(NewTask::new("x"), &Actor::Me).unwrap();
+    s.link(t.id, NewLink::pr("acme/web#1"), &Actor::Me).unwrap();
+    for actor in [agent(), Actor::Plan, Actor::SyncT3, Actor::Launch] {
+        let err = s
+            .set_pr_state("acme/web#1", PrState::Merged, &actor)
+            .unwrap_err();
+        assert!(matches!(err, Error::NotAllowed), "{actor}: {err:?}");
+    }
+    assert_eq!(s.links(t.id).unwrap()[0].pr_state, Some(PrState::Open));
+    s.set_pr_state("acme/web#1", PrState::Merged, &Actor::Me)
+        .unwrap();
+    assert_eq!(s.links(t.id).unwrap()[0].pr_state, Some(PrState::Merged));
 }
