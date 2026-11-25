@@ -200,8 +200,10 @@ impl Hub {
         let parts = lock(&self.parts);
         let mut rows = vec![github_row(&parts.prs), t3_row(&parts.threads)];
         if parts.threads.claude.state == HealthState::Broken {
+            // "Claude Code", as the app names it everywhere; its "Agents" row is the airboss
+            // command, and rows with one name merge.
             rows.push(Connection {
-                name: "Agents".into(),
+                name: "Claude Code".into(),
                 ok: false,
                 state: "Sessions can't be read".into(),
                 detail: "Shows Claude Code sessions run outside T3.".into(),
