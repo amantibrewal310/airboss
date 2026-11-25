@@ -856,9 +856,10 @@ pub fn branch(
     style: Style,
 ) -> Result<String, ToolError> {
     let id = TaskId(id);
-    let task = store
-        .set_branch(id, name, ME)
-        .map_err(fail(store, Subject::task(id)))?;
+    let task = store.set_branch(id, name, ME).map_err(|e| match e {
+        Error::InvalidTarget => ToolError::bad_branch(),
+        e => explain(store, ME, e, &Subject::task(id)),
+    })?;
     let t = TaskView::new(task, &RepoNames::load(store)?);
     done_with(&t, json, |t| match &t.branch {
         Some(b) => format!("{} is on branch {b}", task_line(style, t)),

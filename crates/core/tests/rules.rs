@@ -731,3 +731,67 @@ fn setting_the_branch_of_a_missing_task_is_not_found() {
     let err = s.set_branch(TaskId(4), Some("b"), &Actor::Me).unwrap_err();
     assert!(matches!(err, Error::NotFound), "{err:?}");
 }
+
+// Rule 25: a branch name `git` and `t3` can't misread.
+
+#[test]
+fn branch_names_git_accepts_are_kept() {
+    let mut s = store();
+    let t = s.add_task(NewTask::new("x"), &Actor::Me).unwrap();
+    let longest = "b".repeat(200);
+    for name in [
+        "booking-flow",
+        "feature/booking_v2.1",
+        "Release/2026.11",
+        "a",
+        "x.locked",
+        longest.as_str(),
+    ] {
+        let got = s.set_branch(t.id, Some(name), &Actor::Launch).unwrap();
+        assert_eq!(got.branch.as_deref(), Some(name));
+    }
+}
+
+#[test]
+fn branch_names_git_could_misread_are_refused_and_nothing_is_written() {
+    let mut s = store();
+    let t = s.add_task(NewTask::new("x"), &Actor::Me).unwrap();
+    s.set_branch(t.id, Some("keep"), &Actor::Me).unwrap();
+    let too_long = "b".repeat(201);
+    for bad in [
+        "has space",
+        "tab\there",
+        "a..b",
+        "..",
+        "-x",
+        "--force",
+        "/x",
+        "x/",
+        "x.lock",
+        "feature/x.lock",
+        "ünïcode",
+        "a~b",
+        "a^b",
+        "a:b",
+        "a@{1}",
+        "a*b",
+        "a?b",
+        "a[b",
+        "a\\b",
+        "new\nline",
+        too_long.as_str(),
+    ] {
+        let err = s.set_branch(t.id, Some(bad), &Actor::Me).unwrap_err();
+        assert!(matches!(err, Error::InvalidTarget), "{bad:?}: {err:?}");
+    }
+    assert_eq!(s.task(t.id).unwrap().branch.as_deref(), Some("keep"));
+    assert_eq!(s.history(t.id).unwrap().len(), 2);
+}
+
+#[test]
+fn a_refused_actor_is_told_so_before_its_branch_name_is_checked() {
+    let mut s = store();
+    let t = s.add_task(NewTask::new("x"), &Actor::Me).unwrap();
+    let err = s.set_branch(t.id, Some("--force"), &agent()).unwrap_err();
+    assert!(matches!(err, Error::NotAllowed), "{err:?}");
+}
