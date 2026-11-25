@@ -226,6 +226,7 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
     - A dependency between tasks deeper down counts as a dependency between their top-level ancestors under that parent. For example, if a step in Phase 2 waits on a step in Phase 1, Phase 2 waits on Phase 1.
     - Kahn's algorithm makes the waves: wave 1 is every open subtask that waits on nothing under the parent, wave 2 is everything that waits only on wave 1, and so on. Within a wave, tasks keep their sibling order.
     - A subtask that also waits on an open task outside the parent goes in a separate `waiting_outside` group at the end, not in a wave.
+    - Lifting can make subtasks wait on each other in a loop even when their steps don't, for example when Phase 1 and Phase 2 each have a step waiting on the other phase. Kahn's algorithm can't place those subtasks, or anything waiting on them; these go in a `tangled` group, so the rest of the order still shows. They keep their sibling order.
     - `done` and `dropped` subtasks are left out.
     - Run order is only shown. Nothing starts by itself.
 
@@ -286,7 +287,7 @@ impl Store {
     pub fn remove_dependency(&mut self, task: TaskId, waits_on: TaskId, actor: &Actor) -> Result<()>;
     pub fn waits_on(&self, id: TaskId) -> Result<Vec<Task>>;   // its open blockers
     pub fn ready(&self) -> Result<Vec<Task>>;                  // `todo`, no open blockers
-    pub fn run_order(&self, parent: TaskId) -> Result<RunOrder>;  // { waves, waiting_outside }
+    pub fn run_order(&self, parent: TaskId) -> Result<RunOrder>;  // { waves, waiting_outside, tangled }
 }
 
 pub struct PlanTask { key: String, title: String, body: Option<String>, repo: Option<RepoId>,

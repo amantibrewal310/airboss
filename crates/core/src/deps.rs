@@ -42,8 +42,8 @@ impl crate::Store {
             .collect())
     }
 
-    /// The waves `parent`'s open subtasks can run in (rule 18); `Error::Loop` if lifting
-    /// deeper dependencies up to the subtasks makes them wait on each other in a loop.
+    /// The waves `parent`'s open subtasks can run in (rule 18). Subtasks that lifting
+    /// deeper dependencies tangles into a loop go in `tangled`, after the waves.
     pub fn run_order(&self, parent: TaskId) -> Result<RunOrder> {
         run_order(&self.conn, parent)
     }
@@ -267,9 +267,7 @@ fn run_order(conn: &Connection, parent: TaskId) -> Result<RunOrder> {
     // Kahn's algorithm, one wave at a time; sorting indexes keeps sibling order.
     let mut waves: Vec<Vec<usize>> = Vec::new();
     let mut wave: Vec<usize> = (0..n).filter(|&i| waits_for[i] == 0).collect();
-    let mut placed = 0;
     while !wave.is_empty() {
-        placed += wave.len();
         let mut next = Vec::new();
         for &y in &wave {
             for &x in &unblocks[y] {
@@ -283,8 +281,10 @@ fn run_order(conn: &Connection, parent: TaskId) -> Result<RunOrder> {
         waves.push(wave);
         wave = next;
     }
-    if placed < n {
-        return Err(Error::Loop);
+    // Whatever Kahn's algorithm couldn't place waits, through lifting, on a loop.
+    let mut tangled = vec![true; n];
+    for &i in waves.iter().flatten() {
+        tangled[i] = false;
     }
 
     // Waiting on a subtask that waits outside is waiting outside too. Waves are in
@@ -298,7 +298,7 @@ fn run_order(conn: &Connection, parent: TaskId) -> Result<RunOrder> {
     }
     let pick = |ids: &[usize], want_outside: bool| -> Vec<Task> {
         ids.iter()
-            .filter(|&&i| outside[i] == want_outside)
+            .filter(|&&i| !tangled[i] && outside[i] == want_outside)
             .map(|&i| children[i].clone())
             .collect()
     };
@@ -309,6 +309,10 @@ fn run_order(conn: &Connection, parent: TaskId) -> Result<RunOrder> {
             .filter(|w| !w.is_empty())
             .collect(),
         waiting_outside: pick(&(0..n).collect::<Vec<_>>(), true),
+        tangled: (0..n)
+            .filter(|&i| tangled[i])
+            .map(|i| children[i].clone())
+            .collect(),
     })
 }
 
