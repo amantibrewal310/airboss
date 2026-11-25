@@ -185,7 +185,7 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
    | `launch` | `todo`, `blocked` | `doing` | When it starts a thread for the task |
    | `sync:t3`, `plan` | (none) | (none) | They never change status |
 
-   `proposed` is left only by `me`: accepting moves it to `todo`, and rejecting moves it to `dropped` with an optional reason. Rejected proposals stay in history and are hidden from the tree.
+   `proposed` is left only by `me`: accepting moves it to `todo`, and rejecting moves it to `dropped` with an optional reason. Rejected proposals stay in history and are hidden from the tree. Only a true rejection is hidden: a proposal I accepted and later dropped stays visible, and so does an open proposal dropped along with its parent (rule 9).
 7. **A PR linked after the fact reopens the task.** If an actor other than `me` links a PR to a `done` task, the task moves to `in_review` in the same change. Code can't stay done while its PR is unmerged.
 
 ### Who may do everything else (enforced by code)

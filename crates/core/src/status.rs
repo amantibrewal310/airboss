@@ -110,6 +110,10 @@ pub(crate) fn set_status(
     tasks::get(tx, id)
 }
 
+/// How rule 9's events start, so `tree()` can tell a task dropped with its parent from a
+/// proposal I rejected.
+pub(crate) const DROPPED_WITH: &str = "dropped with #";
+
 /// Rule 9: drops every open task under `id`, with one event each. `done` ones stay `done`.
 fn drop_subtree(tx: &mut Tx<'_>, id: TaskId, actor: &Actor) -> Result<()> {
     let open: Vec<TaskId> = {
@@ -125,7 +129,7 @@ fn drop_subtree(tx: &mut Tx<'_>, id: TaskId, actor: &Actor) -> Result<()> {
         let rows = stmt.query_map(params![id.0], |r| r.get(0).map(TaskId))?;
         rows.collect::<rusqlite::Result<_>>()?
     };
-    let body = format!("dropped with #{}", id.0);
+    let body = format!("{DROPPED_WITH}{}", id.0);
     for task in open {
         apply(tx, task, Status::Dropped, Some(&body), actor)?;
     }
