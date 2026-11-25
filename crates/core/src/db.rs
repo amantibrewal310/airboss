@@ -115,6 +115,13 @@ fn prepare(mut conn: Connection) -> Result<Connection> {
 /// `foreign_key_check` must find nothing (step 10), and afterwards foreign keys go back
 /// to how they were, whether the migration worked or not (step 12).
 pub(crate) fn migrate(conn: &mut Connection, module: &str, migrations: &[Migration]) -> Result<()> {
+    // Nearly every open finds everything applied. Find that out with a plain read, so opening
+    // the file (every CLI command, every agent's `airboss mcp`) never waits for the write lock
+    // another process holds, and fails only if it really has a migration to apply.
+    let newest = migrations.iter().map(|m| m.version).max().unwrap_or(0);
+    if applied_version(conn, module)? >= newest {
+        return Ok(());
+    }
     for m in migrations {
         let enforced: bool = conn.pragma_query_value(None, "foreign_keys", |r| r.get(0))?;
         if enforced {
@@ -129,6 +136,23 @@ pub(crate) fn migrate(conn: &mut Connection, module: &str, migrations: &[Migrati
         restored?;
     }
     Ok(())
+}
+
+/// The newest version of `module` applied, read without the write lock; 0 before any.
+fn applied_version(conn: &Connection, module: &str) -> Result<i64> {
+    let has_table: bool = conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations')",
+        [],
+        |row| row.get(0),
+    )?;
+    if !has_table {
+        return Ok(0);
+    }
+    Ok(conn.query_row(
+        "SELECT ifnull(max(version), 0) FROM schema_migrations WHERE module = ?1",
+        params![module],
+        |row| row.get(0),
+    )?)
 }
 
 /// One migration in its own transaction, unless it's already applied. With `check_keys`,

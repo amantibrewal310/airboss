@@ -37,6 +37,7 @@ pub const MAIN: &str = "main";
 
 /// Sends an event to the window that listens for it.
 pub fn emit(app: &AppHandle<Wry>, event: UiEvent) {
+    crate::trace::event(&event);
     let (name, payload) = (event.name(), event.payload());
     let sent = match event {
         UiEvent::QuickAddReset(_) => app.emit_to(quickadd::LABEL, name, payload),
@@ -116,6 +117,7 @@ impl TauriShell {
                 .map(|d| d.as_secs_f64())
                 .unwrap_or(0.0);
             let model = tray::model(&needs, now, macos::local_offset(secs));
+            crate::trace::tray(&model);
             let hotkey = hotkey_label(&lock(&me.hotkey));
             let mut tray = lock(&me.tray);
             let result = match tray.as_ref() {
@@ -210,14 +212,19 @@ impl Shell for Arc<TauriShell> {
 
     fn register_hotkey(&self, old: &str, new: &str) -> Result<(), String> {
         let gs = self.app.global_shortcut();
-        let _ = gs.unregister(old);
+        // `old` is empty at start-up, when nothing is registered yet.
+        if !old.is_empty() {
+            let _ = gs.unregister(old);
+        }
         match gs.register(new) {
             Ok(()) => {
                 *lock(&self.hotkey) = new.to_string();
                 Ok(())
             }
             Err(e) => {
-                if let Err(e) = gs.register(old) {
+                if !old.is_empty()
+                    && let Err(e) = gs.register(old)
+                {
                     log::warn!("couldn't restore the hotkey {old}: {e}");
                 }
                 Err(e.to_string())
@@ -289,10 +296,17 @@ pub fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
+/// `AIRBOSS_DB`, when it names another database.
+fn db_override() -> Option<PathBuf> {
+    std::env::var_os("AIRBOSS_DB")
+        .filter(|p| !p.is_empty())
+        .map(PathBuf::from)
+}
+
 /// Where the database lives: `AIRBOSS_DB`, or `~/Library/Application Support/Airboss`.
 pub fn db_path() -> PathBuf {
-    if let Some(p) = std::env::var_os("AIRBOSS_DB").filter(|p| !p.is_empty()) {
-        return PathBuf::from(p);
+    if let Some(p) = db_override() {
+        return p;
     }
     let home = std::env::var_os("HOME")
         .map(PathBuf::from)
@@ -344,9 +358,10 @@ pub fn setup(
     let shell = TauriShell::new(handle.clone(), settings.hotkey.clone());
     *lock(&shell.accent) = macos::accent_hex();
 
-    // Open at login on first run, inside the bundle only (never for a dev binary).
+    // Open at login on first run, for the installed app on its own database only.
     if first_run {
-        settings.open_at_login = in_bundle();
+        settings.open_at_login =
+            settings::open_at_login_on_first_run(in_bundle(), db_override().is_some());
         if settings.open_at_login
             && let Err(e) = Shell::set_autostart(&shell, true)
         {
@@ -389,9 +404,14 @@ pub fn setup(
         log::error!("quick add isn't a panel: {e}");
     }
 
-    // The hotkey; a clash is reported, and Settings picks another.
-    if let Err(e) = handle.global_shortcut().register(settings.hotkey.as_str()) {
-        log::warn!("the hotkey {} is taken: {e}", settings.hotkey);
+    // The hotkey; a clash shows in the connections footer, and Settings picks another.
+    match app_state.current() {
+        Some(s) => s.register_hotkey_at_start(),
+        None => {
+            if let Err(e) = handle.global_shortcut().register(settings.hotkey.as_str()) {
+                log::warn!("the hotkey {} is taken: {e}", settings.hotkey);
+            }
+        }
     }
 
     // Appearance: the window theme and background before anything paints.
@@ -447,6 +467,12 @@ pub fn setup(
 /// A second launch: `--quick-add` opens quick add; anything else shows the main window. The
 /// single-instance plugin calls this from its own thread, so the work moves to the main one.
 pub fn second_launch(app: &AppHandle<Wry>, args: &[String]) {
+    if crate::trace::simulated_wake(args) {
+        if let Some(s) = app.try_state::<App>().and_then(|a| a.current()) {
+            s.trigger(Trigger::Wake);
+        }
+        return;
+    }
     let quick_add = args.iter().any(|a| a == "--quick-add");
     let handle = app.clone();
     let run = app.run_on_main_thread(move || {

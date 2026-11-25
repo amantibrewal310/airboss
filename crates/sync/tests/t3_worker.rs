@@ -615,24 +615,27 @@ fn liveness_runs_only_when_the_files_change_or_on_ticks() {
 }
 
 #[test]
-fn an_unknown_claude_status_shows_the_agents_row() {
+fn an_unknown_claude_status_shows_the_claude_code_row() {
     let (mut rig, _) = Rig::new(&[]);
     rig.claude.write(10, "s", "dreaming", "cli");
     rig.start(t0());
-    let row = rig
-        .hub
-        .connections()
-        .into_iter()
-        .find(|c| c.name == "Agents")
-        .unwrap();
+    let rows = rig.hub.connections();
+    let row = rows.iter().find(|c| c.name == "Claude Code").unwrap();
     assert!(!row.ok);
-    assert!(row.fix.unwrap().contains("dreaming"));
+    assert!(row.fix.clone().unwrap().contains("dreaming"));
+    // "Agents" is the app's row for the airboss command; sharing the name would merge them.
+    assert!(rows.iter().all(|c| c.name != "Agents"));
 }
 
 #[test]
-fn no_claude_folder_means_no_agents_row() {
+fn no_claude_folder_means_no_claude_code_row() {
     let (mut rig, _) = Rig::new(&[]);
     std::fs::remove_dir_all(rig.claude_dir.path()).unwrap();
     rig.start(t0());
-    assert!(rig.hub.connections().iter().all(|c| c.name != "Agents"));
+    assert!(
+        rig.hub
+            .connections()
+            .iter()
+            .all(|c| c.name != "Claude Code" && c.name != "Agents")
+    );
 }

@@ -56,7 +56,7 @@ T15 self-review and fixes                              (last)
 2. **Core and service values go to the UI as they serialise** (`Availability`, `Target`, `DoItPlace` externally tagged; `LaunchReport.failed` as tuples; actors as text), with TypeScript-only mirrors in `dto.rs`, so there's no second shape to keep in step.
 3. **A PR link's title can't be filled in by linking again:** `core`'s `link` returns the existing link unchanged. `add_link` links the PR at once; the background `lookup_pr` then corrects its state with `set_pr_state` (as me) if GitHub says merged or closed. The title shown comes from `sync`'s `PrView`.
 4. **Settings live next to the database** (`<db folder>/app-settings.json`), so a temporary `AIRBOSS_DB` isolates a dev run's settings as well.
-5. **First run turns autostart on only inside an `.app` bundle,** so `cargo run` and tests never register a LaunchAgent for a debug binary.
+5. **First run turns autostart on only inside an `.app` bundle and on the default database,** so `cargo run`, tests and runs with `AIRBOSS_DB` (QA, `measure.sh`) never register a LaunchAgent: it can't carry `AIRBOSS_DB`, so it would open the real database at login.
 6. **The release profile is in the root `Cargo.toml`,** because Cargo ignores profiles in member crates. It also shrinks the `airboss` sidecar.
 7. **Lifted run-map edges are done** when every underlying blocker is done or dropped.
 8. **The Agents connection's "last report"** is the newest `last_event_at` among tree nodes whose `last_actor` is an agent (no extra `core` read).

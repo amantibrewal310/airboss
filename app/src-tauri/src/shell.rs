@@ -94,7 +94,8 @@ pub trait Shell: Send + Sync {
     fn pick_folder(&self) -> Option<PathBuf>;
     /// Turns open at login on or off.
     fn set_autostart(&self, on: bool) -> Result<(), String>;
-    /// Swaps the global hotkey; on failure the old one stays registered.
+    /// Swaps the global hotkey; on failure the old one stays registered. `old` is empty at
+    /// start-up, when nothing is registered yet.
     fn register_hotkey(&self, old: &str, new: &str) -> Result<(), String>;
     /// Applies System, Dark or Light to both windows and their background colours.
     fn apply_appearance(&self, appearance: Appearance);

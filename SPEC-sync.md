@@ -90,7 +90,7 @@ pub struct Step { pub changed: bool, pub next_wake: SystemTime }    // next_wake
 
 | Method | What `Sync` does |
 |---|---|
-| `connections()` | `name` "GitHub": ok when every account is ok; `state` "Signed in" or what's wrong; `detail` "Pull requests sync every 5 minutes. A merged PR finishes its task."; `fix` naming the login and "Run `gh auth login` in a terminal." `name` "T3 Code": `state` "Live state", or "Live state broken since 14:02" with the reason as `fix`; `detail` "Shows which agents are working or waiting on you."; it merges with `launch`'s row of the same name (contract rule). `name` "Agents": only when Claude sessions can't be read. |
+| `connections()` | `name` "GitHub": ok when every account is ok; `state` "Signed in" or what's wrong; `detail` "Pull requests sync every 5 minutes. A merged PR finishes its task."; `fix` naming the login and "Run `gh auth login` in a terminal." `name` "T3 Code": `state` "Live state", or "Live state broken since 14:02" with the reason as `fix`; `detail` "Shows which agents are working or waiting on you."; it merges with `launch`'s row of the same name (contract rule). `name` "Claude Code": only when Claude sessions can't be read (not "Agents", which is the app's row for the `airboss` command; rows with one name merge). |
 | `recheck()` | Re-read `gh` accounts, reopen T3 if broken, then a full pass of each source, skipping the minimum gaps once |
 | `changes()` | Bumped after each pass that changed the snapshot |
 | `store_changed(c)` | Takes the open task ids from `c.snapshot.tree` and the link events from `c.events`; see [Following core](#following-core). No other `core` read. |

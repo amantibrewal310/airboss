@@ -5,3 +5,4 @@ target/
 *.sqlite
 *.sqlite-*
 .env
+__pycache__/

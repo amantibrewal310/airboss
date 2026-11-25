@@ -93,7 +93,7 @@ pub trait Service: Send + Sync {
 /// all are ok, with `state`, `detail` and `fix` from the first that isn't.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Connection {
-    /// "GitHub", "T3 Code", "Agents".
+    /// "GitHub", "T3 Code", "Claude Code"; the app adds "Agents" (the airboss command).
     pub name: String,
     pub ok: bool,
     /// Short, e.g. "Signed in" or "Not found".

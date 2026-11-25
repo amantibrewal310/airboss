@@ -1151,6 +1151,61 @@ fn set_settings_refuses_reserved_and_taken_hotkeys_and_applies_the_rest() {
 }
 
 #[test]
+fn a_hotkey_taken_at_start_shows_in_the_footer_until_settings_picks_one_that_works() {
+    let app = TestApp::new();
+    app.shell.refuse_hotkeys(true);
+    app.state.register_hotkey_at_start();
+    let row = app
+        .state
+        .connection_rows()
+        .into_iter()
+        .find(|r| r.name == "Quick add")
+        .expect("a Quick add row");
+    assert!(!row.ok);
+    assert_eq!(row.state, "Shortcut taken");
+    assert_eq!(
+        row.fix.as_deref(),
+        Some("Quick add shortcut ⌃⌥N is taken by another app. Change it in Settings.")
+    );
+    assert!(app.shell.events().iter().any(|e| matches!(
+        e,
+        UiEvent::ConnectionsChanged(c) if c.connections.iter().any(|r| r.name == "Quick add")
+    )));
+    let quick_add_row = |app: &TestApp| {
+        app.state
+            .connection_rows()
+            .iter()
+            .any(|r| r.name == "Quick add")
+    };
+    // Another key that's taken changes nothing.
+    let mut s = appcmd::get_settings(&app.state, M).unwrap();
+    s.hotkey = "Control+Alt+K".into();
+    assert!(appcmd::set_settings(&app.state, M, s.clone()).is_err());
+    assert!(quick_add_row(&app));
+    // One that works clears it.
+    app.shell.refuse_hotkeys(false);
+    appcmd::set_settings(&app.state, M, s).unwrap();
+    assert!(!quick_add_row(&app));
+}
+
+#[test]
+fn a_free_hotkey_at_start_adds_no_row() {
+    let app = TestApp::new();
+    app.state.register_hotkey_at_start();
+    assert!(
+        app.shell
+            .calls()
+            .contains(&"register_hotkey( -> Control+Alt+N)".to_string())
+    );
+    assert!(
+        !app.state
+            .connection_rows()
+            .iter()
+            .any(|r| r.name == "Quick add")
+    );
+}
+
+#[test]
 fn folds_focus_and_windows() {
     let app = TestApp::new();
     appcmd::set_folded(&app.state, M, vec![TaskId(1), TaskId(2)], true).unwrap();

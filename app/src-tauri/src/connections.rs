@@ -111,6 +111,17 @@ pub(crate) fn merged(
             Some("Changes from agents show when the window is focused. Restart Airboss."),
         ));
     }
+    if let Some(key) = &problems.hotkey_taken {
+        rows.push(row(
+            "Quick add",
+            false,
+            "Shortcut taken",
+            &format!("{key} opens quick add from any app."),
+            Some(&format!(
+                "Quick add shortcut {key} is taken by another app. Change it in Settings."
+            )),
+        ));
+    }
     let mut merged = merge(rows);
     // Claude Code shows only when it's broken.
     merged.retain(|r| r.name != "Claude Code" || !r.ok);

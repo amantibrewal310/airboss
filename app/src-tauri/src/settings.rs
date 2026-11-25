@@ -55,6 +55,14 @@ impl Default for Settings {
     }
 }
 
+/// Whether a first run turns on open at login: only inside an `.app` bundle (never for a dev
+/// binary), and only on the default database. The LaunchAgent can't carry `AIRBOSS_DB`, so one
+/// registered by a run on another database (QA, `measure.sh`) would open the real database at
+/// the next login, from whichever build registered it.
+pub fn open_at_login_on_first_run(in_bundle: bool, db_overridden: bool) -> bool {
+    in_bundle && !db_overridden
+}
+
 /// Where the settings file lives for a database at `db`.
 pub fn path_for(db: &Path) -> PathBuf {
     db.with_file_name("app-settings.json")
@@ -166,6 +174,16 @@ mod tests {
     #![allow(clippy::unwrap_used)]
 
     use super::*;
+
+    #[test]
+    fn a_first_run_turns_on_open_at_login_only_for_the_installed_app_on_its_own_database() {
+        assert!(open_at_login_on_first_run(true, false));
+        // A LaunchAgent can't carry AIRBOSS_DB: one registered by a run on a temporary
+        // database (QA, measure.sh) would open the real database at the next login.
+        assert!(!open_at_login_on_first_run(true, true));
+        assert!(!open_at_login_on_first_run(false, false));
+        assert!(!open_at_login_on_first_run(false, true));
+    }
 
     #[test]
     fn defaults_are_ctrl_alt_n_open_at_login_and_system() {
