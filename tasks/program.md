@@ -50,6 +50,37 @@ Then, for the whole product:
 - **Thresholds:** "became ready" shows for 7 days. A PR isn't listed as needing review while an agent on its task is still running. Quiet means 5 days.
 - **Small core additions** for the services: `Store::migrate_module(module, &[Migration])` (making the runner public), and `links_of_kind(kind)`.
 
+## EM decisions on the spec reviews (26 Nov 2026)
+
+- **Service contract:** one std-only `crates/services` crate holds the shared types and traits, using the reconciled sketch from the services review: `Service`, `SyncService`, `LaunchService`, `AttentionService`, `StoreChange`, `LaunchReport`, a serializable `ServiceError` and a `Changes` signal. No tokio in services. Every spec builds to it.
+- **Seeing writes from other processes:** FSEvents doesn't report writes to a WAL file that stays open. So the app and sync watch the `-wal` file with kqueue (re-armed when it's recreated), and check core's new `data_version()` on focus and on wake as a safety net.
+- **Core v3 additions** (small, built first):
+  - `snapshot() -> CoreSnapshot { tree, edges, ready, latest_event_id }` in one consistent read, so services and the app never rebuild the tree several times per change
+  - `dependency_edges()`, `latest_event_id()`, `data_version()`, `links_of_kind(kind)`
+  - a public `Migration` and `migrate_module(module, &[Migration])`, plus `path()`. Service crates open their own connection for **their own** tables only
+  - PR refs stored in one canonical form, `owner/repo#n` in lowercase, with URLs accepted
+  - branch names limited to `[A-Za-z0-9._/-]`
+- **App updates** use a patch sequence number of their own, separate from core event ids, and the snapshot is rebuilt on any service change too.
+- **Open thread** opens the T3 deep link `t3code://threads/<environment>/<thread>`. Sync supplies the environment id.
+- **PRs found on T3 threads** are linked only if T3 linked them at or after the moment the thread was linked to the task, and with GitHub's real state. The finish check uses only state read from GitHub.
+- **A task with several repos finishes** only when its PRs have merged **and** none of its linked threads is running or waiting on me.
+- **Launch writes a pending record before running `t3`**, so a retry or restart can't start a duplicate thread. `InvalidTransition` on the final move to `doing` counts as success.
+- **`gh`:** health, backoff and rate limits are tracked per account. Tokens are wrapped in a `Secret` type that is never printed.
+- **T3 database:** an unknown value or a missing JSON path marks T3 sync `Broken`. It never falls back silently. An `#[ignore]` test runs the queries against the real database, read-only.
+- **Time:** deadlines come from the wall clock, no single wait is longer than 15 minutes, and every service has `woke()`.
+- **App UX additions:**
+  - focus rules for every command
+  - quick-add resets and focuses when it's hidden, so it's ready the moment it opens again
+  - plugin defaults fixed: `window-state` restores size and position only; autostart passes `--hidden`; the hotkey acts on Pressed only
+  - a "Starting…" state and result toasts for Do it
+  - Undo (⌘Z and on toasts) for dismiss, snooze, reject, status changes and moves
+  - reordering with ⌥⌘↑/↓
+  - a first-run "Add repos" step that lists T3's projects
+  - ↓ moves from the quick-add title to its notes
+  - screenshot baselines for all 13 screens in both themes
+  - ids in `ts-rs` types as `number`
+  - services are notified after the store lock is released, and service threads catch panics instead of aborting
+
 ## Done means
 
 - Every module's success criteria are checked off, with tests.
