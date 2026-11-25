@@ -20,6 +20,7 @@ pub mod services;
 pub mod settings;
 pub mod shell;
 pub mod state;
+pub mod trace;
 pub mod tray;
 pub mod undo;
 pub mod util;

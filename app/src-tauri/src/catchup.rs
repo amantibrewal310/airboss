@@ -289,6 +289,12 @@ impl AppState {
 
     /// Handles a batch of triggers.
     fn process(&self, causes: Causes) {
+        let started = Instant::now();
+        self.handle(causes);
+        crate::trace::batch(&causes.label(), started.elapsed(), self.seq());
+    }
+
+    fn handle(&self, causes: Causes) {
         if causes.wake {
             for s in self.services.all() {
                 s.woke();
@@ -350,6 +356,18 @@ impl Causes {
             wake: false,
             service: true,
         }
+    }
+
+    /// "core+service", for the trace.
+    fn label(&self) -> String {
+        let names = [
+            (self.core, "core"),
+            (self.focus, "focus"),
+            (self.wake, "wake"),
+            (self.service, "service"),
+        ];
+        let on: Vec<&str> = names.iter().filter(|(b, _)| *b).map(|(_, n)| *n).collect();
+        on.join("+")
     }
 
     fn add(&mut self, t: Trigger) {
@@ -417,5 +435,22 @@ impl AppState {
             "Live updates stopped after an internal error. Restart Airboss.",
             |p| p.live_stopped = true,
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_batch_names_every_kind_of_trigger_it_handled() {
+        let mut c = Causes::default();
+        assert_eq!(c.label(), "");
+        c.add(Trigger::Service);
+        c.add(Trigger::Core);
+        c.add(Trigger::Core);
+        assert_eq!(c.label(), "core+service");
+        c.add(Trigger::Wake);
+        assert_eq!(c.label(), "core+wake+service");
     }
 }

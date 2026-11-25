@@ -37,6 +37,7 @@ pub const MAIN: &str = "main";
 
 /// Sends an event to the window that listens for it.
 pub fn emit(app: &AppHandle<Wry>, event: UiEvent) {
+    crate::trace::event(&event);
     let (name, payload) = (event.name(), event.payload());
     let sent = match event {
         UiEvent::QuickAddReset(_) => app.emit_to(quickadd::LABEL, name, payload),
@@ -116,6 +117,7 @@ impl TauriShell {
                 .map(|d| d.as_secs_f64())
                 .unwrap_or(0.0);
             let model = tray::model(&needs, now, macos::local_offset(secs));
+            crate::trace::tray(&model);
             let hotkey = hotkey_label(&lock(&me.hotkey));
             let mut tray = lock(&me.tray);
             let result = match tray.as_ref() {
