@@ -5,7 +5,7 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{EventId, RepoId, TaskId};
+use crate::{EventId, LinkId, RepoId, TaskId};
 
 /// Who is making a change. `core` trusts it; `mcp` proves it.
 ///
@@ -327,6 +327,138 @@ impl TaskEdit {
     /// Points the task at a repo; `None` unties it.
     pub fn repo(mut self, repo: Option<RepoId>) -> TaskEdit {
         self.repo = Some(repo);
+        self
+    }
+}
+
+/// What kind of outside thing a link points at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LinkKind {
+    T3Thread,
+    ClaudeSession,
+    Pr,
+    Slack,
+    Doc,
+    GithubIssue,
+}
+
+impl LinkKind {
+    /// The text stored in the database.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            LinkKind::T3Thread => "t3_thread",
+            LinkKind::ClaudeSession => "claude_session",
+            LinkKind::Pr => "pr",
+            LinkKind::Slack => "slack",
+            LinkKind::Doc => "doc",
+            LinkKind::GithubIssue => "github_issue",
+        }
+    }
+
+    pub(crate) fn parse(text: &str) -> Option<LinkKind> {
+        Some(match text {
+            "t3_thread" => LinkKind::T3Thread,
+            "claude_session" => LinkKind::ClaudeSession,
+            "pr" => LinkKind::Pr,
+            "slack" => LinkKind::Slack,
+            "doc" => LinkKind::Doc,
+            "github_issue" => LinkKind::GithubIssue,
+            _ => return None,
+        })
+    }
+}
+
+impl fmt::Display for LinkKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Where a linked PR stands; `sync:gh` keeps it current, and rule 6 reads it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PrState {
+    Open,
+    Merged,
+    Closed,
+}
+
+impl PrState {
+    /// The text stored in the database.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PrState::Open => "open",
+            PrState::Merged => "merged",
+            PrState::Closed => "closed",
+        }
+    }
+
+    pub(crate) fn parse(text: &str) -> Option<PrState> {
+        Some(match text {
+            "open" => PrState::Open,
+            "merged" => PrState::Merged,
+            "closed" => PrState::Closed,
+            _ => return None,
+        })
+    }
+}
+
+impl fmt::Display for PrState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// One outside thing attached to a task.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Link {
+    pub id: LinkId,
+    pub task: TaskId,
+    pub kind: LinkKind,
+    /// Thread id, `owner/repo#n`, Slack permalink path or file path.
+    pub r#ref: String,
+    pub url: Option<String>,
+    /// Set exactly for PR links (rule 3).
+    pub pr_state: Option<PrState>,
+    pub linked_by: Actor,
+    pub linked_at: String,
+}
+
+/// What a caller supplies to link something. A PR link with no state starts `open`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NewLink {
+    pub kind: LinkKind,
+    pub r#ref: String,
+    pub url: Option<String>,
+    pub pr_state: Option<PrState>,
+}
+
+impl NewLink {
+    /// A link of any kind, with no web page.
+    pub fn new(kind: LinkKind, r#ref: impl Into<String>) -> NewLink {
+        NewLink {
+            kind,
+            r#ref: r#ref.into(),
+            url: None,
+            pr_state: None,
+        }
+    }
+
+    /// A PR link, `owner/repo#n`, starting `open`.
+    pub fn pr(r#ref: impl Into<String>) -> NewLink {
+        NewLink::new(LinkKind::Pr, r#ref)
+    }
+
+    /// Adds the web page it lives at.
+    pub fn with_url(mut self, url: impl Into<String>) -> NewLink {
+        self.url = Some(url.into());
+        self
+    }
+
+    /// Records a PR's known state, e.g. one that already merged.
+    pub fn with_pr_state(mut self, state: PrState) -> NewLink {
+        self.pr_state = Some(state);
         self
     }
 }

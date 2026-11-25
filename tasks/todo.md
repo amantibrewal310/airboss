@@ -70,7 +70,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
   - **Files:** `src/tasks.rs`, `src/permissions.rs`, `tests/rules.rs`
   - **Depends on:** T3
 
-- [ ] **T5. Links and PR state** (M)
+- [x] **T5. Links and PR state** (M)
   - **Description:**
     - `link`: linking the same thing twice returns the existing link.
     - `unlink`: `me` can remove any link; an agent only links it added.
