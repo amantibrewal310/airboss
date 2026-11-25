@@ -25,7 +25,7 @@ Then, for the whole product:
 | 0 | `core` v1 | Done (PR #1) |
 | 0 | App design | Done (merged e63a45b) |
 | 1 | `core` v2: what the design needs (see SPEC-core "v2") | Done (262 tests) |
-| 1 | Specs: `app`, `sync`, `launch`, `attention` | Drafted; under fresh review |
+| 1 | Specs: `app`, `sync`, `launch`, `attention` | Draft 2, approved by the EM after fresh reviews |
 | 1→2 | `mcp` | Done (merged; 107 tests; start-up 2.3 ms, 5.4 MB binary) |
 | 2 | Build `app`, `sync`, `launch`, `attention` in parallel | |
 | 3 | Integration: one app process hosts sync, launch and attention; the CLI and `airboss mcp` share the database | |
@@ -80,6 +80,15 @@ Then, for the whole product:
   - screenshot baselines for all 13 screens in both themes
   - ids in `ts-rs` types as `number`
   - services are notified after the store lock is released, and service threads catch panics instead of aborting
+
+## EM decisions on the draft-2 open points (26 Nov 2026)
+
+- When sync and launch both report a "T3 Code" connection, the app shows them as one row: rows with the same name merge, and the worst state wins.
+- The hold-before-finishing rule (no linked thread running or waiting on me) applies to **every** task, not only tasks with several repos. One rule is simpler.
+- `AlreadyStarting` gets its own toast in the app: "Already starting — check T3 in a moment."
+- An interrupted Plan it, or a research-only start, stays pending until "Start again". That's acceptable for v1.
+- Reject commits after a 5-second undo window. Accept can't be undone: it's rare to regret one, and the task can be dropped.
+- The default quick-add hotkey is ⌃⌥N (it can be changed in Settings).
 
 ## Done means
 

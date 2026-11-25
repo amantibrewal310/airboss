@@ -1,6 +1,6 @@
 # Spec: sync
 
-Module `sync` from [CAPABILITIES.md](CAPABILITIES.md). State: **draft 2, waiting for review**.
+Module `sync` from [CAPABILITIES.md](CAPABILITIES.md). State: **draft 2, approved by the EM on 26 Nov 2026**.
 
 It builds on [`core`](SPEC-core.md) v3 and implements `SyncService` from the shared contract (in [SPEC-attention.md](SPEC-attention.md#shared-contract), the one source for `crates/services`). Facts about `gh`, T3 and Claude Code were checked on this Mac on 25 and 26 Nov 2026 ([Checked on this Mac](#checked-on-this-mac)); the rest is under [Not verified yet](#not-verified-yet). What changed since draft 1 is [at the end](#changes-in-draft-2).
 

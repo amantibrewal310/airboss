@@ -1,6 +1,6 @@
 # Spec: launch
 
-Module `launch` from [CAPABILITIES.md](CAPABILITIES.md). State: **draft 2, waiting for review**.
+Module `launch` from [CAPABILITIES.md](CAPABILITIES.md). State: **draft 2, approved by the EM on 26 Nov 2026**.
 
 It builds on [`core`](SPEC-core.md) v3 and implements `LaunchService` from the shared contract (in [SPEC-attention.md](SPEC-attention.md#shared-contract)). It's the only module that runs the `t3` CLI, and it asks `sync` (through `SyncService::find_thread`) whether a thread it may have started exists. Facts about `t3` and `git` were checked on this Mac on 25 and 26 Nov 2026 ([Checked on this Mac](#checked-on-this-mac)); the rest is under [Not verified yet](#not-verified-yet). Changes since draft 1 are [at the end](#changes-in-draft-2).
 

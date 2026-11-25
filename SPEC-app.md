@@ -1,6 +1,6 @@
 # Spec: app
 
-Module `app` from [CAPABILITIES.md](CAPABILITIES.md). State: **draft 2, waiting for review**. Draft 2 folds in the staff review and the EM's decisions of 26 Nov 2026 ([tasks/program.md](tasks/program.md)); see [Changes in draft 2](#changes-in-draft-2).
+Module `app` from [CAPABILITIES.md](CAPABILITIES.md). State: **draft 2, approved by the EM on 26 Nov 2026**. Draft 2 folds in the staff review and the EM's decisions of 26 Nov 2026 ([tasks/program.md](tasks/program.md)); see [Changes in draft 2](#changes-in-draft-2).
 
 It builds on [`core`](SPEC-core.md) v3 for every rule and on [DESIGN.md](DESIGN.md) for every pixel. `app` adds no rules about tasks. It shows them, and it hosts [`sync`](SPEC-sync.md), [`launch`](SPEC-launch.md) and [`attention`](SPEC-attention.md) in one process through the contract in `crates/services`.
 

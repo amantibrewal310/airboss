@@ -1,6 +1,6 @@
 # Spec: attention
 
-Module `attention` from [CAPABILITIES.md](CAPABILITIES.md). State: **draft 2, waiting for review**.
+Module `attention` from [CAPABILITIES.md](CAPABILITIES.md). State: **draft 2, approved by the EM on 26 Nov 2026**.
 
 It builds on [`core`](SPEC-core.md) v3 and on `SyncService`, and implements `AttentionService`. This spec also holds the **[shared contract](#shared-contract)**: every type and trait in `crates/services`, the one source for that crate's builder, for [SPEC-sync.md](SPEC-sync.md), [SPEC-launch.md](SPEC-launch.md) and the app. The item kinds, their order and their actions come from [DESIGN.md](DESIGN.md) ("Needs me") and its prototype. Changes since draft 1 are [at the end](#changes-in-draft-2).
 
