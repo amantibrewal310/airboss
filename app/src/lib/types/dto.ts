@@ -133,6 +133,8 @@ export interface AppError {
 export interface UndoEntry {
   id: number;
   label: string;
+  /** EXTRA: when a deferred reject is written; after it the entry can't be undone. */
+  expires_at?: Timestamp | null;
 }
 
 export interface UndoableWrite {
@@ -143,6 +145,8 @@ export interface UndoableWrite {
 export interface UndoResult {
   patch: Patch | null;
   message: string;
+  /** EXTRA: the entry that was undone, so the UI can undo its own local changes for exactly it. */
+  entry: number | null;
 }
 
 export interface ThreadDto {

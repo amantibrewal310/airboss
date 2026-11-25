@@ -26,6 +26,8 @@ test('keyboard-only smoke test', async ({ page }) => {
   await expect(toast).toContainText('Added 3 subtasks to 150');
   await expect(page.getByRole('option', { name: /Worktree cleanup research/ })).toHaveCount(0);
   const before = await page.locator('#app [role="listbox"] [role="option"]').count();
+  // A second press within 400 ms of an action is ignored (so it can't act on the next item).
+  await page.waitForTimeout(450);
   await page.keyboard.press('Meta+Backspace');
   await expect(toast).toContainText('Dismissed');
   await expect(page.locator('#app [role="listbox"] [role="option"]')).toHaveCount(before - 1);

@@ -64,7 +64,9 @@
     if (item.kind === 'task') {
       if (mode === 'waits_on' && task !== null) return void app.addDependency(task, item.row.id);
       if (mode === 'move_under' && task !== null) return void app.moveUnder(task, item.row.id);
-      return app.reveal(item.row.id);
+      app.reveal(item.row.id);
+      // ↩ just opened it: a quick second ↩ mustn't rename it.
+      return app.settle();
     }
     if (item.kind === 'command') return app.runCommand(item.cmd.id);
     if (item.kind === 'create') void app.create({ title: item.title, body: null, parent: null, repos: [], links: [], then: 'none' });

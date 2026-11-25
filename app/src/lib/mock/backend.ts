@@ -479,7 +479,7 @@ export class MockBackend implements Transport {
         }
         this.commit();
       }, this.delays.reject);
-      return { patch: null, undo: this.entry(rec) };
+      return { patch: null, undo: { ...this.entry(rec), expires_at: ts(this.s.nowMs + this.delays.reject) } };
     },
 
     move_task: ({ id, parent, position }) => {
@@ -674,7 +674,7 @@ export class MockBackend implements Transport {
       }
       rec.inverse();
       const patch = rec.timer !== undefined ? null : this.commit();
-      return { patch, message: `Undid ${rec.label.charAt(0).toLowerCase()}${rec.label.slice(1)}` };
+      return { patch, message: `Undid ${rec.label.charAt(0).toLowerCase()}${rec.label.slice(1)}`, entry: rec.id };
     },
 
     recheck_connections: () => {

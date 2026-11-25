@@ -60,6 +60,9 @@ import { UiStore, type Anchor, type Overlay } from './ui.svelte';
 
 export type ViewKind = 'list' | 'needs' | 'plans' | 'page';
 
+/** Commands a quick repeat of the last key must not run on whatever is selected next. */
+const SETTLE_GUARDED = new Set<CommandId>(['rename', 'needs_main', 'needs_dismiss', 'plans_open']);
+
 const DEFAULT_SETTINGS: Settings = { hotkey: 'Control+Alt+N', open_at_login: true, appearance: 'system', folded: [] };
 
 export function asAppError(e: unknown): AppError {
@@ -113,6 +116,8 @@ export class App {
   private needsIndex = 0;
   /** Undo entries that hid things locally, to bring them back on undo. */
   private undoLocal = new Map<number, { key?: string; rows?: TaskId[] }>();
+  /** Undo entry → the tasks to select again once it's undone. */
+  private undoTasks = new Map<number, TaskId[]>();
   private stopTheme: () => void = () => {};
   private unlisten: (() => void)[] = [];
   focusTargets: Partial<Record<'list' | 'panel' | 'sidebar' | 'page', HTMLElement>> = $state({});
@@ -508,15 +513,32 @@ export class App {
     this.toast(err.message, 'warn');
   }
 
-  private undoToast(text: string, write: UndoableWrite, local?: { key?: string; rows?: TaskId[] }): void {
+  /**
+   * A toast for an undoable write. `local` is what this window hid for the write (rows, a Needs
+   * me item) and must bring back on undo; `tasks` is what to select again once it's undone.
+   */
+  private undoToast(text: string, write: UndoableWrite, local?: { key?: string; rows?: TaskId[] }, tasks?: TaskId[]): void {
     const undo = write.undo;
     if (undo && local) this.undoLocal.set(undo.id, local);
-    this.toasts.push({
-      text,
-      tone: 'info',
-      actions: undo ? [{ label: 'Undo', run: () => this.undo(undo.id) }] : [],
-      ...(undo ? { undo } : {}),
-    });
+    if (undo && tasks?.length) this.undoTasks.set(undo.id, tasks);
+    const deadline = undo?.expires_at ? Date.parse(undo.expires_at) : undefined;
+    if (undo && deadline !== undefined) {
+      // A deferred reject is written at its deadline: its local fix-up and Undo stop being true.
+      setTimeout(() => {
+        this.undoLocal.delete(undo.id);
+        this.undoTasks.delete(undo.id);
+        if (local?.rows) setTimeout(() => this.tasks.hide(local.rows!, false), 2000);
+      }, Math.max(0, deadline - Date.now()));
+    }
+    this.toasts.push(
+      {
+        text,
+        tone: 'info',
+        actions: undo ? [{ label: 'Undo', run: () => this.undo(undo.id) }] : [],
+        ...(undo ? { undo } : {}),
+      },
+      deadline,
+    );
   }
 
   private toastEvent(t: ToastEvent): void {
@@ -546,7 +568,7 @@ export class App {
       const w = await api.toggleDone(r.id);
       this.applyWrite(w.patch);
       const now = this.tasks.get(r.id);
-      this.undoToast(now?.status === 'done' ? `${r.id} marked done` : `${r.id} marked not done`, w);
+      this.undoToast(now?.status === 'done' ? `${r.id} marked done` : `${r.id} marked not done`, w, undefined, [r.id]);
     } catch (e) {
       this.fail(e);
     }
@@ -564,7 +586,7 @@ export class App {
     try {
       const w = await api.setStatus(id, status, status === 'blocked' ? note : null);
       this.applyWrite(w.patch);
-      if (w.patch) this.undoToast(`${id} → ${SHAPE_LABEL[status]}`, w);
+      if (w.patch) this.undoToast(`${id} → ${SHAPE_LABEL[status]}`, w, undefined, [id]);
     } catch (e) {
       this.fail(e);
     }
@@ -574,7 +596,7 @@ export class App {
     try {
       const w = await api.setStatus(id, 'dropped', null);
       this.applyWrite(w.patch);
-      this.undoToast(`Dropped ${id}`, w);
+      this.undoToast(`Dropped ${id}`, w, undefined, [id]);
     } catch (e) {
       this.fail(e);
     }
@@ -679,7 +701,7 @@ export class App {
     try {
       const w = await api.moveTask(id, parent, null);
       this.applyWrite(w.patch);
-      this.undoToast(parent === null ? `Moved ${id} to the top level` : `Moved ${id} under ${parent}`, w);
+      this.undoToast(parent === null ? `Moved ${id} to the top level` : `Moved ${id} under ${parent}`, w, undefined, [id]);
       this.reveal(id);
     } catch (e) {
       this.fail(e);
@@ -693,7 +715,7 @@ export class App {
     try {
       const w = await api.reorder(id, direction);
       this.applyWrite(w.patch);
-      if (w.patch) this.undoToast(`Moved ${id} ${direction}`, w);
+      if (w.patch) this.undoToast(`Moved ${id} ${direction}`, w, undefined, [id]);
     } catch (e) {
       this.fail(e);
     }
@@ -831,6 +853,8 @@ export class App {
 
   selectNeed(key: string | null, keyboard = true): void {
     if (key === null) return;
+    // The user chose an item: the settle after the last action is over.
+    this.settleUntil = 0;
     const changed = this.needs.selectedKey !== key;
     this.needs.selectedKey = key;
     this.ui.keyboard = keyboard;
@@ -846,6 +870,28 @@ export class App {
     this.selectNeed(next.key);
   }
 
+  /**
+   * After an action, keys that run an item's action (↩, ⌘↩, ⌘⌫) and a rename wait this long, or
+   * until the user moves the selection, so a quick second press can't act on the next item.
+   */
+  private settleUntil = 0;
+  static readonly SETTLE_MS = 400;
+
+  settle(): void {
+    this.settleUntil = Date.now() + App.SETTLE_MS;
+  }
+
+  settling(): boolean {
+    return Date.now() < this.settleUntil;
+  }
+
+  /** One action per item per settle. */
+  private actOnce(item: NeedsItem): boolean {
+    if (this.settling() || this.needs.leaving.has(item.key) || this.needs.hidden.has(item.key)) return false;
+    this.settle();
+    return true;
+  }
+
   /** Hides the item at once (180 ms exit), then the selection moves to the item at the same index. */
   private leave(item: NeedsItem, ms?: number): void {
     const before = this.needs.visible.map((n) => n.key);
@@ -853,7 +899,7 @@ export class App {
   }
 
   async mainAction(item: NeedsItem | null = this.needsItem): Promise<void> {
-    if (!item) return;
+    if (!item || !this.actOnce(item)) return;
     try {
       switch (item.kind) {
         case 'question':
@@ -891,7 +937,7 @@ export class App {
   }
 
   async dismiss(item: NeedsItem | null = this.needsItem, text = 'Dismissed'): Promise<void> {
-    if (!item) return;
+    if (!item || !this.actOnce(item)) return;
     this.leave(item);
     try {
       const w = await api.needsDismiss(item.key);
@@ -903,7 +949,7 @@ export class App {
   }
 
   async snooze(item: NeedsItem | null = this.needsItem): Promise<void> {
-    if (!item) return;
+    if (!item || !this.actOnce(item)) return;
     this.leave(item);
     try {
       const w = await api.needsSnooze(item.key, null);
@@ -939,6 +985,7 @@ export class App {
   /** Reject commits after a 5 s undo window; until then the item and rows are hidden here. */
   async rejectProposals(item: NeedsItem, ids: TaskId[]): Promise<void> {
     const all = ids.length >= item.proposed.filter(([id]) => !this.tasks.hidden.has(id)).length;
+    if (all && !this.actOnce(item)) return;
     this.tasks.hide(ids, true);
     if (all) this.leave(item, 7000);
     try {
@@ -985,10 +1032,19 @@ export class App {
     try {
       const res = await api.undo(entry);
       this.applyWrite(res.patch);
-      const local = entry !== null ? this.undoLocal.get(entry) : [...this.undoLocal.entries()].pop()?.[1];
-      if (entry !== null) this.undoLocal.delete(entry);
+      // Only the entry Rust actually undid has its local changes reversed.
+      const id = res.entry ?? entry;
+      const local = id !== null ? this.undoLocal.get(id) : undefined;
+      const tasks = id !== null ? this.undoTasks.get(id) : undefined;
+      if (id !== null) {
+        this.undoLocal.delete(id);
+        this.undoTasks.delete(id);
+      }
       if (local?.key) this.needs.unhide(local.key);
       if (local?.rows) this.tasks.hide(local.rows, false);
+      // The task comes back where it was: select it again if this view shows it.
+      const back = tasks?.find((t) => this.visibleIds.includes(t));
+      if (back !== undefined && isListView(this.ui.view)) this.select(back, { keyboard: true });
       this.toast(res.message);
     } catch (e) {
       this.fail(e);
@@ -1003,6 +1059,7 @@ export class App {
       const res = await api.createTask({ ...input, then: 'none' });
       this.applyWrite(res.patch);
       this.reveal(res.id);
+      this.settle();
       for (const l of res.link_errors) this.toast(`Created ${res.id}, but couldn't link ${l.text}`, 'warn');
       if (input.then === 'do_it') void this.doIt(res.id);
       if (input.then === 'plan_it') void this.planIt(res.id);
@@ -1121,6 +1178,7 @@ export class App {
     const cmd = resolve(key, zone, this.viewKind, this.actionTask() !== null || this.ui.selected !== null);
     if (!cmd) return;
     e.preventDefault();
+    if (SETTLE_GUARDED.has(cmd.id) && this.settling()) return;
     this.runCommand(cmd.id, zone);
   }
 

@@ -76,7 +76,10 @@ describe('StartInMenu', () => {
     await wait(20);
     const labels = [...document.querySelectorAll('[role="menuitem"]')].map((e) => e.textContent?.trim());
     expect(labels).toEqual(['Start in airboss', 'Start in booking-web', 'Start in booking-api', 'Start in dotfiles', 'No repo: research only']);
-    await userEvent.keyboard('{ArrowDown}{Enter}');
+    // ↩ waits out the 300 ms after opening, so the key that opened the menu can't pick from it.
+    await userEvent.keyboard('{ArrowDown}');
+    await wait(320);
+    await userEvent.keyboard('{Enter}');
     expect(onpick).toHaveBeenCalledWith({ repo: 1 });
   });
 });
