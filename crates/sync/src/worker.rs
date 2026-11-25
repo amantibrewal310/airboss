@@ -158,6 +158,10 @@ pub enum GhMsg {
     Refresh(Refresh),
     /// PRs a T3 thread lists, to read 5 s from now.
     Read(Vec<PrRef>),
+    /// A linked thread's state changed: held finishes are checked again. Every finish
+    /// check runs on the GitHub thread, so a hold can't be released by one worker while
+    /// the other is still between its steps.
+    Holds,
     /// The Mac woke.
     Woke,
     /// "Check again".

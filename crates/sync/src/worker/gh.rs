@@ -59,11 +59,13 @@ pub struct GhWorker {
     /// Tasks whose PRs are all read on the next pass, merged and closed ones included.
     forced: HashSet<TaskId>,
     reread_accounts: bool,
+    /// When the T3 worker was last sent the timer's tick.
+    last_tick: Option<SystemTime>,
     /// Backoff is skipped once ("Check again").
     skip_backoff: bool,
 
     part: PrsPart,
-    saved_health: HashMap<String, (HealthState, Option<String>)>,
+    saved_health: HashMap<String, Health>,
 }
 
 /// The `sync_health` scope for `gh` itself.
@@ -110,11 +112,18 @@ impl GhWorker {
             task_refresh: HashMap::new(),
             forced: HashSet::new(),
             reread_accounts: true,
+            last_tick: None,
             skip_backoff: false,
             part,
             saved_health: HashMap::new(),
         };
-        w.reload_links();
+        // Without the links, publishing would mistake every linked PR for an unlinked one.
+        w.links = w.env.store().links_of_kind(LinkKind::Pr).map_err(|e| {
+            ServiceError::new(
+                airboss_services::ErrorCode::Core,
+                format!("sync couldn't read PR links: {e}"),
+            )
+        })?;
         // What was seen before shows at once, stale until the first pass.
         w.publish(now);
         Ok(w)
@@ -154,13 +163,23 @@ impl GhWorker {
                 self.skip_backoff = true;
                 self.soon(now);
             }
+            GhMsg::Holds => {
+                finish::recheck_held(&self.env.store, &self.db, now);
+                self.reload_links();
+                self.publish(now);
+            }
             GhMsg::Woke | GhMsg::Tick | GhMsg::Shutdown => {}
         }
         let timer_due = self.timer_at <= now;
         if timer_due || self.soon_at.is_some_and(|s| s <= now) {
             self.pass(now);
-            if timer_due {
-                // The GitHub timer drives the T3 worker's periodic checks too.
+            // The GitHub timer drives the T3 worker's periodic checks too, at least every
+            // `pr_every` even when on-demand passes keep pushing the timer back.
+            let tick_due = self
+                .last_tick
+                .is_none_or(|t| now >= t + self.env.cfg.pr_every);
+            if timer_due || tick_due {
+                self.last_tick = Some(now);
                 let _ = self.t3.send(T3Msg::Tick);
             }
         }
@@ -253,8 +272,12 @@ impl GhWorker {
         });
         let wanted = self.wanted(&waiting);
         let skip_backoff = std::mem::take(&mut self.skip_backoff);
-        let usable = |w: &GhWorker, login: &str| {
+        // An account that failed this pass isn't tried again in it, even when "Check again"
+        // skips the backoff.
+        let mut spent: HashSet<String> = HashSet::new();
+        let usable = |w: &GhWorker, spent: &HashSet<String>, login: &str| {
             accounts.iter().any(|a| a.login == login && a.ok)
+                && !spent.contains(login)
                 && (skip_backoff || w.health(login).is_none_or(|h| h.may_try(now)))
         };
 
@@ -269,8 +292,8 @@ impl GhWorker {
                 .and_then(|r| r.account.as_deref())
                 .and_then(|l| accounts.iter().position(|a| a.login == l && a.ok));
             let pick = match saved {
-                Some(i) => usable(self, &accounts[i].login).then_some(i),
-                None => accounts.iter().position(|a| usable(self, &a.login)),
+                Some(i) => usable(self, &spent, &accounts[i].login).then_some(i),
+                None => accounts.iter().position(|a| usable(self, &spent, &a.login)),
             };
             if let Some(i) = pick {
                 queue.entry(i).or_default().push(pr.clone());
@@ -285,7 +308,7 @@ impl GhWorker {
         loop {
             // The first usable account with PRs to read, or whose own PRs aren't read yet.
             let next = (0..accounts.len()).find(|i| {
-                usable(self, &accounts[*i].login)
+                usable(self, &spent, &accounts[*i].login)
                     && (queue.get(i).is_some_and(|q| !q.is_empty()) || !viewer_done.contains(i))
             });
             let Some(i) = next else { break };
@@ -313,7 +336,7 @@ impl GhWorker {
                             PrResult::NoAccess => {
                                 let seen = tried.entry(pr.clone()).or_default();
                                 let other = (0..accounts.len()).find(|j| {
-                                    !seen.contains(j) && usable(self, &accounts[*j].login)
+                                    !seen.contains(j) && usable(self, &spent, &accounts[*j].login)
                                 });
                                 match other {
                                     Some(j) => {
@@ -371,11 +394,25 @@ impl GhWorker {
             if !self.health(&login).is_some_and(Health::is_ok) {
                 // Its other PRs wait for the next pass.
                 queue.remove(&i);
+                spent.insert(login.clone());
             }
             self.save_health_of(&login);
         }
         drop(client);
         self.apply(found, failed, &waiting, &viewer_ok, now);
+        // An account backing off or rate-limited is tried again when that ends, not only
+        // at the next timer pass.
+        let retry = self
+            .part
+            .accounts
+            .iter()
+            .filter(|(_, h)| !h.is_ok())
+            .filter_map(|(_, h)| h.next_try_at)
+            .filter(|t| *t > now && *t < self.timer_at)
+            .min();
+        if let Some(t) = retry {
+            self.soon(t);
+        }
         for task in self.forced.drain() {
             self.task_refresh.entry(task).or_insert(now);
         }
@@ -641,13 +678,16 @@ impl GhWorker {
     }
 
     fn write_health(&mut self, scope: &str, h: &Health) {
-        let key = (h.state, h.detail.clone());
-        if self.saved_health.get(scope) == Some(&key) {
+        if self
+            .saved_health
+            .get(scope)
+            .is_some_and(|old| !h.worth_saving(old))
+        {
             return;
         }
         match self.db.save_health("gh", scope, h) {
             Ok(()) => {
-                self.saved_health.insert(scope.to_string(), key);
+                self.saved_health.insert(scope.to_string(), h.clone());
             }
             Err(e) => log(&format!("couldn't save gh health: {e}")),
         }

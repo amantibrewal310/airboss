@@ -61,7 +61,7 @@ pub struct T3Worker {
     /// What `observed_threads` holds, so rows are written only on change.
     stored: HashMap<ThreadKey, ThreadView>,
     /// The health last written to `sync_health`, by source.
-    saved_health: HashMap<&'static str, (HealthState, Option<String>)>,
+    saved_health: HashMap<&'static str, Health>,
 }
 
 fn key(source: Source, r: &str) -> ThreadKey {
@@ -336,6 +336,18 @@ impl T3Worker {
                 self.part
                     .t3
                     .set(HealthState::Off, "T3 isn't installed", now);
+                // No database: every linked thread is gone, so none can hold a finish.
+                let views = self
+                    .open_linked(Source::T3)
+                    .iter()
+                    .map(|id| {
+                        let v = threads::gone_view(id);
+                        (v.key.clone(), v)
+                    })
+                    .collect();
+                if self.replace(Source::T3, views, now) {
+                    self.threads_changed(now);
+                }
             }
             T3Error::Busy => {
                 // Skipped; the next event retries.
@@ -413,8 +425,10 @@ impl T3Worker {
             self.force = true;
         }
 
-        for v in &linked.views {
-            if let (ThreadState::Errored, Some(run), Some(text)) = (v.state, &v.run_id, &v.error) {
+        // Only real messages are kept: a failed run whose error item isn't written yet is
+        // asked about again on the next pass.
+        for (run, message) in &read.failures {
+            if let Some(text) = message {
                 self.known_errors.insert(run.clone(), text.clone());
             }
         }
@@ -580,8 +594,8 @@ impl T3Worker {
     }
 
     /// A linked thread's state changed: held finishes are checked again.
-    fn threads_changed(&mut self, now: SystemTime) {
-        crate::finish::recheck_held(&self.env.store, &self.db, now);
+    fn threads_changed(&mut self, _now: SystemTime) {
+        let _ = self.gh.send(GhMsg::Holds);
     }
 
     // ---- Claude ----
@@ -590,14 +604,20 @@ impl T3Worker {
         let sessions = match self.claude.sessions() {
             Ok(s) => s,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                // No folder: no sessions, so every linked one is gone (and holds nothing).
                 self.part
                     .claude
                     .set(HealthState::Off, "no Claude sessions folder", now);
                 self.save_health("claude");
                 self.claude_files.clear();
-                let changed = self.replace(Source::Claude, HashMap::new(), now);
                 self.update_watches();
-                if changed {
+                let views =
+                    claude::views(&[], &[], &self.open_linked(Source::Claude), &HashSet::new())
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|v| (v.key.clone(), v))
+                        .collect();
+                if self.replace(Source::Claude, views, now) {
                     self.threads_changed(now);
                 }
                 return self.publish();
@@ -704,13 +724,16 @@ impl T3Worker {
             "t3" => &self.part.t3,
             _ => &self.part.claude,
         };
-        let now = (h.state, h.detail.clone());
-        if self.saved_health.get(source) == Some(&now) {
+        if self
+            .saved_health
+            .get(source)
+            .is_some_and(|old| !h.worth_saving(old))
+        {
             return;
         }
         match self.db.save_health(source, "", h) {
             Ok(()) => {
-                self.saved_health.insert(source, now);
+                self.saved_health.insert(source, h.clone());
             }
             Err(e) => log(&format!("couldn't save {source} health: {e}")),
         }

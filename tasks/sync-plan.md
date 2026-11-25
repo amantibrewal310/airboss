@@ -22,7 +22,7 @@ Each worker is a plain state machine, `handle(msg, now) -> Step`, so every timin
 ## Decisions (where the spec left a gap)
 
 1. **Watch messages.** `WalWatch::watch` takes the T3 worker's own `Sender<T3Msg>`, so there's no separate `WatchEvent` type to forward, and `T3Msg` gains `T3Dir` for a change in T3's folder (which re-arms the WAL watch and checks `data_version`). Without this the worker would need a second channel and a forwarding thread, since `std::sync::mpsc` can't wait on two.
-2. **The GitHub timer drives the T3 worker's periodic work.** On each timer pass the GitHub worker sends `T3Msg::Tick`, and the T3 worker then checks Claude liveness, retries T3 if it's off, and runs the hourly checks when due ("checked again each GitHub tick" in the spec). The T3 worker's own deadlines are only the end of the 2 s gap, the 10 s grace for a request with no item, and the 15-minute cap, which the forwarded ticks keep resetting.
+2. **The GitHub timer drives the T3 worker's periodic work.** On each timer pass (and after any pass once `pr_every` has gone by since the last tick, so on-demand passes can't starve it) the GitHub worker sends `T3Msg::Tick`, and the T3 worker then checks Claude liveness, retries T3 if it's off, and runs the hourly checks when due ("checked again each GitHub tick" in the spec). The T3 worker's own deadlines are only the end of the 2 s gap, the 10 s grace for a request with no item, and the 15-minute cap, which the forwarded ticks keep resetting.
 3. **Link events name their kind.** `core` writes `linked` and `unlinked` bodies as `<kind> <ref>` and `link_state` for PRs only. A worker re-reads `links_of_kind` only for its own kinds that an event names: T3 for `t3_thread` and `claude_session`, GitHub for `pr`. Any change in the open-task set re-filters the cached links without a read.
 4. **`pr_waiting` holds objects,** `{"ref","url","linked_at"}`, so the GitHub worker can link a PR with its URL and apply the `linkedAt` rule without reading T3. `pr_seen` is a plain array of refs. Both are only changed by single atomic `UPDATE`s, so the two workers never overwrite each other's edits.
 5. **PRs found on threads are linked to open tasks only.** `core` rule 7 would otherwise let `sync:t3` reopen a done task through a PR that only T3 knew about.
@@ -43,6 +43,11 @@ Each worker is a plain state machine, `handle(msg, now) -> Step`, so every timin
 20. **The finish check uses this pass's GitHub states** before `observed_prs` is written (it's written last, decision above), so it doesn't wait a pass for its own row.
 21. **Times in connection rows say "UTC"** ("Live state broken since 14:02 UTC"): `sync` has no time-zone data and no dependency for it.
 22. **After its own `core` writes, the GitHub worker reads the PR links again** at once, instead of waiting for the app to hand the change back, so the next comparison isn't against a stale `pr_state`.
+23. **Every finish check runs on the GitHub thread.** `GhMsg` gains `Holds`: when a linked thread's state changes, the T3 worker sends it, and the GitHub worker re-checks the holds itself. With both workers running finish checks, one could release a hold while the other sat between writing the hold and writing its `observed_prs` row, and the finish was lost (found in review).
+24. **A missing T3 database or Claude folder makes linked threads `gone`,** so a thread last seen running can't hold a finish forever.
+25. **A failed run with no error item** shows "Run failed", its note is just "Run failed", and only a real Q4 message is cached, so a message T3 writes a moment later is still read.
+26. **Health rows are written when anything but `last_ok_at` changes** (failures, next try, state, reason); a newer `last_ok_at` alone is written at most once a minute, so a busy T3 doesn't write a row on every pass.
+27. **An account backing off or rate-limited is retried when that ends**, not only at the next timer pass, and an account that failed during a pass isn't tried again in it, even after "Check again".
 
 ## Dependency graph
 

@@ -35,10 +35,15 @@ pub fn approval_phrase(kind: T3RequestKind) -> &'static str {
     }
 }
 
-/// The note a failed run adds to its tasks: "Run failed: " and the first 200 characters.
+/// The note a failed run adds to its tasks: "Run failed: " and the first 200 characters of
+/// its message, or just "Run failed" when it has none.
 pub fn failure_note(message: &str) -> String {
     let short: String = message.trim().chars().take(200).collect();
-    format!("Run failed: {short}")
+    if short.is_empty() || short == RUN_FAILED {
+        RUN_FAILED.to_string()
+    } else {
+        format!("Run failed: {short}")
+    }
 }
 
 /// The text a failed run with no error item shows.

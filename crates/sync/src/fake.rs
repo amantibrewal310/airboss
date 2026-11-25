@@ -455,6 +455,7 @@ pub struct FakeGh(std::sync::Arc<std::sync::Mutex<FakeGhWorld>>);
 #[derive(Default)]
 struct FakeGhWorld {
     missing: bool,
+    auth_broken: bool,
     accounts: Vec<(String, bool, bool)>,
     visible: std::collections::HashMap<String, std::collections::HashSet<String>>,
     prs: std::collections::BTreeMap<String, FakePr>,
@@ -494,6 +495,11 @@ impl FakeGh {
     pub fn broken_account(self, login: &str) -> FakeGh {
         self.world().accounts.push((login.into(), false, false));
         self
+    }
+
+    /// Makes `gh auth status` print something that isn't its JSON.
+    pub fn break_auth_status(&self) {
+        self.world().auth_broken = true;
     }
 
     /// Signs every account out (as if `gh auth logout` ran everywhere).
@@ -686,6 +692,13 @@ impl crate::gh::GhRunner for FakeGh {
                             "tokenSource": "keyring", "gitProtocol": "ssh"})
                     })
                     .collect();
+                if w.auth_broken {
+                    return Ok(crate::gh::CmdOutput {
+                        status: Some(1),
+                        stdout: "not json".into(),
+                        stderr: "gh: unexpected error".into(),
+                    });
+                }
                 let hosts = if entries.is_empty() {
                     serde_json::json!({})
                 } else {

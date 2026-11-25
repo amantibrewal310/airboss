@@ -25,6 +25,8 @@ struct Rig {
     hub: Arc<Hub>,
     worker: GhWorker,
     to_t3: Receiver<T3Msg>,
+    /// What the T3 worker sends the GitHub worker.
+    from_t3: Receiver<GhMsg>,
     t3: Option<(T3Fixture, T3Worker, TempDir)>,
 }
 
@@ -70,8 +72,7 @@ impl Rig {
         tweak(&mut c);
         let env = Env::new(c, core.store.clone(), hub.clone());
         let (t3_tx, to_t3) = channel();
-        let (gh_tx, _gh_rx) = channel();
-        std::mem::forget(_gh_rx);
+        let (gh_tx, from_t3) = channel();
         let summary = StoreSummary::from_change(&core.change());
         let client = Arc::new(Mutex::new(GhClient::new(Box::new(gh.clone()))));
         let mut worker =
@@ -96,6 +97,7 @@ impl Rig {
             hub,
             worker,
             to_t3,
+            from_t3,
             t3,
         };
         rig.core.mark();
@@ -122,9 +124,18 @@ impl Rig {
         self.send(GhMsg::Store(s), now);
     }
 
+    /// The T3 worker reads again, and whatever it tells the GitHub worker is delivered.
     fn t3_wal(&mut self, now: SystemTime) {
         let (_, w, _) = self.t3.as_mut().unwrap();
         w.handle(T3Msg::Refresh, now);
+        self.pump(now);
+    }
+
+    /// Delivers what the T3 worker sent the GitHub worker.
+    fn pump(&mut self, now: SystemTime) {
+        while let Ok(msg) = self.from_t3.try_recv() {
+            self.send(msg, now);
+        }
     }
 
     fn pr(&self, r: &str) -> Option<PrView> {
@@ -431,6 +442,137 @@ fn a_merged_pr_i_link_to_a_second_task_finishes_it_too() {
     assert_eq!(rig.core.status(b), Status::Done);
 }
 
+#[test]
+fn a_thread_stopping_after_the_hold_releases_it_on_the_github_thread() {
+    let core = Core::new();
+    let t = task_with_pr(&core, "acme/web#1");
+    core.link(t, LinkKind::T3Thread, "t-run");
+    let mut rig = Rig::with_t3(
+        core,
+        me_only().pr("acme/web#1", merged("me")),
+        T3Fixture::with_rows(),
+    );
+    rig.first_pass();
+    assert_eq!(rig.core.status(t), Status::Todo, "held");
+    let (f, w, _) = rig.t3.as_mut().unwrap();
+    f.exec(
+        "UPDATE orchestration_v2_projection_runs SET status = 'completed' WHERE run_id = 'r-run-2'",
+    );
+    w.handle(T3Msg::Refresh, at(60));
+    assert_eq!(
+        rig.core.status(t),
+        Status::Todo,
+        "the T3 worker itself never finishes a task"
+    );
+    let msgs: Vec<GhMsg> = rig.from_t3.try_iter().collect();
+    assert!(msgs.iter().any(|m| matches!(m, GhMsg::Holds)));
+    for m in msgs {
+        rig.send(m, at(61));
+    }
+    assert_eq!(rig.core.status(t), Status::Done);
+}
+
+#[test]
+fn a_thread_stopping_before_the_merge_is_read_finishes_on_that_pass() {
+    let core = Core::new();
+    let t = task_with_pr(&core, "acme/web#1");
+    core.link(t, LinkKind::T3Thread, "t-run");
+    let gh = me_only().pr("acme/web#1", FakePr::open("me"));
+    let mut rig = Rig::with_t3(core, gh.clone(), T3Fixture::with_rows());
+    rig.first_pass();
+    // The agent stops first: its hold re-check finds no hold yet and changes nothing.
+    let (f, _, _) = rig.t3.as_ref().unwrap();
+    f.exec(
+        "UPDATE orchestration_v2_projection_runs SET status = 'completed' WHERE run_id = 'r-run-2'",
+    );
+    rig.t3_wal(at(30));
+    assert_eq!(rig.core.status(t), Status::Todo);
+    // Then GitHub says merged: no agent works on it, so the pass finishes it at once.
+    gh.set_state("acme/web#1", "MERGED");
+    rig.send(GhMsg::Tick, at(3 + FIVE_MIN));
+    assert_eq!(rig.core.status(t), Status::Done);
+}
+
+#[test]
+fn a_missing_t3_database_holds_nothing() {
+    let core = Core::new();
+    let t = task_with_pr(&core, "acme/web#1");
+    core.link(t, LinkKind::T3Thread, "t-run");
+    let gh = me_only().pr("acme/web#1", merged("me"));
+    let mut rig = Rig::with_t3(core, gh, T3Fixture::with_rows());
+    rig.first_pass();
+    assert_eq!(rig.core.status(t), Status::Todo, "held while t-run runs");
+    let (f, w, _) = rig.t3.as_mut().unwrap();
+    std::fs::rename(f.dir().join("statev2.sqlite"), f.dir().join("moved.sqlite")).unwrap();
+    // The hourly check reopens the database and finds it gone.
+    w.handle(T3Msg::Tick, at(3700));
+    rig.pump(at(3700));
+    assert_eq!(
+        rig.core.status(t),
+        Status::Done,
+        "its threads are gone, so the hold ends"
+    );
+}
+
+#[test]
+fn a_missing_claude_folder_holds_nothing() {
+    let core = Core::new();
+    let t = task_with_pr(&core, "acme/web#1");
+    core.link(t, LinkKind::ClaudeSession, "s-1");
+    let gh = me_only().pr("acme/web#1", merged("me"));
+    let mut rig = Rig::with_t3(core, gh, T3Fixture::with_rows());
+    let claude_dir = rig.t3.as_ref().unwrap().2.path().to_path_buf();
+    FakeClaude::new(&claude_dir).write(10, "s-1", "busy", "cli");
+    let (_, w, _) = rig.t3.as_mut().unwrap();
+    w.handle(T3Msg::ClaudeDir, at(1));
+    rig.pump(at(1));
+    rig.first_pass();
+    assert_eq!(
+        rig.core.status(t),
+        Status::Todo,
+        "held while the session is busy"
+    );
+    std::fs::remove_dir_all(&claude_dir).unwrap();
+    let (_, w, _) = rig.t3.as_mut().unwrap();
+    w.handle(T3Msg::ClaudeDir, at(60));
+    rig.pump(at(60));
+    assert_eq!(rig.core.status(t), Status::Done);
+}
+
+#[test]
+fn the_t3_worker_gets_its_tick_even_when_refreshes_keep_pushing_the_timer() {
+    let core = Core::new();
+    let mut rig = Rig::new(core, me_only());
+    rig.first_pass();
+    while rig.to_t3.try_recv().is_ok() {}
+    for i in 1..=12u64 {
+        rig.send(GhMsg::Recheck, at(3 + 60 * i));
+    }
+    let ticks = rig
+        .to_t3
+        .try_iter()
+        .filter(|m| matches!(m, T3Msg::Tick))
+        .count();
+    assert_eq!(
+        ticks, 2,
+        "one every 5 minutes over 12 minutes of on-demand passes"
+    );
+}
+
+#[test]
+fn a_broken_gh_says_so() {
+    let core = Core::new();
+    task_with_pr(&core, "acme/web#1");
+    let gh = me_only();
+    gh.break_auth_status();
+    let mut rig = Rig::new(core, gh);
+    rig.first_pass();
+    let c = rig.github();
+    assert!(!c.ok);
+    assert_eq!(c.state, "Not working");
+    assert!(c.fix.is_some());
+}
+
 // ---- PRs found on T3 threads ----
 
 fn prs_fixture(core: &Core, task: TaskId) -> T3Fixture {
@@ -663,18 +805,18 @@ fn backoff_is_per_account_and_doubles() {
     rig.send(GhMsg::Refresh(Refresh::Prs), at(30));
     assert!(gh.reads().is_empty(), "inside the 1-minute backoff");
     gh.fail_next("me", FakeFailure::Exit("still down".into()));
-    let step = rig.send(GhMsg::Refresh(Refresh::Prs), at(64));
-    assert_eq!(step.next_wake, at(90), "a minute after the last refresh");
-    rig.send(GhMsg::Tick, at(90));
+    let step = rig.send(GhMsg::Tick, at(40));
+    assert_eq!(step.next_wake, at(63), "woken when the backoff ends");
+    rig.send(GhMsg::Tick, at(63));
     assert_eq!(gh.reads().len(), 1, "after the backoff");
     gh.clear_calls();
-    rig.send(GhMsg::Refresh(Refresh::Prs), at(160));
-    rig.send(GhMsg::Tick, at(160));
+    let step = rig.send(GhMsg::Tick, at(120));
     assert!(
         gh.reads().is_empty(),
         "the second failure backs off 2 minutes"
     );
-    rig.send(GhMsg::Recheck, at(170));
+    assert_eq!(step.next_wake, at(183));
+    rig.send(GhMsg::Recheck, at(130));
     assert_eq!(gh.reads().len(), 1, "Check again tries at once");
     assert!(rig.github().ok);
 }

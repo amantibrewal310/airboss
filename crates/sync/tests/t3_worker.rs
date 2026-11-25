@@ -338,7 +338,44 @@ fn a_failed_run_writes_one_note_per_failed_run() {
     rig.send(T3Msg::Wal, at(70));
     let notes = rig.core.notes(tasks[0]);
     assert_eq!(notes.len(), 2);
-    assert_eq!(notes[1].1, "Run failed: Run failed", "no error item");
+    assert_eq!(notes[1].1, "Run failed", "no error item");
+}
+
+#[test]
+fn a_failure_message_written_after_the_run_failed_is_still_read() {
+    let (mut rig, _) = Rig::new(&["t-failed"]);
+    rig.start(t0());
+    assert_eq!(
+        rig.view("t-failed").unwrap().error.as_deref(),
+        Some("Run failed")
+    );
+    rig.t3.exec(
+        r#"INSERT INTO orchestration_v2_projection_turn_items (turn_item_id, thread_id, run_id, node_id, ordinal, type, status, updated_at, payload_json)
+           VALUES ('i-late', 't-failed', 'r-failed-1', 'n-late', 1, 'error', 'failed', '2026-11-26T12:00:01.000Z', '{"failure":{"message":"Out of disk"}}')"#,
+    );
+    rig.send(T3Msg::Wal, at(5));
+    assert_eq!(
+        rig.view("t-failed").unwrap().error.as_deref(),
+        Some("Out of disk"),
+        "the fallback wasn't cached"
+    );
+}
+
+#[test]
+fn linked_claude_sessions_are_gone_when_the_folder_goes() {
+    let (mut rig, _) = Rig::new(&[]);
+    let task = rig.core.task("Claude work");
+    rig.core.link(task, LinkKind::ClaudeSession, "s-1");
+    rig.follow(t0());
+    rig.claude.write(10, "s-1", "busy", "cli");
+    rig.start(t0());
+    std::fs::remove_dir_all(rig.claude_dir.path()).unwrap();
+    rig.send(T3Msg::ClaudeDir, at(1));
+    let key = ThreadKey {
+        source: Source::Claude,
+        r#ref: "s-1".into(),
+    };
+    assert_eq!(rig.hub.snapshot().threads[&key].state, ThreadState::Gone);
 }
 
 #[test]
@@ -393,20 +430,22 @@ fn prs_on_a_thread_count_only_if_linked_after_our_thread_link() {
          WHERE thread_id = 't-prs'"
     ));
     rig.start(t0());
-    let read: Vec<String> = match rig.gh.try_recv().unwrap() {
-        GhMsg::Read(prs) => prs.into_iter().map(|p| p.to_string()).collect(),
-        other => panic!("{other:?}"),
+    let reads = |rig: &Rig| -> Vec<Vec<String>> {
+        rig.gh
+            .try_iter()
+            .filter_map(|m| match m {
+                GhMsg::Read(prs) => Some(prs.into_iter().map(|p| p.to_string()).collect()),
+                _ => None,
+            })
+            .collect()
     };
     assert_eq!(
-        read,
-        vec!["acme/web#7"],
+        reads(&rig),
+        vec![vec!["acme/web#7".to_string()]],
         "github.com only, at or after the link, canonical"
     );
     rig.send(T3Msg::Refresh, at(60));
-    assert!(
-        rig.gh.try_recv().is_err(),
-        "already waiting: not asked again"
-    );
+    assert!(reads(&rig).is_empty(), "already waiting: not asked again");
 }
 
 #[test]

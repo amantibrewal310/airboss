@@ -230,6 +230,17 @@ fn github_row(p: &PrsPart) -> Connection {
             None => row(false, "Checking", None),
         };
     }
+    if p.gh.state == HealthState::Broken {
+        return row(
+            false,
+            "Not working",
+            Some(
+                p.gh.detail
+                    .clone()
+                    .unwrap_or_else(|| "gh failed; it's tried again in a few minutes.".into()),
+            ),
+        );
+    }
     if let Some((login, h)) = p.accounts.iter().find(|(_, h)| !h.is_ok()) {
         let state = h.detail.clone().unwrap_or_else(|| "Not working".into());
         let fix = match h.state {
