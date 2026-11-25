@@ -8,7 +8,7 @@ use rusqlite::{Connection, params};
 use crate::events;
 use crate::model::{Actor, EventKind, RunOrder, Status, Task};
 use crate::permissions::{Call, allowed};
-use crate::sql::query_all;
+use crate::sql::{SUBTREE_CTE, query_all};
 use crate::tasks::{self, TASK_COLUMNS, ensure_exists};
 use crate::tx::Tx;
 use crate::{Error, Result, TaskId, fault};
@@ -160,35 +160,30 @@ fn open_blockers(conn: &Connection, id: TaskId) -> Result<Vec<Task>> {
     )
 }
 
-/// Each task outside `?1`'s subtree that waits on something inside it, with the blockers
-/// it loses, e.g. `"#12, #14"`.
-const WAITERS_ON_SUBTREE_SQL: &str = "
-WITH RECURSIVE sub(id) AS (
-    SELECT ?1
-    UNION ALL
-    SELECT t.id FROM tasks t JOIN sub ON t.parent_id = sub.id
-)
-SELECT d.task_id, group_concat('#' || d.waits_on_id, ', ')
-FROM task_deps d
-WHERE d.waits_on_id IN (SELECT id FROM sub) AND d.task_id NOT IN (SELECT id FROM sub)
-GROUP BY d.task_id
-ORDER BY d.task_id";
-
 /// Rule 17, run by `delete_task` before it deletes `id`: every task outside the doomed
 /// subtree that waits on something in it loses those dependencies and gets one
 /// `waits_on_removed` event. Dependencies inside the subtree go with it, unrecorded.
 pub(crate) fn on_task_deleting(tx: &mut Tx<'_>, id: TaskId, actor: &Actor) -> Result<()> {
-    let waiters = query_all(tx, WAITERS_ON_SUBTREE_SQL, params![id.0], |r| {
-        Ok((TaskId(r.get(0)?), r.get::<_, String>(1)?))
-    })?;
+    // Each waiter outside the subtree, with the blockers it loses, e.g. `"#12, #14"`.
+    let waiters = query_all(
+        tx,
+        &format!(
+            "{SUBTREE_CTE}
+             SELECT d.task_id, group_concat('#' || d.waits_on_id, ', ')
+             FROM task_deps d
+             WHERE d.waits_on_id IN (SELECT id FROM sub) AND d.task_id NOT IN (SELECT id FROM sub)
+             GROUP BY d.task_id
+             ORDER BY d.task_id"
+        ),
+        params![id.0],
+        |r| Ok((TaskId(r.get(0)?), r.get::<_, String>(1)?)),
+    )?;
     tx.execute(
-        "WITH RECURSIVE sub(id) AS (
-             SELECT ?1
-             UNION ALL
-             SELECT t.id FROM tasks t JOIN sub ON t.parent_id = sub.id
-         )
-         DELETE FROM task_deps
-         WHERE waits_on_id IN (SELECT id FROM sub) AND task_id NOT IN (SELECT id FROM sub)",
+        &format!(
+            "{SUBTREE_CTE}
+             DELETE FROM task_deps
+             WHERE waits_on_id IN (SELECT id FROM sub) AND task_id NOT IN (SELECT id FROM sub)"
+        ),
         params![id.0],
     )?;
     for (waiter, blockers) in waiters {

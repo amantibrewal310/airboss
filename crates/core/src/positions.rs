@@ -9,6 +9,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use crate::events;
 use crate::model::{Actor, EventKind, Status};
 use crate::permissions::{Call, allowed};
+use crate::sql::SUBTREE_CTE;
 use crate::tx::Tx;
 use crate::{Error, Result, TaskId, fault};
 
@@ -48,12 +49,7 @@ pub(crate) fn ensure_open_parent(conn: &Connection, parent: TaskId) -> Result<()
 /// Rule 11: `Error::Loop` if `target` is `id` or anywhere in `id`'s subtree.
 fn ensure_not_in_subtree(conn: &Connection, id: TaskId, target: TaskId) -> Result<()> {
     let inside: bool = conn.query_row(
-        "WITH RECURSIVE sub(id) AS (
-             SELECT ?1
-             UNION
-             SELECT t.id FROM tasks t JOIN sub ON t.parent_id = sub.id
-         )
-         SELECT EXISTS (SELECT 1 FROM sub WHERE id = ?2)",
+        &format!("{SUBTREE_CTE} SELECT EXISTS (SELECT 1 FROM sub WHERE id = ?2)"),
         params![id.0, target.0],
         |r| r.get(0),
     )?;
@@ -65,22 +61,20 @@ fn ensure_not_in_subtree(conn: &Connection, id: TaskId, target: TaskId) -> Resul
 /// ancestor and descendant.
 fn ensure_no_ancestor_dependency(conn: &Connection, id: TaskId, target: TaskId) -> Result<()> {
     let related: bool = conn.query_row(
-        "WITH RECURSIVE sub(id) AS (
-             SELECT ?1
-             UNION
-             SELECT t.id FROM tasks t JOIN sub ON t.parent_id = sub.id
-         ),
-         up(id) AS (
-             SELECT ?2
-             UNION
-             SELECT t.parent_id FROM tasks t JOIN up ON t.id = up.id
-             WHERE t.parent_id IS NOT NULL
-         )
-         SELECT EXISTS (
-             SELECT 1 FROM task_deps d
-             WHERE (d.task_id IN sub AND d.waits_on_id IN up)
-                OR (d.task_id IN up AND d.waits_on_id IN sub)
-         )",
+        &format!(
+            "{SUBTREE_CTE},
+             up(id) AS (
+                 SELECT ?2
+                 UNION
+                 SELECT t.parent_id FROM tasks t JOIN up ON t.id = up.id
+                 WHERE t.parent_id IS NOT NULL
+             )
+             SELECT EXISTS (
+                 SELECT 1 FROM task_deps d
+                 WHERE (d.task_id IN sub AND d.waits_on_id IN up)
+                    OR (d.task_id IN up AND d.waits_on_id IN sub)
+             )"
+        ),
         params![id.0, target.0],
         |r| r.get(0),
     )?;
