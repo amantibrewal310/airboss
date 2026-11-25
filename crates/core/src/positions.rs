@@ -168,8 +168,7 @@ fn move_in(
         params![position, id.0],
     )?;
 
-    events::record(tx, id, EventKind::Moved, None, None, actor)?;
-    Ok(())
+    events::record(tx, id, EventKind::Moved, None, None, actor)
 }
 
 impl crate::Store {

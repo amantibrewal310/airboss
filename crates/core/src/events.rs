@@ -15,7 +15,7 @@ pub(crate) fn record(
     to_status: Option<Status>,
     body: Option<&str>,
     actor: &Actor,
-) -> Result<EventId> {
+) -> Result<()> {
     // An actor that can't be read back would break this task's history for good.
     if matches!(actor, Actor::Agent(r) if r.trim().is_empty()) {
         return Err(Error::NotAllowed);
@@ -30,9 +30,8 @@ pub(crate) fn record(
             actor.to_string()
         ],
     )?;
-    let id = EventId(tx.last_insert_rowid());
-    tx.push_event(id);
-    Ok(id)
+    tx.push_event(EventId(tx.last_insert_rowid()));
+    Ok(())
 }
 
 const EVENT_COLUMNS: &str = "id, task_id, kind, to_status, body, actor, at";

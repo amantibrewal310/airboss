@@ -99,7 +99,7 @@ pub(crate) fn unlink(tx: &mut Tx<'_>, id: LinkId, actor: &Actor) -> Result<()> {
     tx.execute("DELETE FROM links WHERE id = ?1", params![id.0])?;
     fault::hit(fault::LINK_DELETED)?;
     let body = format!("{} {}", link.kind, link.r#ref);
-    events::record(tx, link.task, EventKind::Unlinked, None, Some(&body), actor).map(|_| ())
+    events::record(tx, link.task, EventKind::Unlinked, None, Some(&body), actor)
 }
 
 /// Records a PR's new state on every task linked to it, one `link_state` event each, and
