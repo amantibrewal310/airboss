@@ -19,6 +19,7 @@ use rusqlite::Connection;
 use crate::tx::Tx;
 
 pub use error::{Error, Result};
+pub use model::RunOrder;
 pub use model::{
     Actor, Event, EventKind, NewTask, Origin, Repo, Status, Task, TaskNode, UnknownValue,
 };

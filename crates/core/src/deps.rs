@@ -1,10 +1,12 @@
-//! Dependencies between tasks: adding and removing them, the loop check, and waiting
-//! (rules 14–17).
+//! Dependencies between tasks: adding and removing them, the loop check, waiting and run
+//! order (rules 14–18).
+
+use std::collections::HashMap;
 
 use rusqlite::{Connection, params};
 
 use crate::events;
-use crate::model::{Actor, EventKind, Status, Task};
+use crate::model::{Actor, EventKind, RunOrder, Status, Task};
 use crate::permissions::{Call, allowed};
 use crate::tasks::{self, TASK_COLUMNS, ensure_exists};
 use crate::tx::Tx;
@@ -38,6 +40,12 @@ impl crate::Store {
             .filter(|n| n.task.status == Status::Todo && !n.waiting)
             .map(|n| n.task)
             .collect())
+    }
+
+    /// The waves `parent`'s open subtasks can run in (rule 18); `Error::Loop` if lifting
+    /// deeper dependencies up to the subtasks makes them wait on each other in a loop.
+    pub fn run_order(&self, parent: TaskId) -> Result<RunOrder> {
+        run_order(&self.conn, parent)
     }
 }
 
@@ -178,6 +186,112 @@ pub(crate) fn on_task_deleting(tx: &mut Tx<'_>, id: TaskId, actor: &Actor) -> Re
         )?;
     }
     fault::hit(fault::DEPS_CLEARED)
+}
+
+/// Every dependency between two open tasks that starts in `?1`'s subtree, lifted to the
+/// direct subtasks the two ends sit under. A null blocker side means the blocker is outside.
+const LIFTED_SQL: &str = "
+WITH RECURSIVE sub(id, top) AS (
+    SELECT id, id FROM tasks WHERE parent_id = ?1
+    UNION ALL
+    SELECT t.id, sub.top FROM tasks t JOIN sub ON t.parent_id = sub.id
+)
+SELECT DISTINCT s.top, b.top
+FROM sub s
+JOIN tasks st ON st.id = s.id
+JOIN task_deps d ON d.task_id = s.id
+JOIN tasks bt ON bt.id = d.waits_on_id
+LEFT JOIN sub b ON b.id = d.waits_on_id
+WHERE st.status NOT IN ('done', 'dropped') AND bt.status NOT IN ('done', 'dropped')";
+
+fn run_order(conn: &Connection, parent: TaskId) -> Result<RunOrder> {
+    ensure_exists(conn, parent)?;
+    let children = {
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {TASK_COLUMNS} FROM tasks t
+             WHERE t.parent_id = ?1 AND t.status NOT IN ('done', 'dropped')
+             ORDER BY t.position"
+        ))?;
+        let rows = stmt.query_map(params![parent.0], tasks::from_row)?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    let index: HashMap<TaskId, usize> = children
+        .iter()
+        .enumerate()
+        .map(|(i, t)| (t.id, i))
+        .collect();
+    let n = children.len();
+
+    // `unblocks[y]` lists the subtasks waiting on y.
+    let mut unblocks: Vec<Vec<usize>> = vec![Vec::new(); n];
+    let mut waits_for = vec![0usize; n];
+    let mut outside = vec![false; n];
+    let mut stmt = conn.prepare(LIFTED_SQL)?;
+    let mut rows = stmt.query(params![parent.0])?;
+    while let Some(row) = rows.next()? {
+        // A subtask left out (done or dropped) neither waits nor holds anything up.
+        let Some(&x) = index.get(&TaskId(row.get(0)?)) else {
+            continue;
+        };
+        match row.get::<_, Option<i64>>(1)? {
+            None => outside[x] = true,
+            Some(y) => {
+                if let Some(&y) = index.get(&TaskId(y))
+                    && y != x
+                {
+                    unblocks[y].push(x);
+                    waits_for[x] += 1;
+                }
+            }
+        }
+    }
+
+    // Kahn's algorithm, one wave at a time; sorting indexes keeps sibling order.
+    let mut waves: Vec<Vec<usize>> = Vec::new();
+    let mut wave: Vec<usize> = (0..n).filter(|&i| waits_for[i] == 0).collect();
+    let mut placed = 0;
+    while !wave.is_empty() {
+        placed += wave.len();
+        let mut next = Vec::new();
+        for &y in &wave {
+            for &x in &unblocks[y] {
+                waits_for[x] -= 1;
+                if waits_for[x] == 0 {
+                    next.push(x);
+                }
+            }
+        }
+        next.sort_unstable();
+        waves.push(wave);
+        wave = next;
+    }
+    if placed < n {
+        return Err(Error::Loop);
+    }
+
+    // Waiting on a subtask that waits outside is waiting outside too. Waves are in
+    // dependency order, so one pass reaches everything downstream.
+    for &y in waves.iter().flatten() {
+        if outside[y] {
+            for &x in &unblocks[y] {
+                outside[x] = true;
+            }
+        }
+    }
+    let pick = |ids: &[usize], want_outside: bool| -> Vec<Task> {
+        ids.iter()
+            .filter(|&&i| outside[i] == want_outside)
+            .map(|&i| children[i].clone())
+            .collect()
+    };
+    Ok(RunOrder {
+        waves: waves
+            .iter()
+            .map(|w| pick(w, false))
+            .filter(|w| !w.is_empty())
+            .collect(),
+        waiting_outside: pick(&(0..n).collect::<Vec<_>>(), true),
+    })
 }
 
 #[cfg(test)]
@@ -372,5 +486,58 @@ mod tests {
             (count(&s, "task_deps"), count(&s, "task_events")),
             (deps, events)
         );
+    }
+
+    fn wave_ids(order: &RunOrder) -> Vec<Vec<TaskId>> {
+        order
+            .waves
+            .iter()
+            .map(|w| w.iter().map(|t| t.id).collect())
+            .collect()
+    }
+
+    #[test]
+    fn run_order_leaves_out_finished_subtasks_and_what_they_held_up() {
+        let mut s = Store::open_in_memory().unwrap();
+        let p = top(&mut s, "Project");
+        let [a, b, c, d] = ["A", "B", "C", "D"].map(|t| under(&mut s, p, t));
+        s.add_dependency(c, a, &Actor::Me).unwrap();
+        s.add_dependency(d, b, &Actor::Me).unwrap();
+        set_status(&s, a, "done");
+        set_status(&s, b, "dropped");
+
+        let order = s.run_order(p).unwrap();
+        assert_eq!(wave_ids(&order), vec![vec![c, d]]);
+        assert!(order.waiting_outside.is_empty());
+    }
+
+    #[test]
+    fn a_finished_blocker_outside_does_not_hold_a_subtask() {
+        let mut s = Store::open_in_memory().unwrap();
+        let elsewhere = top(&mut s, "Elsewhere");
+        let p = top(&mut s, "Project");
+        let a = under(&mut s, p, "A");
+        s.add_dependency(a, elsewhere, &Actor::Me).unwrap();
+        set_status(&s, elsewhere, "done");
+
+        let order = s.run_order(p).unwrap();
+        assert_eq!(wave_ids(&order), vec![vec![a]]);
+        assert!(order.waiting_outside.is_empty());
+    }
+
+    #[test]
+    fn a_finished_step_no_longer_orders_its_phase() {
+        let mut s = Store::open_in_memory().unwrap();
+        let p = top(&mut s, "Project");
+        let p1 = under(&mut s, p, "Phase 1");
+        let p2 = under(&mut s, p, "Phase 2");
+        let s1 = under(&mut s, p1, "Step 1");
+        under(&mut s, p1, "Step 1b");
+        let s2 = under(&mut s, p2, "Step 2");
+        s.add_dependency(s2, s1, &Actor::Me).unwrap();
+        assert_eq!(wave_ids(&s.run_order(p).unwrap()), vec![vec![p1], vec![p2]]);
+
+        set_status(&s, s1, "done");
+        assert_eq!(wave_ids(&s.run_order(p).unwrap()), vec![vec![p1, p2]]);
     }
 }
