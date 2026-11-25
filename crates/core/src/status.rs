@@ -91,7 +91,7 @@ pub(crate) fn apply(
         params![id.0, to.as_str(), reason],
     )?;
     fault::hit(fault::STATUS_UPDATED)?;
-    events::record(tx, id, EventKind::Status, Some(to), note, actor).map(|_| ())
+    events::record(tx, id, EventKind::Status, Some(to), note, actor)
 }
 
 pub(crate) fn set_status(
