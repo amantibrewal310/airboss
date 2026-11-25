@@ -205,6 +205,7 @@ pub fn set_settings(s: &AppState, _c: Caller, settings: Settings) -> AppResult<S
                 log::info!("hotkey {} refused: {e}", new.hotkey);
                 AppError::new(ErrorCode::HotkeyInUse, MSG_HOTKEY_IN_USE)
             })?;
+        s.set_hotkey_taken(None);
     }
     if new.open_at_login != old.open_at_login {
         s.shell

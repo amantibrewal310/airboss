@@ -89,6 +89,8 @@ pub(crate) struct Problems {
     pub db_moved: bool,
     pub live_stopped: bool,
     pub watcher: Option<String>,
+    /// The quick-add hotkey another app holds, as shown ("⌃⌥N").
+    pub hotkey_taken: Option<String>,
 }
 
 /// Start-up and hotkey timings, for the log and `measure.sh`.
@@ -326,6 +328,32 @@ impl AppState {
             },
         ));
         self.refresh_connections();
+    }
+
+    /// Registers the saved quick-add hotkey at start-up. If another app holds it, the
+    /// connections footer says so (a "Quick add" row) until Settings picks one that works.
+    pub fn register_hotkey_at_start(&self) {
+        let hotkey = self.settings().hotkey;
+        match self.shell.register_hotkey("", &hotkey) {
+            Ok(()) => self.set_hotkey_taken(None),
+            Err(e) => {
+                log::warn!("the hotkey {hotkey} is taken: {e}");
+                self.set_hotkey_taken(Some(settings::hotkey_label(&hotkey)));
+            }
+        }
+    }
+
+    /// Shows or clears the "Quick add" row for a hotkey another app holds.
+    pub(crate) fn set_hotkey_taken(&self, taken: Option<String>) {
+        let changed = {
+            let mut p = lock(&self.problems);
+            let changed = p.hotkey_taken != taken;
+            p.hotkey_taken = taken;
+            changed
+        };
+        if changed {
+            self.refresh_connections();
+        }
     }
 
     /// The rows `connections` would show, for tests.

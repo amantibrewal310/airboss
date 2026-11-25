@@ -212,14 +212,19 @@ impl Shell for Arc<TauriShell> {
 
     fn register_hotkey(&self, old: &str, new: &str) -> Result<(), String> {
         let gs = self.app.global_shortcut();
-        let _ = gs.unregister(old);
+        // `old` is empty at start-up, when nothing is registered yet.
+        if !old.is_empty() {
+            let _ = gs.unregister(old);
+        }
         match gs.register(new) {
             Ok(()) => {
                 *lock(&self.hotkey) = new.to_string();
                 Ok(())
             }
             Err(e) => {
-                if let Err(e) = gs.register(old) {
+                if !old.is_empty()
+                    && let Err(e) = gs.register(old)
+                {
                     log::warn!("couldn't restore the hotkey {old}: {e}");
                 }
                 Err(e.to_string())
@@ -399,9 +404,14 @@ pub fn setup(
         log::error!("quick add isn't a panel: {e}");
     }
 
-    // The hotkey; a clash is reported, and Settings picks another.
-    if let Err(e) = handle.global_shortcut().register(settings.hotkey.as_str()) {
-        log::warn!("the hotkey {} is taken: {e}", settings.hotkey);
+    // The hotkey; a clash shows in the connections footer, and Settings picks another.
+    match app_state.current() {
+        Some(s) => s.register_hotkey_at_start(),
+        None => {
+            if let Err(e) = handle.global_shortcut().register(settings.hotkey.as_str()) {
+                log::warn!("the hotkey {} is taken: {e}", settings.hotkey);
+            }
+        }
     }
 
     // Appearance: the window theme and background before anything paints.
