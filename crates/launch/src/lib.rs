@@ -21,6 +21,8 @@ pub mod fake;
 mod git;
 mod prepare;
 mod process;
+mod settle;
+mod start;
 pub mod t3cli;
 mod worker;
 
@@ -42,6 +44,7 @@ pub use db::MIGRATIONS;
 pub use errors::T3_MISSING;
 pub use git::{Git, RealGit};
 pub use process::{CmdOutput, ProcessRunner, REMOVED_VARS, child_env};
+pub use start::Brief;
 pub use t3cli::T3Cli;
 pub use worker::{LaunchMsg, LaunchWorker, Step};
 
@@ -102,6 +105,11 @@ impl LaunchTools {
     }
 }
 
+/// One line on stderr. Launch has no logging crate (SPEC-launch allows no new crate).
+pub(crate) fn log(message: &str) {
+    eprintln!("airboss-launch: {message}");
+}
+
 pub(crate) fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     // Each guarded value is left whole by every holder (one SQLite statement or transaction,
     // one process run, one map insert), so a holder's panic can't leave it half-changed.
@@ -112,6 +120,18 @@ pub(crate) fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 pub(crate) struct GitCache {
     git: Box<dyn Git>,
     defaults: HashMap<PathBuf, Option<String>>,
+}
+
+impl GitCache {
+    /// The repo's default branch, asked of `git` once per run of the app.
+    pub fn default_branch(&mut self, repo: &Path) -> std::io::Result<Option<String>> {
+        if let Some(known) = self.defaults.get(repo) {
+            return Ok(known.clone());
+        }
+        let found = self.git.default_branch(repo)?;
+        self.defaults.insert(repo.to_path_buf(), found.clone());
+        Ok(found)
+    }
 }
 
 /// What `Launch` and its worker share.
@@ -140,6 +160,12 @@ impl Inner {
 pub struct Launch {
     inner: Arc<Inner>,
     worker: Mutex<Option<worker::Running>>,
+}
+
+/// Exactly what `start` would send for `req`, for golden tests and a preview. Places that
+/// already started are left out; a place that would fail makes the whole call fail.
+pub fn briefs(launch: &Launch, req: &StartRequest) -> Result<Vec<Brief>, ServiceError> {
+    start::briefs(&launch.inner, req)
 }
 
 /// Builds `Launch` and its worker without starting a thread, so tests can drive the worker
@@ -249,11 +275,8 @@ impl LaunchService for Launch {
         prepare::prepare(&self.inner, task, mode)
     }
 
-    fn start(&self, _req: &StartRequest) -> Result<LaunchReport, ServiceError> {
-        Err(ServiceError::new(
-            ErrorCode::Internal,
-            "Do it isn't built yet.",
-        ))
+    fn start(&self, req: &StartRequest) -> Result<LaunchReport, ServiceError> {
+        start::start(&self.inner, req)
     }
 
     fn add_to_t3(&self, _repo: RepoId) -> Result<(), ServiceError> {

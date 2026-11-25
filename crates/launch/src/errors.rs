@@ -179,6 +179,10 @@ pub(crate) fn no_database() -> ServiceError {
     )
 }
 
+pub(crate) fn git_failed(e: &std::io::Error) -> ServiceError {
+    ServiceError::new(ErrorCode::Internal, format!("Couldn't run git: {e}."))
+}
+
 pub(crate) fn shutting_down() -> ServiceError {
     ServiceError::new(ErrorCode::ShuttingDown, "Airboss is closing.")
 }

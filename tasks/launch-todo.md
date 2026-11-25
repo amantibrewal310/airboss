@@ -70,7 +70,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
   - **Files:** `src/prepare.rs`, `tests/prepare.rs`
   - **Depends on:** T6
 
-- [ ] **T8. The start loop** (M)
+- [x] **T8. The start loop** (M)
   - **Description:** `start.rs`: checks, branch saved once, one pending row per place committed before `t3`, the answer settles it, link, move to `doing`, the report; `briefs()`.
   - **Acceptance:** exact argv for one repo, two repos, Plan it, research only; base from `origin/HEAD`, the current branch and the override; `set_branch` once, before the first start; the pending row is in the table when the fake runs; `Waiting`, `NeedsChoice`; a started repo is skipped; `-2`, `-3` on again; task text with metacharacters reaches `t3` unchanged as one argv entry or on stdin.
   - **Verify:** `tests/commands.rs`, `tests/branch.rs`, `tests/idempotency.rs`.
