@@ -128,6 +128,10 @@ pub struct AppState {
     pub(crate) db: Mutex<DbHealth>,
     /// Whether `~/.local/bin` is on the user's shell `PATH`, once checked.
     pub(crate) login_path: Mutex<Option<bool>>,
+    /// What the notification decisions remember (`notify.rs`).
+    pub(crate) notify: Mutex<crate::notify::Memory>,
+    /// The main window has focus: no notifications then.
+    pub(crate) main_focused: AtomicBool,
     pub(crate) config: AppConfig,
     pub(crate) stopping: AtomicBool,
     pub(crate) main_shown: AtomicBool,
@@ -149,6 +153,7 @@ impl AppState {
         // After the first reads, so the WAL exists and its identity is the one the app holds.
         let db = DbHealth::new(lock(&store).path());
         let settings = config.settings.clone();
+        let started = clock.now();
         let state = Arc::new_cyclic(|me| AppState {
             store,
             services,
@@ -166,6 +171,8 @@ impl AppState {
             watch: Mutex::new(None),
             db: Mutex::new(db),
             login_path: Mutex::new(None),
+            notify: Mutex::new(crate::notify::Memory::new(started)),
+            main_focused: AtomicBool::new(false),
             main_shown: AtomicBool::new(false),
             stopping: AtomicBool::new(false),
             fold_saver: Mutex::new(None),
@@ -177,6 +184,9 @@ impl AppState {
             let mut cu = lock(&state.catchup);
             cu.connections = state.connections(&cu.vm, cu.agent_report.as_deref());
             crate::catchup::log_connections(&cu.connections);
+            // What's waiting at launch never notifies.
+            let needs = cu.vm.needs.clone();
+            state.notify_new(&needs);
         }
         Ok(state)
     }
@@ -399,6 +409,31 @@ impl AppState {
         if changed {
             self.refresh_connections();
         }
+    }
+
+    /// Posts a notification for each new Needs me item that calls for one (`notify.rs`).
+    pub(crate) fn notify_new(&self, needs: &airboss_services::NeedsList) {
+        let at = crate::notify::Moment {
+            enabled: self.settings().notifications,
+            focused: self.main_focused.load(Ordering::SeqCst),
+            now: self.now(),
+        };
+        let notices = lock(&self.notify).decide(needs, at);
+        if notices.is_empty() {
+            return;
+        }
+        let n = self.shell.notifications();
+        for notice in &notices {
+            if let Err(e) = n.post(notice) {
+                log::warn!("couldn't post a notification for {}: {e}", notice.task.0);
+            }
+        }
+        log::info!("posted {} notification(s)", notices.len());
+    }
+
+    /// The main window gained or lost focus.
+    pub fn set_main_focused(&self, focused: bool) {
+        self.main_focused.store(focused, Ordering::SeqCst);
     }
 
     /// The rows `connections` would show, for tests.

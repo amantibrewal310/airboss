@@ -752,6 +752,13 @@ export class MockBackend implements Transport {
       return this.s.settings;
     },
 
+    notification_permission: () => this.s.notificationPermission ?? 'granted',
+
+    open_notification_settings: () => {
+      this.opened.push('system-settings:notifications');
+      return null;
+    },
+
     set_folded: ({ ids, folded }) => {
       const set = new Set(this.s.settings.folded);
       for (const id of ids) {

@@ -31,10 +31,16 @@
         <Button variant="primary" onclick={() => app.openNew()}><Icon name="plus" size={13} stroke={1.6} />New task <Kbd keys="mod+n" onFill joined /></Button>
         <Button onclick={() => app.open({ kind: 'settings' })}>Change hotkey…</Button>
       </div>
-      <label class="login">
-        <input type="checkbox" checked={app.settings.open_at_login} onchange={(e) => app.setOpenAtLogin((e.currentTarget as HTMLInputElement).checked)} />
-        <span>Open Airboss at login</span>
-      </label>
+      <div class="ticks">
+        <label class="login">
+          <input type="checkbox" checked={app.settings.open_at_login} onchange={(e) => app.setOpenAtLogin((e.currentTarget as HTMLInputElement).checked)} />
+          <span>Open Airboss at login</span>
+        </label>
+        <label class="login">
+          <input type="checkbox" checked={app.settings.notifications} onchange={(e) => app.setNotifications((e.currentTarget as HTMLInputElement).checked)} />
+          <span>Notify me when an agent asks something or stops</span>
+        </label>
+      </div>
     </div>
 
     {#if !app.tasks.repos.length}
@@ -111,11 +117,16 @@
     gap: 8px;
     padding-top: 12px;
   }
+  .ticks {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 10px;
+  }
   .login {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    margin-top: 10px;
     color: var(--text-2);
     width: fit-content;
   }

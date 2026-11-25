@@ -1,12 +1,13 @@
 //! The native side: `TauriShell`, start-up, and the window, menu and run-loop handlers.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use airboss_core::Store;
-use airboss_services::{NeedsList, SystemClock};
+use airboss_services::{NeedsKey, NeedsList, SystemClock};
 use tauri::menu::MenuEvent;
 use tauri::tray::TrayIcon;
 use tauri::window::Color;
@@ -16,6 +17,7 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
 use tauri_plugin_log::log;
+use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::catchup::Trigger;
@@ -25,6 +27,7 @@ use crate::dto::{
 use crate::errors::{AppError, AppResult, ErrorCode};
 use crate::ipc::App;
 use crate::menu::{self, MenuHandles, MenuState, ids};
+use crate::notify::{Notice, Notifications, Permission};
 use crate::services::Services;
 use crate::settings::{self, Appearance, hotkey_label};
 use crate::shell::{Shell, UiEvent};
@@ -69,6 +72,106 @@ fn effective_theme(app: &AppHandle<Wry>, appearance: Appearance) -> ThemeDto {
     }
 }
 
+/// Notifications through `tauri-plugin-notification`; a click opens the main window on the
+/// item. Permission comes from `UNUserNotificationCenter` (the plugin's desktop side always
+/// answers "granted"), only inside the app bundle.
+pub struct TauriNotifications {
+    app: AppHandle<Wry>,
+    next: AtomicI32,
+    /// Each posted notification's id → its Needs me item, for the click.
+    keys: Mutex<HashMap<i32, NeedsKey>>,
+}
+
+impl TauriNotifications {
+    fn new(app: AppHandle<Wry>) -> Arc<TauriNotifications> {
+        let me = Arc::new(TauriNotifications {
+            app: app.clone(),
+            next: AtomicI32::new(1),
+            keys: Mutex::new(HashMap::new()),
+        });
+        // Before anything is posted: the plugin reports clicks only to handlers that existed.
+        let weak = Arc::downgrade(&me);
+        let registered = app.notification().on_action(move |action| {
+            if action.action_id() != "tap" {
+                return;
+            }
+            let Some(me) = weak.upgrade() else { return };
+            let key = action
+                .notification()
+                .and_then(|n| lock(&me.keys).get(&n.id()).cloned());
+            let app = me.app.clone();
+            let _ = me.app.run_on_main_thread(move || {
+                show_main_window(&app);
+                emit(
+                    &app,
+                    UiEvent::NavOpen(NavOpen {
+                        view: Some("needs".into()),
+                        task: None,
+                        needs_key: key.map(|k| k.0),
+                    }),
+                );
+            });
+        });
+        if let Err(e) = registered {
+            log::warn!("notification clicks won't open Airboss: {e}");
+        }
+        me
+    }
+}
+
+impl Notifications for TauriNotifications {
+    fn post(&self, n: &Notice) -> Result<(), String> {
+        let id = self.next.fetch_add(1, Ordering::SeqCst);
+        {
+            let mut keys = lock(&self.keys);
+            // Old ones were long since clicked or cleared.
+            if keys.len() >= 500 {
+                keys.clear();
+            }
+            keys.insert(id, n.key.clone());
+        }
+        self.app
+            .notification()
+            .builder()
+            .id(id)
+            .title(&n.title)
+            .body(&n.body)
+            .group(&n.group)
+            .show()
+            .map_err(|e| e.to_string())
+    }
+
+    fn permission(&self) -> Permission {
+        if !in_bundle() {
+            return Permission::Unknown;
+        }
+        match macos::notify_permission(Duration::from_secs(2)) {
+            Some(macos::NotifyAuth::Granted) => Permission::Granted,
+            Some(macos::NotifyAuth::Denied) => Permission::Denied,
+            Some(macos::NotifyAuth::NotAsked) => Permission::NotAsked,
+            None => Permission::Unknown,
+        }
+    }
+
+    fn request(&self) {
+        if in_bundle() {
+            macos::request_notify_permission();
+        }
+    }
+
+    fn open_settings(&self) -> Result<(), String> {
+        // An app constant, not a link anyone stored: it doesn't go through the link allowlist.
+        let url = format!(
+            "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id={}",
+            self.app.config().identifier
+        );
+        self.app
+            .opener()
+            .open_url(url, None::<&str>)
+            .map_err(|e| e.to_string())
+    }
+}
+
 /// The app's side of [`Shell`].
 pub struct TauriShell {
     app: AppHandle<Wry>,
@@ -78,11 +181,13 @@ pub struct TauriShell {
     tray_rebuild: Mutex<Option<Debounced>>,
     accent: Mutex<Option<String>>,
     hotkey: Mutex<String>,
+    notifications: Arc<TauriNotifications>,
 }
 
 impl TauriShell {
     fn new(app: AppHandle<Wry>, hotkey: String) -> Arc<TauriShell> {
         let shell = Arc::new(TauriShell {
+            notifications: TauriNotifications::new(app.clone()),
             app,
             menus: Mutex::new(None),
             tray: Mutex::new(None),
@@ -293,6 +398,10 @@ impl Shell for Arc<TauriShell> {
         lock(&self.accent).clone()
     }
 
+    fn notifications(&self) -> Arc<dyn Notifications> {
+        self.notifications.clone()
+    }
+
     fn sidecar(&self) -> Option<PathBuf> {
         let exe = std::env::current_exe().ok()?;
         let dir = exe.parent()?;
@@ -406,6 +515,10 @@ pub fn setup(
             && let Err(e) = settings::save(path, &settings)
         {
             log::warn!("couldn't save settings: {e}");
+        }
+        // Alongside open at login: macOS asks once whether Airboss may notify.
+        if settings.notifications {
+            shell.notifications.request();
         }
     }
 
@@ -540,9 +653,13 @@ pub fn on_window_event(window: &Window<Wry>, event: &WindowEvent) {
             api.prevent_close();
             let _ = window.hide();
         }
-        (MAIN, WindowEvent::Focused(true)) => {
+        (MAIN, WindowEvent::Focused(focused)) => {
             if let Some(s) = app.try_state::<App>().and_then(|a| a.current()) {
-                s.trigger(Trigger::Focus);
+                // No notifications while the window is in front.
+                s.set_main_focused(*focused);
+                if *focused {
+                    s.trigger(Trigger::Focus);
+                }
             }
         }
         (MAIN, WindowEvent::ThemeChanged(theme)) => {

@@ -225,6 +225,7 @@ impl AppState {
                 needs.version
             );
             self.shell.update_tray(&needs);
+            self.notify_new(&needs);
             self.shell.emit(UiEvent::NeedsChanged((*needs).clone()));
         }
         let connections = self.connections(&cu.vm, cu.agent_report.as_deref());

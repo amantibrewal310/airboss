@@ -5,7 +5,8 @@
   import SettingsRepos from './SettingsRepos.svelte';
   import { useApp } from '../../../lib/state/context';
   import { acceleratorLabel, acceleratorOf, RESERVED_HOTKEYS } from '../../../lib/logic/keymap';
-  import type { Appearance } from '../../../lib/types';
+  import { onMount } from 'svelte';
+  import type { Appearance, NotificationPermission } from '../../../lib/types';
 
   /**
    * ⌘,: the quick-add hotkey, open at login, appearance, repos, the command-line tool, agent
@@ -37,6 +38,16 @@
   }
 
   const appearance = $derived(app.settings.appearance);
+
+  /** What macOS allows, read on open and again when Airboss comes back from System Settings. */
+  let permission = $state<NotificationPermission>('granted');
+  onMount(() => {
+    const read = async () => (permission = await app.notificationPermission());
+    void read();
+    window.addEventListener('focus', read);
+    return () => window.removeEventListener('focus', read);
+  });
+  const blocked = $derived(app.settings.notifications && permission === 'denied');
 </script>
 
 <Modal label="Settings" top="10%" width={560} onclose={() => app.close()}>
@@ -82,6 +93,29 @@
           onclick={() => app.setOpenAtLogin(!app.settings.open_at_login)}><i></i></button
         >
       </div>
+    </section>
+
+    <section>
+      <div class="row">
+        <div class="lab">
+          <b>Notifications</b>
+          <span>A banner when an agent asks something or needs an approval, a run fails, or an agent stops. Never while Airboss is in front.</span>
+        </div>
+        <button
+          type="button"
+          class="switch"
+          role="switch"
+          aria-checked={app.settings.notifications}
+          aria-label="Notifications"
+          onclick={() => app.setNotifications(!app.settings.notifications)}><i></i></button
+        >
+      </div>
+      {#if blocked}
+        <div class="blocked" role="status">
+          <p>macOS has notifications turned off for Airboss. Turn on Allow notifications in System Settings › Notifications › Airboss.</p>
+          <Button size="sm" onclick={() => app.openNotificationSettings()}>Open System Settings</Button>
+        </div>
+      {/if}
     </section>
 
     <section>
@@ -225,6 +259,18 @@
     margin-top: 8px;
     color: var(--warn-text);
     font-size: var(--fs-meta);
+  }
+  .blocked {
+    margin-top: 10px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .blocked p {
+    flex: 1;
+    color: var(--warn-text);
+    font-size: var(--fs-meta);
+    line-height: 16px;
   }
   .switch {
     width: 34px;

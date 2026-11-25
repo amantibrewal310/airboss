@@ -16,6 +16,7 @@ pub mod logs;
 pub mod macos;
 pub mod menu;
 pub mod native;
+pub mod notify;
 pub mod opener;
 pub mod quickadd;
 pub mod runmap;

@@ -287,6 +287,11 @@ export type NewLinkText = { text: string, title: string | null, };
 export type NextUp = { id: TaskId, title: string, };
 
 /**
+ * Whether macOS lets Airboss notify.
+ */
+export type NotificationPermission = "granted" | "denied" | "not_asked" | "unknown";
+
+/**
  * What to open: a URL, or a link by its id.
  */
 export type OpenTarget = { "url": string } | { "link": LinkId };
@@ -527,6 +532,11 @@ export type Settings = {
  * The quick-add hotkey as an accelerator, e.g. `"Control+Alt+N"`.
  */
 hotkey: string, open_at_login: boolean, appearance: Appearance, 
+/**
+ * macOS notifications for an agent's question or approval, a failed run and an agent
+ * that stopped. On by default.
+ */
+notifications: boolean, 
 /**
  * Parents folded in the tree; saved a second after the last change.
  */

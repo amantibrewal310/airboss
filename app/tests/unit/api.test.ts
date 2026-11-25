@@ -8,7 +8,8 @@ const APPENDIX_A = `bootstrap task_detail run_map plans quickadd_data t3_project
 edit_notes set_status toggle_done accept_proposals reject_proposals move_task reorder link_repo
 unlink_repo add_repos edit_repo remove_repo back_up_database pick_folder set_branch add_dependency remove_dependency add_link remove_link
 add_note do_it plan_it add_to_t3 reopen_and_start open_thread open_url needs_dismiss needs_snooze
-needs_restore undo recheck_connections copy_text install_cli get_settings set_settings set_folded
+needs_restore undo recheck_connections copy_text install_cli get_settings set_settings
+notification_permission open_notification_settings set_folded
 set_focus_context ui_ready quickadd_shown quickadd_hide quickadd_resize show_main`.split(/\s+/);
 
 const APPENDIX_B = `tree:patch needs:changed connections:changed menu:action nav:open quickadd:reset toast

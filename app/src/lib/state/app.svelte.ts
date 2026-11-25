@@ -18,6 +18,7 @@ import type {
   NeedsItem,
   Patch,
   PlanCard,
+  NotificationPermission,
   RepoId,
   RowDto,
   RunMap,
@@ -66,7 +67,7 @@ export type ViewKind = 'list' | 'needs' | 'plans' | 'page';
 /** Commands a quick repeat of the last key must not run on whatever is selected next. */
 const SETTLE_GUARDED = new Set<CommandId>(['rename', 'needs_main', 'needs_dismiss', 'needs_done', 'plans_open']);
 
-const DEFAULT_SETTINGS: Settings = { hotkey: 'Control+Alt+N', open_at_login: true, appearance: 'system', folded: [] };
+const DEFAULT_SETTINGS: Settings = { hotkey: 'Control+Alt+N', open_at_login: true, appearance: 'system', notifications: true, folded: [] };
 
 export function asAppError(e: unknown): AppError {
   if (e && typeof e === 'object' && 'code' in e && 'message' in e) return e as AppError;
@@ -1295,6 +1296,28 @@ export class App {
     try {
       const to = await api.backUpDatabase();
       if (to) this.toast(`Backed up to ${to.replace(/^\/Users\/[^/]+/, '~')}`);
+    } catch (e) {
+      this.fail(e);
+    }
+  }
+
+  /** Settings › Notifications. Turning it on asks macOS if it hasn't been asked (Rust). */
+  async setNotifications(on: boolean): Promise<void> {
+    await this.saveSettings({ ...this.settings, notifications: on });
+  }
+
+  /** Whether macOS lets Airboss notify, for Settings' explanation. */
+  async notificationPermission(): Promise<NotificationPermission> {
+    try {
+      return await api.notificationPermission();
+    } catch {
+      return 'unknown';
+    }
+  }
+
+  async openNotificationSettings(): Promise<void> {
+    try {
+      await api.openNotificationSettings();
     } catch (e) {
       this.fail(e);
     }

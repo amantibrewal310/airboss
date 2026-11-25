@@ -52,6 +52,8 @@
     "allow-install-cli",
     "allow-get-settings",
     "allow-set-settings",
+    "allow-notification-permission",
+    "allow-open-notification-settings",
     "allow-set-folded",
     "allow-set-focus-context",
     "allow-ui-ready",

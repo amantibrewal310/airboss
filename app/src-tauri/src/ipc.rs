@@ -224,6 +224,10 @@ commands! {
     install_cli(InstallCliArgs) => app::install_cli, [] -> InstallCliResult;
     get_settings(GetSettingsArgs) => app::get_settings, [] -> Settings;
     set_settings(SetSettingsArgs) => app::set_settings, [settings: Settings] -> Settings;
+    notification_permission(NotificationPermissionArgs) => app::notification_permission,
+        [] -> crate::notify::Permission;
+    open_notification_settings(OpenNotificationSettingsArgs) => app::open_notification_settings,
+        [] -> ();
     set_folded(SetFoldedArgs) => app::set_folded, [ids: Vec<TaskId>, folded: bool] -> ();
     set_focus_context(SetFocusContextArgs) => app::set_focus_context, [context: FocusContext] -> ();
     ui_ready(UiReadyArgs) => app::ui_ready, [window: WindowName] -> ();

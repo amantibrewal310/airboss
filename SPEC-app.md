@@ -59,6 +59,8 @@ Versions are the latest stable on crates.io and npm on 25 Nov 2026, pinned exact
 | `tauri-plugin-dialog` | 2.8.4 | Folder picker for "Add another folder…" |
 | `tauri-plugin-log` | 2.10.2 | `~/Library/Logs/Airboss/app.log`, rotated at 1 MB, keeping 3 files. The services' lines (`airboss_services::log::line`) and panics on any thread go there too (`logs::install`), since stderr is `/dev/null` when the app opens from Finder. Nothing in the app process writes to stderr directly (`tests/logs.rs` checks the sources) |
 | `tauri-nspanel` | 2.1.1 | Quick add as a non-activating panel over full-screen apps |
+| `tauri-plugin-notification` | 2.8.1 | macOS notifications for Needs me, and their clicks (`Notification::on_action`, "tap") |
+| `objc2-user-notifications` 0.3.2, `block2` 0.6.2 | the versions already in the lock | Asking for, and reading, permission to notify (`UNUserNotificationCenter`), in `src/macos.rs`; the plugin's desktop side always answers "granted" |
 | `notify` | 9.0.0, `default-features = false`, feature `macos_kqueue` | kqueue on the WAL file and its folder. FSEvents is not used. |
 | `objc2` 0.6.5, `objc2-foundation` 0.3.2, `objc2-app-kit` 0.3.2 | the versions Tauri already links | System accent colour and the wake notification, in one module, `src/macos.rs` |
 | `serde` 1.0.229, `serde_json` 1.0.154, `thiserror` 2.0.21 | | As in `core` |
@@ -631,6 +633,19 @@ Toasts are built from `LaunchReport`. Each names the task and offers what can be
   - A separator, then "Quit Airboss".
 - **Empty:** "Nothing needs you", disabled, with the same items below it.
 
+### Notifications
+
+macOS notifications for what blocks an agent or needs me now (EM decision on the final audit). `notify.rs` decides, as pure functions; delivery goes through the `Notifications` trait (`RecordingNotifications` in tests, `tauri-plugin-notification` in the app).
+
+- **When:** a new Needs me item of the kinds **Question, Approval, Failed run and Agent stopped**. Never for Review, Proposed, Ready, Finish it? or Quiet: quiet when nothing's happening.
+- **Never twice:** each key notifies at most once in a run, even if it leaves and comes back (a dismiss undone, a snooze that ends).
+- **Not what was waiting at launch:** until sync has read every source once (`checked_at`) or a minute has passed, an item notifies only if it began waiting after the start (`since`); everything else is remembered as seen.
+- **Not while the main window is focused**, and not with the setting off. An item that arrives then is remembered too, so it doesn't notify later. A stale item ("May be out of date") is judged once it's fresh.
+- **Content:** one notification per item. The title is the task ("144 Web: slot picker"), the body is the item's one line (its headline), and the group is the task (`task-144`), so several at once go out together by task. Clicking one shows the main window on Needs me with that item selected (`nav:open`).
+- **Settings:** a Notifications switch, on by default: "A banner when an agent asks something or needs an approval, a run fails, or an agent stops. Never while Airboss is in front."
+- **Permission:** asked for at first run, alongside "Open at login" (and when the switch is turned on while macOS hasn't been asked). First run shows a second ticked box, "Notify me when an agent asks something or stops". If macOS has notifications off for Airboss, Settings says "macOS has notifications turned off for Airboss. Turn on Allow notifications in System Settings › Notifications › Airboss." with **Open System Settings**, rereading the state when Airboss is focused again. Outside the app bundle (a dev build) the permission is "unknown" and nothing is asked.
+- **Not verified without a screen:** whether the plugin's macOS delivery (`notify-rust` on `NSUserNotificationCenter`) shows the banner under the permission `UNUserNotificationCenter` asked for, and the click; `app/QA.md` checks both. The plugin's macOS side ignores the group (banners stack under Airboss), and keeps a thread per shown notification until it's clicked or cleared.
+
 ### Shortcut sheet
 
 - ? opens it, built from the command registry in DESIGN's two-column layout. It shows the hotkey from Settings, plus ⌥⌘↑↓, ⌘Z and F6.
@@ -644,6 +659,7 @@ A modal in the main window, built from the design's components:
   - Registration is tried at once. If it fails: "That key is in use by another app. Pick another."
   - Keys macOS uses by default are refused, with the reason: ⌃Space, ⌃⌥Space, ⌘Space, ⌥⌘Space and ⌃⌘Space.
 - **Open at login:** a switch.
+- **Notifications:** a switch, on by default; see "Notifications".
 - **Appearance:** System (the default), Dark or Light.
 - **Command-line tool:** Install, with its path, and whether `~/.local/bin` is on `PATH`.
   - "On `PATH`" means the user's own shell's `PATH`: `$SHELL -ilc` (interactive and login, so `~/.zprofile` **and** `~/.zshrc` count, as in Terminal), reading the `PATH` after a marker, with a 3 s deadline, after which the shell is killed; it's always reaped (`login_path.rs`). It runs in the background at start and after Install, and the answer reaches the UI as `cli` in `connections:changed`. The app's own `PATH` is launchd's and never has `~/.local/bin`.
@@ -659,6 +675,7 @@ A modal in the main window, built from the design's components:
 - **First run** is any start with no tasks. All tasks shows DESIGN screen 10, extended:
   - "Nothing here yet", with New task ⌘N and "Change hotkey…".
   - **"Open Airboss at login"**, a checkbox ticked by default. First run turns autostart on; unticking turns it off at once.
+  - **"Notify me when an agent asks something or stops"**, ticked by default. First run asks macOS for permission to notify.
   - **Repos:** the Add repos list (below), when no repo is added yet.
   - **Connections:**
 
@@ -994,7 +1011,9 @@ Writes return `Patch` (shown as → P). All `core` calls act as `me`, with one l
 | `recheck_connections` | | | `recheck()` on every service |
 | `copy_text` | `task_number(id) / agent_note / setup_command` | | clipboard plugin |
 | `install_cli` | | `{path, on_path}` | symlink `~/.local/bin/airboss` to the sidecar |
-| `get_settings` / `set_settings` | `Settings` | `Settings` | `app-settings.json`; re-registers the hotkey; autostart plugin; window backgrounds |
+| `get_settings` / `set_settings` | `Settings` | `Settings` | `app-settings.json`; re-registers the hotkey; autostart plugin; window backgrounds; asks to notify when notifications are turned on and macOS hasn't been asked |
+| `notification_permission` | | `granted / denied / not_asked / unknown` | `UNUserNotificationCenter` settings (inside the bundle) |
+| `open_notification_settings` | | | opens System Settings › Notifications at Airboss |
 | `set_folded` | `ids[], folded` | | settings, debounced |
 | `set_focus_context` | `{window, zone, selection?, view}` | | enables, disables and relabels menu items |
 | `ui_ready` | `window` | | shows the main window (2 s backstop) |

@@ -45,6 +45,8 @@ pub const COMMAND_NAMES: &[&str] = &[
     "install_cli",
     "get_settings",
     "set_settings",
+    "notification_permission",
+    "open_notification_settings",
     "set_folded",
     "set_focus_context",
     "ui_ready",

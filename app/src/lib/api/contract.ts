@@ -24,6 +24,7 @@ import type {
   NavOpen,
   NeedsChanged,
   NeedsKey,
+  NotificationPermission,
   OpenTarget,
   Patch,
   PlanCard,
@@ -91,6 +92,8 @@ export interface Commands {
   install_cli: C<None, InstallCliResult>;
   get_settings: C<None, Settings>;
   set_settings: C<{ settings: Settings }, Settings>;
+  notification_permission: C<None, NotificationPermission>;
+  open_notification_settings: C<None, null>;
   set_folded: C<{ ids: TaskId[]; folded: boolean }, null>;
   set_focus_context: C<{ context: FocusContext }, null>;
   ui_ready: C<{ window: 'main' | 'quickadd' }, null>;
@@ -128,7 +131,7 @@ export const COMMAND_NAMES = [
   'add_dependency', 'remove_dependency', 'add_link', 'remove_link', 'add_note', 'do_it', 'plan_it',
   'add_to_t3', 'reopen_and_start', 'open_thread', 'open_url', 'needs_dismiss', 'needs_snooze',
   'needs_restore', 'undo', 'recheck_connections', 'copy_text', 'install_cli', 'get_settings',
-  'set_settings', 'set_folded', 'set_focus_context', 'ui_ready', 'quickadd_shown', 'quickadd_hide',
+  'set_settings', 'notification_permission', 'open_notification_settings', 'set_folded', 'set_focus_context', 'ui_ready', 'quickadd_shown', 'quickadd_hide',
   'quickadd_resize', 'show_main',
 ] as const satisfies readonly CommandName[];
 

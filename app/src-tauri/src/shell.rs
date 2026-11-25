@@ -6,7 +6,7 @@
 //! every command is a plain function that runs without Tauri.
 
 use std::path::PathBuf;
-use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use airboss_services::NeedsList;
@@ -18,6 +18,7 @@ use crate::dto::{
 };
 use crate::errors::AppError;
 use crate::menu::MenuState;
+use crate::notify::{Notifications, RecordingNotifications};
 use crate::settings::Appearance;
 
 /// An event for the web views (Appendix B).
@@ -116,6 +117,8 @@ pub trait Shell: Send + Sync {
     fn accent(&self) -> Option<String>;
     /// The bundled `airboss` CLI, when running from the app bundle.
     fn sidecar(&self) -> Option<PathBuf>;
+    /// macOS notifications.
+    fn notifications(&self) -> Arc<dyn Notifications>;
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -133,6 +136,7 @@ pub struct RecordingShell {
     refuse_hotkey: Mutex<bool>,
     sidecar: Mutex<Option<PathBuf>>,
     accent: Mutex<Option<String>>,
+    notifications: Arc<RecordingNotifications>,
 }
 
 impl RecordingShell {
@@ -191,6 +195,11 @@ impl RecordingShell {
     /// What `sidecar` answers.
     pub fn set_sidecar(&self, path: Option<PathBuf>) {
         *lock(&self.sidecar) = path;
+    }
+
+    /// The notifications fake: what was posted, and what permission answers.
+    pub fn notifications_fake(&self) -> Arc<RecordingNotifications> {
+        self.notifications.clone()
     }
 
     /// What `accent` answers.
@@ -267,5 +276,8 @@ impl Shell for RecordingShell {
     }
     fn sidecar(&self) -> Option<PathBuf> {
         lock(&self.sidecar).clone()
+    }
+    fn notifications(&self) -> Arc<dyn Notifications> {
+        self.notifications.clone()
     }
 }

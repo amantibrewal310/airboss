@@ -84,3 +84,33 @@ describe('Settings › Repos', () => {
     expect(app.toasts.list.at(-1)!.text).toBe('Backed up to ~/Documents/Airboss backup.db');
   });
 });
+
+describe('Settings › Notifications', () => {
+  it('is on by default and turns off and on', async () => {
+    const { app, backend } = await startApp('design');
+    await render(Harness, { app, component: Overlays });
+    app.open({ kind: 'settings' });
+    await wait(30);
+    const toggle = q<HTMLButtonElement>('[role="switch"][aria-label="Notifications"]')!;
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    toggle.click();
+    await wait(30);
+    expect(app.settings.notifications).toBe(false);
+    const saved = backend.calls.filter((c) => c.command === 'set_settings').at(-1)!.args as { settings: { notifications: boolean } };
+    expect(saved.settings.notifications).toBe(false);
+    expect(q('.blocked')).toBeNull();
+  });
+
+  it('explains how to allow them when macOS has them off, with a way there', async () => {
+    const { app, backend } = await startApp('design');
+    (backend as unknown as { s: { notificationPermission: string } }).s.notificationPermission = 'denied';
+    await render(Harness, { app, component: Overlays });
+    app.open({ kind: 'settings' });
+    await wait(50);
+    const note = q<HTMLElement>('.blocked')!;
+    expect(note.textContent).toContain('System Settings › Notifications › Airboss');
+    note.querySelector<HTMLButtonElement>('button')!.click();
+    await wait(30);
+    expect(backend.calls.some((c) => c.command === 'open_notification_settings')).toBe(true);
+  });
+});

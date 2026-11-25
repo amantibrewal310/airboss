@@ -12,6 +12,7 @@ use crate::dto::{
 };
 use crate::errors::{AppError, AppResult, Ctx, ErrorCode, MSG_HOTKEY_IN_USE, MSG_LINK_GONE};
 use crate::menu::{FocusContext, WindowName};
+use crate::notify::Permission;
 use crate::opener::{self, Opening};
 use crate::settings::{Settings, check_hotkey, hotkey_label};
 use crate::shell::UiEvent;
@@ -183,8 +184,28 @@ pub fn set_settings(s: &AppState, _c: Caller, settings: Settings) -> AppResult<S
     if new.appearance != old.appearance {
         s.shell.apply_appearance(new.appearance);
     }
+    // Turning notifications on asks macOS, if it hasn't been asked yet.
+    if new.notifications && !old.notifications {
+        let n = s.shell.notifications();
+        if n.permission() == Permission::NotAsked {
+            n.request();
+        }
+    }
     s.store_settings(new.clone())?;
     Ok(new)
+}
+
+/// Whether macOS lets Airboss notify, for Settings' explanation when it doesn't.
+pub fn notification_permission(s: &AppState, _c: Caller) -> AppResult<Permission> {
+    Ok(s.shell.notifications().permission())
+}
+
+/// "Open System Settings": Notifications, at Airboss, to allow them.
+pub fn open_notification_settings(s: &AppState, _c: Caller) -> AppResult<()> {
+    s.shell
+        .notifications()
+        .open_settings()
+        .map_err(|e| AppError::internal(format!("couldn't open System Settings: {e}")))
 }
 
 /// Folds or unfolds parents; saved a second after the last change.
