@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use airboss_core::{Actor, Error, EventKind, NewTask, Store, TaskId};
+use airboss_core::{Actor, Error, EventKind, NewTask, Status, Store, TaskId};
 
 fn store() -> Store {
     Store::open_in_memory().unwrap()
@@ -230,6 +230,78 @@ fn adding_under_a_proposed_parent_is_rejected() {
         .add_task(NewTask::new("Child").under(proposal), &Actor::Me)
         .unwrap_err();
     assert!(matches!(err, Error::InvalidTarget), "{err:?}");
+}
+
+fn set_status(store: &mut Store, id: TaskId, to: Status) {
+    store.set_status(id, to, None, &Actor::Me).unwrap();
+}
+
+/// Every task's (id, parent, position) and how many events it has.
+fn snapshot(store: &Store) -> Vec<(TaskId, Option<TaskId>, u32, usize)> {
+    let mut out: Vec<_> = store
+        .tree()
+        .unwrap()
+        .into_iter()
+        .map(|n| {
+            let t = n.task;
+            (
+                t.id,
+                t.parent,
+                t.position,
+                store.history(t.id).unwrap().len(),
+            )
+        })
+        .collect();
+    out.sort();
+    out
+}
+
+#[test]
+fn moving_under_a_done_or_dropped_parent_is_rejected() {
+    for status in [Status::Done, Status::Dropped] {
+        let mut s = store();
+        let closed = add(&mut s, "Closed", None);
+        let t = add(&mut s, "T", None);
+        set_status(&mut s, closed, status);
+        let before = snapshot(&s);
+
+        let err = s.move_task(t, Some(closed), 1, &Actor::Me).unwrap_err();
+        assert!(matches!(err, Error::InvalidTarget), "{status:?}: {err:?}");
+        assert_eq!(snapshot(&s), before);
+    }
+}
+
+#[test]
+fn adding_under_a_done_or_dropped_parent_is_rejected() {
+    for status in [Status::Done, Status::Dropped] {
+        let mut s = store();
+        let closed = add(&mut s, "Closed", None);
+        set_status(&mut s, closed, status);
+        let before = snapshot(&s);
+
+        let err = s
+            .add_task(NewTask::new("Child").under(closed), &Actor::Me)
+            .unwrap_err();
+        assert!(matches!(err, Error::InvalidTarget), "{status:?}: {err:?}");
+        assert_eq!(snapshot(&s), before);
+    }
+}
+
+#[test]
+fn moving_and_adding_under_other_statuses_is_fine() {
+    for status in [
+        Status::Todo,
+        Status::Doing,
+        Status::InReview,
+        Status::Blocked,
+    ] {
+        let mut s = store();
+        let p = add(&mut s, "P", None);
+        let t = add(&mut s, "T", None);
+        s.set_status(p, status, Some("reason"), &Actor::Me).unwrap();
+        s.move_task(t, Some(p), 1, &Actor::Me).unwrap();
+        add(&mut s, "U", Some(p));
+    }
 }
 
 #[test]

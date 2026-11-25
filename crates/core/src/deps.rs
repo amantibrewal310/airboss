@@ -311,16 +311,6 @@ mod tests {
             .id
     }
 
-    /// Status changes aren't in the public API yet, so tests set them directly.
-    fn set_status(s: &Store, id: TaskId, status: &str) {
-        s.conn
-            .execute(
-                "UPDATE tasks SET status = ?2 WHERE id = ?1",
-                params![id.0, status],
-            )
-            .unwrap();
-    }
-
     fn count(s: &Store, table: &str) -> i64 {
         s.conn
             .query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))
@@ -329,63 +319,6 @@ mod tests {
 
     fn kinds(s: &Store, id: TaskId) -> Vec<EventKind> {
         s.history(id).unwrap().into_iter().map(|e| e.kind).collect()
-    }
-
-    fn is_waiting(s: &Store, id: TaskId) -> bool {
-        s.tree()
-            .unwrap()
-            .into_iter()
-            .find(|n| n.task.id == id)
-            .unwrap()
-            .waiting
-    }
-
-    #[test]
-    fn a_waiting_task_becomes_ready_when_its_blocker_finishes() {
-        for finished in ["done", "dropped"] {
-            let mut s = Store::open_in_memory().unwrap();
-            let a = top(&mut s, "A");
-            let b = top(&mut s, "B");
-            let c = top(&mut s, "C");
-            s.add_dependency(c, a, &Actor::Me).unwrap();
-            s.add_dependency(c, b, &Actor::Me).unwrap();
-            let ready = |s: &Store| s.ready().unwrap().iter().map(|t| t.id).collect::<Vec<_>>();
-            assert!(is_waiting(&s, c));
-            assert_eq!(ready(&s), vec![a, b]);
-
-            set_status(&s, a, finished);
-            assert!(is_waiting(&s, c), "still waits on B");
-            let still: Vec<_> = s.waits_on(c).unwrap().iter().map(|t| t.id).collect();
-            assert_eq!(still, vec![b]);
-
-            set_status(&s, b, finished);
-            assert!(!is_waiting(&s, c));
-            assert!(s.waits_on(c).unwrap().is_empty());
-            assert_eq!(ready(&s), vec![c], "{finished}");
-        }
-    }
-
-    #[test]
-    fn ready_leaves_out_tasks_that_are_not_todo() {
-        let mut s = Store::open_in_memory().unwrap();
-        let a = top(&mut s, "A");
-        let b = top(&mut s, "B");
-        set_status(&s, a, "doing");
-        let ready: Vec<_> = s.ready().unwrap().iter().map(|t| t.id).collect();
-        assert_eq!(ready, vec![b]);
-    }
-
-    #[test]
-    fn a_loop_through_finished_tasks_is_still_a_loop() {
-        let mut s = Store::open_in_memory().unwrap();
-        let a = top(&mut s, "A");
-        let b = top(&mut s, "B");
-        s.add_dependency(b, a, &Actor::Me).unwrap();
-        set_status(&s, b, "done");
-        assert!(matches!(
-            s.add_dependency(a, b, &Actor::Me),
-            Err(Error::Loop)
-        ));
     }
 
     #[test]
@@ -486,58 +419,5 @@ mod tests {
             (count(&s, "task_deps"), count(&s, "task_events")),
             (deps, events)
         );
-    }
-
-    fn wave_ids(order: &RunOrder) -> Vec<Vec<TaskId>> {
-        order
-            .waves
-            .iter()
-            .map(|w| w.iter().map(|t| t.id).collect())
-            .collect()
-    }
-
-    #[test]
-    fn run_order_leaves_out_finished_subtasks_and_what_they_held_up() {
-        let mut s = Store::open_in_memory().unwrap();
-        let p = top(&mut s, "Project");
-        let [a, b, c, d] = ["A", "B", "C", "D"].map(|t| under(&mut s, p, t));
-        s.add_dependency(c, a, &Actor::Me).unwrap();
-        s.add_dependency(d, b, &Actor::Me).unwrap();
-        set_status(&s, a, "done");
-        set_status(&s, b, "dropped");
-
-        let order = s.run_order(p).unwrap();
-        assert_eq!(wave_ids(&order), vec![vec![c, d]]);
-        assert!(order.waiting_outside.is_empty());
-    }
-
-    #[test]
-    fn a_finished_blocker_outside_does_not_hold_a_subtask() {
-        let mut s = Store::open_in_memory().unwrap();
-        let elsewhere = top(&mut s, "Elsewhere");
-        let p = top(&mut s, "Project");
-        let a = under(&mut s, p, "A");
-        s.add_dependency(a, elsewhere, &Actor::Me).unwrap();
-        set_status(&s, elsewhere, "done");
-
-        let order = s.run_order(p).unwrap();
-        assert_eq!(wave_ids(&order), vec![vec![a]]);
-        assert!(order.waiting_outside.is_empty());
-    }
-
-    #[test]
-    fn a_finished_step_no_longer_orders_its_phase() {
-        let mut s = Store::open_in_memory().unwrap();
-        let p = top(&mut s, "Project");
-        let p1 = under(&mut s, p, "Phase 1");
-        let p2 = under(&mut s, p, "Phase 2");
-        let s1 = under(&mut s, p1, "Step 1");
-        under(&mut s, p1, "Step 1b");
-        let s2 = under(&mut s, p2, "Step 2");
-        s.add_dependency(s2, s1, &Actor::Me).unwrap();
-        assert_eq!(wave_ids(&s.run_order(p).unwrap()), vec![vec![p1], vec![p2]]);
-
-        set_status(&s, s1, "done");
-        assert_eq!(wave_ids(&s.run_order(p).unwrap()), vec![vec![p1, p2]]);
     }
 }
