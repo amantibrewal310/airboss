@@ -227,7 +227,8 @@ fn github_row(p: &PrsPart) -> Connection {
         return match p.gh.detail.as_deref() {
             Some(d) if d.contains("Install") => row(false, "Not installed", Some(d.into())),
             Some(d) => row(false, "Not signed in", Some(d.into())),
-            None => row(false, "Checking", None),
+            // Not read yet: still checking, which isn't a problem to set up.
+            None => row(true, "Checking", None),
         };
     }
     if p.gh.state == HealthState::Broken {
@@ -267,6 +268,8 @@ fn t3_row(t: &ThreadsPart) -> Connection {
         fix,
     };
     match t.t3.state {
+        // Not read yet (no saved state either): still checking, not missing.
+        HealthState::Off if t.t3.detail.is_none() => row(true, "Checking".into(), None),
         HealthState::Off => row(
             false,
             "Not installed".into(),
@@ -290,5 +293,32 @@ fn t3_row(t: &ThreadsPart) -> Connection {
             ),
             (None, Some(_)) => row(true, "Live state".into(), None),
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// At start-up, before either worker's first pass, the footer mustn't claim T3 isn't
+    /// installed or count GitHub as a problem: both are still being checked.
+    #[test]
+    fn before_the_first_read_both_rows_say_checking_and_are_not_problems() {
+        let rows = Hub::new().connections();
+        let state = |name: &str| {
+            rows.iter()
+                .find(|r| r.name == name)
+                .map(|r| (r.ok, r.state.clone(), r.fix.clone()))
+        };
+        assert_eq!(state("GitHub"), Some((true, "Checking".into(), None)));
+        assert_eq!(state("T3 Code"), Some((true, "Checking".into(), None)));
+    }
+
+    #[test]
+    fn t3_found_missing_is_still_not_installed() {
+        let mut t = ThreadsPart::default();
+        t.t3.set(HealthState::Off, "T3 isn't installed", UNIX_EPOCH);
+        let row = t3_row(&t);
+        assert_eq!((row.ok, row.state.as_str()), (false, "Not installed"));
     }
 }
