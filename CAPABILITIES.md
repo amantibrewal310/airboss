@@ -52,6 +52,6 @@ A module counts as done only after these are measured on a real Mac.
 | `mcp` | [SPEC-mcp.md](SPEC-mcp.md) | **Built 26 Nov 2026** (`crates/mcp`, 107 tests, all performance targets met) |
 | `services` (shared crate) | [SPEC-attention.md, shared contract](SPEC-attention.md#shared-contract) | **Built 26 Nov 2026** (`crates/services`, 36 tests, with fakes behind the `fakes` feature) |
 | `app` | [SPEC-app.md](SPEC-app.md) | Draft 1, waiting for review |
-| `launch` | [SPEC-launch.md](SPEC-launch.md) | Draft 1, waiting for review |
-| `sync` | [SPEC-sync.md](SPEC-sync.md) | Draft 1, waiting for review |
-| `attention` | [SPEC-attention.md](SPEC-attention.md) | Draft 1, waiting for review |
+| `launch` | [SPEC-launch.md](SPEC-launch.md) | **Built 26 Nov 2026** (`crates/launch`) |
+| `sync` | [SPEC-sync.md](SPEC-sync.md) | **Built 26 Nov 2026** (`crates/sync`) |
+| `attention` | [SPEC-attention.md](SPEC-attention.md) | **Built 26 Nov 2026** (`crates/attention`) |
