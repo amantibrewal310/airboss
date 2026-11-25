@@ -4,13 +4,14 @@
 //! See `SPEC-core.md` at the repo root for the rules enforced here.
 
 mod db;
+mod deps;
 mod error;
 mod events;
 mod links;
 mod model;
 mod permissions;
-mod status;
 mod positions;
+mod status;
 mod tasks;
 mod tx;
 
@@ -21,6 +22,7 @@ use rusqlite::Connection;
 use crate::tx::Tx;
 
 pub use error::{Error, Result};
+pub use model::RunOrder;
 pub use model::TaskEdit;
 pub use model::{
     Actor, Event, EventKind, NewTask, Origin, Repo, Status, Task, TaskNode, UnknownValue,
@@ -142,6 +144,9 @@ pub(crate) mod fault {
     pub(crate) const PR_STATE_RECORDED: &str = "links::set_pr_state after one task";
     pub(crate) const STATUS_UPDATED: &str = "status::apply after update";
     pub(crate) const MOVE_RENUMBERED: &str = "positions::move_task after renumber";
+    pub(crate) const DEP_ADDED: &str = "deps::add after event";
+    pub(crate) const DEP_REMOVED: &str = "deps::remove after event";
+    pub(crate) const DEPS_CLEARED: &str = "deps::on_task_deleting after events";
 
     pub(crate) fn arm(point: &'static str) {
         ARMED.with(|a| a.set(Some(point)));
@@ -166,6 +171,9 @@ pub(crate) mod fault {
     pub(crate) const PR_STATE_RECORDED: &str = "links::set_pr_state after one task";
     pub(crate) const STATUS_UPDATED: &str = "status::apply after update";
     pub(crate) const MOVE_RENUMBERED: &str = "positions::move_task after renumber";
+    pub(crate) const DEP_ADDED: &str = "deps::add after event";
+    pub(crate) const DEP_REMOVED: &str = "deps::remove after event";
+    pub(crate) const DEPS_CLEARED: &str = "deps::on_task_deleting after events";
 
     #[inline(always)]
     pub(crate) fn hit(_point: &str) -> crate::Result<()> {

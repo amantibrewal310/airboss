@@ -462,3 +462,13 @@ impl NewLink {
         self
     }
 }
+
+/// The order a parent's open subtasks can run in (rule 18). Only shown; nothing starts itself.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RunOrder {
+    /// Wave 1 waits on nothing under the parent, wave 2 only on wave 1, and so on.
+    /// Siblings keep their order within a wave.
+    pub waves: Vec<Vec<Task>>,
+    /// Subtasks that wait, directly or through a sibling, on an open task outside the parent.
+    pub waiting_outside: Vec<Task>,
+}
