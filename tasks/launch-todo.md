@@ -63,7 +63,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
   - **Files:** `src/core_access.rs`, `src/git.rs`, `src/fake.rs`, `src/lib.rs`, `tests/common/mod.rs`
   - **Depends on:** T5
 
-- [ ] **T7. `prepare`** (S)
+- [x] **T7. `prepare`** (S)
   - **Description:** refusals, repos (own or open subtasks'), `needs_choice`, `choices`, branch preview, `waiting_on`, `started`.
   - **Acceptance:** each field for a task with repos, one with only subtasks' repos, one with none; proposed, done and dropped refused; no process runs.
   - **Verify:** `tests/prepare.rs`.

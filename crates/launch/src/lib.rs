@@ -19,6 +19,7 @@ mod errors;
 #[cfg(feature = "fakes")]
 pub mod fake;
 mod git;
+mod prepare;
 mod process;
 pub mod t3cli;
 mod worker;
@@ -30,7 +31,11 @@ use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use airboss_services::{Availability, Changes, Clock, ServiceError, SyncService, SystemClock};
+use airboss_core::{RepoId, TaskId};
+use airboss_services::{
+    Availability, Changes, Clock, Connection, ErrorCode, LaunchReport, LaunchService, Mode,
+    Prepared, Service, ServiceError, StartRequest, StoreChange, SyncService, SystemClock,
+};
 
 pub use core_access::{CoreAccess, CoreWrite, FailWith};
 pub use db::MIGRATIONS;
@@ -175,4 +180,86 @@ pub fn open(
         worker: Mutex::new(None),
     });
     Ok((launch, LaunchWorker::new(inner, rx)))
+}
+
+/// The connections popover's "T3 Code" row for an availability.
+fn connection(availability: &Availability) -> Connection {
+    let name = "T3 Code".to_string();
+    match availability {
+        Availability::Ready { .. } => Connection {
+            name,
+            ok: true,
+            state: "Connected".into(),
+            detail: "Do it and Plan it start agent threads here.".into(),
+            fix: None,
+        },
+        Availability::Missing { .. } => Connection {
+            name,
+            ok: false,
+            state: "Not found".into(),
+            detail: "Do it and Plan it start agent threads here.".into(),
+            fix: Some(
+                "Install T3 Code to turn on Do it and Plan it. Everything else works.".into(),
+            ),
+        },
+        Availability::Unknown => Connection {
+            name,
+            ok: true,
+            state: "Checking…".into(),
+            detail: "Do it and Plan it start agent threads here.".into(),
+            fix: None,
+        },
+    }
+}
+
+impl Service for Launch {
+    fn connections(&self) -> Vec<Connection> {
+        vec![connection(&lock(&self.inner.availability))]
+    }
+
+    fn recheck(&self) {
+        self.inner.queue(LaunchMsg::CheckAvailability);
+        self.inner.queue(LaunchMsg::Settle);
+    }
+
+    fn changes(&self) -> Changes {
+        self.inner.changes.clone()
+    }
+
+    fn store_changed(&self, _c: &StoreChange) {}
+
+    fn woke(&self) {
+        self.inner.queue(LaunchMsg::Woke);
+    }
+
+    fn shutdown(&self) {
+        self.inner
+            .shut
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        self.inner.queue(LaunchMsg::Shutdown);
+    }
+}
+
+impl LaunchService for Launch {
+    fn availability(&self) -> Availability {
+        lock(&self.inner.availability).clone()
+    }
+
+    fn prepare(&self, task: TaskId, mode: Mode) -> Result<Prepared, ServiceError> {
+        prepare::prepare(&self.inner, task, mode)
+    }
+
+    fn start(&self, _req: &StartRequest) -> Result<LaunchReport, ServiceError> {
+        Err(ServiceError::new(
+            ErrorCode::Internal,
+            "Do it isn't built yet.",
+        ))
+    }
+
+    fn add_to_t3(&self, _repo: RepoId) -> Result<(), ServiceError> {
+        Err(ServiceError::new(
+            ErrorCode::Internal,
+            "Add to T3 isn't built yet.",
+        ))
+    }
 }
