@@ -14,7 +14,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
 
 ## Phase 1: Foundation
 
-- [ ] **T1. Workspace and empty crate** (S)
+- [x] **T1. Workspace and empty crate** (S)
   - **Description:** Set up a Cargo workspace with `rust-toolchain.toml` pinning Rust 1.100 and the `crates/core` library crate (`airboss-core`, edition 2024). Add the `core::Error` enum (`NotFound`, `NotAllowed`, `InvalidTransition`, `NoteRequired`, `InvalidTarget`, `Loop`, `DuplicateKey`, `Db`) and wrapper types for ids (`TaskId`, `EventId`, `LinkId`, `RepoId`).
   - **Acceptance:**
     - `cargo build` uses Rust 1.100.
