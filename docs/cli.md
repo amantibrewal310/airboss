@@ -40,6 +40,24 @@ Added repo booking-api at /Users/you/Workspace/booking-api
 
 Lists the registered repos: name, path and remote.
 
+### `airboss repo edit <NAME> [--name <NEW>] [--path <PATH>] [--remote <URL> | --no-remote]`
+
+Renames a repo, points it at the folder it moved to, or changes or clears its remote. Its tasks keep it, so they follow the change. A relative path is taken from the current directory.
+
+```console
+$ airboss repo edit booking-web --path ~/Code/booking-web
+Edited repo booking-web at /Users/you/Code/booking-web
+```
+
+### `airboss repo rm <NAME>`
+
+Removes a repo. It's unlinked from every task that has it first, done ones too, and each of those tasks gets a `repo unlinked` entry in its history. The tasks themselves stay.
+
+```console
+$ airboss repo rm booking-api
+Removed repo booking-api, and unlinked it from #1, #3
+```
+
 ### `airboss repo link <TASK> <NAME>` and `airboss repo unlink <TASK> <NAME>`
 
 Links a task to a repo, or unlinks it. A task can have several.

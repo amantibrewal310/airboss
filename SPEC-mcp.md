@@ -136,6 +136,8 @@ airboss mv 12 [--under 9 | --top] [--pos 2]
 airboss wait 12 --on 9 | airboss unwait 12 --on 9
 airboss link 12 pr owner/repo#42 [--url …] [--title …]
 airboss repo add hub-ui ~/Workspace/…/hub-ui [--remote …] | airboss repo ls
+airboss repo edit hub-ui [--name …] [--path …] [--remote … | --no-remote]
+airboss repo rm hub-ui                # unlinks it from its tasks first
 airboss log [--after <event id>]      # recent history, newest last
 airboss mcp                           # the MCP server over stdio (agents only)
 ```

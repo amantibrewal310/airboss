@@ -220,6 +220,7 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
    | Call | `me` | an agent | `plan` | `sync:gh` | `sync:t3` | `launch` |
    |---|---|---|---|---|---|---|
    | `add_repo` | yes | (no) | (no) | (no) | (no) | (no) |
+   | `edit_repo` / `remove_repo` | yes | (no) | (no) | (no) | (no) | (no) |
    | `add_task` | yes, as `todo` | yes, always as `proposed` | (no) | (no) | (no) | (no) |
    | `add_tasks` (a plan) | yes | (no) | yes | (no) | (no) | (no) |
    | `edit_task` (title, notes) | yes | (no) | (no) | (no) | (no) | (no) |
@@ -244,6 +245,10 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
     - `link_repo` writes a `repo_linked` event and `unlink_repo` a `repo_unlinked` event, each naming the repo. Linking a repo that's already linked changes nothing. Unlinking one that isn't is `Error::NotFound`.
     - `Task.repos` lists a task's own repos, sorted by repo name. `tree()` carries the same list. A parent shows only its own; the union over its subtree is the app's job.
     - A plan sent again leaves an existing step's repos as they are, like its title (rule 20). `plan` links more with `link_repo`.
+33. **Repos can be edited and removed, by `me` only.**
+    - `edit_repo` changes a repo's name, path or remote; what it's not given stays as it is, and `Some(None)` clears the remote. The name is trimmed. A blank name or path is `Error::InvalidTarget`, a name or path another repo has is `Error::AlreadyExists`, and a missing repo is `Error::NotFound`. Tasks keep the repo, so they follow it. Like `add_repo`, it writes no event.
+    - `remove_repo` unlinks the repo from every task that has it, in any status, with a `repo_unlinked` event on each naming the repo, then deletes it, all in one change. It returns those tasks by id. A missing repo is `Error::NotFound`.
+    - A removed repo's id can be handed out again to the next repo added. A module keeping its own rows by repo id mustn't assume otherwise.
 25. **A task has at most one branch,** shared by every thread `launch` starts for it. Null means no branch yet. `set_branch` writes one `edited` event whose body names the branch, e.g. `branch: booking-flow`, or `branch cleared`. A blank name clears it. Setting the branch it already has writes nothing.
     - A name, once trimmed, uses only `A–Z`, `a–z`, `0–9`, `.`, `_`, `/` and `-`, and is at most 200 characters long.
     - It can't contain `..`, start with `-` or `/`, or end with `/` or `.lock`.
@@ -326,6 +331,9 @@ impl Store {
 
     // repos
     pub fn add_repo(&mut self, name: &str, path: &Path, remote: Option<&str>, actor: &Actor) -> Result<Repo>;
+    pub fn edit_repo(&mut self, id: RepoId, name: Option<&str>, path: Option<&Path>, remote: Option<Option<&str>>,
+                     actor: &Actor) -> Result<Repo>;              // rule 33; no event
+    pub fn remove_repo(&mut self, id: RepoId, actor: &Actor) -> Result<Vec<TaskId>>;  // the tasks it was unlinked from
     pub fn repos(&self) -> Result<Vec<Repo>>;
 
     // tasks
@@ -598,6 +606,7 @@ The final audit of `main` found gaps that need `core`. They're folded into the r
 
 1. **A newer database is refused** (rule 32). An older `airboss mcp`, still running after an update, wrote a PR ref the newer app never matched.
 2. **One place for the database path.** `default_db_path()` and `DB_VAR` replace the CLI's and the app's own copies. With no `HOME` the CLI errored while the app used a relative path; now both get the same error.
+3. **Repos can be edited and removed** (rules 8 and 33). A wrong first-run folder or a moved checkout needed SQLite to fix.
 
 ## Open questions
 

@@ -9,6 +9,8 @@ use crate::{Error, Result};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Call {
     AddRepo,
+    EditRepo,
+    RemoveRepo,
     AddTask,
     AddPlan,
     EditTask,
@@ -41,7 +43,7 @@ pub(crate) fn allowed(call: Call, actor: &Actor) -> Result<()> {
     use Call::*;
     valid_actor(actor)?;
     let ok = match call {
-        AddRepo | EditTask | MoveTask | DeleteTask => *actor == Me,
+        AddRepo | EditRepo | RemoveRepo | EditTask | MoveTask | DeleteTask => *actor == Me,
         AddTask | Unlink => matches!(actor, Me | Agent(_)),
         AddPlan | ChangeRepos | ChangeDependency => matches!(actor, Me | Plan),
         // A plan arrives as a tree of tasks; it has nothing to say about one afterwards.
@@ -76,6 +78,8 @@ mod tests {
         let agent = Actor::Agent("t3/a1".into());
         let table: Vec<(Call, Vec<Actor>)> = vec![
             (Call::AddRepo, vec![me.clone()]),
+            (Call::EditRepo, vec![me.clone()]),
+            (Call::RemoveRepo, vec![me.clone()]),
             (Call::AddTask, vec![me.clone(), agent.clone()]),
             (Call::AddPlan, vec![me.clone(), Actor::Plan]),
             (Call::EditTask, vec![me.clone()]),

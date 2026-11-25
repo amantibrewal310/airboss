@@ -805,10 +805,7 @@ pub fn repo_add(
     remote: Option<&str>,
     json: bool,
 ) -> Result<String, ToolError> {
-    let path = path
-        .canonicalize()
-        .or_else(|_| std::env::current_dir().map(|d| d.join(path)))
-        .map_err(|e| ToolError::new(format!("Couldn't resolve {}: {e}", path.display())))?;
+    let path = full_path(path)?;
     let repo = store
         .add_repo(name.trim(), &path, remote, ME)
         .map_err(ToolError::from_core)?;
@@ -816,6 +813,94 @@ pub fn repo_add(
         return to_json(&repo);
     }
     Ok(format!("Added repo {} at {}\n", repo.name, repo.path))
+}
+
+/// The registered repo called `name`, or an error naming the ones there are.
+fn find_repo(store: &Store, name: &str) -> Result<Repo, ToolError> {
+    let repos = store.repos().map_err(ToolError::from_core)?;
+    if repos.is_empty() {
+        return Err(ToolError::new(format!(
+            "There's no repo named \"{}\". No repos are registered yet.",
+            name.trim()
+        )));
+    }
+    let id = tools::repo_ids(&repos, &[name.to_string()])?[0];
+    repos
+        .into_iter()
+        .find(|r| r.id == id)
+        .ok_or_else(|| ToolError::from_core(Error::NotFound))
+}
+
+/// A path as `repo add` and `repo edit` store it: canonical when it exists, otherwise taken
+/// from the current directory.
+fn full_path(path: &Path) -> Result<std::path::PathBuf, ToolError> {
+    path.canonicalize()
+        .or_else(|_| std::env::current_dir().map(|d| d.join(path)))
+        .map_err(|e| ToolError::new(format!("Couldn't resolve {}: {e}", path.display())))
+}
+
+/// What `airboss repo edit` changes. `remote: Some(None)` clears the remote.
+pub struct RepoChange<'a> {
+    pub name: Option<&'a str>,
+    pub path: Option<&'a Path>,
+    pub remote: Option<Option<&'a str>>,
+}
+
+/// `airboss repo edit`: a new name, folder or remote. Tasks keep the repo.
+pub fn repo_edit(
+    store: &mut Store,
+    name: &str,
+    change: RepoChange<'_>,
+    json: bool,
+) -> Result<String, ToolError> {
+    if change.name.is_none() && change.path.is_none() && change.remote.is_none() {
+        return Err(ToolError::new(
+            "Give --name, --path, --remote or --no-remote.",
+        ));
+    }
+    let repo = find_repo(store, name)?;
+    let path = change.path.map(full_path).transpose()?;
+    let repo = store
+        .edit_repo(repo.id, change.name, path.as_deref(), change.remote, ME)
+        .map_err(|e| match e {
+            Error::InvalidTarget => {
+                ToolError::new("A repo needs a name and a path that aren't blank.")
+            }
+            e => ToolError::from_core(e),
+        })?;
+    if json {
+        return to_json(&repo);
+    }
+    Ok(format!("Edited repo {} at {}\n", repo.name, repo.path))
+}
+
+/// What `airboss repo rm --json` prints.
+#[derive(Serialize)]
+struct Removed {
+    repo: Repo,
+    unlinked: Vec<TaskId>,
+}
+
+/// `airboss repo rm`: unlinks the repo from every task that has it, then removes it.
+pub fn repo_rm(store: &mut Store, name: &str, json: bool) -> Result<String, ToolError> {
+    let repo = find_repo(store, name)?;
+    let unlinked = store
+        .remove_repo(repo.id, ME)
+        .map_err(ToolError::from_core)?;
+    if json {
+        return to_json(&Removed { repo, unlinked });
+    }
+    Ok(match unlinked.as_slice() {
+        [] => format!("Removed repo {}; no task had it\n", repo.name),
+        ids => {
+            let ids: Vec<String> = ids.iter().map(|id| id_text(*id)).collect();
+            format!(
+                "Removed repo {}, and unlinked it from {}\n",
+                repo.name,
+                ids.join(", ")
+            )
+        }
+    })
 }
 
 /// `airboss repo link` and `repo unlink`.

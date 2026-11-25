@@ -163,6 +163,8 @@ pub(crate) mod fault {
     pub(crate) const NOTE_RECORDED: &str = "tasks::add_note after event";
     pub(crate) const REPO_LINKED: &str = "repos::link_repo after insert";
     pub(crate) const REPO_UNLINKED: &str = "repos::unlink_repo after delete";
+    pub(crate) const REPO_EDITED: &str = "repos::edit_repo after update";
+    pub(crate) const REPO_REMOVED: &str = "repos::remove_repo after unlinking, before delete";
     pub(crate) const LINK_INSERTED: &str = "links::link after insert";
     pub(crate) const LINK_DELETED: &str = "links::unlink after delete";
     pub(crate) const PR_STATE_RECORDED: &str = "links::set_pr_state after one task";

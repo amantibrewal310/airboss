@@ -550,6 +550,114 @@ fn repo_add_link_and_unlink() {
 }
 
 #[test]
+fn repo_edit_renames_moves_and_changes_the_remote() {
+    let dir = TempDir::new();
+    let db = dir.db();
+    ok(
+        &db,
+        &[
+            "repo",
+            "add",
+            "web",
+            "/src/web",
+            "--remote",
+            "git@x:web.git",
+        ],
+    );
+    ok(&db, &["add", "Task", "--repo", "web"]);
+    let src = dir.0.join("moved");
+    std::fs::create_dir_all(&src).unwrap();
+    let src = src.canonicalize().unwrap();
+    assert_eq!(
+        ok(
+            &db,
+            &[
+                "repo",
+                "edit",
+                "web",
+                "--name",
+                "site",
+                "--path",
+                src.to_str().unwrap()
+            ]
+        ),
+        format!("Edited repo site at {}\n", src.display())
+    );
+    assert_eq!(
+        json(&db, &["show", "1"])["task"]["repos"],
+        serde_json::json!(["site"])
+    );
+    let v = json(&db, &["repo", "edit", "site", "--no-remote"]);
+    assert_eq!(v["remote_url"], Value::Null);
+    let v = json(&db, &["repo", "edit", "site", "--remote", "git@x:site.git"]);
+    assert_eq!(v["remote_url"], "git@x:site.git");
+
+    ok(&db, &["repo", "add", "api", "/src/api"]);
+    assert_eq!(
+        fails(&db, &["repo", "edit", "site", "--name", "api"]),
+        "That name or path is already registered. List the repos to see it."
+    );
+    assert_eq!(
+        fails(&db, &["repo", "edit", "site", "--name", " "]),
+        "A repo needs a name and a path that aren't blank."
+    );
+    assert_eq!(
+        fails(&db, &["repo", "edit", "site"]),
+        "Give --name, --path, --remote or --no-remote."
+    );
+    assert_eq!(
+        fails(&db, &["repo", "edit", "nope", "--name", "x"]),
+        "There's no repo named \"nope\". Registered repos: api, site."
+    );
+    assert!(
+        !run(
+            &db,
+            &["repo", "edit", "site", "--remote", "a", "--no-remote"]
+        )
+        .status
+        .success()
+    );
+}
+
+#[test]
+fn repo_rm_unlinks_its_tasks_then_removes_it() {
+    let dir = TempDir::new();
+    let db = dir.db();
+    ok(&db, &["repo", "add", "web", "/src/web"]);
+    ok(&db, &["repo", "add", "api", "/src/api"]);
+    ok(&db, &["add", "One", "--repo", "web", "--repo", "api"]);
+    ok(&db, &["add", "Two", "--repo", "web"]);
+    assert_eq!(
+        ok(&db, &["repo", "rm", "web"]),
+        "Removed repo web, and unlinked it from #1, #2\n"
+    );
+    assert_eq!(ok(&db, &["repo", "ls"]), "api  /src/api\n");
+    assert_eq!(
+        json(&db, &["show", "1"])["task"]["repos"],
+        serde_json::json!(["api"])
+    );
+    let log = json(&db, &["log"]);
+    let last = &log.as_array().unwrap()[log.as_array().unwrap().len() - 1];
+    assert_eq!(
+        (last["kind"].as_str(), last["body"].as_str()),
+        (Some("repo_unlinked"), Some("web"))
+    );
+
+    let v = json(&db, &["repo", "rm", "api"]);
+    assert_eq!(v["repo"]["name"], "api");
+    assert_eq!(v["unlinked"], serde_json::json!([1]));
+    ok(&db, &["repo", "add", "ios", "/src/ios"]);
+    assert_eq!(
+        ok(&db, &["repo", "rm", "ios"]),
+        "Removed repo ios; no task had it\n"
+    );
+    assert_eq!(
+        fails(&db, &["repo", "rm", "ios"]),
+        "There's no repo named \"ios\". No repos are registered yet."
+    );
+}
+
+#[test]
 fn branch_sets_and_clears() {
     let dir = TempDir::new();
     let db = dir.db();

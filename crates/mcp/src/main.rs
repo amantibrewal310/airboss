@@ -203,7 +203,7 @@ enum Command {
         #[command(flatten)]
         out: Out,
     },
-    /// Register and list repos, and link them to tasks.
+    /// Register, edit, remove and list repos, and link them to tasks.
     #[command(subcommand)]
     Repo(RepoCommand),
     /// Show recent history, newest last.
@@ -231,6 +231,32 @@ enum RepoCommand {
         /// Its remote URL.
         #[arg(long)]
         remote: Option<String>,
+        #[command(flatten)]
+        out: Out,
+    },
+    /// Rename a repo, point it at another folder, or change its remote.
+    Edit {
+        /// The repo's name now.
+        name: String,
+        /// Its new name.
+        #[arg(long = "name", value_name = "NEW")]
+        new_name: Option<String>,
+        /// Where it's checked out now.
+        #[arg(long)]
+        path: Option<PathBuf>,
+        /// Its new remote URL.
+        #[arg(long, conflicts_with = "no_remote")]
+        remote: Option<String>,
+        /// Clear its remote URL.
+        #[arg(long)]
+        no_remote: bool,
+        #[command(flatten)]
+        out: Out,
+    },
+    /// Remove a repo. It's unlinked from every task that has it first.
+    Rm {
+        /// The repo's name.
+        name: String,
         #[command(flatten)]
         out: Out,
     },
@@ -379,6 +405,26 @@ fn run(command: Command) -> Result<String, String> {
                 remote,
                 out,
             } => cli::repo_add(store, &name, &path, remote.as_deref(), out.json),
+            RepoCommand::Edit {
+                name,
+                new_name,
+                path,
+                remote,
+                no_remote,
+                out,
+            } => {
+                let change = cli::RepoChange {
+                    name: new_name.as_deref(),
+                    path: path.as_deref(),
+                    remote: match (remote.as_deref(), no_remote) {
+                        (Some(url), _) => Some(Some(url)),
+                        (None, true) => Some(None),
+                        (None, false) => None,
+                    },
+                };
+                cli::repo_edit(store, &name, change, out.json)
+            }
+            RepoCommand::Rm { name, out } => cli::repo_rm(store, &name, out.json),
             RepoCommand::Link { task, name, out } => {
                 cli::repo_link(store, task, &name, true, out.json, style)
             }
