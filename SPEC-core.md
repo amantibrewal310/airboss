@@ -306,6 +306,8 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
     - A failing migration leaves nothing of itself behind. Those before it in the list stay applied.
     - Foreign keys are off while it runs, and it's refused if it leaves a row breaking one (`PRAGMA foreign_key_check`). So a `DELETE` in a migration doesn't cascade.
     - It writes no events and sends no notification.
+32. **A database from a newer Airboss is refused.** When `schema_migrations` records a version of a module newer than the binary knows, `Store::open` (for `core`) and `migrate_module` (for that module) fail, and nothing is read or written. An open `Store` checks `core`'s version inside every write transaction too, so a long-running `airboss mcp` stops writing once a newer app has migrated the file.
+    - The error is `Error::Db`, so callers that match every variant don't change, and `Error::is_newer_database()` recognises it. Its text is `NEWER_DATABASE`: "This database was created by a newer Airboss. Update the `airboss` command."
 
 ## API shape
 
@@ -386,6 +388,7 @@ pub enum DepRef { Key(String), Task(TaskId) }
 
 pub enum Error { EmptyTitle, AlreadyExists, NotFound, NotAllowed, InvalidTransition, NoteRequired, InvalidTarget, Loop,
                  DuplicateKey, Db(rusqlite::Error) }
+impl Error { pub fn is_newer_database(&self) -> bool; }   // rule 32; its text is NEWER_DATABASE
 ```
 
 `Store` isn't shared between threads by itself. The app holds one `Store` behind a mutex. Every call is short, so `mcp`, `app` and `sync` waiting on one lock stays well under the 20 ms MCP target.
@@ -585,6 +588,12 @@ The app and service specs asked for a few more things. The EM decided them in [t
 - `mcp` says what a PR ref or a branch name may be when `core` refuses one, instead of its generic `InvalidTarget` message.
 - Migration 3 seeds `sqlite_sequence` by copying the rows with their ids: that sets it to `max(id)`, and the rename carries it. A test checks the sequence afterwards.
 - The runner turns foreign keys off around every migration, not only migration 3. Turning them off per migration would need a field on `Migration`, whose shape is fixed, and `foreign_key_check` still catches anything a migration breaks.
+
+## v4 (26 Nov 2026)
+
+The final audit of `main` found gaps that need `core`. They're folded into the rules, tables and API above.
+
+1. **A newer database is refused** (rule 32). An older `airboss mcp`, still running after an update, wrote a PR ref the newer app never matched.
 
 ## Open questions
 

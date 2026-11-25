@@ -48,6 +48,21 @@ pub fn airboss(db: &Path) -> Command {
     cmd
 }
 
+/// What a newer Airboss leaves behind: a `core` migration this binary doesn't know. Written
+/// with macOS's own `sqlite3`, since this crate doesn't use SQLite directly.
+pub fn as_if_a_newer_airboss_migrated(db: &Path) {
+    let out = Command::new("/usr/bin/sqlite3")
+        .arg(db)
+        .arg("INSERT INTO schema_migrations (module, version) VALUES ('core', 99);")
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+}
+
+/// What `core` says about a database a newer Airboss migrated.
+pub const NEWER_DATABASE: &str =
+    "This database was created by a newer Airboss. Update the `airboss` command.";
+
 /// Runs the CLI with `args` and returns what it did.
 pub fn run(db: &Path, args: &[&str]) -> Output {
     airboss(db).args(args).output().unwrap()

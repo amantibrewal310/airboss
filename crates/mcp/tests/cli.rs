@@ -6,7 +6,7 @@ mod common;
 use std::path::Path;
 
 use airboss_core::{Actor, LinkKind, NewLink, NewTask, Status, Store, TaskId};
-use common::{TempDir, run, stderr, stdout};
+use common::{NEWER_DATABASE, TempDir, as_if_a_newer_airboss_migrated, run, stderr, stdout};
 use serde_json::Value;
 
 fn ok(db: &Path, args: &[&str]) -> String {
@@ -604,4 +604,14 @@ fn every_write_is_recorded_as_me() {
     for e in log.as_array().unwrap() {
         assert_eq!(e["actor"], "me");
     }
+}
+
+#[test]
+fn a_database_from_a_newer_airboss_is_refused_with_what_to_do() {
+    let dir = TempDir::new();
+    let db = dir.db();
+    ok(&db, &["add", "Task"]);
+    as_if_a_newer_airboss_migrated(&db);
+    assert_eq!(fails(&db, &["ls"]), NEWER_DATABASE);
+    assert_eq!(fails(&db, &["add", "Another"]), NEWER_DATABASE);
 }

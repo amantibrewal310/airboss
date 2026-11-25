@@ -28,7 +28,7 @@ use rusqlite::Connection;
 use crate::tx::Tx;
 
 pub use db::Migration;
-pub use error::{Error, Result};
+pub use error::{Error, NEWER_DATABASE, Result};
 pub use model::TaskEdit;
 pub use model::{
     Actor, Event, EventKind, NewTask, Origin, Repo, Status, Task, TaskNode, UnknownValue,
@@ -105,6 +105,9 @@ impl Store {
     /// Runs one call as one transaction: all of it lands, events included, or none of it (rule 21).
     fn write<T>(&mut self, change: impl FnOnce(&mut Tx<'_>) -> Result<T>) -> Result<T> {
         let mut tx = Tx::begin(&mut self.conn)?;
+        // A newer Airboss may have migrated the file since this handle opened it, e.g. under
+        // a long-running `airboss mcp`. Its rules could differ, so write nothing.
+        db::refuse_newer_core(&tx)?;
         let out = change(&mut tx)?;
         self.last_committed = tx.commit()?;
         // Sent only after a commit, and only when something was written, so a refused,

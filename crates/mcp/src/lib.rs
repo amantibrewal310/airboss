@@ -36,7 +36,10 @@ pub fn open_store() -> Result<Store, String> {
         std::fs::create_dir_all(dir)
             .map_err(|e| format!("couldn't create {}: {e}", dir.display()))?;
     }
-    Store::open(&path).map_err(|e| format!("couldn't open {}: {e}", path.display()))
+    Store::open(&path).map_err(|e| match e.is_newer_database() {
+        true => e.to_string(),
+        false => format!("couldn't open {}: {e}", path.display()),
+    })
 }
 
 #[cfg(test)]
