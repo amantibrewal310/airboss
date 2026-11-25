@@ -8,6 +8,13 @@
   const app = useApp();
   let editing = $state(false);
   let input: HTMLTextAreaElement | undefined = $state();
+  let button: HTMLButtonElement | undefined = $state();
+
+  /** Back to the title, not to <body>, once the edit ends. */
+  async function refocus() {
+    await tick();
+    button?.focus({ preventScroll: true });
+  }
   let cancelled = false;
 
   async function edit() {
@@ -31,6 +38,7 @@
     if (!editing) return;
     editing = false;
     if (!cancelled && input) void app.rename(task, input.value.replace(/\n/g, ' '));
+    void refocus();
   }
 
   function key(e: KeyboardEvent) {
@@ -42,6 +50,7 @@
       e.preventDefault();
       cancelled = true;
       editing = false;
+      void refocus();
     }
   }
 </script>
@@ -49,7 +58,7 @@
 {#if editing}
   <textarea bind:this={input} class="t {size} edit" value={title} rows="1" aria-label="Rename {task}" oninput={grow} onkeydown={key} onblur={save}></textarea>
 {:else}
-  <h1 class="t {size}"><button type="button" title="Rename" onclick={edit}>{title}</button></h1>
+  <h1 class="t {size}"><button bind:this={button} type="button" title="Rename" onclick={edit}>{title}</button></h1>
 {/if}
 
 <style>

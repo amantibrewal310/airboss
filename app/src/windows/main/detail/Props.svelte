@@ -27,6 +27,13 @@
   let editingBranch = $state(false);
   let branchError = $state<string | null>(null);
   let branchInput: HTMLInputElement | undefined = $state();
+  let branchTag: HTMLButtonElement | undefined = $state();
+
+  async function branchDone() {
+    editingBranch = false;
+    await tick();
+    (branchTag ?? document.querySelector<HTMLElement>('[data-zone="panel"]'))?.focus({ preventScroll: true });
+  }
 
   async function editBranch() {
     editingBranch = true;
@@ -39,13 +46,10 @@
   async function saveBranch() {
     if (!editingBranch || !branchInput) return;
     const value = branchInput.value.trim();
-    if (value === (own ?? '')) {
-      editingBranch = false;
-      return;
-    }
+    if (value === (own ?? '')) return void branchDone();
     const err = await app.setBranch(row.id, value);
     branchError = err;
-    if (!err) editingBranch = false;
+    if (!err) void branchDone();
   }
 
   function branchKey(e: KeyboardEvent) {
@@ -55,8 +59,8 @@
       void saveBranch();
     } else if (e.key === 'Escape') {
       e.preventDefault();
-      editingBranch = false;
       branchError = null;
+      void branchDone();
     }
   }
 
@@ -118,7 +122,7 @@
           />
           {#if branchError}<span class="err" role="alert">{branchError}</span>{/if}
         {:else}
-          <button type="button" class="tag mono" title="Edit the branch" onclick={editBranch}>
+          <button bind:this={branchTag} type="button" class="tag mono" title="Edit the branch" onclick={editBranch}>
             <Icon name="branch" size={12} />{own}
           </button>
         {/if}

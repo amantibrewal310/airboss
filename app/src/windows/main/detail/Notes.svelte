@@ -8,7 +8,31 @@
   const app = useApp();
   let editing = $state(false);
   let area: HTMLTextAreaElement | undefined = $state();
+  let view: HTMLDivElement | undefined = $state();
   let cancelled = false;
+
+  /** Back to the notes, not to <body>, once the edit ends. */
+  async function refocus() {
+    await tick();
+    view?.focus({ preventScroll: true });
+  }
+
+  /**
+   * A single click edits, unless it selected text (the notes can be selected and copied): a
+   * drag or a double-click selects instead, so the edit waits a moment to see which it was.
+   */
+  let pending: ReturnType<typeof setTimeout> | null = null;
+  function click(e: MouseEvent) {
+    if (pending) clearTimeout(pending);
+    pending = null;
+    if (e.detail > 1) return;
+    pending = setTimeout(() => {
+      pending = null;
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed && view?.contains(sel.anchorNode)) return;
+      void edit();
+    }, 220);
+  }
 
   async function edit() {
     editing = true;
@@ -31,6 +55,7 @@
     if (!editing || cancelled) return;
     editing = false;
     const next = area?.value ?? '';
+    void refocus();
     if (next.trim() !== (body ?? '').trim()) await app.editNotes(task, next);
   }
 
@@ -44,6 +69,7 @@
       e.stopPropagation();
       cancelled = true;
       editing = false;
+      void refocus();
     }
   }
 </script>
@@ -51,7 +77,25 @@
 {#if editing}
   <textarea bind:this={area} class="doc edit" value={body ?? ''} aria-label="Notes" oninput={grow} onkeydown={key} onblur={save}></textarea>
 {:else}
-  <button type="button" class="doc" class:empty={!body} title="Click to edit the notes" onclick={edit}>{body || empty}</button>
+  <div
+    bind:this={view}
+    class="doc view"
+    class:empty={!body}
+    role="button"
+    tabindex="0"
+    aria-label="Notes. Press Return to edit."
+    title="Click to edit the notes"
+    onclick={click}
+    onkeydown={(e) => {
+      if ((e.key === 'Enter' || e.key === ' ') && !e.metaKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        void edit();
+      }
+    }}
+  >
+    {body || empty}
+  </div>
 {/if}
 
 <style>
@@ -69,8 +113,17 @@
     margin: -2px -6px;
     width: calc(100% + 12px);
   }
-  button.doc:hover {
+  .view {
+    user-select: text;
+    -webkit-user-select: text;
+    cursor: text;
+    outline: none;
+  }
+  .view:hover {
     background: var(--bg-hover);
+  }
+  .view:focus-visible {
+    box-shadow: 0 0 0 2px var(--focus);
   }
   .empty {
     color: var(--text-3);

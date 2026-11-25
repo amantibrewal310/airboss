@@ -95,6 +95,10 @@
     min-width: 0;
     overflow-wrap: anywhere;
     padding: 7px 0;
+    /* Activity can be selected and copied. */
+    user-select: text;
+    -webkit-user-select: text;
+    cursor: text;
   }
   b {
     color: var(--text);

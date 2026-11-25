@@ -23,6 +23,13 @@
 
   let editing = $state<TaskId | null>(null);
   let editInput: HTMLInputElement | undefined = $state();
+  let primary: HTMLButtonElement | undefined = $state();
+
+  async function editDone() {
+    editing = null;
+    await tick();
+    primary?.focus({ preventScroll: true });
+  }
 
   async function edit(id: TaskId) {
     editing = id;
@@ -36,11 +43,11 @@
     if (e.key === 'Enter') {
       e.preventDefault();
       const title = editInput?.value ?? '';
-      editing = null;
+      void editDone();
       void app.editAndAccept(item, id, title);
     } else if (e.key === 'Escape') {
       e.preventDefault();
-      editing = null;
+      void editDone();
     }
   }
 
@@ -82,7 +89,7 @@
       </div>
     {/if}
     <div class="acts">
-      <button type="button" class="pri" onclick={() => app.mainAction(item)}>{mainLabel(item.kind)} <Kbd keys="enter" onFill /></button>
+      <button bind:this={primary} type="button" class="pri" onclick={() => app.mainAction(item)}>{mainLabel(item.kind)} <Kbd keys="enter" onFill /></button>
       {#if secondary}<button type="button" class="sec" onclick={secondary.run}>{secondary.label}</button>{/if}
       <span class="sp"></span>
       <button type="button" class="ghost" onclick={() => app.dismiss(item, item.kind === 'finish_it' ? 'Kept open' : 'Dismissed')}>

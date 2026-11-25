@@ -31,12 +31,12 @@ describe('TaskPanel', () => {
     const notes = () => document.querySelector<HTMLElement>('.doc')!;
     expect(notes().textContent).toContain('No notes yet');
     notes().click();
-    await wait(10);
+    await wait(260);
     await userEvent.keyboard('Start with the sortie repo’s README.{Meta>}{Enter}{/Meta}');
     await wait(40);
     expect(app.detail.detail!.task.body).toBe('Start with the sortie repo’s README.');
     notes().click();
-    await wait(10);
+    await wait(260);
     await userEvent.keyboard(' More.{Escape}');
     await wait(30);
     expect(app.detail.detail!.task.body).toBe('Start with the sortie repo’s README.');

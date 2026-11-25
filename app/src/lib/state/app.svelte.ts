@@ -29,7 +29,9 @@ import type {
   ToastEvent,
   UndoableWrite,
 } from '../types';
+import { tick as svelteTick } from 'svelte';
 import { now as clockNow } from '../logic/clock';
+import { focusables, nextFocusable } from '../components/trap';
 import type { CommandId } from '../logic/commands';
 import { controlOwnsKey, zoneOf } from '../logic/focus';
 import { keyOf, Sequencer } from '../logic/keymap';
@@ -171,6 +173,8 @@ export class App {
     }, 60_000);
     document.addEventListener('visibilitychange', tick);
     this.ready = true;
+    // Focus starts on the view's list (the inbox on Needs me), never on <body>.
+    void svelteTick().then(() => this.focusHome());
   }
 
   stop(): void {
@@ -470,9 +474,23 @@ export class App {
       // A menu item that opens another overlay (Blocked, Drop) hands its focus target on.
       if (this.ui.overlay || this.pendingReturn !== el) return;
       this.pendingReturn = null;
-      if (el && el.isConnected) el.focus({ preventScroll: true });
-      else this.focus('list');
+      // Give focus back to a real element: never <body>.
+      if (el && el.isConnected && el !== document.body && !el.closest('[data-zone="overlay"]')) el.focus({ preventScroll: true });
+      else this.focusHome();
     });
+  }
+
+  /** Where focus goes when nothing better is known: the page, or the view's list. */
+  focusHome(): void {
+    this.focus(this.ui.pageOpen ? 'page' : 'list');
+  }
+
+  /** Esc in a field that doesn't handle it: leave it for its panel or list, not for <body>. */
+  leaveField(el: HTMLElement): void {
+    const zone = el.closest('[data-zone="panel"]') ? 'panel' : null;
+    el.blur();
+    if (zone) this.focus(this.ui.pageOpen ? 'page' : 'panel');
+    else this.focusHome();
   }
 
   /** Where a menu for this task opens: under its status icon, its row, or the middle. */
@@ -612,6 +630,14 @@ export class App {
       if (r.status !== 'done' && r.status !== 'dropped') n++;
     }
     return n;
+  }
+
+  /** A row's rename ends (↩, blur or Esc): focus goes back to the list, once. */
+  endRowRename(id: TaskId, title: string | null): void {
+    if (this.ui.renaming !== id) return;
+    this.ui.renaming = null;
+    this.focus('list');
+    if (title !== null) void this.rename(id, title);
   }
 
   async rename(id: TaskId, title: string): Promise<void> {
@@ -1159,11 +1185,27 @@ export class App {
     const active = document.activeElement;
     const zone = zoneOf(active, !!this.ui.overlay);
     if (zone !== this.ui.zone && zone !== 'overlay') this.setZone(zone);
+    if (this.ui.overlay) {
+      // An overlay that didn't handle the key itself (focus escaped it): Esc still closes it,
+      // and Tab goes back inside.
+      if (key0 === 'esc') {
+        e.preventDefault();
+        return this.close();
+      }
+      if (key0 === 'tab' || key0 === 'shift+tab') {
+        const roots = document.querySelectorAll<HTMLElement>('[data-zone="overlay"] [role="dialog"], [data-zone="overlay"][role="dialog"], [data-zone="overlay"]');
+        const root = roots[roots.length - 1];
+        if (root && !root.contains(active)) {
+          e.preventDefault();
+          (nextFocusable(focusables(root), null, key0 === 'shift+tab') ?? root).focus();
+          return;
+        }
+      }
+    }
     // A field: only ⌘K, ⌘N, ⌘, and F6 act; Esc leaves a field that doesn't handle it itself.
     if (zone === 'field' && key0 === 'esc') {
-      (active as HTMLElement).blur();
       e.preventDefault();
-      return;
+      return this.leaveField(active as HTMLElement);
     }
     const letters = zone === 'list' || zone === 'panel' || zone === 'sidebar';
     let key = key0;
@@ -1176,7 +1218,19 @@ export class App {
     } else this.seq.reset();
     if (zone === 'panel' && controlOwnsKey(active, key)) return;
     const cmd = resolve(key, zone, this.viewKind, this.actionTask() !== null || this.ui.selected !== null);
-    if (!cmd) return;
+    if (!cmd) {
+      // Tab moves through every control in document order, buttons included, whatever macOS's
+      // Keyboard navigation setting says (WebKit skips buttons when it's off).
+      if ((key === 'tab' || key === 'shift+tab') && !this.ui.overlay) {
+        const root = document.getElementById('app') ?? document.body;
+        const next = nextFocusable(focusables(root), active, key === 'shift+tab');
+        if (next) {
+          e.preventDefault();
+          next.focus();
+        }
+      }
+      return;
+    }
     e.preventDefault();
     if (SETTLE_GUARDED.has(cmd.id) && this.settling()) return;
     this.runCommand(cmd.id, zone);

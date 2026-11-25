@@ -107,7 +107,7 @@
               role={tree ? 'treeitem' : 'option'}
               pos={it.pos}
               size={it.size}
-              onrename={(title) => (title === null ? (app.ui.renaming = null) : app.rename(row.id, title))}
+              onrename={(title) => app.endRowRename(row.id, title)}
             />
           {/if}
         {/if}
