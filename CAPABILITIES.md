@@ -19,9 +19,11 @@ Dependencies point one way only. A module may use only the modules it depends on
 
 ## Stack
 
-- **One process**, a Tauri v2 app:
-  - Rust for all the logic: `rusqlite` for SQLite, `rmcp` for MCP over streamable HTTP.
-  - Svelte for the UI.
+- **One process**, a Tauri 2.12 app:
+  - Rust, edition 2024, on stable Rust 1.100, pinned in `rust-toolchain.toml`.
+  - Rust for all the logic: `rusqlite` 0.43 for SQLite, `rmcp` 3.11 (the official MCP Rust SDK) for MCP over streamable HTTP.
+  - Svelte 5 for the UI.
+- **Versions** were checked on crates.io and npm on 25 Nov 2026: the latest stable release of each. Tauri 3 exists only as an alpha (3.0.0-alpha.6), so we stay on Tauri 2 and move when 3 is stable.
   - No second runtime such as Node or Bun.
 - **macOS only.** `launch` needs T3 Code installed and `sync` needs `gh` logged in. Without them, those features switch off and everything else still works.
 - **Data** lives in one SQLite file, `~/Library/Application Support/Airboss/airboss.db`.
