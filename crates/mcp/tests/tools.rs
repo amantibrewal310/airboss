@@ -5,7 +5,9 @@ use std::path::Path;
 
 use airboss_core::{Actor, LinkKind, NewLink, NewTask, RepoId, Status, Store, TaskId};
 use airboss_mcp::identity::Identity;
-use airboss_mcp::tools::{self, GetTask, ListTasks, StatusName};
+use airboss_mcp::tools::{
+    self, AgentStatus, GetTask, Link, LinkKindName, ListTasks, PrStateName, StatusName, UpdateTask,
+};
 
 const THREAD: &str = "97b5c8b5";
 
@@ -380,4 +382,283 @@ fn get_task_shows_subtasks_and_run_order() {
     assert_eq!(order.waiting_outside[0].task.id, three);
     assert_eq!(order.waiting_outside[0].blockers, [outside]);
     assert!(order.tangled.is_empty());
+}
+
+// ---- update_task ----
+
+fn update(
+    s: &mut Store,
+    id: TaskId,
+    status: Option<AgentStatus>,
+    note: Option<&str>,
+) -> Result<airboss_mcp::render::TaskView, String> {
+    tools::update_task(
+        s,
+        &t3(),
+        UpdateTask {
+            id: id.0,
+            status,
+            note: note.map(str::to_string),
+        },
+    )
+    .map_err(|e| e.to_string())
+}
+
+fn last_event(s: &Store, id: TaskId) -> airboss_core::Event {
+    s.history(id).unwrap().pop().unwrap()
+}
+
+#[test]
+fn update_task_sets_the_status_as_this_agent() {
+    let mut s = store();
+    let id = add(&mut s, "work");
+    let got = update(&mut s, id, Some(AgentStatus::Doing), None).unwrap();
+    assert_eq!(got.status, Status::Doing);
+    let e = last_event(&s, id);
+    assert_eq!(e.actor, Actor::Agent(format!("t3/{THREAD}")));
+    assert_eq!(e.to_status, Some(Status::Doing));
+}
+
+#[test]
+fn update_task_with_only_a_note_adds_the_note() {
+    let mut s = store();
+    let id = add(&mut s, "work");
+    let got = update(&mut s, id, None, Some("halfway there")).unwrap();
+    assert_eq!(got.status, Status::Todo);
+    assert_eq!(last_event(&s, id).body.as_deref(), Some("halfway there"));
+}
+
+#[test]
+fn update_task_blocked_takes_the_note_as_its_reason() {
+    let mut s = store();
+    let id = add(&mut s, "work");
+    let got = update(
+        &mut s,
+        id,
+        Some(AgentStatus::Blocked),
+        Some("needs an API key"),
+    )
+    .unwrap();
+    assert_eq!(got.status, Status::Blocked);
+    assert_eq!(got.blocked_reason.as_deref(), Some("needs an API key"));
+}
+
+#[test]
+fn update_task_blocked_without_a_reason_asks_for_one() {
+    let mut s = store();
+    let id = add(&mut s, "work");
+    let err = update(&mut s, id, Some(AgentStatus::Blocked), None).unwrap_err();
+    assert_eq!(err, "Say why it's blocked in `note`.");
+}
+
+#[test]
+fn update_task_done_without_a_note_asks_what_was_done() {
+    let mut s = store();
+    let id = add(&mut s, "work");
+    let err = update(&mut s, id, Some(AgentStatus::Done), Some("  ")).unwrap_err();
+    assert_eq!(err, "Say what you did in `note` when finishing a task.");
+}
+
+#[test]
+fn update_task_done_with_a_note_finishes_a_task_without_a_pr() {
+    let mut s = store();
+    let id = add(&mut s, "work");
+    let got = update(&mut s, id, Some(AgentStatus::Done), Some("Wrote the doc")).unwrap();
+    assert_eq!(got.status, Status::Done);
+}
+
+#[test]
+fn update_task_done_on_a_task_with_a_pr_says_to_use_in_review() {
+    let mut s = store();
+    let id = add(&mut s, "code");
+    s.link(id, NewLink::pr("acme/web#42"), &Actor::Me).unwrap();
+    let err = update(&mut s, id, Some(AgentStatus::Done), Some("merged it")).unwrap_err();
+    assert_eq!(
+        err,
+        "Agents can't finish a task that has a PR; it finishes when the PR merges. Set it to in_review instead."
+    );
+}
+
+#[test]
+fn update_task_on_a_finished_task_names_its_status() {
+    let mut s = store();
+    let id = add(&mut s, "old");
+    set(&mut s, id, Status::Done);
+    let err = update(&mut s, id, Some(AgentStatus::Doing), None).unwrap_err();
+    assert_eq!(
+        err,
+        format!(
+            "Task #{} is done, so its status can't change from here. Ask the user to reopen it if there's more to do.",
+            id.0
+        )
+    );
+}
+
+#[test]
+fn update_task_on_a_proposal_says_to_wait_for_acceptance() {
+    let mut s = store();
+    let agent = Actor::Agent("t3/x".into());
+    let id = s.add_task(NewTask::new("idea"), &agent).unwrap().id;
+    let err = update(&mut s, id, Some(AgentStatus::Doing), None).unwrap_err();
+    assert!(
+        err.ends_with(
+            "is proposed, so its status can't change from here. Wait for the user to accept it."
+        ),
+        "{err}"
+    );
+}
+
+#[test]
+fn update_task_needs_a_status_or_a_note() {
+    let mut s = store();
+    let id = add(&mut s, "work");
+    assert_eq!(
+        update(&mut s, id, None, None).unwrap_err(),
+        "Give `status`, `note`, or both."
+    );
+    assert_eq!(
+        update(&mut s, id, None, Some(" ")).unwrap_err(),
+        "Give `status`, `note`, or both."
+    );
+}
+
+#[test]
+fn update_task_on_a_missing_task_names_it() {
+    let mut s = store();
+    let err = update(&mut s, TaskId(41), Some(AgentStatus::Doing), None).unwrap_err();
+    assert_eq!(
+        err,
+        "There's no task #41. List the tasks to find the right id."
+    );
+    let err = update(&mut s, TaskId(41), None, Some("hi")).unwrap_err();
+    assert_eq!(
+        err,
+        "There's no task #41. List the tasks to find the right id."
+    );
+}
+
+// ---- link ----
+
+fn link_args(id: TaskId, kind: LinkKindName) -> Link {
+    Link {
+        id: id.0,
+        kind,
+        r#ref: None,
+        url: None,
+        pr_state: None,
+        title: None,
+    }
+}
+
+#[test]
+fn link_without_a_ref_links_this_t3_thread() {
+    let mut s = store();
+    let id = add(&mut s, "work");
+    let got = tools::link(&mut s, &t3(), link_args(id, LinkKindName::T3Thread)).unwrap();
+    assert_eq!((got.kind, got.r#ref.as_str()), (LinkKind::T3Thread, THREAD));
+    assert_eq!(got.linked_by, Actor::Agent(format!("t3/{THREAD}")));
+    // Now it's this thread's task.
+    let mine = ListTasks {
+        mine: true,
+        ..ListTasks::default()
+    };
+    assert_eq!(titles(&s, mine), ["work"]);
+}
+
+#[test]
+fn link_without_a_ref_links_this_claude_session() {
+    let mut s = store();
+    let id = add(&mut s, "work");
+    let got = tools::link(&mut s, &t3(), link_args(id, LinkKindName::ClaudeSession)).unwrap();
+    assert_eq!(got.r#ref, "sess-1");
+}
+
+#[test]
+fn link_without_a_ref_needs_a_known_thread() {
+    let mut s = store();
+    let id = add(&mut s, "work");
+    let err = tools::link(&mut s, &unknown(), link_args(id, LinkKindName::T3Thread))
+        .unwrap_err()
+        .to_string();
+    assert_eq!(
+        err,
+        "This server doesn't know its T3 thread id, so give `ref`."
+    );
+}
+
+#[test]
+fn link_a_pr_with_title_and_url_starts_it_open() {
+    let mut s = store();
+    let id = add(&mut s, "code");
+    let args = Link {
+        r#ref: Some("acme/web#42".into()),
+        url: Some("https://github.com/acme/web/pull/42".into()),
+        title: Some("Fix typo".into()),
+        ..link_args(id, LinkKindName::Pr)
+    };
+    let got = tools::link(&mut s, &t3(), args).unwrap();
+    assert_eq!(got.pr_state, Some(airboss_core::PrState::Open));
+    assert_eq!(got.title.as_deref(), Some("Fix typo"));
+    assert_eq!(
+        got.url.as_deref(),
+        Some("https://github.com/acme/web/pull/42")
+    );
+}
+
+#[test]
+fn link_takes_a_known_pr_state() {
+    let mut s = store();
+    let id = add(&mut s, "code");
+    let args = Link {
+        r#ref: Some("acme/web#7".into()),
+        pr_state: Some(PrStateName::Merged),
+        ..link_args(id, LinkKindName::Pr)
+    };
+    let got = tools::link(&mut s, &t3(), args).unwrap();
+    assert_eq!(got.pr_state, Some(airboss_core::PrState::Merged));
+}
+
+#[test]
+fn link_refuses_a_pr_state_on_anything_but_a_pr() {
+    let mut s = store();
+    let id = add(&mut s, "doc");
+    let args = Link {
+        r#ref: Some("/notes.md".into()),
+        pr_state: Some(PrStateName::Open),
+        ..link_args(id, LinkKindName::Doc)
+    };
+    let err = tools::link(&mut s, &t3(), args).unwrap_err().to_string();
+    assert_eq!(err, "`pr_state` only goes with a `pr` link; leave it out.");
+}
+
+#[test]
+fn link_needs_a_ref_for_anything_but_this_thread() {
+    let mut s = store();
+    let id = add(&mut s, "code");
+    let err = tools::link(&mut s, &t3(), link_args(id, LinkKindName::Pr))
+        .unwrap_err()
+        .to_string();
+    assert_eq!(err, "Give `ref` for a pr link, e.g. owner/repo#42.");
+}
+
+#[test]
+fn link_twice_returns_the_same_link() {
+    let mut s = store();
+    let id = add(&mut s, "work");
+    let a = tools::link(&mut s, &t3(), link_args(id, LinkKindName::T3Thread)).unwrap();
+    let b = tools::link(&mut s, &t3(), link_args(id, LinkKindName::T3Thread)).unwrap();
+    assert_eq!(a.id, b.id);
+    assert_eq!(s.links(id).unwrap().len(), 1);
+}
+
+#[test]
+fn link_on_a_missing_task_names_it() {
+    let mut s = store();
+    let err = tools::link(&mut s, &t3(), link_args(TaskId(5), LinkKindName::T3Thread))
+        .unwrap_err()
+        .to_string();
+    assert_eq!(
+        err,
+        "There's no task #5. List the tasks to find the right id."
+    );
 }

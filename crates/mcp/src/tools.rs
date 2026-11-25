@@ -5,7 +5,7 @@
 
 use std::collections::HashSet;
 
-use airboss_core::{Repo, RepoId, Status, Store, TaskId};
+use airboss_core::{LinkKind, NewLink, PrState, Repo, RepoId, Status, Store, TaskId};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -75,6 +75,118 @@ pub struct ListTasks {
 pub struct GetTask {
     /// The task's id, e.g. 12 for #12.
     pub id: i64,
+}
+
+/// A status an agent may set. `core` decides whether it may set it on this task now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentStatus {
+    /// Working on it.
+    Doing,
+    /// Waiting for review, e.g. its PR is open.
+    InReview,
+    /// Stuck; `note` says why.
+    Blocked,
+    /// Finished. Only for a task with no PR, and `note` says what was done.
+    Done,
+}
+
+impl From<AgentStatus> for Status {
+    fn from(s: AgentStatus) -> Status {
+        match s {
+            AgentStatus::Doing => Status::Doing,
+            AgentStatus::InReview => Status::InReview,
+            AgentStatus::Blocked => Status::Blocked,
+            AgentStatus::Done => Status::Done,
+        }
+    }
+}
+
+/// Arguments for `update_task`. Give `status`, `note`, or both.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct UpdateTask {
+    /// The task's id.
+    pub id: i64,
+    /// The new status.
+    #[serde(default)]
+    pub status: Option<AgentStatus>,
+    /// With `status`: why it's blocked, or what was done. Alone: a progress note.
+    #[serde(default)]
+    pub note: Option<String>,
+}
+
+/// What a link points at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum LinkKindName {
+    /// A T3 Code thread. Leave `ref` out to link this thread.
+    T3Thread,
+    /// A Claude Code session. Leave `ref` out to link this session.
+    ClaudeSession,
+    /// A pull request, `ref` like owner/repo#42.
+    Pr,
+    /// A Slack message, `ref` its permalink.
+    Slack,
+    /// A document, `ref` its file path.
+    Doc,
+    /// A GitHub issue, `ref` like owner/repo#7.
+    GithubIssue,
+}
+
+impl From<LinkKindName> for LinkKind {
+    fn from(k: LinkKindName) -> LinkKind {
+        match k {
+            LinkKindName::T3Thread => LinkKind::T3Thread,
+            LinkKindName::ClaudeSession => LinkKind::ClaudeSession,
+            LinkKindName::Pr => LinkKind::Pr,
+            LinkKindName::Slack => LinkKind::Slack,
+            LinkKindName::Doc => LinkKind::Doc,
+            LinkKindName::GithubIssue => LinkKind::GithubIssue,
+        }
+    }
+}
+
+/// A PR's state, for a PR link.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PrStateName {
+    Open,
+    Merged,
+    Closed,
+}
+
+impl From<PrStateName> for PrState {
+    fn from(s: PrStateName) -> PrState {
+        match s {
+            PrStateName::Open => PrState::Open,
+            PrStateName::Merged => PrState::Merged,
+            PrStateName::Closed => PrState::Closed,
+        }
+    }
+}
+
+/// Arguments for `link`.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Link {
+    /// The task's id.
+    pub id: i64,
+    /// What the link points at.
+    pub kind: LinkKindName,
+    /// The thread id, owner/repo#n, permalink or file path. Leave it out for
+    /// `t3_thread` or `claude_session` to link this thread.
+    #[serde(default, rename = "ref")]
+    pub r#ref: Option<String>,
+    /// The web page it lives at, if any.
+    #[serde(default)]
+    pub url: Option<String>,
+    /// For a `pr` link only: its state if already known. Left out, it starts open.
+    #[serde(default)]
+    pub pr_state: Option<PrStateName>,
+    /// A short name to show instead of the ref, e.g. "booking-flow.md".
+    #[serde(default)]
+    pub title: Option<String>,
 }
 
 /// Lists tasks in tree order, filtered, at most [`LIST_LIMIT`].
@@ -202,6 +314,79 @@ pub fn get_task(store: &Store, args: GetTask) -> Result<TaskDetail, ToolError> {
         },
         subtasks,
         run_order,
+    })
+}
+
+/// Reports progress: a status change, a note, or both. `core` decides what's allowed.
+pub fn update_task(
+    store: &mut Store,
+    who: &Identity,
+    args: UpdateTask,
+) -> Result<TaskView, ToolError> {
+    let id = TaskId(args.id);
+    let note = args.note.as_deref().filter(|n| !n.trim().is_empty());
+    let actor = &who.actor;
+    let task = match (args.status, note) {
+        (Some(to), note) => {
+            let to = Status::from(to);
+            store.set_status(id, to, note, actor).map_err(|e| {
+                let about = Subject {
+                    to: Some(to),
+                    ..Subject::task(id)
+                };
+                explain(store, actor, e, &about)
+            })?
+        }
+        (None, Some(note)) => {
+            let fail = |store: &Store, e| explain(store, actor, e, &Subject::task(id));
+            store
+                .add_note(id, note, actor)
+                .map_err(|e| fail(store, e))?;
+            store.task(id).map_err(|e| fail(store, e))?
+        }
+        (None, None) => return Err(ToolError::new("Give `status`, `note`, or both.")),
+    };
+    Ok(TaskView::new(task, &RepoNames::load(store)?))
+}
+
+/// Links something to a task; a thread link with no `ref` links this thread.
+pub fn link(store: &mut Store, who: &Identity, args: Link) -> Result<LinkView, ToolError> {
+    let id = TaskId(args.id);
+    let kind = LinkKind::from(args.kind);
+    let given = args
+        .r#ref
+        .map(|r| r.trim().to_string())
+        .filter(|r| !r.is_empty());
+    let r#ref = match (given, who.thread_ref(kind)) {
+        (Some(r), _) => r,
+        (None, Some(own)) => own.to_string(),
+        (None, None) => return Err(missing_ref(kind)),
+    };
+    if args.pr_state.is_some() && kind != LinkKind::Pr {
+        return Err(ToolError::new(
+            "`pr_state` only goes with a `pr` link; leave it out.",
+        ));
+    }
+    let mut new = NewLink::new(kind, r#ref);
+    new.url = args.url.filter(|u| !u.trim().is_empty());
+    new.pr_state = args.pr_state.map(PrState::from);
+    new.title = args.title;
+    store
+        .link(id, new, &who.actor)
+        .map(LinkView::from)
+        .map_err(|e| explain(store, &who.actor, e, &Subject::task(id)))
+}
+
+fn missing_ref(kind: LinkKind) -> ToolError {
+    ToolError::new(match kind {
+        LinkKind::T3Thread => "This server doesn't know its T3 thread id, so give `ref`.",
+        LinkKind::ClaudeSession => {
+            "This server doesn't know its Claude Code session id, so give `ref`."
+        }
+        LinkKind::Pr => "Give `ref` for a pr link, e.g. owner/repo#42.",
+        LinkKind::GithubIssue => "Give `ref` for a github_issue link, e.g. owner/repo#7.",
+        LinkKind::Slack => "Give `ref` for a slack link: the message's permalink.",
+        LinkKind::Doc => "Give `ref` for a doc link: the file's path.",
     })
 }
 
