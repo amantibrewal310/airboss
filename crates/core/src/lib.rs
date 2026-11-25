@@ -18,6 +18,7 @@ mod tasks;
 mod tx;
 
 use std::path::Path;
+use std::sync::mpsc::{Receiver, Sender};
 
 use rusqlite::Connection;
 
@@ -65,6 +66,8 @@ pub struct Store {
     conn: Connection,
     /// Event ids from the last committed call; the change notification (rule 23) sends these.
     last_committed: Vec<EventId>,
+    /// Who gets told about each committed change (rule 23). Dropped receivers are pruned.
+    subscribers: Vec<Sender<Vec<EventId>>>,
 }
 
 impl Store {
@@ -73,6 +76,7 @@ impl Store {
         Ok(Store {
             conn: db::open_file(path)?,
             last_committed: Vec::new(),
+            subscribers: Vec::new(),
         })
     }
 
@@ -81,6 +85,7 @@ impl Store {
         Ok(Store {
             conn: db::open_memory()?,
             last_committed: Vec::new(),
+            subscribers: Vec::new(),
         })
     }
 
@@ -89,7 +94,27 @@ impl Store {
         let mut tx = Tx::begin(&mut self.conn)?;
         let out = change(&mut tx)?;
         self.last_committed = tx.commit()?;
+        // Sent only after a commit, and only when something was written, so a refused,
+        // failed or no-op call tells nobody anything.
+        if !self.last_committed.is_empty() {
+            let ids = &self.last_committed;
+            self.subscribers.retain(|s| s.send(ids.clone()).is_ok());
+        }
         Ok(out)
+    }
+
+    /// Returns a channel that receives, after each committed call, the ids of the events
+    /// it wrote. The app updates from this instead of polling (rule 23).
+    pub fn subscribe(&mut self) -> Receiver<Vec<EventId>> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.subscribers.push(tx);
+        rx
+    }
+
+    /// Every event after `cursor`, oldest first. Event ids only grow, so this is the
+    /// reliable way to catch up after missing notifications.
+    pub fn events_after(&self, cursor: EventId) -> Result<Vec<Event>> {
+        events::after(&self.conn, cursor)
     }
 
     /// Registers a repo tasks can point at. Only `me` does this.
@@ -237,5 +262,14 @@ mod tests {
         fault::arm(fault::TASK_INSERTED);
         assert!(store.add_task(NewTask::new("Doomed"), &Actor::Me).is_err());
         assert_eq!(store.last_committed, before);
+    }
+
+    #[test]
+    fn a_call_that_fails_partway_sends_no_notification() {
+        let mut store = Store::open_in_memory().unwrap();
+        let rx = store.subscribe();
+        fault::arm(fault::TASK_INSERTED);
+        assert!(store.add_task(NewTask::new("Doomed"), &Actor::Me).is_err());
+        assert!(rx.try_recv().is_err());
     }
 }
