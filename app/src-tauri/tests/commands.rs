@@ -1,0 +1,1334 @@
+//! Every command in Appendix A, called as a plain function against an in-memory store and
+//! fake services that check the store lock is free whenever they're called.
+
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
+mod common;
+
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Duration;
+
+use airboss_app::commands::app::{self as appcmd, CopyWhat, LinkRef};
+use airboss_app::commands::launch::{self, PlaceArg};
+use airboss_app::commands::tasks::{self, Direction, NewLinkArg, Then};
+use airboss_app::commands::{detail, needs, repos};
+use airboss_app::dto::{
+    ChipDto, LaunchOutcome, ModeDto, NextUp, SourceDto, StatusDto, ThreadKeyDto, ToastCommand,
+    ToastTone,
+};
+use airboss_app::errors::{AppError, ErrorCode};
+use airboss_app::menu::{WindowName, Zone};
+use airboss_app::settings::{Appearance, Settings};
+use airboss_app::{Caller, UiEvent};
+use airboss_core::{Actor, LinkKind, NewLink, PrState, RepoId, Status, TaskId};
+use airboss_services::{
+    AttentionService, Availability, Checks, Connection, ErrorCode as SvcCode, LaunchReport, Mode,
+    NeedsKind, Place, PrRef, PrView, Prepared, Review, ServiceError, Source, StartedThread,
+    SyncSnapshot, T3Project, ThreadKey, ThreadState, ThreadView,
+};
+use common::{TestApp, needs_item, temp_dir};
+
+const M: Caller = Caller::Main;
+
+fn err_code<T: std::fmt::Debug>(r: Result<T, AppError>) -> (ErrorCode, String) {
+    let e = r.unwrap_err();
+    (e.code, e.message)
+}
+
+fn repo(app: &TestApp, name: &str) -> RepoId {
+    app.core(|s| {
+        s.add_repo(name, Path::new(&format!("/src/{name}")), None, &Actor::Me)
+            .unwrap()
+            .id
+    })
+}
+
+/// Every write: the services heard about it with the lock free.
+fn assert_told(app: &TestApp) {
+    app.assert_lock_free();
+    assert!(
+        app.attention
+            .calls()
+            .iter()
+            .any(|c| c.starts_with("store_changed")),
+        "{:?}",
+        app.attention.calls()
+    );
+}
+
+// ---------------------------------------------------------------------------- reads
+
+#[test]
+fn bootstrap_returns_rows_in_tree_order_and_everything_the_window_draws_first() {
+    let app = TestApp::new();
+    let empty = detail::bootstrap(&app.state, M).unwrap();
+    assert!(empty.first_run && empty.rows.is_empty());
+    let web = repo(&app, "web");
+    let p = app.add("Parent", None);
+    let c = app.add("Child", Some(p));
+    app.attention
+        .set_items(vec![needs_item("q", NeedsKind::Question, c, common::NOW)]);
+    app.sync_vm();
+    let b = detail::bootstrap(&app.state, M).unwrap();
+    assert!(!b.first_run);
+    assert_eq!(b.order, vec![p, c]);
+    assert_eq!(b.rows.iter().map(|r| r.id).collect::<Vec<_>>(), vec![p, c]);
+    assert_eq!(b.repos[0].id, web);
+    assert_eq!(b.needs.count, 1);
+    assert_eq!(b.hotkey, "⌃⌥N");
+    assert_eq!(b.settings, Settings::default());
+    assert!(b.connections.iter().any(|c| c.name == "Agents" && !c.ok));
+    assert!(b.connections.iter().any(|c| c.name == "T3 Code" && c.ok));
+    assert!(b.seq >= 1);
+    app.assert_lock_free();
+}
+
+fn view(id: &str, state: ThreadState) -> ThreadView {
+    ThreadView {
+        key: ThreadKey {
+            source: Source::T3,
+            r#ref: id.into(),
+        },
+        linked: true,
+        state,
+        title: Some(format!("{id} title")),
+        request: None,
+        error: None,
+        run_id: None,
+        project_path: None,
+        branch: None,
+        worktree_path: None,
+        parent_ref: None,
+        child_count: 0,
+        last_activity_at: None,
+        stale: false,
+    }
+}
+
+fn pr_view(r: &str, state: PrState, head: Option<&str>, linked: bool) -> PrView {
+    PrView {
+        r#ref: PrRef::parse(r).unwrap(),
+        linked,
+        url: Some(format!("https://github.com/{}", r.replace('#', "/pull/"))),
+        title: Some(format!("PR {r}")),
+        state: Some(state),
+        draft: false,
+        review: Review::Approved,
+        checks: Checks::Passing,
+        additions: Some(412),
+        deletions: Some(38),
+        head_ref: head.map(str::to_string),
+        author: None,
+        updated_at: None,
+        ready_since: None,
+        problem: None,
+        stale: false,
+    }
+}
+
+#[test]
+fn task_detail_gathers_links_threads_history_deps_needs_and_prepare() {
+    let app = TestApp::new();
+    let p = app.add("Booking flow", None);
+    let t = app.add("Web: slot picker", Some(p));
+    let blocker = app.add("API", Some(p));
+    let after = app.add("Confirm", Some(p));
+    app.core(|s| {
+        s.add_dependency(t, blocker, &Actor::Me).unwrap();
+        s.add_dependency(after, t, &Actor::Me).unwrap();
+        s.link(t, NewLink::pr("acme/web#58"), &Actor::Me).unwrap();
+        s.link(
+            t,
+            NewLink::new(LinkKind::T3Thread, "slot-picker"),
+            &Actor::Me,
+        )
+        .unwrap();
+        s.set_branch(p, Some("task-1-booking"), &Actor::Me).unwrap();
+        s.add_note(t, "from the agent", &Actor::Agent("t3/slot-picker".into()))
+            .unwrap();
+    });
+    let mut snap = SyncSnapshot::default();
+    let th = view("slot-picker", ThreadState::Running);
+    snap.thread_tasks.insert(th.key.clone(), vec![t]);
+    snap.threads.insert(th.key.clone(), th);
+    let pr = pr_view("acme/web#58", PrState::Open, None, true);
+    snap.pr_tasks.insert(pr.r#ref.clone(), vec![t]);
+    snap.prs.insert(pr.r#ref.clone(), pr);
+    let mine = pr_view("acme/web#60", PrState::Open, Some("task-1-booking"), false);
+    snap.prs.insert(mine.r#ref.clone(), mine);
+    app.sync.set_snapshot(snap);
+    app.attention
+        .set_items(vec![needs_item("q", NeedsKind::Question, t, common::NOW)]);
+    app.sync_vm();
+
+    let d = detail::task_detail(&app.state, M, t, 9, 30).unwrap();
+    assert_eq!(d.req, 9);
+    assert_eq!(d.task.title, "Web: slot picker");
+    assert_eq!(
+        d.ancestors.iter().map(|c| c.id).collect::<Vec<_>>(),
+        vec![p]
+    );
+    assert_eq!(d.links.len(), 2);
+    let pr_link = d.links.iter().find(|l| l.r#ref == "acme/web#58").unwrap();
+    assert_eq!(pr_link.pr.as_ref().unwrap().additions, Some(412));
+    let th_link = d.links.iter().find(|l| l.r#ref == "slot-picker").unwrap();
+    assert_eq!(
+        th_link.thread.as_ref().unwrap().chip,
+        Some(ChipDto::Working)
+    );
+    assert_eq!(d.threads.len(), 1);
+    assert_eq!(
+        d.threads[0].url.as_deref(),
+        Some("t3code://threads/fake-environment/slot-picker")
+    );
+    assert_eq!(d.prs.len(), 1);
+    assert_eq!(
+        d.waits_on.iter().map(|x| x.id).collect::<Vec<_>>(),
+        vec![blocker]
+    );
+    assert_eq!(
+        d.blocks.iter().map(|x| x.id).collect::<Vec<_>>(),
+        vec![after]
+    );
+    assert!(d.waves.is_none(), "a leaf has no waves");
+    assert_eq!(d.needs.len(), 1);
+    assert!(d.prepared.is_some());
+    assert_eq!(
+        d.suggested_prs.len(),
+        1,
+        "my open PR from the inherited branch"
+    );
+    // Newest first; the agent is named by its thread.
+    assert_eq!(d.history[0].actor.name, "Agent in slot-picker title");
+    assert!(!d.history_more);
+    assert!(
+        app.sync.calls().contains(&format!("refresh(PrsOf({t:?}))")),
+        "an open PR asks sync to refresh: {:?}",
+        app.sync.calls()
+    );
+    // A parent has waves; the history includes its subtasks'.
+    let dp = detail::task_detail(&app.state, M, p, 1, 2).unwrap();
+    assert!(dp.waves.is_some());
+    assert!(dp.history_more);
+    app.assert_lock_free();
+}
+
+#[test]
+fn task_detail_skips_prepare_for_closed_tasks_and_says_a_gone_task_is_gone() {
+    let app = TestApp::new();
+    let t = app.add("Done", None);
+    app.core(|s| s.set_status(t, Status::Done, None, &Actor::Me).unwrap());
+    app.sync_vm();
+    let d = detail::task_detail(&app.state, M, t, 1, 30).unwrap();
+    assert!(d.prepared.is_none() && d.prepare_error.is_none());
+    assert!(!app.launch.calls().iter().any(|c| c.starts_with("prepare")));
+    assert_eq!(
+        err_code(detail::task_detail(&app.state, M, TaskId(999), 1, 30)),
+        (ErrorCode::NotFound, "Task 999 no longer exists.".into())
+    );
+    // T3 missing: prepare's error is shown, not thrown.
+    let open = app.add("Open", None);
+    app.launch.set_prepare(Err(ServiceError::new(
+        SvcCode::T3Missing,
+        "T3 Code isn't installed.",
+    )));
+    let d = detail::task_detail(&app.state, M, open, 1, 30).unwrap();
+    assert_eq!(d.prepare_error.unwrap().code, ErrorCode::T3Missing);
+}
+
+#[test]
+fn run_map_plans_and_quickadd_data_read_the_view_model() {
+    let app = TestApp::new();
+    let web = repo(&app, "web");
+    let p = app.add("Plan", None);
+    let a = app.add("A", Some(p));
+    let _b = app.add("B", Some(p));
+    let done = app.add("Done", None);
+    app.core(|s| s.set_status(done, Status::Done, None, &Actor::Me).unwrap());
+    app.sync_vm();
+    let map = detail::run_map(&app.state, M, p, 4).unwrap();
+    assert_eq!((map.req, map.nodes.len(), map.waves.len()), (4, 2, 1));
+    let plans = detail::plans(&app.state, M, 5).unwrap();
+    assert_eq!(plans.req, 5);
+    assert_eq!(plans.cards.len(), 1);
+    assert_eq!(plans.cards[0].next_up, NextUp::Ready { ids: vec![a, _b] });
+    let q = detail::quickadd_data(&app.state, M).unwrap();
+    assert_eq!(q.repos[0].id, web);
+    assert_eq!(
+        q.parents.iter().map(|p| p.id).collect::<Vec<_>>(),
+        vec![p, a, _b]
+    );
+    assert_eq!(q.hotkey, "⌃⌥N");
+    assert_eq!(
+        err_code(detail::run_map(&app.state, M, TaskId(77), 1)).0,
+        ErrorCode::NotFound
+    );
+}
+
+#[test]
+fn t3_projects_says_which_are_git_repos_and_which_are_added() {
+    let app = TestApp::new();
+    let dir = temp_dir("t3");
+    let git = dir.join("booking-web");
+    std::fs::create_dir_all(git.join(".git")).unwrap();
+    let plain = dir.join("notes");
+    std::fs::create_dir_all(&plain).unwrap();
+    app.core(|s| s.add_repo("booking-web", &git, None, &Actor::Me).unwrap());
+    app.sync_vm();
+    app.sync.set_snapshot(SyncSnapshot {
+        projects: vec![
+            T3Project {
+                id: "1".into(),
+                name: "booking-web".into(),
+                path: git.clone(),
+            },
+            T3Project {
+                id: "2".into(),
+                name: "notes".into(),
+                path: plain.clone(),
+            },
+        ],
+        ..SyncSnapshot::default()
+    });
+    let list = detail::t3_projects(&app.state, M).unwrap();
+    assert_eq!(list.len(), 2);
+    assert!(list[0].is_git && list[0].added);
+    assert!(!list[1].is_git && !list[1].added);
+}
+
+// ---------------------------------------------------------------------------- task writes
+
+#[test]
+fn create_task_links_repos_in_the_same_change_then_each_link() {
+    let app = TestApp::new();
+    let web = repo(&app, "web");
+    let parent = app.add("Parent", None);
+    app.sync_vm();
+    let out = tasks::create_task(
+        &app.state,
+        M,
+        "Slot picker".into(),
+        Some("Notes".into()),
+        Some(parent),
+        vec![web],
+        vec![
+            NewLinkArg {
+                text: "https://acme.slack.com/archives/C1/p2".into(),
+                title: Some("#booking thread".into()),
+            },
+            NewLinkArg {
+                text: "not a link".into(),
+                title: None,
+            },
+        ],
+        None,
+    )
+    .unwrap();
+    let task = app.core(|s| s.task(out.id).unwrap());
+    assert_eq!(
+        (task.parent, task.repos.clone(), task.body.as_deref()),
+        (Some(parent), vec![web], Some("Notes"))
+    );
+    let links = app.core(|s| s.links(out.id).unwrap());
+    assert_eq!(links.len(), 1);
+    assert_eq!(links[0].title.as_deref(), Some("#booking thread"));
+    assert_eq!(out.failed_links, vec!["not a link".to_string()]);
+    assert!(out.patch.upserts.iter().any(|r| r.id == out.id));
+    assert!(out.patch.created.contains(&out.id));
+    assert!(out.launch.is_none());
+    assert_told(&app);
+}
+
+#[test]
+fn create_task_from_quick_add_shows_the_main_window_when_a_link_fails() {
+    let app = TestApp::new();
+    let out = tasks::create_task(
+        &app.state,
+        Caller::QuickAdd,
+        "T".into(),
+        None,
+        None,
+        vec![],
+        vec![NewLinkArg {
+            text: "nope".into(),
+            title: None,
+        }],
+        None,
+    )
+    .unwrap();
+    assert!(app.shell.calls().contains(&"show_main".to_string()));
+    let toast = app.shell.events().into_iter().find_map(|e| match e {
+        UiEvent::Toast(t) => Some(t),
+        _ => None,
+    });
+    assert_eq!(
+        toast.unwrap().text,
+        format!("Created {}, but couldn't link nope", out.id.0)
+    );
+}
+
+#[test]
+fn create_task_then_do_it_starts_it_or_asks_where() {
+    let app = TestApp::new();
+    let out = tasks::create_task(
+        &app.state,
+        M,
+        "Go".into(),
+        None,
+        None,
+        vec![],
+        vec![],
+        Some(Then::DoIt),
+    )
+    .unwrap();
+    let launch = out.launch.unwrap();
+    assert!(matches!(
+        launch.outcome,
+        Some(LaunchOutcome::Started { .. })
+    ));
+    assert_eq!(app.launch.starts()[0].task, out.id);
+
+    app.launch.set_prepare(Ok(Prepared {
+        needs_choice: true,
+        ..app_prepared()
+    }));
+    let out = tasks::create_task(
+        &app.state,
+        M,
+        "Where".into(),
+        None,
+        None,
+        vec![],
+        vec![],
+        Some(Then::DoIt),
+    )
+    .unwrap();
+    assert!(matches!(
+        out.launch.unwrap().outcome,
+        Some(LaunchOutcome::NeedsChoice { .. })
+    ));
+    let out = tasks::create_task(
+        &app.state,
+        M,
+        "Plan".into(),
+        None,
+        None,
+        vec![],
+        vec![],
+        Some(Then::PlanIt),
+    )
+    .unwrap();
+    assert!(out.launch.unwrap().outcome.is_some());
+    assert_eq!(app.launch.starts().last().unwrap().mode, Mode::PlanIt);
+}
+
+#[test]
+fn create_task_refuses_an_empty_title_and_a_closed_parent() {
+    let app = TestApp::new();
+    assert_eq!(
+        err_code(tasks::create_task(
+            &app.state,
+            M,
+            "  ".into(),
+            None,
+            None,
+            vec![],
+            vec![],
+            None
+        )),
+        (ErrorCode::EmptyTitle, "A task needs a title.".into())
+    );
+    let done = app.add("Done", None);
+    app.core(|s| s.set_status(done, Status::Done, None, &Actor::Me).unwrap());
+    assert_eq!(
+        err_code(tasks::create_task(
+            &app.state,
+            M,
+            "x".into(),
+            None,
+            Some(done),
+            vec![],
+            vec![],
+            None
+        )),
+        (
+            ErrorCode::InvalidTarget,
+            "Tasks can't go under a proposed, done or dropped task.".into()
+        )
+    );
+}
+
+#[test]
+fn rename_notes_note_and_branch_return_their_patches() {
+    let app = TestApp::new();
+    let t = app.add("Old", None);
+    app.sync_vm();
+    let p = tasks::rename_task(&app.state, M, t, "New".into()).unwrap();
+    assert_eq!(p.upserts[0].title, "New");
+    assert_told(&app);
+    let p = tasks::edit_notes(&app.state, M, t, Some("Body".into())).unwrap();
+    assert!(p.seq > 0);
+    assert_eq!(app.core(|s| s.task(t).unwrap().body), Some("Body".into()));
+    tasks::edit_notes(&app.state, M, t, Some("  ".into())).unwrap();
+    assert_eq!(app.core(|s| s.task(t).unwrap().body), None);
+    tasks::add_note(&app.state, M, t, "for the agent".into()).unwrap();
+    let p = tasks::set_branch(&app.state, M, t, Some("task-1-new".into())).unwrap();
+    assert_eq!(p.upserts[0].branch.as_deref(), Some("task-1-new"));
+    assert_eq!(
+        err_code(tasks::set_branch(
+            &app.state,
+            M,
+            t,
+            Some("bad branch".into())
+        )),
+        (
+            ErrorCode::InvalidTarget,
+            "Branch names can use letters, digits, `.`, `_`, `/` and `-`.".into()
+        )
+    );
+    assert_eq!(
+        err_code(tasks::rename_task(&app.state, M, TaskId(404), "x".into())).1,
+        "Task 404 no longer exists."
+    );
+}
+
+#[test]
+fn set_status_and_toggle_done_return_a_patch_and_an_undo_entry() {
+    let app = TestApp::new();
+    let t = app.add("T", None);
+    app.sync_vm();
+    let r = tasks::set_status(&app.state, M, t, StatusDto::Doing, None).unwrap();
+    assert_eq!(r.patch.upserts[0].status, StatusDto::Doing);
+    assert_eq!(r.undo.unwrap().label, format!("Set {} to In progress", t.0));
+    let r = tasks::toggle_done(&app.state, M, t).unwrap();
+    assert_eq!(r.undo.unwrap().label, format!("Mark done {}", t.0));
+    let r = tasks::toggle_done(&app.state, M, t).unwrap();
+    assert_eq!(
+        r.patch.upserts[0].status,
+        StatusDto::Doing,
+        "reopens to what it was"
+    );
+    assert_eq!(
+        err_code(tasks::set_status(
+            &app.state,
+            M,
+            t,
+            StatusDto::Blocked,
+            None
+        )),
+        (ErrorCode::NotAllowed, "Say why it's blocked.".into())
+    );
+    let r = tasks::set_status(&app.state, M, t, StatusDto::Doing, None).unwrap();
+    assert!(r.undo.is_none(), "no change, nothing to undo");
+    assert_told(&app);
+}
+
+#[test]
+fn accept_proposals_moves_each_to_todo() {
+    let app = TestApp::new();
+    let p = app.add("P", None);
+    let ids: Vec<TaskId> = (0..2)
+        .map(|i| {
+            app.core(|s| {
+                s.add_task(
+                    airboss_core::NewTask::new(format!("prop {i}")).under(p),
+                    &Actor::Agent("t3/x".into()),
+                )
+                .unwrap()
+                .id
+            })
+        })
+        .collect();
+    app.sync_vm();
+    let patch = tasks::accept_proposals(&app.state, M, ids.clone()).unwrap();
+    assert!(
+        patch
+            .upserts
+            .iter()
+            .filter(|r| ids.contains(&r.id))
+            .all(|r| r.status == StatusDto::Todo)
+    );
+}
+
+#[test]
+fn move_and_reorder_move_within_the_tree() {
+    let app = TestApp::new();
+    let p = app.add("P", None);
+    let a = app.add("A", None);
+    let b = app.add("B", None);
+    app.sync_vm();
+    let r = tasks::move_task(&app.state, M, a, Some(p), None).unwrap();
+    assert_eq!(app.state.row(a).unwrap().parent, Some(p));
+    assert!(r.undo.is_some());
+    let r = tasks::reorder(&app.state, M, b, Direction::Up).unwrap();
+    assert_eq!(app.state.row(b).unwrap().position, 1);
+    assert!(r.undo.is_some());
+    let r = tasks::reorder(&app.state, M, b, Direction::Up).unwrap();
+    assert!(
+        r.undo.is_none() && r.patch.upserts.is_empty(),
+        "at the top nothing happens"
+    );
+    let r = tasks::reorder(&app.state, M, a, Direction::Down).unwrap();
+    assert!(r.undo.is_none(), "an only child can't move");
+    let done = app.add("Done", None);
+    app.core(|s| s.set_status(done, Status::Done, None, &Actor::Me).unwrap());
+    app.sync_vm();
+    assert_eq!(
+        err_code(tasks::move_task(&app.state, M, b, Some(done), None)).1,
+        "Tasks can't go under a proposed, done or dropped task."
+    );
+    assert_eq!(
+        err_code(tasks::move_task(&app.state, M, p, Some(a), None)),
+        (
+            ErrorCode::Loop,
+            "A task can't go under itself or one of its subtasks.".into()
+        )
+    );
+}
+
+#[test]
+fn repos_link_and_unlink() {
+    let app = TestApp::new();
+    let web = repo(&app, "web");
+    let t = app.add("T", None);
+    app.sync_vm();
+    let p = tasks::link_repo(&app.state, M, t, web).unwrap();
+    assert_eq!(p.upserts[0].repos, vec![web]);
+    let p = tasks::unlink_repo(&app.state, M, t, web).unwrap();
+    assert!(p.upserts[0].repos.is_empty());
+    assert_eq!(
+        err_code(tasks::unlink_repo(&app.state, M, t, web)).1,
+        format!("That repo isn't linked to {}.", t.0)
+    );
+}
+
+#[test]
+fn dependencies_and_their_errors() {
+    let app = TestApp::new();
+    let a = app.add("A", None);
+    let b = app.add("B", None);
+    let child = app.add("Child", Some(a));
+    app.sync_vm();
+    let p = tasks::add_dependency(&app.state, M, a, b).unwrap();
+    assert_eq!(
+        p.upserts.iter().find(|r| r.id == a).unwrap().waits_on,
+        vec![b]
+    );
+    assert_eq!(
+        err_code(tasks::add_dependency(&app.state, M, b, a)),
+        (
+            ErrorCode::Loop,
+            format!("That would make a loop: {} already waits on {}.", a.0, b.0)
+        )
+    );
+    assert_eq!(
+        err_code(tasks::add_dependency(&app.state, M, child, a)),
+        (
+            ErrorCode::InvalidTarget,
+            "A task can't wait on its own parent or subtask.".into()
+        )
+    );
+    tasks::remove_dependency(&app.state, M, a, b).unwrap();
+    assert!(app.state.row(a).unwrap().waits_on.is_empty());
+}
+
+// ---------------------------------------------------------------------------- repos and links
+
+#[test]
+fn add_repos_names_each_from_its_folder_and_reads_its_remote() {
+    let app = TestApp::new();
+    let dir = temp_dir("repos");
+    let web = dir.join("booking-web");
+    std::fs::create_dir_all(web.join(".git")).unwrap();
+    std::fs::write(
+        web.join(".git/config"),
+        "[core]\n\tbare = false\n[remote \"origin\"]\n\turl = git@github.com:acme/booking-web.git\n",
+    )
+    .unwrap();
+    let out = repos::add_repos(
+        &app.state,
+        M,
+        vec![web.to_string_lossy().into(), web.to_string_lossy().into()],
+    )
+    .unwrap();
+    assert_eq!(out.repos.len(), 1);
+    assert_eq!(out.repos[0].name, "booking-web");
+    assert_eq!(
+        out.repos[0].remote_url.as_deref(),
+        Some("git@github.com:acme/booking-web.git")
+    );
+    assert_eq!(out.failed.len(), 1);
+    assert_eq!(
+        out.failed[0].message,
+        "A repo with that name or folder is already added."
+    );
+    assert_eq!(
+        out.patch.repos.as_ref().unwrap().len(),
+        1,
+        "repos changed with no event"
+    );
+}
+
+#[test]
+fn pick_folder_asks_the_shell() {
+    let app = TestApp::new();
+    assert_eq!(repos::pick_folder(&app.state, M).unwrap(), None);
+    app.shell.answer_folder(Some(PathBuf::from("/src/x")));
+    assert_eq!(
+        repos::pick_folder(&app.state, M).unwrap(),
+        Some("/src/x".into())
+    );
+}
+
+#[test]
+fn add_link_classifies_and_a_pr_lookup_corrects_its_state_in_the_background() {
+    let app = TestApp::new();
+    let t = app.add("T", None);
+    app.sync_vm();
+    app.sync.answer_lookup(
+        PrRef::parse("acme/web#5").unwrap(),
+        Ok(pr_view("acme/web#5", PrState::Merged, None, false)),
+    );
+    let first = repos::add_link(
+        &app.state,
+        M,
+        t,
+        "https://github.com/acme/web/pull/5".into(),
+        None,
+    )
+    .unwrap();
+    // Wait for the background lookup's own patch, without touching the store meanwhile (the
+    // lock checker can't tell whose lock it is).
+    app.shell
+        .wait_for(
+            Duration::from_secs(2),
+            |e| matches!(e, UiEvent::TreePatch(p) if p.seq > first.seq),
+        )
+        .expect("the lookup never corrected the state");
+    // Let the background catch-up finish its rebuild before this thread takes the lock.
+    std::thread::sleep(Duration::from_millis(100));
+    assert_eq!(
+        app.core(|s| s.links(t).unwrap())[0].pr_state,
+        Some(PrState::Merged)
+    );
+    repos::add_link(&app.state, M, t, "~/plans/booking.md".into(), None).unwrap();
+    let links = app.core(|s| s.links(t).unwrap());
+    assert_eq!(links[1].kind, LinkKind::Doc);
+    assert_eq!(links[1].title.as_deref(), Some("booking.md"));
+    assert_eq!(
+        err_code(repos::add_link(&app.state, M, t, "hello".into(), None)),
+        (ErrorCode::NotALink, "Paste a link or a file path.".into())
+    );
+    let id = links[1].id;
+    repos::remove_link(&app.state, M, id).unwrap();
+    assert_eq!(
+        err_code(repos::remove_link(&app.state, M, id)),
+        (ErrorCode::NotFound, "That link no longer exists.".into())
+    );
+    app.assert_lock_free();
+}
+
+// ---------------------------------------------------------------------------- Do it
+
+fn app_prepared() -> Prepared {
+    Prepared {
+        repos: vec![],
+        from_subtasks: false,
+        needs_choice: false,
+        choices: vec![airboss_core::Repo {
+            id: RepoId(1),
+            name: "web".into(),
+            path: "/src/web".into(),
+            remote_url: None,
+        }],
+        branch: Some("task-1-x".into()),
+        research_dir: PathBuf::from("/tmp/research"),
+        waiting_on: vec![],
+        started: vec![],
+    }
+}
+
+fn started(key: &str, repo: Option<RepoId>, mode: Mode) -> StartedThread {
+    StartedThread {
+        key: ThreadKey {
+            source: Source::T3,
+            r#ref: key.into(),
+        },
+        mode,
+        repo,
+        title: key.into(),
+        linked: true,
+    }
+}
+
+#[test]
+fn do_it_holds_an_in_flight_guard_until_start_returns() {
+    let app = TestApp::new();
+    let t = app.add("T", None);
+    app.sync_vm();
+    app.gate.close();
+    let state = app.state.clone();
+    let first = std::thread::spawn(move || launch::do_it(&state, M, t, None, None));
+    while app.gate.entered.load(std::sync::atomic::Ordering::SeqCst) == 0 {
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert_eq!(
+        err_code(launch::do_it(&app.state, M, t, None, None)),
+        (
+            ErrorCode::AlreadyStarting,
+            "Already starting — check T3 in a moment.".into()
+        )
+    );
+    assert_eq!(
+        err_code(launch::plan_it(&app.state, M, t, None)).0,
+        ErrorCode::AlreadyStarting
+    );
+    app.gate.open();
+    assert!(matches!(
+        first.join().unwrap().unwrap(),
+        LaunchOutcome::Started { .. }
+    ));
+    // The guard is gone once start returned.
+    assert!(launch::do_it(&app.state, M, t, None, None).is_ok());
+    app.assert_lock_free();
+}
+
+#[test]
+fn do_it_asks_where_then_starts_in_the_chosen_repo_or_research_only() {
+    let app = TestApp::new();
+    let web = repo(&app, "web");
+    let t = app.add("T", None);
+    app.sync_vm();
+    app.launch.set_prepare(Ok(Prepared {
+        needs_choice: true,
+        ..app_prepared()
+    }));
+    match launch::do_it(&app.state, M, t, None, None).unwrap() {
+        LaunchOutcome::NeedsChoice {
+            choices,
+            research_dir,
+        } => {
+            assert_eq!(choices[0].name, "web");
+            assert_eq!(research_dir, "/tmp/research");
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(app.launch.starts().is_empty());
+    app.launch.set_start(Ok(LaunchReport {
+        started: vec![started("th1", Some(web), Mode::DoIt)],
+        skipped: vec![],
+        failed: vec![],
+        branch: Some("task-1-t".into()),
+        moved_to_doing: true,
+    }));
+    match launch::do_it(&app.state, M, t, Some(PlaceArg::Repo { repo: web }), None).unwrap() {
+        LaunchOutcome::Started { toast, .. } => {
+            assert_eq!(toast.text, format!("Started a thread for {} in web", t.0));
+            assert!(matches!(
+                toast.actions[0].command,
+                ToastCommand::OpenThread { .. }
+            ));
+        }
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(
+        app.core(|s| s.task(t).unwrap().repos),
+        vec![web],
+        "linked as me"
+    );
+    assert_eq!(app.launch.starts()[0].place, Place::TaskRepos);
+    launch::do_it(&app.state, M, t, Some(PlaceArg::NoRepo), Some(true)).unwrap();
+    let last = app.launch.starts().last().unwrap().clone();
+    assert_eq!(last.place, Place::NoRepo(PathBuf::from("/tmp/research")));
+    assert!(last.again);
+}
+
+#[test]
+fn a_partial_report_offers_add_to_t3_and_from_quick_add_shows_the_main_window() {
+    let app = TestApp::new();
+    let web = repo(&app, "web");
+    let api = repo(&app, "api");
+    let t = app.add("T", None);
+    app.sync_vm();
+    app.launch.set_start(Ok(LaunchReport {
+        started: vec![started("th1", Some(web), Mode::DoIt)],
+        skipped: vec![],
+        failed: vec![(
+            Some(api),
+            ServiceError::new(SvcCode::NotAProject, "api isn't a T3 project yet."),
+        )],
+        branch: Some("task-1-t".into()),
+        moved_to_doing: true,
+    }));
+    let LaunchOutcome::Started { toast, report, .. } =
+        launch::do_it(&app.state, Caller::QuickAdd, t, None, None).unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(
+        toast.text,
+        "Started in web. api failed: api isn't a T3 project yet."
+    );
+    assert_eq!(toast.tone, ToastTone::Warning);
+    assert_eq!(
+        toast.actions[0].command,
+        ToastCommand::AddToT3AndRetry {
+            repo: api,
+            task: t,
+            mode: ModeDto::DoIt
+        }
+    );
+    assert_eq!(report.failed[0].error.code, ErrorCode::NotAProject);
+    assert!(app.shell.calls().contains(&"show_main".to_string()));
+    assert!(
+        app.shell
+            .events()
+            .iter()
+            .any(|e| matches!(e, UiEvent::NavOpen(n) if n.task == Some(t)))
+    );
+    // Add to T3, then retry.
+    launch::add_to_t3(&app.state, M, api).unwrap();
+    assert!(app.launch.calls().contains(&format!("add_to_t3({api:?})")));
+}
+
+#[test]
+fn the_toast_table_for_every_report() {
+    let name = |r: Option<RepoId>| match r {
+        Some(RepoId(1)) => "booking-web".to_string(),
+        Some(RepoId(2)) => "booking-api".to_string(),
+        _ => "research".to_string(),
+    };
+    let t = TaskId(142);
+    let rep = |started, skipped, failed| LaunchReport {
+        started,
+        skipped,
+        failed,
+        branch: Some("task-142-booking-flow".into()),
+        moved_to_doing: false,
+    };
+    let text = |m, r: &LaunchReport| launch::report_toast(t, m, r, &name).text;
+    assert_eq!(
+        text(
+            Mode::DoIt,
+            &rep(
+                vec![
+                    started("a", Some(RepoId(2)), Mode::DoIt),
+                    started("b", Some(RepoId(1)), Mode::DoIt)
+                ],
+                vec![],
+                vec![]
+            )
+        ),
+        "Started 2 threads for 142 on task-142-booking-flow"
+    );
+    assert_eq!(
+        text(
+            Mode::DoIt,
+            &rep(vec![started("a", None, Mode::DoIt)], vec![], vec![])
+        ),
+        "Started a research thread for 142"
+    );
+    assert_eq!(
+        text(
+            Mode::PlanIt,
+            &rep(vec![started("a", None, Mode::PlanIt)], vec![], vec![])
+        ),
+        "Started a planning thread for 142. Its steps become subtasks when you settle the plan."
+    );
+    let skipped = launch::report_toast(
+        t,
+        Mode::DoIt,
+        &rep(vec![], vec![RepoId(1), RepoId(2)], vec![]),
+        &name,
+    );
+    assert_eq!(
+        skipped.text,
+        "142 already has threads in booking-web and booking-api"
+    );
+    assert_eq!(
+        skipped.actions[0].command,
+        ToastCommand::StartAgain {
+            task: t,
+            mode: ModeDto::DoIt
+        }
+    );
+    let failed = launch::report_toast(
+        t,
+        Mode::DoIt,
+        &rep(
+            vec![],
+            vec![],
+            vec![(
+                Some(RepoId(1)),
+                ServiceError::new(SvcCode::T3Failed, "t3 said no"),
+            )],
+        ),
+        &name,
+    );
+    assert_eq!(failed.text, "Couldn't start 142: t3 said no");
+    assert_eq!(failed.actions[0].label, "Retry");
+}
+
+#[test]
+fn a_closed_task_offers_reopen_and_start() {
+    let app = TestApp::new();
+    let t = app.add("T", None);
+    app.core(|s| s.set_status(t, Status::Done, None, &Actor::Me).unwrap());
+    app.sync_vm();
+    app.launch
+        .set_prepare(Err(ServiceError::new(SvcCode::TaskClosed, "142 is done.")));
+    assert_eq!(
+        err_code(launch::do_it(&app.state, M, t, None, None)).0,
+        ErrorCode::TaskClosed
+    );
+    app.launch.set_prepare(Ok(app_prepared()));
+    launch::reopen_and_start(&app.state, M, t).unwrap();
+    assert_eq!(app.core(|s| s.task(t).unwrap().status), Status::Todo);
+    assert_eq!(app.launch.starts().len(), 1);
+}
+
+#[test]
+fn a_service_error_passes_through_with_its_own_code_and_message() {
+    let app = TestApp::new();
+    let t = app.add("T", None);
+    app.sync_vm();
+    app.launch.set_start(Err(ServiceError::new(
+        SvcCode::T3NotRunning,
+        "Open T3 Code, then try again.",
+    )));
+    assert_eq!(
+        err_code(launch::plan_it(&app.state, M, t, None)),
+        (
+            ErrorCode::T3NotRunning,
+            "Open T3 Code, then try again.".into()
+        )
+    );
+}
+
+// ---------------------------------------------------------------------------- needs me
+
+#[test]
+fn dismiss_snooze_and_restore_go_through_attention() {
+    let app = TestApp::new();
+    let t = app.add("T", None);
+    app.attention.set_items(vec![
+        needs_item("q", NeedsKind::Question, t, common::NOW),
+        needs_item("quiet", NeedsKind::Quiet, t, common::NOW),
+    ]);
+    app.state.catch_up_services();
+    let undo = needs::needs_dismiss(&app.state, M, "q".into()).unwrap();
+    assert_eq!(undo.label, format!("Dismiss {}", t.0));
+    needs::needs_snooze(&app.state, M, "quiet".into(), None).unwrap();
+    assert!(
+        app.attention
+            .calls()
+            .contains(&"snooze(quiet, None)".to_string())
+    );
+    needs::needs_restore(&app.state, M, "q".into()).unwrap();
+    assert_eq!(app.attention.needs_me().count, 1);
+    assert_eq!(
+        err_code(needs::needs_restore(&app.state, M, "never".into())).0,
+        ErrorCode::NotFound
+    );
+}
+
+// ---------------------------------------------------------------------------- app commands
+
+#[test]
+fn open_thread_and_open_url_go_through_the_allowlist() {
+    let app = TestApp::new();
+    appcmd::open_thread(
+        &app.state,
+        M,
+        ThreadKeyDto {
+            source: SourceDto::T3,
+            r#ref: "abc".into(),
+        },
+    )
+    .unwrap();
+    assert!(
+        app.shell
+            .calls()
+            .contains(&"open_url(t3code://threads/fake-environment/abc)".to_string())
+    );
+    assert_eq!(
+        err_code(appcmd::open_thread(
+            &app.state,
+            M,
+            ThreadKeyDto {
+                source: SourceDto::Claude,
+                r#ref: "s".into()
+            }
+        ))
+        .0,
+        ErrorCode::NotFound
+    );
+    appcmd::open_url(
+        &app.state,
+        M,
+        Some("https://github.com/acme/web/pull/1".into()),
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        err_code(appcmd::open_url(
+            &app.state,
+            M,
+            Some("javascript:alert(1)".into()),
+            None
+        ))
+        .0,
+        ErrorCode::UrlNotAllowed
+    );
+    let t = app.add("T", None);
+    let link = app.core(|s| {
+        s.link(t, NewLink::new(LinkKind::Doc, "~/plan.md"), &Actor::Me)
+            .unwrap()
+    });
+    appcmd::open_url(
+        &app.state,
+        M,
+        None,
+        Some(LinkRef {
+            task: t,
+            id: link.id,
+        }),
+    )
+    .unwrap();
+    let home = app.home.to_string_lossy().to_string();
+    assert!(
+        app.shell
+            .calls()
+            .iter()
+            .any(|c| c.starts_with("open_url(file://") && c.contains(&home[1..]))
+    );
+}
+
+#[test]
+fn recheck_copy_and_install_cli() {
+    let app = TestApp::new();
+    appcmd::recheck_connections(&app.state, M).unwrap();
+    for calls in [app.sync.calls(), app.launch.calls(), app.attention.calls()] {
+        assert!(calls.contains(&"recheck".to_string()));
+    }
+    appcmd::copy_text(&app.state, M, CopyWhat::TaskNumber { id: TaskId(144) }).unwrap();
+    appcmd::copy_text(&app.state, M, CopyWhat::SetupCommand).unwrap();
+    appcmd::copy_text(&app.state, M, CopyWhat::AgentNote).unwrap();
+    let calls = app.shell.calls();
+    assert!(calls.contains(&"copy_text(144)".to_string()));
+    assert!(calls.contains(
+        &"copy_text(claude mcp add --scope user airboss -- ~/.local/bin/airboss mcp)".to_string()
+    ));
+    assert!(calls.iter().any(|c| c.starts_with("copy_text(## Airboss")));
+
+    assert_eq!(
+        err_code(appcmd::install_cli(&app.state, M)).0,
+        ErrorCode::NotFound
+    );
+    let sidecar = temp_dir("bundle").join("airboss");
+    std::fs::write(&sidecar, b"#!/bin/sh\n").unwrap();
+    app.shell.set_sidecar(Some(sidecar.clone()));
+    let out = appcmd::install_cli(&app.state, M).unwrap();
+    let link = app.home.join(".local/bin/airboss");
+    assert_eq!(out.path, link.to_string_lossy());
+    assert_eq!(std::fs::read_link(&link).unwrap(), sidecar);
+    // Installing again replaces our own link.
+    appcmd::install_cli(&app.state, M).unwrap();
+    assert!(
+        app.state
+            .connection_rows()
+            .iter()
+            .any(|c| c.name == "Agents" && c.ok)
+    );
+    std::fs::remove_file(&link).unwrap();
+    std::fs::write(&link, b"someone else's").unwrap();
+    assert_eq!(
+        err_code(appcmd::install_cli(&app.state, M)).0,
+        ErrorCode::AlreadyExists
+    );
+}
+
+#[test]
+fn set_settings_refuses_reserved_and_taken_hotkeys_and_applies_the_rest() {
+    let app = TestApp::new();
+    let mut s = appcmd::get_settings(&app.state, M).unwrap();
+    s.hotkey = "Control+Space".into();
+    assert_eq!(
+        err_code(appcmd::set_settings(&app.state, M, s.clone())).0,
+        ErrorCode::HotkeyReserved
+    );
+    s.hotkey = "Control+Alt+K".into();
+    app.shell.refuse_hotkeys(true);
+    assert_eq!(
+        err_code(appcmd::set_settings(&app.state, M, s.clone())),
+        (
+            ErrorCode::HotkeyInUse,
+            "That key is in use by another app. Pick another.".into()
+        )
+    );
+    assert_eq!(app.state.settings().hotkey, "Control+Alt+N", "unchanged");
+    app.shell.refuse_hotkeys(false);
+    s.open_at_login = false;
+    s.appearance = Appearance::Light;
+    let saved = appcmd::set_settings(&app.state, M, s).unwrap();
+    assert_eq!(saved.hotkey, "Control+Alt+K");
+    let calls = app.shell.calls();
+    assert!(calls.contains(&"register_hotkey(Control+Alt+N -> Control+Alt+K)".to_string()));
+    assert!(calls.contains(&"set_autostart(false)".to_string()));
+    assert!(calls.contains(&"apply_appearance(Light)".to_string()));
+}
+
+#[test]
+fn folds_focus_and_windows() {
+    let app = TestApp::new();
+    appcmd::set_folded(&app.state, M, vec![TaskId(1), TaskId(2)], true).unwrap();
+    appcmd::set_folded(&app.state, M, vec![TaskId(1)], false).unwrap();
+    assert_eq!(app.state.settings().folded, vec![TaskId(2)]);
+
+    appcmd::set_focus_context(
+        &app.state,
+        M,
+        WindowName::Main,
+        Zone::Field,
+        Some(TaskId(2)),
+        "all".into(),
+    )
+    .unwrap();
+    assert!(
+        app.shell
+            .calls()
+            .last()
+            .unwrap()
+            .contains("task_items: false")
+    );
+    appcmd::set_focus_context(
+        &app.state,
+        M,
+        WindowName::Main,
+        Zone::List,
+        Some(TaskId(2)),
+        "all".into(),
+    )
+    .unwrap();
+    assert!(
+        app.shell
+            .calls()
+            .last()
+            .unwrap()
+            .contains("task_items: true, selection: true")
+    );
+
+    appcmd::ui_ready(&app.state, M, WindowName::Main).unwrap();
+    appcmd::ui_ready(&app.state, M, WindowName::Main).unwrap();
+    assert_eq!(
+        app.shell
+            .calls()
+            .iter()
+            .filter(|c| *c == "show_main")
+            .count(),
+        1
+    );
+
+    appcmd::quickadd_shown(&app.state, Caller::QuickAdd).unwrap();
+    appcmd::quickadd_resize(&app.state, Caller::QuickAdd, 240.0).unwrap();
+    appcmd::quickadd_hide(&app.state, Caller::QuickAdd).unwrap();
+    assert!(
+        app.shell
+            .calls()
+            .contains(&"resize_quickadd(240)".to_string())
+    );
+    assert!(app.shell.calls().contains(&"hide_quickadd".to_string()));
+    assert!(
+        app.shell
+            .events()
+            .iter()
+            .any(|e| matches!(e, UiEvent::QuickAddReset(r) if !r.keep_text && r.hotkey == "⌃⌥N"))
+    );
+
+    appcmd::show_main(&app.state, M, Some("needs".into()), None, Some("q".into())).unwrap();
+    assert!(
+        app.shell
+            .events()
+            .iter()
+            .any(|e| matches!(e, UiEvent::NavOpen(n) if n.needs_key.as_deref() == Some("q")))
+    );
+}
+
+#[test]
+fn connections_merge_rows_by_name_and_follow_availability() {
+    let app = TestApp::new();
+    app.sync.set_connections(vec![
+        Connection {
+            name: "GitHub".into(),
+            ok: true,
+            state: "Signed in".into(),
+            detail: "PRs".into(),
+            fix: None,
+        },
+        Connection {
+            name: "T3 Code".into(),
+            ok: true,
+            state: "Found".into(),
+            detail: "threads".into(),
+            fix: None,
+        },
+    ]);
+    app.launch.set_availability(Availability::Missing {
+        reason: "Not installed".into(),
+    });
+    app.state.catch_up_services();
+    let rows = app.state.connection_rows();
+    let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
+    assert_eq!(names, vec!["T3 Code", "GitHub", "Agents"]);
+    assert!(!rows[0].ok && rows[0].state == "Not found", "{:?}", rows[0]);
+    assert!(
+        app.shell
+            .events()
+            .iter()
+            .any(|e| matches!(e, UiEvent::ConnectionsChanged(_)))
+    );
+}
+
+// ---------------------------------------------------------------------------- errors
+
+#[test]
+fn a_panic_in_a_command_is_an_internal_error() {
+    let r: Result<(), AppError> = airboss_app::ipc::guarded_call(|| panic!("boom"));
+    assert_eq!(
+        err_code(r),
+        (
+            ErrorCode::Internal,
+            "Something went wrong inside Airboss; details are in the log.".into()
+        )
+    );
+}
+
+#[test]
+fn commands_run_by_name_with_json_as_invoke_sends_them() {
+    let app = TestApp::new();
+    let out = app
+        .call(
+            "create_task",
+            serde_json::json!({"title": "From JSON", "body": null, "parent": null, "repos": [], "links": [], "then": null}),
+        )
+        .unwrap();
+    let id = out["id"].as_i64().unwrap();
+    let detail = app
+        .call(
+            "task_detail",
+            serde_json::json!({"id": id, "req": 3, "history_limit": 30}),
+        )
+        .unwrap();
+    assert_eq!(detail["req"], 3);
+    assert_eq!(detail["task"]["title"], "From JSON");
+    let r = app
+        .call(
+            "set_status",
+            serde_json::json!({"id": id, "status": "in_review"}),
+        )
+        .unwrap();
+    assert_eq!(r["patch"]["upserts"][0]["status"], "in_review");
+    assert!(app.call("no_such_command", serde_json::json!({})).is_err());
+    let _ = Arc::strong_count(&app.state);
+}
