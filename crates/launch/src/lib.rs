@@ -5,6 +5,7 @@
 //! same task, repo and mode. See `SPEC-launch.md` at the repo root, and the decisions in
 //! `tasks/launch-plan.md`.
 
+pub mod branch;
 mod db;
 mod process;
 

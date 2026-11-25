@@ -29,7 +29,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
   - **Files:** `src/process.rs`, `tests/process.rs`, `tests/fixtures/fake-t3`
   - **Depends on:** T1
 
-- [ ] **T3. Branch names** (S)
+- [x] **T3. Branch names** (S)
   - **Description:** `branch.rs`: `core`'s rule, the slug, `task-<id>-<slug>`.
   - **Acceptance:** the spec's slug cases; 40-character cut at the last `-`; no-ASCII titles; names at the rule's edges (200 characters, `.lock`, leading `-` or `/`, `..`); every generated name passes the rule.
   - **Verify:** `tests/branch.rs`.
