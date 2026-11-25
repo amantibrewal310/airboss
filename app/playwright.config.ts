@@ -24,7 +24,9 @@ export default defineConfig({
   webServer: {
     command: 'pnpm preview:mock',
     url: 'http://localhost:4173',
-    reuseExistingServer: true,
+    // Never test someone else's build: a preview left running on 4173 by another worktree would
+    // otherwise be reused silently (its tests then fail against the wrong UI).
+    reuseExistingServer: false,
     timeout: 60_000,
   },
 });
