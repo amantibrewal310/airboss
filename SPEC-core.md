@@ -1,6 +1,6 @@
 # Spec: core
 
-Module `core` from [CAPABILITIES.md](CAPABILITIES.md). State: **approved 25 Nov 2026** (draft 2).
+Module `core` from [CAPABILITIES.md](CAPABILITIES.md). State: **approved 25 Nov 2026** (draft 2); **built** the same day in `crates/core`.
 
 Draft 2 folds in a review by a reader who had not seen draft 1 (25 Nov 2026). The [changes from draft 1](#changes-from-draft-1) are listed at the end.
 
@@ -380,18 +380,18 @@ fn check_status_change(actor: &Actor, task: &TaskFacts, to: Status, note: Option
 
 ## Success criteria
 
-- [ ] `cargo test -p airboss-core` passes, with tests for every rule, every row of the rule 6 table and every "no" in the rule 8 table.
-- [ ] An agent can't accept its own proposal, reopen a `done` or `dropped` task, drop a task, or finish a task that has a PR.
-- [ ] `sync:gh` finishes a task only when none of its PRs is open and at least one has merged.
-- [ ] Linking an open PR to a `done` task, or reopening its PR, moves it back to `in_review`.
-- [ ] Rejected proposals are `dropped`, are hidden from `tree()`, and are still in history.
-- [ ] Dependency loops of any length are rejected, including across parents, and nothing is written.
-- [ ] `run_order` returns the expected waves for the diamond, the cross-phase case and the outside-blocker case.
-- [ ] Running a plan twice changes nothing, and a revised plan adds only its new steps.
-- [ ] A call that fails partway leaves no rows, no events and no notification.
-- [ ] Each performance check meets its target, with the machine recorded next to the numbers.
-- [ ] `clippy -D warnings` and `fmt --check` are clean.
-- [ ] Opening an existing database runs only the pending `core` migrations, once, and keeps the data.
+- [x] `cargo test -p airboss-core` passes, with tests for every rule, every row of the rule 6 table and every "no" in the rule 8 table.
+- [x] An agent can't accept its own proposal, reopen a `done` or `dropped` task, drop a task, or finish a task that has a PR.
+- [x] `sync:gh` finishes a task only when none of its PRs is open and at least one has merged.
+- [x] Linking an open PR to a `done` task, or reopening its PR, moves it back to `in_review`.
+- [x] Rejected proposals are `dropped`, are hidden from `tree()`, and are still in history.
+- [x] Dependency loops of any length are rejected, including across parents, and nothing is written.
+- [x] `run_order` returns the expected waves for the diamond, the cross-phase case and the outside-blocker case.
+- [x] Running a plan twice changes nothing, and a revised plan adds only its new steps.
+- [x] A call that fails partway leaves no rows, no events and no notification.
+- [x] Each performance check meets its target, with the machine recorded next to the numbers.
+- [x] `clippy -D warnings` and `fmt --check` are clean.
+- [x] Opening an existing database runs only the pending `core` migrations, once, and keeps the data.
 
 ## Decisions (settled 25 Nov 2026)
 

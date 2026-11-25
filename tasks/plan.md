@@ -2,7 +2,7 @@
 
 Module `core` from [CAPABILITIES.md](../CAPABILITIES.md). It builds what's in [SPEC-core.md](../SPEC-core.md), approved 25 Nov 2026. The tasks and their checkpoints are in [todo.md](todo.md).
 
-State: **approved 25 Nov 2026**. Building starts when I say "build it".
+State: **built 25 Nov 2026**. All 14 tasks and 5 checkpoints done; see [todo.md](todo.md).
 
 ## Overview
 

@@ -6,7 +6,7 @@ Jot down a task in a couple of seconds, whether it's a one-line bug fix or a who
 
 On an aircraft carrier, the air boss launches every plane, tracks each one in the air and decides who lands next. Airboss does that for your agent threads.
 
-> **Status:** idea stage. Nothing is built yet. See [docs/idea.md](docs/idea.md) for the direction.
+> **Status:** early. The `core` library (task tree, history, links, dependencies, run order) is built and tested in `crates/core`. The MCP server, the Mac app, launching and sync come next. See [CAPABILITIES.md](CAPABILITIES.md).
 
 ## What it will do
 

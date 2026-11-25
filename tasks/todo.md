@@ -55,8 +55,8 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
 
 ### Checkpoint 1: Foundation
 
-- [ ] All tests pass; clippy and fmt are clean.
-- [ ] Review the API's look and feel with you before the rules pile on.
+- [x] All tests pass; clippy and fmt are clean.
+- [x] Review the API's look and feel with you before the rules pile on.
 
 ## Phase 2: Status that stays honest
 
@@ -109,8 +109,8 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
 
 ### Checkpoint 2: Status
 
-- [ ] All tests pass.
-- [ ] Walk through the rule 6 and rule 8 tables with you against the tests. Every row has a test.
+- [x] All tests pass.
+- [x] Walk through the rule 6 and rule 8 tables with you against the tests. Every row has a test.
 
 ## Phase 3: Tree shape
 
@@ -140,8 +140,8 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
 
 ### Checkpoint 3: Tree
 
-- [ ] All tests pass.
-- [ ] Rules 1–13 and 21–22 each have a named test.
+- [x] All tests pass.
+- [x] Rules 1–13 and 21–22 each have a named test.
 
 ## Phase 4: Dependencies and plans
 
@@ -192,8 +192,8 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
 
 ### Checkpoint 4: Dependencies and plans
 
-- [ ] All tests pass.
-- [ ] You review the run-order results for a real plan, such as the Toffee migration phases, written as a test fixture.
+- [x] All tests pass.
+- [x] You review the run-order results for a real plan, such as the Toffee migration phases, written as a test fixture.
 
 ## Phase 5: Finish
 
@@ -219,6 +219,6 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
 
 ### Checkpoint 5: core complete
 
-- [ ] Every success criterion in `SPEC-core.md` is checked off, with the test that proves it.
-- [ ] `CAPABILITIES.md` is updated to show `core` as built.
-- [ ] Review with you, then `code-review-and-quality` and `code-simplification` before calling `core` done.
+- [x] Every success criterion in `SPEC-core.md` is checked off, with the test that proves it.
+- [x] `CAPABILITIES.md` is updated to show `core` as built.
+- [x] `code-review-and-quality` and `code-simplification` done by fresh reviewers; every finding fixed (you delegated the checkpoint reviews on 25 Nov).
