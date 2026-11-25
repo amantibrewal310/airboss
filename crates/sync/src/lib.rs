@@ -10,6 +10,7 @@ mod db;
 mod health;
 mod secret;
 pub mod t3;
+pub mod threads;
 
 pub use db::{MIGRATIONS, MODULE, SyncDb};
 pub use secret::Secret;

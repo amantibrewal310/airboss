@@ -378,3 +378,159 @@ fn a_missing_or_bad_environment_id_is_none() {
     std::fs::remove_file(f.dir().join("environment-id")).unwrap();
     assert_eq!(open(&f).environment_id().unwrap(), None);
 }
+
+// ---- The state rules (threads.rs) on the fixture ----
+
+mod states {
+    use std::collections::{HashMap, HashSet};
+
+    use airboss_services::{RequestKind, ThreadState, ThreadView};
+    use airboss_sync::fake::T3Fixture;
+    use airboss_sync::threads;
+
+    use super::{LINKED, read};
+
+    fn views(f: &T3Fixture) -> (HashMap<String, ThreadView>, Vec<String>) {
+        let ids: Vec<String> = LINKED.iter().map(|s| s.to_string()).collect();
+        let out = threads::linked(&read(f), &ids, &HashMap::new());
+        (
+            out.views
+                .into_iter()
+                .map(|v| (v.key.r#ref.clone(), v))
+                .collect(),
+            out.itemless,
+        )
+    }
+
+    #[test]
+    fn each_state_row() {
+        let (v, itemless) = views(&T3Fixture::with_rows());
+        let state = |id: &str| v[id].state;
+        assert_eq!(state("t-missing"), ThreadState::Gone, "no row");
+        assert_eq!(state("t-archived"), ThreadState::Gone);
+        assert_eq!(state("t-deleted"), ThreadState::Gone);
+        assert_eq!(state("t-question"), ThreadState::NeedsMe, "before running");
+        assert_eq!(state("t-approve"), ThreadState::NeedsMe);
+        assert_eq!(state("t-run"), ThreadState::Running);
+        assert_eq!(state("t-queued"), ThreadState::Running);
+        assert_eq!(state("t-settled"), ThreadState::Settled);
+        assert_eq!(state("t-errored"), ThreadState::Errored);
+        assert_eq!(state("t-failed"), ThreadState::Errored);
+        assert_eq!(state("t-idle"), ThreadState::Idle, "interrupted");
+        assert_eq!(state("t-noruns"), ThreadState::Idle, "no runs");
+        assert!(itemless.is_empty());
+    }
+
+    #[test]
+    fn question_and_approval_text() {
+        let (v, _) = views(&T3Fixture::with_rows());
+        let q = v["t-question"].request.clone().unwrap();
+        assert_eq!(
+            (q.id.as_str(), q.kind, q.text.as_str(), q.at.as_str()),
+            (
+                "q-question",
+                RequestKind::Question,
+                "Ship it to staging now?",
+                "2026-11-26T11:30:00.000Z"
+            )
+        );
+        let a = v["t-approve"].request.clone().unwrap();
+        assert_eq!(
+            (a.kind, a.text.as_str()),
+            (RequestKind::Approval, "cargo publish --dry-run")
+        );
+        let no_prompt = v["t-approve2"].request.clone().unwrap();
+        assert_eq!(no_prompt.text, "Change files", "the kind's phrase");
+    }
+
+    #[test]
+    fn a_childs_request_marks_its_root() {
+        let (v, _) = views(&T3Fixture::with_rows());
+        let root = &v["t-root"];
+        assert_eq!(root.state, ThreadState::NeedsMe);
+        assert_eq!(root.request.as_ref().unwrap().text, "Which schema?");
+        assert_eq!(root.child_count, 2);
+    }
+
+    #[test]
+    fn errors_and_details() {
+        let (v, _) = views(&T3Fixture::with_rows());
+        assert_eq!(
+            v["t-errored"].error.as_deref(),
+            Some("Usage limit reached. Try again at 18:00.")
+        );
+        assert_eq!(v["t-errored"].run_id.as_deref(), Some("r-errored-2"));
+        assert_eq!(v["t-failed"].error.as_deref(), Some("Run failed"));
+        let run = &v["t-run"];
+        assert_eq!(run.branch.as_deref(), Some("feat/run"));
+        assert_eq!(run.worktree_path.as_deref(), Some("/work/wt/run"));
+        assert_eq!(run.project_path.as_deref(), Some("/work/web"));
+        assert!(run.linked);
+        assert_eq!(
+            run.last_activity_at.as_deref(),
+            Some("2026-11-26T11:00:00.000Z"),
+            "the latest of requested and started"
+        );
+        assert_eq!(
+            v["t-question"].last_activity_at.as_deref(),
+            Some("2026-11-26T11:30:00.000Z"),
+            "the request counts"
+        );
+        assert_eq!(
+            v["t-noruns"].last_activity_at.as_deref(),
+            Some("2026-11-26T04:00:00.000Z"),
+            "no runs: the thread's own update"
+        );
+    }
+
+    #[test]
+    fn a_known_failure_keeps_its_message() {
+        let f = T3Fixture::with_rows();
+        let ids = vec!["t-errored".to_string()];
+        let mut q = super::query();
+        q.known_failures.insert("r-errored-2".into());
+        let mut db = super::open(&f);
+        use airboss_sync::t3::T3Source;
+        let r = db.read(&q).unwrap();
+        let known = HashMap::from([("r-errored-2".to_string(), "Earlier text".to_string())]);
+        let out = threads::linked(&r, &ids, &known);
+        assert_eq!(out.views[0].error.as_deref(), Some("Earlier text"));
+    }
+
+    #[test]
+    fn a_request_without_its_item_is_retried() {
+        let f = T3Fixture::with_rows();
+        f.add_request(
+            "t-run",
+            "q-new",
+            "command",
+            "2026-11-26T11:50:00.000Z",
+            None,
+        );
+        let (v, itemless) = views(&f);
+        assert_eq!(v["t-run"].state, ThreadState::Running, "not needs_me yet");
+        assert_eq!(itemless, vec!["q-new".to_string()]);
+    }
+
+    #[test]
+    fn untracked_filtering() {
+        let r = read(&T3Fixture::with_rows());
+        let linked: HashSet<String> = ["t-run", "t-question"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let u = threads::untracked(r.untracked.as_ref().unwrap(), &linked);
+        let ids: Vec<&str> = u.iter().map(|v| v.key.r#ref.as_str()).collect();
+        assert!(!ids.contains(&"t-run") && !ids.contains(&"t-question"));
+        assert!(ids.contains(&"t-idle"));
+        assert!(u.iter().all(|v| !v.linked));
+        let settled = u.iter().find(|v| v.key.r#ref == "t-settled").unwrap();
+        assert_eq!(settled.state, ThreadState::Settled);
+        let approve = u.iter().find(|v| v.key.r#ref == "t-approve").unwrap();
+        assert_eq!(
+            approve.state,
+            ThreadState::Idle,
+            "untracked runs aren't read"
+        );
+    }
+}
