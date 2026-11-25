@@ -16,7 +16,7 @@ use crate::permissions::{Call, allowed};
 use crate::positions::ensure_open_parent;
 use crate::tasks::{clean_title, ensure_exists};
 use crate::tx::Tx;
-use crate::{Error, RepoId, Result, TaskId, fault};
+use crate::{Error, Result, TaskId, fault};
 
 impl crate::Store {
     /// Adds a whole plan under `parent` (None: top level), all or nothing (rule 19).
@@ -110,7 +110,7 @@ fn validate(conn: &Connection, steps: &[&PlanTask]) -> Result<()> {
         }
         clean_title(&step.title)?;
         if let Some(repo) = step.repo {
-            ensure_repo_exists(conn, repo)?;
+            crate::tasks::ensure_repo_exists(conn, repo)?;
         }
     }
     for dep in steps.iter().flat_map(|s| &s.depends_on) {
@@ -169,11 +169,7 @@ fn insert(conn: &Connection, parent: Option<TaskId>, step: &PlanTask) -> Result<
         // is sent again unchanged still changes nothing.
         ensure_open_parent(conn, p)?;
     }
-    let position: u32 = conn.query_row(
-        "SELECT ifnull(max(position), 0) + 1 FROM tasks WHERE parent_id IS ?1",
-        params![parent.map(|p| p.0)],
-        |r| r.get(0),
-    )?;
+    let position = crate::tasks::next_position(conn, parent)?;
     conn.execute(
         "INSERT INTO tasks (parent_id, repo_id, title, body, status, position, origin, plan_key)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
@@ -189,15 +185,6 @@ fn insert(conn: &Connection, parent: Option<TaskId>, step: &PlanTask) -> Result<
         ],
     )?;
     Ok(TaskId(conn.last_insert_rowid()))
-}
-
-fn ensure_repo_exists(conn: &Connection, id: RepoId) -> Result<()> {
-    let found: Option<i64> = conn
-        .query_row("SELECT 1 FROM repos WHERE id = ?1", params![id.0], |r| {
-            r.get(0)
-        })
-        .optional()?;
-    found.map(|_| ()).ok_or(Error::NotFound)
 }
 
 #[cfg(test)]

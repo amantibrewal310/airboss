@@ -6,8 +6,6 @@ use crate::model::Actor;
 use crate::{Error, Result};
 
 /// Every call that changes something, apart from status changes.
-// Variants are used as T4–T12 land; the rule 8 test already covers all of them.
-#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Call {
     AddRepo,

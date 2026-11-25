@@ -174,8 +174,6 @@ ORDER BY d.task_id";
 /// Rule 17, run by `delete_task` before it deletes `id`: every task outside the doomed
 /// subtree that waits on something in it loses those dependencies and gets one
 /// `waits_on_removed` event. Dependencies inside the subtree go with it, unrecorded.
-// Called by `delete_task` once T9 lands.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn on_task_deleting(tx: &mut Tx<'_>, id: TaskId, actor: &Actor) -> Result<()> {
     let waiters = {
         let mut stmt = tx.prepare(WAITERS_ON_SUBTREE_SQL)?;
