@@ -49,6 +49,6 @@ A module counts as done only after these are measured on a real Mac.
 | `core` | [SPEC-core.md](SPEC-core.md) | **Built 25 Nov 2026** (`crates/core`, 218 tests, all performance targets met); plan in [tasks/plan.md](tasks/plan.md) |
 | `mcp` | [SPEC-mcp.md](SPEC-mcp.md) | Draft 1, waiting for review |
 | `app` | [SPEC-app.md](SPEC-app.md) | Draft 1, waiting for review |
-| `launch` | not written yet | |
-| `sync` | not written yet | |
-| `attention` | not written yet | |
+| `launch` | [SPEC-launch.md](SPEC-launch.md) | Draft 1, waiting for review |
+| `sync` | [SPEC-sync.md](SPEC-sync.md) | Draft 1, waiting for review |
+| `attention` | [SPEC-attention.md](SPEC-attention.md) | Draft 1, waiting for review |
