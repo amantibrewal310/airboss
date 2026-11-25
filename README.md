@@ -71,7 +71,7 @@ The design is in [DESIGN.md](DESIGN.md) and [docs/design](docs/design/README.md)
 
 ## Status
 
-Version 0.1.0. Every module is built, tested and merged: the task store, the MCP server and CLI, the Mac app, Do it and Plan it, sync with GitHub and T3 Code, and Needs me. The Rust workspace has 941 tests, and the interface has unit, component and end-to-end tests.
+Version 0.1.0. Every module is built, tested and merged: the task store, the MCP server and CLI, the Mac app, Do it and Plan it, sync with GitHub and T3 Code, and Needs me. Every Rust crate is tested (`cargo test --workspace`), and the interface has unit, component and end-to-end tests.
 
 What isn't done yet:
 

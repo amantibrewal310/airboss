@@ -64,6 +64,10 @@ The app adds a catch-up worker, the database watcher, and one listener per servi
 
 **Writing at once** is safe: `core` uses SQLite's WAL mode and IMMEDIATE transactions, and its tests run several writers together.
 
+**Versions.** Every module records its migrations in `schema_migrations`. A binary that finds a version newer than it knows refuses the file, and an open connection checks before every write, so an `airboss mcp` left running after an update stops writing instead of breaking rules it doesn't know.
+
+**Who did what.** Every change carries its actor (`me`, `agent:t3/<id>`, `sync:gh` and so on), and `core` enforces each actor's rights. The actor records who did something but doesn't prove it: `airboss mcp` takes its identity from its environment, and the CLI acts as `me`. So any process running as your user can act as you through the CLI, or claim to be another thread. That's acceptable for a single-user local tool, since such a process could open the database file itself anyway. The rights stop an agent doing your part by mistake; they aren't a security boundary between processes you run.
+
 ## How a change reaches the window
 
 Say an agent calls `update_task`. Its `airboss mcp` process commits to the database, which writes to `airboss.db-wal`.

@@ -21,6 +21,12 @@ The server works out who it's acting for once, at start-up, from its environment
 
   > This server couldn't tell which thread it serves: none of T3CODE_THREAD_ID, CLAUDE_CODE_SESSION_ID or AIRBOSS_THREAD is set. It acts as agent:unknown/73060, so `mine` and linking this thread without a `ref` won't work. Set AIRBOSS_THREAD in this client's MCP config to fix it.
 
+### What the actor proves
+
+The actor records who did something; it doesn't prove it. The server believes its environment, and the CLI acts as `me` for whoever runs it. So any process running as your macOS user can act as you through the CLI, or start `airboss mcp` with another thread's id and report as that thread. Its changes still obey that actor's rules, and history shows them under the name it claimed.
+
+That's acceptable for a single-user tool that runs only on your Mac: anything that can run as your user can already read and change the database file directly. Airboss's rules keep agents from making the changes you reserve for yourself by mistake, not from software set on getting round them.
+
 ## Server instructions
 
 Sent with the `initialize` result, naming the actor:
@@ -205,6 +211,7 @@ Every refusal is one of these sentences, filled in with the task, status or name
 
 **The database**
 
+- "This database was created by a newer Airboss. Update the `airboss` command." A newer app has migrated the file, so this older binary refuses to write to it. A server that was running already says this for every write; a new one doesn't start.
 - "The Airboss database is busy. Try again in a moment."
 - "The Airboss database failed (…). Try again; if it keeps failing, tell the user."
 

@@ -206,12 +206,12 @@ crates/attention/
 
 ## Success criteria
 
-- [ ] Every kind shows from realistic inputs, and each hiding rule has a test.
-- [ ] The list follows the design's group order, and the count equals its length.
-- [ ] Dismiss and snooze survive a restart; a new occurrence shows again.
-- [ ] A question asked in a linked thread is in Needs me within 3 s of T3 writing it, and leaves when it's answered.
-- [ ] A task with no activity for 5 days shows as Quiet on time, including after the Mac slept through the moment; its quiet subtasks don't.
-- [ ] A change costs no `core` read, and `compute` meets 5 ms for 2,000 tasks on this Mac.
+- [x] Every kind shows from realistic inputs, and each hiding rule has a test (`tests/kinds.rs`, e.g. `a_question_in_a_linked_thread_shows`, `a_question_on_a_closed_task_is_hidden`; `tests/hidden.rs`).
+- [x] The list follows the design's group order, and the count equals its length (`groups_come_in_the_designs_order`, `the_order_never_depends_on_hash_order`).
+- [x] Dismiss and snooze survive a restart; a new occurrence shows again (`dismiss_and_snooze_survive_a_restart`, `dismiss_hides_an_item_until_a_new_occurrence`).
+- [ ] A question asked in a linked thread is in Needs me within 3 s of T3 writing it, and leaves when it's answered (manual: needs a real thread asking; `a_question_in_a_linked_thread_shows` covers the logic).
+- [x] A task with no activity for 5 days shows as Quiet on time, including after the Mac slept through the moment; its quiet subtasks don't (`exactly_five_days_is_quiet`, `after_a_long_sleep_the_quiet_task_is_there_at_once`, `a_quiet_parent_hides_its_quiet_subtasks`).
+- [x] A change costs no `core` read, and `compute` meets 5 ms for 2,000 tasks on this Mac (`a_store_change_needs_no_core_read`, `perf_compute_at_2000_tasks`: 0.61 ms in the final audit).
 
 ## Shared contract
 

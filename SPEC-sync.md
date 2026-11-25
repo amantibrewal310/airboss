@@ -399,15 +399,15 @@ crates/sync/
 
 ## Success criteria
 
-- [ ] A PR merged on GitHub finishes its task within one pass when no agent on it is working, and after the agent stops otherwise; a task I reopen stays open.
-- [ ] A closed PR reopened on GitHub moves its done task back to `in_review`; T3 alone never does.
-- [ ] PRs in the second account's private repos are read; a rate limit on one account doesn't stop the other; no token is written anywhere.
-- [ ] A question in a linked T3 thread shows as `needs_me` with its text within 3 s of T3 writing it, seen through kqueue.
-- [ ] An unknown status, kind or missing key in T3's data gives "Live state broken since …" naming it, and the app keeps working.
-- [ ] Without `gh`, or signed out, PR sync is off with a plain reason and nothing else changes.
-- [ ] `thread_url` opens the thread in T3, and `SyncSnapshot.projects` lists T3's projects (each checked by hand once).
-- [ ] After the Mac sleeps past a deadline, `woke()` runs what's overdue at once.
-- [ ] Every performance target is met on this Mac, with the machine recorded.
+- [x] A PR merged on GitHub finishes its task within one pass when no agent on it is working, and after the agent stops otherwise; a task I reopen stays open (`a_pr_merging_finishes_its_task_within_one_pass`, `a_finish_is_held_while_a_thread_runs_and_released_when_it_stops`, `a_task_i_reopen_stays_open`).
+- [x] A closed PR reopened on GitHub moves its done task back to `in_review`; T3 alone never does (`closed_then_reopened_goes_back_to_in_review`, `t3_saying_merged_while_github_says_open_changes_nothing`).
+- [x] PRs in the second account's private repos are read; a rate limit on one account doesn't stop the other; no token is written anywhere (`the_second_account_is_used_only_after_not_found`, `one_account_rate_limited_while_the_other_keeps_reading`, `no_token_in_argv_tables_logs_or_debug`).
+- [ ] A question in a linked T3 thread shows as `needs_me` with its text within 3 s of T3 writing it, seen through kqueue (manual: the kqueue path is tested by `kqueue_reports_every_wal_write_from_another_process_and_rearms`, but the 3 s needs a real thread asking).
+- [x] An unknown status, kind or missing key in T3's data gives "Live state broken since …" naming it, and the app keeps working (`an_unknown_run_status_is_broken`, `an_unknown_request_kind_or_status_is_broken`, `a_missing_required_key_is_broken`, `a_missing_table_is_broken`).
+- [x] Without `gh`, or signed out, PR sync is off with a plain reason and nothing else changes (`without_gh_pr_sync_is_off_and_nothing_else_changes`, `every_account_failing_is_signed_out_and_stays_off`).
+- [ ] `thread_url` opens the thread in T3, and `SyncSnapshot.projects` lists T3's projects (manual: each checked by hand once).
+- [x] After the Mac sleeps past a deadline, `woke()` runs what's overdue at once (`after_a_six_hour_sleep_woke_runs_the_overdue_pass_at_once`, `after_a_six_hour_sleep_woke_reads_what_changed`). Setting the clock back never delays a pass past two intervals (`a_merge_is_seen_within_one_interval_after_the_clock_is_set_back_an_hour`).
+- [ ] Every performance target is met on this Mac, with the machine recorded (manual: the passes, idle CPU, wake-ups and memory are measured in `tasks/sync-todo.md`; the 3 s question and CPU while agents are busy need real T3 threads).
 
 ## Checked on this Mac
 
