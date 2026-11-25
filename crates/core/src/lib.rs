@@ -156,10 +156,11 @@ impl Store {
 
 /// Test-only fault injection: makes a named point inside a call fail, to prove the call
 /// leaves nothing behind. Compiles to nothing outside tests.
-#[cfg(test)]
 pub(crate) mod fault {
+    #[cfg(test)]
     use std::cell::Cell;
 
+    #[cfg(test)]
     thread_local! {
         static ARMED: Cell<Option<&'static str>> = const { Cell::new(None) };
     }
@@ -179,10 +180,12 @@ pub(crate) mod fault {
     pub(crate) const DELETE_RENUMBERED: &str = "delete::delete_task after renumber";
     pub(crate) const PLAN_TASKS_WRITTEN: &str = "plans::add_tasks after tasks, before deps";
 
+    #[cfg(test)]
     pub(crate) fn arm(point: &'static str) {
         ARMED.with(|a| a.set(Some(point)));
     }
 
+    #[cfg(test)]
     pub(crate) fn hit(point: &str) -> crate::Result<()> {
         if ARMED.with(|a| a.get()) == Some(point) {
             ARMED.with(|a| a.set(None));
@@ -190,25 +193,8 @@ pub(crate) mod fault {
         }
         Ok(())
     }
-}
 
-#[cfg(not(test))]
-pub(crate) mod fault {
-    pub(crate) const TASK_INSERTED: &str = "tasks::add after insert";
-    pub(crate) const TASK_EDITED: &str = "tasks::edit after update";
-    pub(crate) const NOTE_RECORDED: &str = "tasks::add_note after event";
-    pub(crate) const LINK_INSERTED: &str = "links::link after insert";
-    pub(crate) const LINK_DELETED: &str = "links::unlink after delete";
-    pub(crate) const PR_STATE_RECORDED: &str = "links::set_pr_state after one task";
-    pub(crate) const STATUS_UPDATED: &str = "status::apply after update";
-    pub(crate) const MOVE_RENUMBERED: &str = "positions::move_task after renumber";
-    pub(crate) const DEP_ADDED: &str = "deps::add after event";
-    pub(crate) const DEP_REMOVED: &str = "deps::remove after event";
-    pub(crate) const DEPS_CLEARED: &str = "deps::on_task_deleting after events";
-    pub(crate) const SUBTREE_DROPPED: &str = "status::drop_subtree after events";
-    pub(crate) const DELETE_RENUMBERED: &str = "delete::delete_task after renumber";
-    pub(crate) const PLAN_TASKS_WRITTEN: &str = "plans::add_tasks after tasks, before deps";
-
+    #[cfg(not(test))]
     #[inline(always)]
     pub(crate) fn hit(_point: &str) -> crate::Result<()> {
         Ok(())
