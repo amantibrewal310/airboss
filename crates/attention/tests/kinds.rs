@@ -230,3 +230,153 @@ fn threads_that_are_running_idle_settled_or_gone_ask_nothing() {
         assert!(run(core, sync, at(1, 1)).items.is_empty(), "{state:?}");
     }
 }
+
+// ---------- Reviews ----------
+
+use airboss_core::PrState;
+use airboss_services::{Checks, PrProblem, Review};
+
+fn review_core() -> airboss_core::CoreSnapshot {
+    Core::new().task(5, None, InReview, &ts(1, 0)).build()
+}
+
+#[test]
+fn an_open_pr_ready_for_review_shows() {
+    let mut p = pr(58);
+    p.ready_since = Some("2026-11-02T04:00:00Z".into()); // GitHub's form, no fraction
+    let sync = Links::new().pr(p, &[5]).build();
+    let out = run(review_core(), sync, at(3, 0));
+    let item = &out.items[0];
+    assert_eq!(item.key, key("review:acme/web#58"));
+    assert_eq!(item.kind, NeedsKind::Review);
+    assert_eq!(item.group, NeedsGroup::Reviews);
+    assert_eq!(item.since, ts(1, 4));
+    assert_eq!(item.headline, "PR #58 · Change 58");
+    assert_eq!(item.context, "+10 −2 · checks passing · review required");
+    assert_eq!(
+        item.target,
+        Target::Pr {
+            r#ref: pr_ref(58),
+            url: Some("https://github.com/acme/web/pull/58".into())
+        }
+    );
+}
+
+#[test]
+fn a_reviews_context_says_what_github_said() {
+    let cases = [
+        (
+            Checks::Failing,
+            Review::ChangesRequested,
+            "+10 −2 · checks failing · changes requested",
+        ),
+        (
+            Checks::Pending,
+            Review::Approved,
+            "+10 −2 · checks pending · approved",
+        ),
+        (Checks::None, Review::None, "+10 −2"),
+    ];
+    for (checks, review, context) in cases {
+        let mut p = pr(1);
+        p.checks = checks;
+        p.review = review;
+        let out = run(review_core(), Links::new().pr(p, &[5]).build(), at(3, 0));
+        assert_eq!(out.items[0].context, context);
+    }
+    let mut p = pr(1);
+    p.additions = None;
+    p.title = None;
+    let out = run(review_core(), Links::new().pr(p, &[5]).build(), at(3, 0));
+    assert_eq!(out.items[0].headline, "PR #1");
+    assert_eq!(out.items[0].context, "checks passing · review required");
+}
+
+#[test]
+fn a_pr_that_isnt_ready_for_review_is_hidden() {
+    let mut draft = pr(1);
+    draft.draft = true;
+    let mut merged = pr(2);
+    merged.state = Some(PrState::Merged);
+    let mut closed = pr(3);
+    closed.state = Some(PrState::Closed);
+    let mut unread = pr(4);
+    unread.state = None;
+    let mut broken = pr(5);
+    broken.problem = Some(PrProblem::NoAccess);
+    for p in [draft, merged, closed, unread, broken] {
+        let r = p.r#ref.clone();
+        let out = run(review_core(), Links::new().pr(p, &[5]).build(), at(3, 0));
+        assert!(out.items.is_empty(), "{r}");
+    }
+}
+
+#[test]
+fn a_pr_on_a_closed_task_is_hidden() {
+    let core = Core::new().task(5, None, Done, &ts(1, 0)).build();
+    assert!(
+        run(core, Links::new().pr(pr(1), &[5]).build(), at(3, 0))
+            .items
+            .is_empty()
+    );
+}
+
+#[test]
+fn a_pr_isnt_a_review_while_an_agent_on_its_task_runs_or_waits() {
+    for state in [Running, NeedsMe] {
+        let sync = Links::new()
+            .pr(pr(1), &[5])
+            .thread(thread("a1", state), &[5])
+            .build();
+        let out = run(review_core(), sync, at(3, 0));
+        assert!(
+            out.items.iter().all(|i| i.kind != NeedsKind::Review),
+            "{state:?}"
+        );
+    }
+    // Once the agent stops, it's a review.
+    let sync = Links::new()
+        .pr(pr(1), &[5])
+        .thread(thread("a1", Idle), &[5])
+        .build();
+    assert_eq!(
+        keys(&run(review_core(), sync, at(3, 0))),
+        vec!["review:acme/web#1"]
+    );
+}
+
+#[test]
+fn an_agent_on_any_of_the_prs_tasks_holds_the_review() {
+    let core = Core::new()
+        .task(5, None, InReview, &ts(1, 0))
+        .task(6, None, Doing, &ts(1, 0))
+        .build();
+    let sync = Links::new()
+        .pr(pr(1), &[5, 6])
+        .thread(thread("a1", Running), &[6])
+        .build();
+    assert!(run(core, sync, at(3, 0)).items.is_empty());
+}
+
+#[test]
+fn a_pr_on_several_tasks_shows_once_at_the_lowest_open_task() {
+    let core = Core::new()
+        .task(3, None, Done, &ts(1, 0))
+        .task(5, None, InReview, &ts(1, 0))
+        .task(8, None, InReview, &ts(1, 0))
+        .build();
+    let out = run(core, Links::new().pr(pr(1), &[8, 3, 5]).build(), at(3, 0));
+    assert_eq!(out.items.len(), 1);
+    assert_eq!(out.items[0].task, id(5));
+}
+
+#[test]
+fn a_review_without_ready_since_uses_its_last_update() {
+    let mut p = pr(1);
+    p.ready_since = None;
+    p.updated_at = Some(ts(2, 2));
+    p.stale = true;
+    let out = run(review_core(), Links::new().pr(p, &[5]).build(), at(3, 0));
+    assert_eq!(out.items[0].since, ts(2, 2));
+    assert!(out.items[0].stale);
+}

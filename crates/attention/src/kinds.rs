@@ -1,8 +1,10 @@
 //! One function per kind (Quiet is in `quiet.rs`). Each adds its entries, unsorted and
 //! unhidden; `compute` orders and hides them.
 
-use airboss_core::TaskNode;
-use airboss_services::{NeedsKind, RequestKind, Target, ThreadState, ThreadView};
+use airboss_core::{PrState, TaskNode};
+use airboss_services::{
+    Checks, NeedsKind, PrView, RequestKind, Review, Target, ThreadState, ThreadView,
+};
 
 use crate::compute::{Ctx, Entry, ItemFor, stamp};
 
@@ -106,8 +108,76 @@ fn first_line(text: &str) -> &str {
         .unwrap_or("")
 }
 
-/// Reviews. Added in the next step.
-pub(crate) fn reviews(_ctx: &Ctx<'_>, _out: &mut Vec<Entry>) {}
+/// Linked PRs that are open, not drafts and readable, on an open task, with no agent
+/// running on or waiting in any of the PR's open tasks.
+pub(crate) fn reviews(ctx: &Ctx<'_>, out: &mut Vec<Entry>) {
+    for (pr_ref, tasks) in &ctx.sync.pr_tasks {
+        let Some(pr) = ctx.sync.prs.get(pr_ref) else {
+            continue;
+        };
+        if pr.state != Some(PrState::Open) || pr.draft || pr.problem.is_some() {
+            continue;
+        }
+        let tasks = ctx.open_tasks(tasks);
+        if tasks.iter().any(|t| ctx.agent_on.contains(t)) {
+            continue;
+        }
+        let Some(node) = tasks.first().and_then(|&t| ctx.node(t)) else {
+            continue;
+        };
+        let (_, _, number) = pr_ref.parts();
+        let headline = match pr.title.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
+            Some(title) => format!("PR #{number} · {title}"),
+            None => format!("PR #{number}"),
+        };
+        let since = pr
+            .ready_since
+            .as_deref()
+            .or(pr.updated_at.as_deref())
+            .unwrap_or(&node.last_event_at);
+        let item = ItemFor {
+            kind: NeedsKind::Review,
+            key: format!("review:{pr_ref}"),
+            node,
+            since: stamp(since),
+            headline,
+            context: review_context(pr),
+            target: Target::Pr {
+                r#ref: pr_ref.clone(),
+                url: pr.url.clone(),
+            },
+        };
+        out.push(Entry {
+            item: item.build(pr.stale),
+            tasks,
+            changes_at: None,
+        });
+    }
+}
+
+/// "+{add} −{del} · checks {…} · {review}", leaving out what GitHub didn't say.
+fn review_context(pr: &PrView) -> String {
+    let mut parts = Vec::with_capacity(3);
+    if let (Some(add), Some(del)) = (pr.additions, pr.deletions) {
+        parts.push(format!("+{add} \u{2212}{del}"));
+    }
+    match pr.checks {
+        Checks::Passing => parts.push("checks passing".to_string()),
+        Checks::Failing => parts.push("checks failing".to_string()),
+        Checks::Pending => parts.push("checks pending".to_string()),
+        Checks::None => {}
+    }
+    match pr.review {
+        Review::Approved => parts.push("approved".to_string()),
+        Review::ChangesRequested => parts.push("changes requested".to_string()),
+        Review::Required => parts.push("review required".to_string()),
+        Review::None => {}
+    }
+    match parts.is_empty() {
+        true => "Ready for review".to_string(),
+        false => parts.join(" · "),
+    }
+}
 
 /// Proposed subtasks. Added in a later step.
 pub(crate) fn proposed(_ctx: &Ctx<'_>, _out: &mut Vec<Entry>) {}
