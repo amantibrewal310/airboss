@@ -9,6 +9,8 @@
 */
 
 import type { MockSeed } from '../model';
+import type { Recording } from '../replay';
+import recorded from './recorded.json';
 import { CONNECTED, designSeed, seedDefaults } from './design';
 import { fullSeed } from './full';
 import { perfSeed } from './perf';
@@ -81,4 +83,14 @@ export function loadFixture(name: FixtureName): MockSeed {
       return seed;
     }
   }
+}
+
+/**
+  The Rust-recorded fixtures (`cargo test -p airboss-app --test fixtures` writes
+  ./recorded.json): every read command's answer on DESIGN's sample data, and each scripted write
+  (app/tests/script.json if it exists, else app/src-tauri/tests/fixtures/script.json) with its
+  exact args, response or error, and the events it sent. Feed it to `createReplayTransport()`.
+*/
+export function loadRecording(): Recording {
+  return structuredClone(recorded) as unknown as Recording;
 }

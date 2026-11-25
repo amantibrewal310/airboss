@@ -2,7 +2,8 @@
   The strict replay transport for the Rust-recorded script (SPEC-app "Testing"): reads come
   from the read fixtures, writes are matched IN ORDER by exact command and args and answered
   with the recorded response, then the recorded events are sent. Anything else throws
-  `UnscriptedCall`. Not used until `cargo test --test fixtures` writes app/tests/script.json.
+  `UnscriptedCall`. The recording is `loadRecording()` from ./fixtures, which
+  `cargo test -p airboss-app --test fixtures` writes as ./fixtures/recorded.json.
 */
 
 import type { CommandName, EventName, Events } from '../api/contract';

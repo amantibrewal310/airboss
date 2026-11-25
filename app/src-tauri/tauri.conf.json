@@ -1,0 +1,87 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Airboss",
+  "mainBinaryName": "airboss-app",
+  "version": "0.1.0",
+  "identifier": "io.github.amantibrewal310.airboss",
+  "build": {
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../dist",
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build && sh src-tauri/scripts/build-sidecar.sh"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "macOSPrivateApi": true,
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'",
+      "capabilities": [
+        "main",
+        "quickadd"
+      ]
+    },
+    "windows": [
+      {
+        "label": "main",
+        "title": "Airboss",
+        "url": "index.html",
+        "width": 1100,
+        "height": 720,
+        "minWidth": 900,
+        "minHeight": 560,
+        "center": true,
+        "visible": false,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": {
+          "x": 18,
+          "y": 20
+        },
+        "backgroundColor": "#0f1012",
+        "tabbingIdentifier": "airboss-main"
+      },
+      {
+        "label": "quickadd",
+        "title": "Quick Add",
+        "url": "quickadd.html",
+        "width": 680,
+        "height": 320,
+        "visible": false,
+        "focus": false,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "resizable": false,
+        "minimizable": false,
+        "maximizable": false,
+        "alwaysOnTop": true,
+        "visibleOnAllWorkspaces": true,
+        "skipTaskbar": true,
+        "acceptFirstMouse": true
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "app",
+      "dmg"
+    ],
+    "category": "public.app-category.productivity",
+    "shortDescription": "A to-do list where agents do the work.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.png"
+    ],
+    "externalBin": [
+      "binaries/airboss"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "13.0",
+      "signingIdentity": "-"
+    }
+  }
+}
