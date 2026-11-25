@@ -23,7 +23,7 @@ Dependencies point one way only. A module may use only the modules it depends on
 
 - **One process**, a Tauri 2.12 app:
   - Rust, edition 2024, on stable Rust 1.100, pinned in `rust-toolchain.toml`.
-  - Rust for all the logic: `rusqlite` 0.43 for SQLite, `rmcp` 3.11 (the official MCP Rust SDK) for MCP over streamable HTTP.
+  - Rust for all the logic: `rusqlite` 0.43 for SQLite, `rmcp` 3.11 (the official MCP Rust SDK) for MCP over stdio, one `airboss mcp` process per agent thread.
   - Svelte 5 for the UI.
   - No second runtime such as Node or Bun.
 - **Versions** were checked on crates.io and npm on 25 Nov 2026: the latest stable release of each. Tauri 3 exists only as an alpha (3.0.0-alpha.6), so we stay on Tauri 2 and move when 3 is stable.
@@ -51,7 +51,7 @@ A module counts as done only after these are measured on a real Mac.
 | `core` | [SPEC-core.md](SPEC-core.md) | **Built 25 Nov 2026** (`crates/core`, 218 tests, all performance targets met); plan in [tasks/plan.md](tasks/plan.md) |
 | `mcp` | [SPEC-mcp.md](SPEC-mcp.md) | **Built 26 Nov 2026** (`crates/mcp`, 107 tests, all performance targets met) |
 | `services` (shared crate) | [SPEC-attention.md, shared contract](SPEC-attention.md#shared-contract) | **Built 26 Nov 2026** (`crates/services`, 36 tests, with fakes behind the `fakes` feature) |
-| `app` | [SPEC-app.md](SPEC-app.md) | Draft 1, waiting for review |
+| `app` | [SPEC-app.md](SPEC-app.md) | **Built 26 Nov 2026** (`app/`: Tauri backend + Svelte UI); polish and integration QA in progress |
 | `launch` | [SPEC-launch.md](SPEC-launch.md) | **Built 26 Nov 2026** (`crates/launch`) |
 | `sync` | [SPEC-sync.md](SPEC-sync.md) | **Built 26 Nov 2026** (`crates/sync`) |
 | `attention` | [SPEC-attention.md](SPEC-attention.md) | **Built 26 Nov 2026** (`crates/attention`) |

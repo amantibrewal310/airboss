@@ -338,7 +338,7 @@ Nothing here stops the app. Last known values stay in the snapshot marked `stale
 | Secondary limit | stderr mentions "secondary rate limit" | that login `rate_limited` for 15 minutes |
 | Network or other failure | non-zero exit without `data`, or timeout | that login `broken`; next try after 1, 2, 4 … 30 minutes; `recheck()` tries once at once |
 | T3 not installed | no `statev2.sqlite` | T3 off; checked again each GitHub tick |
-| T3 layout or values changed | column, value or key check, or any query error | `Broken`: "T3 sync broken since 14:02: <what>". Retried on the next WAL event and hourly; logged once per streak |
+| T3 layout or values changed | column, value or key check, or any query error | `Broken`: "Live state broken since 14:02: <what>". Retried on the next WAL event and hourly; logged once per streak |
 | T3 busy | `SQLITE_BUSY` after 200 ms | skip; the next event retries |
 | Claude folder missing | no directory | Claude off (no connection row) |
 | `core` refuses a write | `NotAllowed`, `InvalidTransition` | logged and skipped, never retried in a loop |
@@ -403,7 +403,7 @@ crates/sync/
 - [ ] A closed PR reopened on GitHub moves its done task back to `in_review`; T3 alone never does.
 - [ ] PRs in the second account's private repos are read; a rate limit on one account doesn't stop the other; no token is written anywhere.
 - [ ] A question in a linked T3 thread shows as `needs_me` with its text within 3 s of T3 writing it, seen through kqueue.
-- [ ] An unknown status, kind or missing key in T3's data gives "T3 sync broken since …" naming it, and the app keeps working.
+- [ ] An unknown status, kind or missing key in T3's data gives "Live state broken since …" naming it, and the app keeps working.
 - [ ] Without `gh`, or signed out, PR sync is off with a plain reason and nothing else changes.
 - [ ] `thread_url` opens the thread in T3, and `SyncSnapshot.projects` lists T3's projects (each checked by hand once).
 - [ ] After the Mac sleeps past a deadline, `woke()` runs what's overdue at once.
