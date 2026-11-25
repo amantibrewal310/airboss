@@ -157,6 +157,7 @@ impl AppState {
         {
             let mut cu = lock(&state.catchup);
             cu.connections = state.connections(&cu.vm);
+            crate::catchup::log_connections(&cu.connections);
         }
         Ok(state)
     }

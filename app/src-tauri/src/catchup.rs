@@ -188,12 +188,18 @@ impl AppState {
         }
         if needs.version != cu.needs_version {
             cu.needs_version = needs.version;
+            log::info!(
+                "needs me: {} items (version {})",
+                needs.count,
+                needs.version
+            );
             self.shell.update_tray(&needs);
             self.shell.emit(UiEvent::NeedsChanged((*needs).clone()));
         }
         let connections = self.connections(&cu.vm);
         if connections != cu.connections {
             cu.connections = connections.clone();
+            log_connections(&connections);
             self.shell.emit(UiEvent::ConnectionsChanged(connections));
         }
         patch
@@ -296,6 +302,23 @@ impl AppState {
             self.catch_up_services();
         }
     }
+}
+
+/// One log line for the connections footer, so a support log shows what the user saw.
+pub(crate) fn log_connections(c: &ConnectionsChanged) {
+    let rows: Vec<String> = c
+        .connections
+        .iter()
+        .map(|r| {
+            format!(
+                "{} {} ({})",
+                r.name,
+                if r.ok { "ok" } else { "off" },
+                r.state
+            )
+        })
+        .collect();
+    log::info!("connections: {}; T3 {:?}", rows.join(", "), c.availability);
 }
 
 fn read_err(e: airboss_core::Error) -> AppError {
