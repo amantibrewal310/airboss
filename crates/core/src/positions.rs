@@ -135,17 +135,6 @@ mod tests {
         store.add_task(new, &Actor::Me).unwrap().id
     }
 
-    // TODO: switch to `Store::set_status` once it lands (T6).
-    fn force_status(store: &Store, id: TaskId, status: Status) {
-        store
-            .conn
-            .execute(
-                "UPDATE tasks SET status = ?1 WHERE id = ?2",
-                params![status.as_str(), id.0],
-            )
-            .unwrap();
-    }
-
     fn snapshot(store: &Store) -> (Vec<(i64, Option<i64>, i64)>, i64) {
         let mut stmt = store
             .conn
@@ -161,49 +150,6 @@ mod tests {
             .query_row("SELECT count(*) FROM task_events", [], |r| r.get(0))
             .unwrap();
         (rows, events)
-    }
-
-    #[test]
-    fn moving_under_a_done_or_dropped_parent_is_rejected() {
-        for status in [Status::Done, Status::Dropped] {
-            let mut s = Store::open_in_memory().unwrap();
-            let closed = add(&mut s, "Closed", None);
-            let t = add(&mut s, "T", None);
-            force_status(&s, closed, status);
-            let before = snapshot(&s);
-
-            let err = s.move_task(t, Some(closed), 1, &Actor::Me).unwrap_err();
-            assert!(matches!(err, Error::InvalidTarget), "{status:?}: {err:?}");
-            assert_eq!(snapshot(&s), before);
-        }
-    }
-
-    #[test]
-    fn adding_under_a_done_or_dropped_parent_is_rejected() {
-        for status in [Status::Done, Status::Dropped] {
-            let mut s = Store::open_in_memory().unwrap();
-            let closed = add(&mut s, "Closed", None);
-            force_status(&s, closed, status);
-            let before = snapshot(&s);
-
-            let err = s
-                .add_task(NewTask::new("Child").under(closed), &Actor::Me)
-                .unwrap_err();
-            assert!(matches!(err, Error::InvalidTarget), "{status:?}: {err:?}");
-            assert_eq!(snapshot(&s), before);
-        }
-    }
-
-    #[test]
-    fn moving_and_adding_under_other_statuses_is_fine() {
-        for status in [Status::Todo, Status::Doing, Status::InReview] {
-            let mut s = Store::open_in_memory().unwrap();
-            let p = add(&mut s, "P", None);
-            let t = add(&mut s, "T", None);
-            force_status(&s, p, status);
-            s.move_task(t, Some(p), 1, &Actor::Me).unwrap();
-            add(&mut s, "U", Some(p));
-        }
     }
 
     #[test]

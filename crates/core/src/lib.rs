@@ -4,6 +4,7 @@
 //! See `SPEC-core.md` at the repo root for the rules enforced here.
 
 mod db;
+mod delete;
 mod deps;
 mod error;
 mod events;
@@ -147,6 +148,8 @@ pub(crate) mod fault {
     pub(crate) const DEP_ADDED: &str = "deps::add after event";
     pub(crate) const DEP_REMOVED: &str = "deps::remove after event";
     pub(crate) const DEPS_CLEARED: &str = "deps::on_task_deleting after events";
+    pub(crate) const SUBTREE_DROPPED: &str = "status::drop_subtree after events";
+    pub(crate) const DELETE_RENUMBERED: &str = "delete::delete_task after renumber";
 
     pub(crate) fn arm(point: &'static str) {
         ARMED.with(|a| a.set(Some(point)));
@@ -174,6 +177,8 @@ pub(crate) mod fault {
     pub(crate) const DEP_ADDED: &str = "deps::add after event";
     pub(crate) const DEP_REMOVED: &str = "deps::remove after event";
     pub(crate) const DEPS_CLEARED: &str = "deps::on_task_deleting after events";
+    pub(crate) const SUBTREE_DROPPED: &str = "status::drop_subtree after events";
+    pub(crate) const DELETE_RENUMBERED: &str = "delete::delete_task after renumber";
 
     #[inline(always)]
     pub(crate) fn hit(_point: &str) -> crate::Result<()> {
