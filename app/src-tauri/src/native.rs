@@ -207,6 +207,17 @@ impl Shell for Arc<TauriShell> {
             .and_then(|p| p.into_path().ok())
     }
 
+    fn pick_save(&self, name: &str) -> Option<PathBuf> {
+        self.app
+            .dialog()
+            .file()
+            .set_title("Back up the Airboss database")
+            .set_file_name(name)
+            .add_filter("SQLite database", &["db"])
+            .blocking_save_file()
+            .and_then(|p| p.into_path().ok())
+    }
+
     fn set_autostart(&self, on: bool) -> Result<(), String> {
         let launcher = self.app.autolaunch();
         if on {

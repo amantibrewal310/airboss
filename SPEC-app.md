@@ -648,6 +648,11 @@ A modal in the main window, built from the design's components:
 - **Command-line tool:** Install, with its path, and whether `~/.local/bin` is on `PATH`.
   - "On `PATH`" means the user's own shell's `PATH`: `$SHELL -ilc` (interactive and login, so `~/.zprofile` **and** `~/.zshrc` count, as in Terminal), reading the `PATH` after a marker, with a 3 s deadline, after which the shell is killed; it's always reaped (`login_path.rs`). It runs in the background at start and after Install, and the answer reaches the UI as `cli` in `connections:changed`. The app's own `PATH` is launchd's and never has `~/.local/bin`.
 - **Agent setup:** "Copy agent note", and "Copy setup command" (`claude mcp add --scope user airboss -- ~/.local/bin/airboss mcp`).
+- **Repos** (final audit should-fix 8): each repo with its colour dot, name, folder (mono, `~` for home) and remote, plus "Add repos…".
+  - **Edit** opens the row in place: Name, Folder (with "Choose…", the folder picker) and Remote (blank clears it). ↩ saves, Esc cancels and returns to the row's Edit button. A refusal (a blank name, a folder that isn't there, a name or folder already used) shows under the fields. Tasks keep a repo that's renamed or moved.
+  - **Remove…** asks in place: "Remove booking-web? 12 tasks lose the link." (counting tasks linked to it themselves, not parents showing it from subtasks), with "Its folder and its threads stay as they are." Cancel has focus; Esc cancels before it closes Settings. The toast says how many tasks lost the link.
+- **Database:** "Back up…" opens a save dialog offering "Airboss backup <date>.db" and writes a consistent copy through core's online backup, while everything keeps running.
+- The modal scrolls when its sections are taller than 80% of the window.
 
 ### First run, Add repos, T3 missing, nothing needs you
 
@@ -968,6 +973,9 @@ Writes return `Patch` (shown as → P). All `core` calls act as `me`, with one l
 | `reorder` | `id, up / down` | → P, undo entry | `move_task(id, same parent, position ∓ 1)` |
 | `link_repo` / `unlink_repo` | `id, repo` | → P | `link_repo` / `unlink_repo` |
 | `add_repos` | `paths[]` | `{repos, patch}` | `add_repo` each; name from the folder, remote from `.git/config` |
+| `edit_repo` | `repo, name, path, remote?` | → P | `edit_repo` with only what changed; a new folder must be an existing absolute folder (symlinks resolved); a blank remote clears it |
+| `remove_repo` | `repo` | `{unlinked, patch}` | `remove_repo` (unlinks it from every task, done ones too) |
+| `back_up_database` | | `path?` | save dialog, then `Store::backup(to, overwrite)` (not the database problem state if it fails) |
 | `pick_folder` | | `path?` | dialog plugin |
 | `set_branch` | `id, branch` | → P | `set_branch` |
 | `add_dependency` / `remove_dependency` | `id, waits_on` | → P | `add_dependency` / `remove_dependency` |

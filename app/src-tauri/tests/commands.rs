@@ -1685,6 +1685,164 @@ fn add_repos_needs_an_absolute_path_to_a_folder() {
     assert_eq!(out.repos[0].name, "real");
 }
 
+/// Settings › Repos (audit should-fix 8): rename, change folder or remote, and remove.
+#[test]
+fn a_repo_can_be_renamed_moved_and_given_another_remote() {
+    let app = TestApp::new();
+    let web = repo(&app, "web");
+    repo(&app, "api");
+    app.sync_vm();
+    let moved = temp_dir("moved").join("booking-web");
+    std::fs::create_dir_all(&moved).unwrap();
+    let patch = repos::edit_repo(
+        &app.state,
+        M,
+        web,
+        "booking-web".into(),
+        moved.to_string_lossy().into(),
+        Some("git@github.com:acme/booking-web.git".into()),
+    )
+    .unwrap();
+    let r = app
+        .core(|s| s.repos().unwrap())
+        .into_iter()
+        .find(|r| r.id == web)
+        .unwrap();
+    assert_eq!(r.name, "booking-web");
+    assert_eq!(r.path, moved.canonicalize().unwrap().to_string_lossy());
+    assert_eq!(
+        r.remote_url.as_deref(),
+        Some("git@github.com:acme/booking-web.git")
+    );
+    assert!(patch.repos.is_some(), "the sidebar hears the new name");
+    assert_told(&app);
+    // A blank remote clears it; the rest stays.
+    repos::edit_repo(
+        &app.state,
+        M,
+        web,
+        r.name.clone(),
+        r.path.clone(),
+        Some("  ".into()),
+    )
+    .unwrap();
+    let r = app
+        .core(|s| s.repos().unwrap())
+        .into_iter()
+        .find(|r| r.id == web)
+        .unwrap();
+    assert_eq!((r.name.as_str(), r.remote_url), ("booking-web", None));
+}
+
+#[test]
+fn editing_a_repo_refuses_a_blank_name_a_missing_folder_and_a_taken_one() {
+    let app = TestApp::new();
+    let web = repo(&app, "web");
+    repo(&app, "api");
+    app.sync_vm();
+    let path = "/src/web".to_string();
+    assert_eq!(
+        err_code(repos::edit_repo(
+            &app.state,
+            M,
+            web,
+            " ".into(),
+            path.clone(),
+            None
+        )),
+        (ErrorCode::InvalidTarget, "A repo needs a name.".into())
+    );
+    assert_eq!(
+        err_code(repos::edit_repo(
+            &app.state,
+            M,
+            web,
+            "web".into(),
+            "/no/such/folder".into(),
+            None
+        ))
+        .0,
+        ErrorCode::InvalidTarget
+    );
+    assert_eq!(
+        err_code(repos::edit_repo(
+            &app.state,
+            M,
+            web,
+            "api".into(),
+            path.clone(),
+            None
+        )),
+        (
+            ErrorCode::AlreadyExists,
+            "A repo with that name or folder is already added.".into()
+        )
+    );
+    assert_eq!(
+        err_code(repos::edit_repo(
+            &app.state,
+            M,
+            RepoId(99),
+            "x".into(),
+            path,
+            None
+        )),
+        (ErrorCode::NotFound, "That repo no longer exists.".into())
+    );
+}
+
+#[test]
+fn removing_a_repo_unlinks_it_from_its_tasks_and_says_how_many() {
+    let app = TestApp::new();
+    let web = repo(&app, "web");
+    let a = app.add("A", None);
+    let b = app.add("B", None);
+    app.add("C", None);
+    app.core(|s| {
+        s.link_repo(a, web, &Actor::Me).unwrap();
+        s.link_repo(b, web, &Actor::Me).unwrap();
+        s.set_status(b, Status::Done, None, &Actor::Me).unwrap();
+    });
+    app.sync_vm();
+    let out = repos::remove_repo(&app.state, M, web).unwrap();
+    assert_eq!(out.unlinked, vec![a, b], "done tasks lose it too");
+    assert!(app.core(|s| s.repos().unwrap()).is_empty());
+    assert!(
+        out.patch
+            .upserts
+            .iter()
+            .any(|r| r.id == a && r.repos.is_empty())
+    );
+    assert_eq!(
+        err_code(repos::remove_repo(&app.state, M, web)),
+        (ErrorCode::NotFound, "That repo no longer exists.".into())
+    );
+}
+
+/// Settings › Database: "Back up…" through a save dialog and core's online backup.
+#[test]
+fn back_up_the_database_where_the_save_dialog_says() {
+    let db = temp_dir("backup-src").join("airboss.db");
+    let app = TestApp::with_store(airboss_core::Store::open(&db).unwrap());
+    app.add("Kept", None);
+    // Cancelled: nothing happens.
+    assert_eq!(repos::back_up_database(&app.state, M).unwrap(), None);
+    let to = temp_dir("backup-dst").join("Airboss backup.db");
+    app.shell.answer_save(Some(to.clone()));
+    let out = repos::back_up_database(&app.state, M).unwrap();
+    assert_eq!(out.as_deref(), Some(to.to_string_lossy().as_ref()));
+    let copy = airboss_core::Store::open(&to).unwrap();
+    assert_eq!(copy.tree().unwrap()[0].task.title, "Kept");
+    // The dialog already asked about replacing, so a second backup there overwrites.
+    repos::back_up_database(&app.state, M).unwrap();
+    assert!(
+        app.shell
+            .calls()
+            .iter()
+            .any(|c| c.starts_with("pick_save(Airboss backup "))
+    );
+}
+
 #[test]
 fn install_cli_never_replaces_someone_elses_link() {
     let app = TestApp::new();

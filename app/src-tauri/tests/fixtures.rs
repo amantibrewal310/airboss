@@ -92,7 +92,7 @@ fn typescript_types() {
         HistoryEntry, DepDto, RunEdge, OutsideWait, RunMap, TaskDetail, NextUp, PlanCard,
         ParentOption, QuickaddData, T3ProjectRow, UndoEntry, UndoableWrite, UndoResult,
         NewLinkText, Then, CreateTaskInput, DoItPlace, DoItResult, LinkError, CreateTaskResult,
-        AddReposResult, InstallCliResult, CopyWhat, OpenTarget, MenuAction, NavOpen,
+        AddReposResult, RemoveRepoResult, InstallCliResult, CopyWhat, OpenTarget, MenuAction, NavOpen,
         QuickaddReset, ToastEventAction, ToastTone, ToastEvent, Theme, AppearanceChanged,
         BackgroundError, AppError, ErrorCode, Settings, Appearance, FocusContext, Zone,
         WindowName,

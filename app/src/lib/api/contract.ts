@@ -29,6 +29,7 @@ import type {
   PlanCard,
   QuickaddData,
   QuickaddReset,
+  RemoveRepoResult,
   RepoId,
   RunMap,
   Settings,
@@ -65,6 +66,9 @@ export interface Commands {
   link_repo: C<{ id: TaskId; repo: RepoId }, Patch>;
   unlink_repo: C<{ id: TaskId; repo: RepoId }, Patch>;
   add_repos: C<{ paths: string[] }, AddReposResult>;
+  edit_repo: C<{ repo: RepoId; name: string; path: string; remote: string | null }, Patch>;
+  remove_repo: C<{ repo: RepoId }, RemoveRepoResult>;
+  back_up_database: C<None, string | null>;
   pick_folder: C<None, string | null>;
   set_branch: C<{ id: TaskId; branch: string }, Patch>;
   add_dependency: C<{ id: TaskId; waitsOn: TaskId }, Patch>;
@@ -119,7 +123,8 @@ export type ResultOf<K extends CommandName> = Commands[K]['result'];
 export const COMMAND_NAMES = [
   'bootstrap', 'task_detail', 'run_map', 'plans', 'quickadd_data', 't3_projects', 'create_task',
   'rename_task', 'edit_notes', 'set_status', 'toggle_done', 'accept_proposals', 'reject_proposals',
-  'move_task', 'reorder', 'link_repo', 'unlink_repo', 'add_repos', 'pick_folder', 'set_branch',
+  'move_task', 'reorder', 'link_repo', 'unlink_repo', 'add_repos', 'edit_repo', 'remove_repo',
+  'back_up_database', 'pick_folder', 'set_branch',
   'add_dependency', 'remove_dependency', 'add_link', 'remove_link', 'add_note', 'do_it', 'plan_it',
   'add_to_t3', 'reopen_and_start', 'open_thread', 'open_url', 'needs_dismiss', 'needs_snooze',
   'needs_restore', 'undo', 'recheck_connections', 'copy_text', 'install_cli', 'get_settings',

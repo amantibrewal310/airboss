@@ -99,6 +99,8 @@ pub trait Shell: Send + Sync {
     fn copy_text(&self, text: &str) -> Result<(), String>;
     /// The folder picker; `None` when cancelled.
     fn pick_folder(&self) -> Option<PathBuf>;
+    /// A save dialog offering `name`; `None` when cancelled. It asks before replacing a file.
+    fn pick_save(&self, name: &str) -> Option<PathBuf>;
     /// Turns open at login on or off.
     fn set_autostart(&self, on: bool) -> Result<(), String>;
     /// Swaps the global hotkey; on failure the old one stays registered. `old` is empty at
@@ -127,6 +129,7 @@ pub struct RecordingShell {
     calls: Mutex<Vec<String>>,
     arrived: Condvar,
     folder: Mutex<Option<PathBuf>>,
+    save: Mutex<Option<PathBuf>>,
     refuse_hotkey: Mutex<bool>,
     sidecar: Mutex<Option<PathBuf>>,
     accent: Mutex<Option<String>>,
@@ -173,6 +176,11 @@ impl RecordingShell {
     /// What `pick_folder` answers.
     pub fn answer_folder(&self, folder: Option<PathBuf>) {
         *lock(&self.folder) = folder;
+    }
+
+    /// What `pick_save` answers.
+    pub fn answer_save(&self, to: Option<PathBuf>) {
+        *lock(&self.save) = to;
     }
 
     /// Makes `register_hotkey` fail, as when another app holds the key.
@@ -228,6 +236,10 @@ impl Shell for RecordingShell {
     fn pick_folder(&self) -> Option<PathBuf> {
         self.call("pick_folder".into());
         lock(&self.folder).clone()
+    }
+    fn pick_save(&self, name: &str) -> Option<PathBuf> {
+        self.call(format!("pick_save({name})"));
+        lock(&self.save).clone()
     }
     fn set_autostart(&self, on: bool) -> Result<(), String> {
         self.call(format!("set_autostart({on})"));

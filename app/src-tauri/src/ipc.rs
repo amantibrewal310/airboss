@@ -15,8 +15,8 @@ use crate::commands::tasks::{self, Direction};
 use crate::commands::{app, detail, launch, needs, repos};
 use crate::dto::{
     AddReposResult, Bootstrap, CopyWhat, CreateTaskInput, CreateTaskResult, DoItPlace, DoItResult,
-    InstallCliResult, OpenTarget, Patch, PlanCard, QuickaddData, RunMap, T3ProjectRow, TaskDetail,
-    UndoResult, UndoableWrite,
+    InstallCliResult, OpenTarget, Patch, PlanCard, QuickaddData, RemoveRepoResult, RunMap,
+    T3ProjectRow, TaskDetail, UndoResult, UndoableWrite,
 };
 use crate::errors::{AppError, AppResult, ErrorCode};
 use crate::menu::{FocusContext, WindowName};
@@ -194,6 +194,10 @@ commands! {
     link_repo(LinkRepoArgs) => tasks::link_repo, [id: TaskId, repo: RepoId] -> Patch;
     unlink_repo(UnlinkRepoArgs) => tasks::unlink_repo, [id: TaskId, repo: RepoId] -> Patch;
     add_repos(AddReposArgs) => repos::add_repos, [paths: Vec<String>] -> AddReposResult;
+    edit_repo(EditRepoArgs) => repos::edit_repo,
+        [repo: RepoId, name: String, path: String, remote: Option<String>] -> Patch;
+    remove_repo(RemoveRepoArgs) => repos::remove_repo, [repo: RepoId] -> RemoveRepoResult;
+    back_up_database(BackUpDatabaseArgs) => repos::back_up_database, [] -> Option<String>;
     pick_folder(PickFolderArgs) => repos::pick_folder, [] -> Option<String>;
     set_branch(SetBranchArgs) => tasks::set_branch, [id: TaskId, branch: Option<String>] -> Patch;
     add_dependency(AddDependencyArgs) => tasks::add_dependency, [id: TaskId, waits_on: TaskId] -> Patch;

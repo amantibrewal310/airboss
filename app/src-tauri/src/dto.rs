@@ -1122,6 +1122,15 @@ pub struct CreateTaskResult {
     pub link_errors: Vec<LinkError>,
 }
 
+/// What `remove_repo` answers: the tasks that lost the link, and the patch.
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[ts(export_to = "types.ts")]
+pub struct RemoveRepoResult {
+    #[ts(as = "Vec<TaskIdTs>")]
+    pub unlinked: Vec<TaskId>,
+    pub patch: Patch,
+}
+
 /// `add_repos`' answer.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[ts(export_to = "types.ts")]

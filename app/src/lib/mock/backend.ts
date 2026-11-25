@@ -563,6 +563,31 @@ export class MockBackend implements Transport {
       return { repos: added, patch: this.commit() };
     },
 
+    edit_repo: ({ repo, name, path, remote }) => {
+      const r = this.s.repos.find((x) => x.id === repo);
+      if (!r) throw fail('not_found', 'That repo no longer exists.');
+      if (!name.trim()) throw fail('invalid_target', 'A repo needs a name.');
+      if (this.s.repos.some((x) => x.id !== repo && (x.name === name.trim() || x.path === path))) {
+        throw fail('already_exists', 'A repo with that name or folder is already added.');
+      }
+      Object.assign(r, { name: name.trim(), path, remote_url: remote?.trim() || null });
+      return this.commit();
+    },
+
+    remove_repo: ({ repo }) => {
+      if (!this.s.repos.some((x) => x.id === repo)) throw fail('not_found', 'That repo no longer exists.');
+      const unlinked: TaskId[] = [];
+      for (const t of this.s.tasks.values()) {
+        if (!t.repos.includes(repo)) continue;
+        t.repos = t.repos.filter((x) => x !== repo);
+        unlinked.push(t.id);
+      }
+      this.s.repos = this.s.repos.filter((x) => x.id !== repo);
+      return { unlinked: unlinked.sort((a, b) => a - b), patch: this.commit() };
+    },
+
+    back_up_database: () => '/Users/me/Documents/Airboss backup.db',
+
     pick_folder: () => '~/Code/side-project',
 
     set_branch: ({ id, branch }) => {

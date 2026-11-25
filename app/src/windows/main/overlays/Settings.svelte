@@ -2,11 +2,15 @@
   import Modal from '../../../lib/components/Modal.svelte';
   import Button from '../../../lib/components/Button.svelte';
   import Segmented from '../../../lib/components/Segmented.svelte';
+  import SettingsRepos from './SettingsRepos.svelte';
   import { useApp } from '../../../lib/state/context';
   import { acceleratorLabel, acceleratorOf, RESERVED_HOTKEYS } from '../../../lib/logic/keymap';
   import type { Appearance } from '../../../lib/types';
 
-  /** ⌘,: the quick-add hotkey, open at login, appearance, the command-line tool and agent setup. */
+  /**
+   * ⌘,: the quick-add hotkey, open at login, appearance, repos, the command-line tool, agent
+   * setup and the database's backup.
+   */
   const app = useApp();
   let recording = $state(false);
   let hotkeyError = $state<string | null>(null);
@@ -99,6 +103,8 @@
       </div>
     </section>
 
+    <SettingsRepos />
+
     <section>
       <div class="row">
         <div class="lab">
@@ -129,6 +135,16 @@
       <pre>claude mcp add --scope user airboss -- ~/.local/bin/airboss mcp</pre>
     </section>
 
+    <section>
+      <div class="row">
+        <div class="lab">
+          <b>Database</b>
+          <span>A copy of every task, safe to make while Airboss and your agents run.</span>
+        </div>
+        <Button onclick={() => app.backUp()}>Back up…</Button>
+      </div>
+    </section>
+
     <div class="ft"><Button variant="primary" onclick={() => app.close()}>Done</Button></div>
   </div>
 </Modal>
@@ -136,6 +152,8 @@
 <style>
   .set {
     padding: 20px 24px 18px;
+    max-height: 80vh;
+    overflow-y: auto;
   }
   h2 {
     font-size: var(--fs-field);

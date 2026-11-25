@@ -402,6 +402,11 @@ hotkey: string,
 keep_text?: boolean, };
 
 /**
+ * What `remove_repo` answers: the tasks that lost the link, and the patch.
+ */
+export type RemoveRepoResult = { unlinked: Array<TaskId>, patch: Patch, };
+
+/**
  * `core::Repo`.
  */
 export type Repo = { id: RepoId, name: string, path: string, remote_url: string | null, };

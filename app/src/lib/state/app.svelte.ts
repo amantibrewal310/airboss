@@ -1262,6 +1262,44 @@ export class App {
     }
   }
 
+  /** Settings › Repos: the repo as it should be. Returns an error message to show inline, or null. */
+  async editRepo(repo: RepoId, name: string, path: string, remote: string | null): Promise<string | null> {
+    try {
+      this.applyWrite(await api.editRepo(repo, name, path, remote));
+      this.toast(`Saved ${name.trim()}`);
+      return null;
+    } catch (e) {
+      const err = asAppError(e);
+      if (err.code === 'db_unavailable' || err.code === 'db_too_new') this.lost(err);
+      return err.message;
+    }
+  }
+
+  /** Settings › Repos › Remove, once confirmed: says how many tasks lost the link. */
+  async removeRepo(repo: RepoId): Promise<boolean> {
+    const name = this.tasks.repos.find((r) => r.id === repo)?.name ?? 'the repo';
+    try {
+      const res = await api.removeRepo(repo);
+      this.applyWrite(res.patch);
+      const n = res.unlinked.length;
+      this.toast(n ? `Removed ${name}. ${n} ${n === 1 ? 'task' : 'tasks'} lost the link.` : `Removed ${name}`);
+      return true;
+    } catch (e) {
+      this.fail(e);
+      return false;
+    }
+  }
+
+  /** Settings › Database › Back up…: a save dialog, then a copy. */
+  async backUp(): Promise<void> {
+    try {
+      const to = await api.backUpDatabase();
+      if (to) this.toast(`Backed up to ${to.replace(/^\/Users\/[^/]+/, '~')}`);
+    } catch (e) {
+      this.fail(e);
+    }
+  }
+
   async setOpenAtLogin(on: boolean): Promise<void> {
     await this.saveSettings({ ...this.settings, open_at_login: on });
   }
