@@ -1,0 +1,23 @@
+[package]
+name = "airboss-services"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+description = "The contract between the Airboss app and its services: shared types and traits, std only."
+
+[features]
+# Trivial fakes of every service and a settable clock, for other crates' tests.
+fakes = []
+
+[dependencies]
+airboss-core = { path = "../core" }
+serde = { version = "1.0.229", features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1.0.154"
+# The crate's own tests use the fakes too.
+airboss-services = { path = ".", features = ["fakes"] }
+
+[lints]
+workspace = true
