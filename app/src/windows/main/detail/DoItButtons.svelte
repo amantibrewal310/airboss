@@ -11,6 +11,8 @@
   const off = $derived(!app.conn.t3Ready);
   const starting = $derived(app.ui.starting.has(task));
   const closed = $derived(row?.status === 'done' || row?.status === 'dropped' || row?.status === 'proposed');
+  /** The branch Do it would use, when the task has none of its own. */
+  const planned = $derived(app.detail.detail?.task.id === task ? app.detail.detail.prepared?.branch : null);
 </script>
 
 <button
@@ -28,7 +30,7 @@
   data-do-it
   aria-disabled={off || starting ? 'true' : undefined}
   aria-busy={starting}
-  title={off ? 'Do it and Plan it need T3 Code' : 'Do it (⌘↩)'}
+  title={off ? 'Do it and Plan it need T3 Code' : planned ? `Do it (⌘↩) · on ${planned}` : 'Do it (⌘↩)'}
   onclick={() => !starting && app.doIt(task)}
 >
   {#if starting}

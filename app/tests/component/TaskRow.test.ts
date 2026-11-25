@@ -1,0 +1,89 @@
+import { describe, expect, it } from 'vitest';
+import { render } from 'vitest-browser-svelte';
+import RowHost from './RowHost.svelte';
+import { buildRows } from '../../src/lib/mock/viewmodel';
+import { stateFromSeed } from '../../src/lib/mock/model';
+import { loadFixture } from '../../src/lib/mock/fixtures';
+import '../../src/styles/tokens.css';
+import '../../src/styles/base.css';
+
+const seed = loadFixture('full');
+const { rows } = buildRows(stateFromSeed(seed));
+const now = Date.parse(seed.now);
+
+async function show(id: number, width = 900, selected = false) {
+  const screen = await render(RowHost, { row: rows.get(id)!, width, repos: seed.repos, now, selected });
+  const el = screen.container.querySelector<HTMLElement>(`[data-row="${id}"]`)!;
+  return { screen, el };
+}
+
+const visible = (el: Element | null) => !!el && getComputedStyle(el).display !== 'none';
+
+describe('TaskRow', () => {
+  it('is exactly 38px at every status', async () => {
+    for (const id of [142, 143, 144, 145, 146, 203, 153, 172]) {
+      const { el } = await show(id);
+      expect(el.getBoundingClientRect().height).toBe(38);
+    }
+  });
+
+  it('reads like a sentence to VoiceOver', async () => {
+    const { el } = await show(144);
+    expect(el.getAttribute('aria-label')).toBe('144, Web: slot picker, In progress, waiting on you, needs you, booking-web, 6 minutes ago');
+  });
+
+  it('draws each status by shape, with its name', async () => {
+    const labels: Record<number, string> = { 143: 'Done', 144: 'In progress', 145: 'Waiting', 146: 'Todo', 203: 'Blocked', 204: 'In review', 153: 'Proposed', 172: 'Dropped' };
+    for (const [id, label] of Object.entries(labels)) {
+      const { el } = await show(Number(id));
+      expect(el.getAttribute('aria-label')).toContain(label);
+    }
+  });
+
+  it('shows a parent’s progress, a blocked pill, waits-on and Ready', async () => {
+    expect((await show(142)).el.textContent).toContain('1/5');
+    const blocked = (await show(203)).el;
+    expect(blocked.querySelector('.pill.warn')?.textContent).toBe('Blocked');
+    expect((await show(147)).el.textContent).toContain('waits on 144, 145, 146');
+    expect((await show(146)).el.querySelector('.pill.ok')?.textContent).toBe('Ready');
+  });
+
+  it('truncates a long title with an ellipsis and a tooltip, never wrapping', async () => {
+    const { el } = await show(194, 700);
+    const t = el.querySelector<HTMLElement>('.t')!;
+    expect(t.scrollWidth).toBeGreaterThan(t.clientWidth);
+    expect(getComputedStyle(t).textOverflow).toBe('ellipsis');
+    expect(t.title).toContain('screen readers');
+    expect(el.getBoundingClientRect().height).toBe(38);
+  });
+
+  it('drops detail in two steps at narrow widths', async () => {
+    const wide = (await show(147, 900)).el;
+    expect(visible(wide.querySelector('.rn'))).toBe(true);
+    expect(visible(wide.querySelector('.rd'))).toBe(false);
+    const mid = (await show(147, 680)).el;
+    expect(visible(mid.querySelector('.rn'))).toBe(false);
+    expect(visible(mid.querySelector('.rd'))).toBe(true);
+    expect(visible(mid.querySelector('.long'))).toBe(true);
+    const narrow = (await show(147, 520)).el;
+    expect(visible(narrow.querySelector('.long'))).toBe(false);
+    expect(visible(narrow.querySelector('.short'))).toBe(true);
+    const parent = (await show(142, 520)).el;
+    expect(visible(parent.querySelector('.pc'))).toBe(false);
+    const live = (await show(144, 520)).el;
+    expect(visible(live.querySelector('.live .lt'))).toBe(false);
+    expect(live.querySelector('.live')!.getAttribute('aria-label')).toBe('Waiting on you');
+  });
+
+  it('dims the needs-me dot of a stale item, with a tooltip', async () => {
+    const { el } = await show(180);
+    const dot = el.querySelector<HTMLElement>('.dot')!;
+    expect(dot.title).toBe('May be out of date');
+    expect(Number(getComputedStyle(dot).opacity)).toBeLessThan(1);
+  });
+
+  it('draws the keyboard outline on the selected row', async () => {
+    const { el } = await show(144, 900, true);
+    expect(getComputedStyle(el, '::after').boxShadow).toContain('inset');
+  });
+});

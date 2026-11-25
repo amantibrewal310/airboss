@@ -97,7 +97,7 @@
               repos={app.tasks.repoById}
               now={app.now}
               selected={app.ui.selected === row.id}
-              keyboard={app.ui.keyboard && app.ui.zone === 'list'}
+              keyboard={app.ui.keyboard && (app.ui.zone === 'list' || app.ui.zone === 'overlay')}
               folded={app.ui.folded.has(row.id)}
               foldable={tree}
               fresh={app.tasks.fresh.has(row.id)}

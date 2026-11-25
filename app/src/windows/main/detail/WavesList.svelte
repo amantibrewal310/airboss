@@ -16,7 +16,7 @@
   {#each map.waves as ids, w (w)}
     {#if ids.length}
       <div class="wv">
-        <div class="wv-h">Wave {w + 1}{#if w === 0}<span> · can start now</span>{/if}{#if ids.length > 1}<span> · in parallel</span>{/if}</div>
+        <div class="wv-h">Wave {w + 1}{#if w === 0}<span>{' · can start now'}</span>{/if}{#if ids.length > 1}<span>{' · in parallel'}</span>{/if}</div>
         {#each ids as id (id)}
           {@const r = app.row(id)}
           {#if r}

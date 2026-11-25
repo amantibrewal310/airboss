@@ -16,7 +16,7 @@
 
   onMount(() => {
     if (el && !el.contains(document.activeElement)) {
-      const first = el.querySelector<HTMLElement>('[data-autofocus], input, textarea, button');
+      const first = el.querySelector<HTMLElement>('[data-autofocus]') ?? el.querySelector<HTMLElement>('input, textarea, button');
       (first ?? el).focus({ preventScroll: true });
     }
   });

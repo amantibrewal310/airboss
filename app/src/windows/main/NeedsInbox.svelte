@@ -22,7 +22,9 @@
     <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.25" fill="none" stroke="var(--text-2)" stroke-width="1.5" /><path d="m8 12.3 2.8 2.8 5.2-5.6" fill="none" stroke="var(--text-2)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
     <h2>Nothing needs you</h2>
     <p>
-      {#if app.needs.checkedAt}Checked {clockTime(app.needs.checkedAt, app.now)} · {/if}{app.counts.progress} in progress · {app.counts.ready} ready to start
+      {[app.needs.checkedAt ? `Checked ${clockTime(app.needs.checkedAt, app.now)}` : '', `${app.counts.progress} in progress`, `${app.counts.ready} ready to start`]
+        .filter(Boolean)
+        .join(' · ')}
     </p>
     <Button onclick={() => app.go('ready')}>Show ready tasks</Button>
   </div>
@@ -42,7 +44,7 @@
           id="need-{n.key}"
           class="ib"
           class:sel={item?.key === n.key}
-          class:kb={item?.key === n.key && app.ui.keyboard && app.ui.zone === 'list'}
+          class:kb={item?.key === n.key && app.ui.keyboard && (app.ui.zone === 'list' || app.ui.zone === 'overlay')}
           class:stale={n.stale}
           class:gone={app.needs.leaving.has(n.key)}
           role="option"

@@ -60,7 +60,7 @@
       <span>
         {KIND_LABEL[item.kind]} · {relative(item.since, app.now)} ago ·
         <button type="button" class="task" onclick={() => app.reveal(item.task)}>{item.task} {item.task_title}</button>
-        {#if item.stale}<span class="stale-note"> · May be out of date</span>{/if}
+        {#if item.stale}<span class="stale-note">{' · May be out of date'}</span>{/if}
       </span>
     </div>
     <p class="q">{item.headline}</p>

@@ -20,7 +20,7 @@
   <div class="call" class:stale={n.stale} class:gone={app.needs.leaving.has(n.key)}>
     <span class="ic"><Icon name={KIND_ICON[n.kind]} size={15} /></span>
     <div class="w">
-      <div class="k">{KIND_LABEL[n.kind]} · {relative(n.since, app.now)} ago{#if n.stale}<span class="st"> · May be out of date</span>{/if}</div>
+      <div class="k">{KIND_LABEL[n.kind]} · {relative(n.since, app.now)} ago{#if n.stale}<span class="st">{' · May be out of date'}</span>{/if}</div>
       <div class="q">{n.headline}</div>
       <div class="acts">
         <button type="button" class="pri" onclick={() => app.mainAction(n)}>{mainLabel(n.kind)}</button>

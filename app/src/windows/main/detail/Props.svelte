@@ -21,7 +21,7 @@
   const parent = $derived(row.parent === null ? null : app.row(row.parent));
   const prepared = $derived(detail?.task.id === row.id ? detail.prepared : null);
   const mine = $derived(detail?.task.id === row.id ? detail : null);
-  /** The task's own branch; an inherited or planned one shows in text-3. */
+  /** The task's own branch. The one Do it would use otherwise is on Do it's tooltip (PLAN-ui.md, Decisions). */
   const own = $derived(mine ? mine.task.branch : null);
 
   let editingBranch = $state(false);
@@ -92,14 +92,16 @@
     <span class="l">Repos</span>
     <span class="v tags">
       {#each repos as r (r!.id)}
-        <span class="tag"><RepoDot id={r!.id} />{r!.name}</span>
+        <button type="button" class="tag" title="Link repos (R)" onclick={(e) => app.open({ kind: 'repos', task: row.id, at: anchorOf(e) })}><RepoDot id={r!.id} />{r!.name}</button>
       {/each}
       {#if row.repos_from_subtasks}<span class="faint">· from subtasks</span>{/if}
-      <button type="button" class="add" onclick={(e) => app.open({ kind: 'repos', task: row.id, at: anchorOf(e) })}>+ {repos.length ? 'Link repo' : 'Link a repo'}</button>
+      {#if !rail || !repos.length}
+        <button type="button" class="add" onclick={(e) => app.open({ kind: 'repos', task: row.id, at: anchorOf(e) })}>+ {repos.length ? 'Link repo' : 'Link a repo'}</button>
+      {/if}
     </span>
   </div>
 
-  {#if own || prepared?.branch || editingBranch}
+  {#if own || editingBranch}
     <div class="p" class:wrap={!!branchError}>
       <span class="l">Branch</span>
       <span class="v col">
@@ -116,8 +118,8 @@
           />
           {#if branchError}<span class="err" role="alert">{branchError}</span>{/if}
         {:else}
-          <button type="button" class="tag mono" class:planned={!own} title={own ? 'Edit the branch' : 'The branch Do it would use'} onclick={editBranch}>
-            <Icon name="branch" size={12} />{own ?? prepared?.branch}
+          <button type="button" class="tag mono" title="Edit the branch" onclick={editBranch}>
+            <Icon name="branch" size={12} />{own}
           </button>
         {/if}
       </span>
@@ -277,9 +279,6 @@
   }
   .tag.mono :global(svg) {
     color: var(--text-2);
-  }
-  .tag.planned {
-    color: var(--text-3);
   }
   .dep {
     padding: 0;
