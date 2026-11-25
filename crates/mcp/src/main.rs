@@ -15,11 +15,21 @@ use airboss_mcp::tools::LinkKindName;
 ///
 /// These commands act as you. Agents reach the same tasks through `airboss mcp`.
 #[derive(Parser)]
-#[command(name = "airboss", version, arg_required_else_help = true)]
+#[command(name = "airboss", version, arg_required_else_help = true, after_help = AFTER_HELP)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
 }
+
+const AFTER_HELP: &str = "\
+Examples:
+  airboss add \"Fix booking typo\" --repo hub-ui
+  airboss ls
+  airboss set 12 doing
+  airboss accept 14
+
+Tasks live in ~/Library/Application Support/Airboss/airboss.db.
+Set AIRBOSS_DB to use another file.";
 
 /// `--json`, on every command except `mcp`.
 #[derive(Args, Clone, Copy)]
@@ -31,22 +41,6 @@ struct Out {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Add a task, as todo, at the end of its siblings.
-    Add {
-        /// What to do, e.g. "Fix booking typo".
-        title: String,
-        /// Put it under this task.
-        #[arg(long, value_name = "TASK")]
-        under: Option<i64>,
-        /// Link it to a repo, by name. Give it again for more.
-        #[arg(long = "repo", value_name = "NAME")]
-        repos: Vec<String>,
-        /// Notes.
-        #[arg(long)]
-        body: Option<String>,
-        #[command(flatten)]
-        out: Out,
-    },
     /// Show the task tree. Done and dropped tasks are hidden unless --all.
     Ls {
         /// Include done and dropped tasks.
@@ -65,11 +59,19 @@ enum Command {
         #[command(flatten)]
         out: Out,
     },
-    /// Show recent history, newest last.
-    Log {
-        /// Show every event after this event id instead of the last 50.
-        #[arg(long, value_name = "EVENT")]
-        after: Option<i64>,
+    /// Add a task, as todo, at the end of its siblings.
+    Add {
+        /// What to do, e.g. "Fix booking typo".
+        title: String,
+        /// Put it under this task.
+        #[arg(long, value_name = "TASK")]
+        under: Option<i64>,
+        /// Link it to a repo, by name. Give it again for more.
+        #[arg(long = "repo", value_name = "NAME")]
+        repos: Vec<String>,
+        /// Notes.
+        #[arg(long)]
+        body: Option<String>,
         #[command(flatten)]
         out: Out,
     },
@@ -203,6 +205,14 @@ enum Command {
     /// Register and list repos, and link them to tasks.
     #[command(subcommand)]
     Repo(RepoCommand),
+    /// Show recent history, newest last.
+    Log {
+        /// Show every event after this event id instead of the last 50.
+        #[arg(long, value_name = "EVENT")]
+        after: Option<i64>,
+        #[command(flatten)]
+        out: Out,
+    },
     /// Serve the MCP tools over stdin and stdout, for one agent thread.
     ///
     /// Agent tools start this themselves, one process per thread; see the README.

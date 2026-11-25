@@ -641,10 +641,14 @@ pub fn add(
 /// A status `airboss set` takes; done and dropped have their own commands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum SetStatus {
+    /// Not started.
     Todo,
+    /// In progress.
     Doing,
+    /// Waiting for review.
     #[value(name = "in_review", alias = "in-review")]
     InReview,
+    /// Stuck; give --note saying why.
     Blocked,
 }
 

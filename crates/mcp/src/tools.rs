@@ -85,7 +85,7 @@ pub struct GetTask {
     pub id: i64,
 }
 
-/// A status an agent may set. `core` decides whether it may set it on this task now.
+/// A status an agent may set.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentStatus {
@@ -130,16 +130,22 @@ pub struct UpdateTask {
 #[value(rename_all = "snake_case")]
 pub enum LinkKindName {
     /// A T3 Code thread. Leave `ref` out to link this thread.
+    #[value(help = "A T3 Code thread, by its id")]
     T3Thread,
     /// A Claude Code session. Leave `ref` out to link this session.
+    #[value(help = "A Claude Code session, by its id")]
     ClaudeSession,
     /// A pull request, `ref` like owner/repo#42.
+    #[value(help = "A pull request, like owner/repo#42")]
     Pr,
     /// A Slack message, `ref` its permalink.
+    #[value(help = "A Slack message, by its permalink")]
     Slack,
     /// A document, `ref` its file path.
+    #[value(help = "A document, by its file path")]
     Doc,
     /// A GitHub issue, `ref` like owner/repo#7.
+    #[value(help = "A GitHub issue, like owner/repo#7")]
     GithubIssue,
 }
 
@@ -244,7 +250,9 @@ pub struct PlanStep {
     /// The plan's own id for this step, unique in the plan. Sending the plan again matches
     /// steps by key, so keep keys stable when revising it.
     pub key: String,
+    /// A short title saying what to do.
     pub title: String,
+    /// Notes for whoever picks it up.
     #[serde(default)]
     pub body: Option<String>,
     /// The repos it touches, by name.
