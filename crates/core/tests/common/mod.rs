@@ -14,6 +14,12 @@ pub fn agent() -> Actor {
     Actor::Agent("t3/abc".into())
 }
 
+/// Waits long enough for SQLite's millisecond clock to move on, so tests that compare
+/// event times can tell consecutive events apart.
+pub fn tick() {
+    std::thread::sleep(std::time::Duration::from_millis(2));
+}
+
 /// A fresh directory under the system temp dir, removed on drop.
 pub struct TempDir(pub PathBuf);
 

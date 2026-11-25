@@ -6,7 +6,9 @@ use std::collections::{BTreeSet, HashMap};
 use rusqlite::{Connection, params};
 
 use crate::events;
-use crate::model::{Actor, Dependencies, EventKind, OutsideWait, RunOrder, Status, Task};
+use crate::model::{
+    Actor, Dependencies, EventKind, OutsideWait, ReadyTask, RunOrder, Status, Task,
+};
 use crate::permissions::{Call, allowed};
 use crate::sql::{SUBTREE_CTE, query_all};
 use crate::tasks::{self, TASK_COLUMNS, ensure_exists};
@@ -35,13 +37,10 @@ impl crate::Store {
         dependencies(&self.conn, id)
     }
 
-    /// What can be picked up now: `todo` tasks with no open blockers, in tree order.
-    pub fn ready(&self) -> Result<Vec<Task>> {
-        Ok(tasks::tree(&self.conn)?
-            .into_iter()
-            .filter(|n| n.task.status == Status::Todo && !n.waiting)
-            .map(|n| n.task)
-            .collect())
+    /// What can be picked up now: `todo` tasks with no open blockers, in tree order, each
+    /// with the time it became ready (rule 26).
+    pub fn ready(&self) -> Result<Vec<ReadyTask>> {
+        ready(&self.conn)
     }
 
     /// The waves `parent`'s open subtasks can run in (rule 18). Subtasks that lifting
@@ -49,6 +48,39 @@ impl crate::Store {
     pub fn run_order(&self, parent: TaskId) -> Result<RunOrder> {
         run_order(&self.conn, parent)
     }
+}
+
+/// For every `todo` task, the time of the newest event that could have made it ready: its
+/// own `created` or `waits_on_removed` event, or a current blocker finishing. Newest goes
+/// by event id (rule 26).
+const READY_SINCE_SQL: &str = "
+SELECT t.id, ifnull(
+    (SELECT e.at FROM task_events e WHERE e.id = max(
+        ifnull((SELECT max(o.id) FROM task_events o
+                WHERE o.task_id = t.id AND o.kind IN ('created', 'waits_on_removed')), 0),
+        ifnull((SELECT max(f.id) FROM task_deps d JOIN task_events f ON f.task_id = d.waits_on_id
+                WHERE d.task_id = t.id
+                  AND (f.kind = 'rejected'
+                       OR (f.kind = 'status' AND f.to_status IN ('done', 'dropped')))), 0))),
+    t.created_at)
+FROM tasks t WHERE t.status = 'todo'";
+
+fn ready(conn: &Connection) -> Result<Vec<ReadyTask>> {
+    let mut since: HashMap<TaskId, String> = query_all(conn, READY_SINCE_SQL, [], |r| {
+        Ok((TaskId(r.get(0)?), r.get(1)?))
+    })?
+    .into_iter()
+    .collect();
+    Ok(tasks::tree(conn)?
+        .into_iter()
+        .filter(|n| n.task.status == Status::Todo && !n.waiting)
+        .map(|n| ReadyTask {
+            since: since
+                .remove(&n.task.id)
+                .unwrap_or_else(|| n.task.created_at.clone()),
+            task: n.task,
+        })
+        .collect())
 }
 
 /// True when either task is an ancestor of the other (rule 15).

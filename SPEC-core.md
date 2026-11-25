@@ -260,7 +260,7 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
     - `done` and `dropped` subtasks are left out, and so are `proposed` ones until I accept them. A dependency on an unaccepted proposal doesn't hold anything back in run order.
     - Run order is only shown. Nothing starts by itself.
 
-26. **A ready task knows since when.** `ready()` gives each task the time its last blocker became `done` or `dropped` (a `status` event to either, or a `rejected` event). If it never waited, or every blocker finished before it was created, that's its creation time. "Last" goes by event id, never by time.
+26. **A ready task knows since when.** `ready()` gives each task the time its last blocker became `done` or `dropped` (a `status` event to either, or a `rejected` event), or stopped being a blocker (a `waits_on_removed` event on the task). If it never waited, or every blocker finished before it was created, that's its creation time. "Last" goes by event id, never by time.
 27. **`dependencies(id)` lists every dependency, both ways,** finished blockers included: what the task waits on, and what waits on it, each sorted by id. `waits_on(id)` still lists open blockers only.
 
 ### Plans (enforced by code)
@@ -502,6 +502,7 @@ The app design ([DESIGN.md](DESIGN.md), "Needs from the core data model") asked 
 - A blank link title is stored as no title. Linking the same thing again returns the link as it was, title included.
 - An outside blocker reaches a subtask through a sibling too, so every `waiting_outside` entry names at least one blocker (rule 18).
 - "Newest" and "last" go by event id, as everywhere else; times are only shown (rules 26 and 28).
+- A task freed by removing or deleting its blocker is ready since that removal, not since its creation (rule 26).
 
 ## Open questions
 

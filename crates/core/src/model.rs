@@ -490,6 +490,14 @@ impl NewLink {
     }
 }
 
+/// A task that can be picked up now, and since when (rule 26).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReadyTask {
+    pub task: Task,
+    /// When its last blocker finished or was removed; its creation time if it never waited.
+    pub since: String,
+}
+
 /// Every dependency of one task, both ways, finished tasks included (rule 27).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Dependencies {

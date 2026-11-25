@@ -4,7 +4,7 @@
 mod common;
 
 use airboss_core::{Actor, Error, EventKind, NewTask, Store, TaskId};
-use common::{agent, store};
+use common::{agent, store, tick};
 
 fn top(s: &mut Store, title: &str) -> TaskId {
     s.add_task(NewTask::new(title), &Actor::Me).unwrap().id
@@ -107,6 +107,7 @@ fn a_tree_node_carries_its_own_newest_event_and_actor() {
     assert_eq!(fresh.last_actor, Actor::Me);
     assert_eq!(fresh.last_event_at, newest_at(&s, t));
 
+    tick();
     s.add_note(t, "picked up", &agent()).unwrap();
     let n = node(&s, t);
     assert_eq!(n.last_actor, agent());
@@ -118,6 +119,7 @@ fn a_tree_node_carries_its_own_newest_event_and_actor() {
 fn a_subtrees_newest_event_comes_up_from_a_grandchild() {
     let mut s = store();
     let [p, a, a1, q] = three_levels(&mut s);
+    tick();
     s.add_note(a1, "newest of all", &agent()).unwrap();
     let deepest = newest_at(&s, a1);
 
@@ -137,6 +139,7 @@ fn the_newest_event_goes_by_event_id_not_time() {
     let mut s = store();
     let p = top(&mut s, "P");
     let a = under(&mut s, p, "A");
+    tick();
     s.add_note(p, "parent note", &Actor::Me).unwrap();
     let newest = s.history_with_subtasks(p, 1).unwrap().remove(0);
     assert_eq!(newest.task, p);
