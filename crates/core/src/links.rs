@@ -3,11 +3,11 @@
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use crate::events::{self, bad_text};
-use crate::model::{Actor, EventKind, Link, LinkKind, NewLink, PrState};
+use crate::model::{Actor, EventKind, Link, LinkKind, NewLink, PrState, Status};
 use crate::permissions::{Call, allowed};
 use crate::tasks::ensure_exists;
 use crate::tx::Tx;
-use crate::{Error, LinkId, Result, TaskId, fault};
+use crate::{Error, LinkId, Result, TaskId, fault, status};
 
 const LINK_COLUMNS: &str = "id, task_id, kind, ref, url, pr_state, linked_by, linked_at";
 
@@ -77,6 +77,14 @@ pub(crate) fn link(tx: &mut Tx<'_>, task: TaskId, new: NewLink, actor: &Actor) -
     fault::hit(fault::LINK_INSERTED)?;
     let body = format!("{} {}", new.kind, new.r#ref);
     events::record(tx, task, EventKind::Linked, None, Some(&body), actor)?;
+    // Rule 7: code can't stay done while a PR someone else just linked is unreviewed.
+    if new.kind == LinkKind::Pr
+        && *actor != Actor::Me
+        && crate::tasks::get(tx, task)?.status == Status::Done
+    {
+        let why = format!("reopened: PR {} linked after done", new.r#ref);
+        status::apply(tx, task, Status::InReview, Some(&why), actor)?;
+    }
     get(tx, id)
 }
 

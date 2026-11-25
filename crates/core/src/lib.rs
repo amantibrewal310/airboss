@@ -9,6 +9,7 @@ mod events;
 mod links;
 mod model;
 mod permissions;
+mod status;
 mod tasks;
 mod tx;
 
@@ -138,6 +139,7 @@ pub(crate) mod fault {
     pub(crate) const LINK_INSERTED: &str = "links::link after insert";
     pub(crate) const LINK_DELETED: &str = "links::unlink after delete";
     pub(crate) const PR_STATE_RECORDED: &str = "links::set_pr_state after one task";
+    pub(crate) const STATUS_UPDATED: &str = "status::apply after update";
 
     pub(crate) fn arm(point: &'static str) {
         ARMED.with(|a| a.set(Some(point)));
@@ -160,6 +162,7 @@ pub(crate) mod fault {
     pub(crate) const LINK_INSERTED: &str = "links::link after insert";
     pub(crate) const LINK_DELETED: &str = "links::unlink after delete";
     pub(crate) const PR_STATE_RECORDED: &str = "links::set_pr_state after one task";
+    pub(crate) const STATUS_UPDATED: &str = "status::apply after update";
 
     #[inline(always)]
     pub(crate) fn hit(_point: &str) -> crate::Result<()> {
