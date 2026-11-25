@@ -6,9 +6,11 @@
 
 use std::collections::HashMap;
 use std::ffi::OsStr;
-use std::io;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime};
+use std::process::{Child, Command, ExitStatus, Stdio};
+use std::sync::mpsc;
+use std::time::{Duration, Instant, SystemTime};
 
 use airboss_core::PrState;
 use airboss_services::time::{from_ts, to_ts};
@@ -561,8 +563,6 @@ impl ProcessGh {
         token: Option<&Secret>,
         timeout: Duration,
     ) -> io::Result<CmdOutput> {
-        use std::io::Read;
-        use std::process::{Command, Stdio};
         let mut cmd = Command::new(self.binary()?);
         cmd.args(args)
             .stdin(Stdio::null())
@@ -572,56 +572,70 @@ impl ProcessGh {
             cmd.env_remove(name);
         }
         cmd.envs(child_env(token));
-        let mut child = cmd.spawn()?;
-        let (done, finished) = std::sync::mpsc::channel();
-        let read = |pipe: Option<Box<dyn Read + Send>>, done: std::sync::mpsc::Sender<()>| {
-            std::thread::spawn(move || {
-                let mut text = String::new();
-                if let Some(mut p) = pipe {
-                    let _ = p.read_to_string(&mut text);
-                }
-                let _ = done.send(());
-                text
-            })
-        };
-        let out = read(
-            child
-                .stdout
-                .take()
-                .map(|p| Box::new(p) as Box<dyn Read + Send>),
-            done.clone(),
-        );
-        let err = read(
-            child
-                .stderr
-                .take()
-                .map(|p| Box::new(p) as Box<dyn Read + Send>),
-            done,
-        );
-        // Both pipes close when gh exits; past the deadline it's killed.
-        let deadline = std::time::Instant::now() + timeout;
-        let mut closed = 0;
-        let mut timed_out = false;
-        while closed < 2 {
-            let left = deadline.saturating_duration_since(std::time::Instant::now());
-            match finished.recv_timeout(left) {
-                Ok(()) => closed += 1,
-                Err(_) => {
-                    timed_out = true;
-                    let _ = child.kill();
-                    break;
-                }
+        finish(cmd.spawn()?, timeout, READ_GRACE)
+    }
+}
+
+/// How long to wait for `gh`'s output once it has exited, or been killed. A process `gh`
+/// started could still hold the pipes; `launch`'s runner waits the same.
+const READ_GRACE: Duration = Duration::from_secs(1);
+
+/// Waits for `child`, killing it at `timeout`, then gives its readers `grace` to finish.
+/// `status` is `None` when it was killed. Like `launch`'s runner, it never waits on the
+/// pipes alone: a grandchild holding them would hold this thread too.
+fn finish(mut child: Child, timeout: Duration, grace: Duration) -> io::Result<CmdOutput> {
+    let deadline = Instant::now() + timeout;
+    let stdout = read_in_background(child.stdout.take());
+    let stderr = read_in_background(child.stderr.take());
+    let status = wait_until(&mut child, deadline)?;
+    Ok(CmdOutput {
+        status: status.and_then(|s| s.code()),
+        stdout: stdout.recv_timeout(grace).unwrap_or_default(),
+        stderr: stderr.recv_timeout(grace).unwrap_or_default(),
+    })
+}
+
+/// Waits for the child; `None` when it ran past `deadline` and was killed.
+fn wait_until(child: &mut Child, deadline: Instant) -> io::Result<Option<ExitStatus>> {
+    let mut pause = Duration::from_millis(1);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Ok(Some(status)),
+            Ok(None) => {}
+            Err(e) => {
+                // Don't leave a child we can no longer watch.
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(e);
             }
         }
-        let status = child.wait()?;
-        let stdout = out.join().unwrap_or_default();
-        let stderr = err.join().unwrap_or_default();
-        Ok(CmdOutput {
-            status: if timed_out { None } else { status.code() },
-            stdout,
-            stderr,
-        })
+        let now = Instant::now();
+        if now >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Ok(None);
+        }
+        std::thread::sleep(pause.min(deadline - now));
+        pause = (pause * 2).min(Duration::from_millis(20));
     }
+}
+
+/// Reads a pipe to its end on its own thread; the text arrives on the channel.
+fn read_in_background(pipe: Option<impl Read + Send + 'static>) -> mpsc::Receiver<String> {
+    let (tx, rx) = mpsc::channel();
+    match pipe {
+        Some(mut pipe) => {
+            std::thread::spawn(move || {
+                let mut text = String::new();
+                let _ = pipe.read_to_string(&mut text);
+                let _ = tx.send(text);
+            });
+        }
+        None => {
+            let _ = tx.send(String::new());
+        }
+    }
+    rx
 }
 
 impl GhRunner for ProcessGh {
@@ -703,6 +717,62 @@ mod tests {
         );
         assert!(parse_accounts(r#"{"hosts":{}}"#).unwrap().is_empty());
         assert!(parse_accounts("nope").is_err());
+    }
+
+    /// `sh -c script`, piped as `ProcessGh` pipes `gh`. Only tests run a shell.
+    fn sh(script: &str) -> std::process::Child {
+        use std::process::{Command, Stdio};
+        Command::new("/bin/sh")
+            .args(["-c", script])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap()
+    }
+
+    #[test]
+    fn a_finished_child_gives_its_code_and_both_outputs() {
+        let out = finish(sh("echo hi; echo oops >&2; exit 3"), GH_TIMEOUT, READ_GRACE).unwrap();
+        assert_eq!(out.status, Some(3));
+        assert_eq!(
+            (out.stdout.as_str(), out.stderr.as_str()),
+            ("hi\n", "oops\n")
+        );
+    }
+
+    #[test]
+    fn a_grandchild_holding_the_pipes_holds_us_only_for_the_grace_period() {
+        let began = std::time::Instant::now();
+        let out = finish(
+            sh("sleep 4 & exit 0"),
+            GH_TIMEOUT,
+            Duration::from_millis(200),
+        )
+        .unwrap();
+        assert_eq!(out.status, Some(0), "gh itself finished");
+        assert!(
+            began.elapsed() < Duration::from_secs(2),
+            "{:?}",
+            began.elapsed()
+        );
+    }
+
+    #[test]
+    fn a_child_past_its_deadline_is_killed_and_has_no_code() {
+        let began = std::time::Instant::now();
+        let out = finish(
+            sh("sleep 4"),
+            Duration::from_millis(200),
+            Duration::from_millis(200),
+        )
+        .unwrap();
+        assert_eq!(out.status, None);
+        assert!(
+            began.elapsed() < Duration::from_secs(2),
+            "{:?}",
+            began.elapsed()
+        );
     }
 
     #[test]

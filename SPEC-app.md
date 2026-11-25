@@ -851,16 +851,16 @@ applyPatch(p: Patch) {
 
 ## Success criteria
 
-- [ ] Every web screen in `docs/design/screens/` has a reviewed baseline in dark and light, and screen 08 is checked in `QA.md`.
-- [ ] The QA flow in program.md works keyboard only: capture, plan, Do it, an agent reports, a PR merges, Needs me clears.
-- [ ] A write from `airboss mcp` or the CLI shows in the open window within 300 ms, with no polling and no FSEvents.
-- [ ] No service is called while the store lock is held, which the fake service checks.
+- [ ] Every web screen in `docs/design/screens/` has a reviewed baseline in dark and light, and screen 08 is checked in `QA.md` (manual).
+- [ ] The QA flow in program.md works keyboard only: capture, plan, Do it, an agent reports, a PR merges, Needs me clears (manual).
+- [x] A write from `airboss mcp` or the CLI shows in the open window within 300 ms, with no polling and no FSEvents (`another_process_write_shows_within_300_ms`).
+- [x] No service is called while the store lock is held, which the fake service checks (`Checked` and `assert_lock_free` in `tests/common/mod.rs`, used across `tests/commands.rs`).
 - [ ] ⌘Z undoes dismiss, snooze, reject, status changes and moves, and refuses after someone else's change.
-- [ ] Every command in Appendix A has a Rust test. Every view, selection and focus rule, the layout and the keymap have unit tests. The listed components have component tests. The smoke test passes, and the mock reports no unscripted calls.
+- [x] Every command in Appendix A has a Rust test (`tests/commands.rs`, all 44). Every view, selection and focus rule, the layout and the keymap have unit tests. The listed components have component tests. The smoke test passes, and the mock reports no unscripted calls.
 - [ ] Every performance target is measured with `scripts/measure.sh` and met, memory with both web views alive, with the machine recorded.
-- [ ] Without T3 Code, Do it and Plan it are off with the DESIGN wording, and everything else works. A partial Do it failure offers Retry and Add to T3.
-- [ ] VoiceOver reads a row, a needs-me item and a map station correctly. Reduce Motion and Increase Contrast visibly apply.
-- [ ] No AI attribution anywhere. Clippy, fmt, `svelte-check` and every test are clean.
+- [ ] Without T3 Code, Do it and Plan it are off with the DESIGN wording, and everything else works. A partial Do it failure offers Retry and Add to T3 (manual: the wording and toasts are tested, e.g. `the_toast_table_for_every_report`; the screens need looking at).
+- [ ] VoiceOver reads a row, a needs-me item and a map station correctly. Reduce Motion and Increase Contrast visibly apply (manual).
+- [x] No AI attribution anywhere. Clippy, fmt, `svelte-check` and every test are clean (on `main`, in the final audit's runs).
 
 ## Not verified yet
 

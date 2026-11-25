@@ -220,6 +220,7 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
    | Call | `me` | an agent | `plan` | `sync:gh` | `sync:t3` | `launch` |
    |---|---|---|---|---|---|---|
    | `add_repo` | yes | (no) | (no) | (no) | (no) | (no) |
+   | `edit_repo` / `remove_repo` | yes | (no) | (no) | (no) | (no) | (no) |
    | `add_task` | yes, as `todo` | yes, always as `proposed` | (no) | (no) | (no) | (no) |
    | `add_tasks` (a plan) | yes | (no) | yes | (no) | (no) | (no) |
    | `edit_task` (title, notes) | yes | (no) | (no) | (no) | (no) | (no) |
@@ -244,6 +245,10 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
     - `link_repo` writes a `repo_linked` event and `unlink_repo` a `repo_unlinked` event, each naming the repo. Linking a repo that's already linked changes nothing. Unlinking one that isn't is `Error::NotFound`.
     - `Task.repos` lists a task's own repos, sorted by repo name. `tree()` carries the same list. A parent shows only its own; the union over its subtree is the app's job.
     - A plan sent again leaves an existing step's repos as they are, like its title (rule 20). `plan` links more with `link_repo`.
+33. **Repos can be edited and removed, by `me` only.**
+    - `edit_repo` changes a repo's name, path or remote; what it's not given stays as it is, and `Some(None)` clears the remote. The name is trimmed. A blank name or path is `Error::InvalidTarget`, a name or path another repo has is `Error::AlreadyExists`, and a missing repo is `Error::NotFound`. Tasks keep the repo, so they follow it. Like `add_repo`, it writes no event.
+    - `remove_repo` unlinks the repo from every task that has it, in any status, with a `repo_unlinked` event on each naming the repo, then deletes it, all in one change. It returns those tasks by id. A missing repo is `Error::NotFound`.
+    - A removed repo's id can be handed out again to the next repo added. A module keeping its own rows by repo id mustn't assume otherwise.
 25. **A task has at most one branch,** shared by every thread `launch` starts for it. Null means no branch yet. `set_branch` writes one `edited` event whose body names the branch, e.g. `branch: booking-flow`, or `branch cleared`. A blank name clears it. Setting the branch it already has writes nothing.
     - A name, once trimmed, uses only `A–Z`, `a–z`, `0–9`, `.`, `_`, `/` and `-`, and is at most 200 characters long.
     - It can't contain `..`, start with `-` or `/`, or end with `/` or `.lock`.
@@ -306,6 +311,12 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
     - A failing migration leaves nothing of itself behind. Those before it in the list stay applied.
     - Foreign keys are off while it runs, and it's refused if it leaves a row breaking one (`PRAGMA foreign_key_check`). So a `DELETE` in a migration doesn't cascade.
     - It writes no events and sends no notification.
+32. **A database from a newer Airboss is refused.** When `schema_migrations` records a version of a module newer than the binary knows, `Store::open` (for `core`) and `migrate_module` (for that module) fail, and nothing is read or written. An open `Store` checks `core`'s version inside every write transaction too, so a long-running `airboss mcp` stops writing once a newer app has migrated the file.
+    - The error is `Error::Db`, so callers that match every variant don't change, and `Error::is_newer_database()` recognises it. Its text is `NEWER_DATABASE`: "This database was created by a newer Airboss. Update the `airboss` command."
+
+34. **A backup is one consistent moment.** `backup(to, overwrite)` copies the whole file, every module's tables included, with SQLite's online backup in a single step, so it neither tears under another process's writes nor blocks them.
+    - It writes to a hidden file beside `to`, then renames it over `to`, so a failure leaves `to` as it was and nothing else behind.
+    - A file already at `to` is `Error::AlreadyExists` unless `overwrite`; then any `-wal` and `-shm` left beside the old file go too. The store's own file, however it's spelled, is always `Error::InvalidTarget`.
 
 ## API shape
 
@@ -321,9 +332,13 @@ impl Store {
     pub fn subscribe(&mut self) -> Receiver<Vec<EventId>>;
     pub fn data_version(&self) -> Result<i64>;          // changes when ANOTHER connection commits
     pub fn migrate_module(&mut self, module: &str, migrations: &[Migration]) -> Result<()>;  // "core": InvalidTarget
+    pub fn backup(&self, to: &Path, overwrite: bool) -> Result<()>;  // rule 34
 
     // repos
     pub fn add_repo(&mut self, name: &str, path: &Path, remote: Option<&str>, actor: &Actor) -> Result<Repo>;
+    pub fn edit_repo(&mut self, id: RepoId, name: Option<&str>, path: Option<&Path>, remote: Option<Option<&str>>,
+                     actor: &Actor) -> Result<Repo>;              // rule 33; no event
+    pub fn remove_repo(&mut self, id: RepoId, actor: &Actor) -> Result<Vec<TaskId>>;  // the tasks it was unlinked from
     pub fn repos(&self) -> Result<Vec<Repo>>;
 
     // tasks
@@ -388,7 +403,12 @@ pub enum Error { EmptyTitle, AlreadyExists, NotFound, NotAllowed, InvalidTransit
                  DuplicateKey, Db(rusqlite::Error) }
 impl Error {
     pub fn is_storage_failure(&self) -> bool;  // Db with SQLite's IOERR, CORRUPT, NOTADB or CANTOPEN (not BUSY or LOCKED);
-}                                              // the app shows these as its database problem state (integration QA R2)
+                                               // the app shows these as its database problem state (integration QA R2)
+    pub fn is_newer_database(&self) -> bool;   // rule 32; its text is NEWER_DATABASE
+}
+
+pub fn default_db_path() -> Result<PathBuf>;   // AIRBOSS_DB, else ~/Library/Application Support/Airboss/airboss.db;
+                                               // no HOME either: an error naming AIRBOSS_DB, never a relative path
 ```
 
 `Store` isn't shared between threads by itself. The app holds one `Store` behind a mutex. Every call is short, so `mcp`, `app` and `sync` waiting on one lock stays well under the 20 ms MCP target.
@@ -588,6 +608,22 @@ The app and service specs asked for a few more things. The EM decided them in [t
 - `mcp` says what a PR ref or a branch name may be when `core` refuses one, instead of its generic `InvalidTarget` message.
 - Migration 3 seeds `sqlite_sequence` by copying the rows with their ids: that sets it to `max(id)`, and the rename carries it. A test checks the sequence afterwards.
 - The runner turns foreign keys off around every migration, not only migration 3. Turning them off per migration would need a field on `Migration`, whose shape is fixed, and `foreign_key_check` still catches anything a migration breaks.
+
+## v4 (26 Nov 2026)
+
+The final audit of `main` found gaps that need `core`. They're folded into the rules, tables and API above.
+
+1. **A newer database is refused** (rule 32). An older `airboss mcp`, still running after an update, wrote a PR ref the newer app never matched.
+2. **One place for the database path.** `default_db_path()` and `DB_VAR` replace the CLI's and the app's own copies. With no `HOME` the CLI errored while the app used a relative path; now both get the same error.
+3. **Repos can be edited and removed** (rules 8 and 33). A wrong first-run folder or a moved checkout needed SQLite to fix.
+4. **Backup.** `backup(to, overwrite)`, through `rusqlite`'s `backup` feature (rule 34), for `airboss backup`.
+
+**Success criteria for v4:**
+
+- [x] A file with a newer `core` or module migration is refused at open, and an open store refuses writes once a newer Airboss migrates the file (`a_database_a_newer_airboss_migrated_is_refused_and_left_alone`, `an_open_store_refuses_writes_once_a_newer_airboss_migrated_the_file`).
+- [x] `default_db_path` honours `AIRBOSS_DB`, and with no `HOME` is an error, never a relative path.
+- [x] `edit_repo` and `remove_repo` are `me`'s only; removing writes one `repo_unlinked` event per task and is all or nothing.
+- [x] A backup opens as the same tasks and history, leaves out uncommitted writes, keeps an existing file unless told, and never targets the database itself.
 
 ## Open questions
 

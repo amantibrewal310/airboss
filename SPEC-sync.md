@@ -170,7 +170,7 @@ Rows are written only when something changed. On start the snapshot is loaded fr
 ### Workers and time
 
 - Each worker thread loops: `step = worker.handle(msg, clock.now())`, then waits on its channel with `recv_timeout(min(step.next_wake − now, 15 min))`; a timeout sends `Tick`. `handle` asserts `next_wake > now` (an overdue deadline is acted on inside `handle`, not by waiting zero).
-- Deadlines are `SystemTime`: the next GitHub pass (5 min after the last ended), per-account backoff and rate-limit ends, the end of the T3 gap, the next untracked read. After a sleep the Mac's wall clock has moved, so the first `Tick` or `woke()` finds them overdue and acts.
+- Deadlines are `SystemTime`: the next GitHub pass (5 min after the last ended), per-account backoff and rate-limit ends, the end of the T3 gap, the next untracked read. After a sleep the Mac's wall clock has moved, so the first `Tick` or `woke()` finds them overdue and acts. When the clock is set back, the GitHub worker pulls its next pass to at most one interval from now, and forgets refresh and tick times in the future, so however far back the clock goes, a merge is seen within two intervals: the wait already under way, then one more.
 - A panic inside `handle` is caught (`catch_unwind`), logged, and turns the source's health to `Broken`; the thread keeps running.
 
 ### GitHub PRs
@@ -181,7 +181,7 @@ Rows are written only when something changed. On start the snapshot is loaded fr
 - **Which PRs:** every PR link whose task is open and whose GitHub-read state is `open` or unknown; PRs waiting from T3 threads (`pr_waiting`); `failed` or `no_access` rows (after backoff); and each account's own open PRs (`viewer`, first 50), to offer as links and to notice a closed PR reopened. Merged and closed PRs aren't read again, except by `refresh(PrsOf(task))`.
 - **When:** 3 s after start, then 5 minutes after each pass ends. On demand: `Refresh::Prs`/`All` at most once a minute, `PrsOf(task)` at most every 10 s per task, and 5 s after a PR link or a T3-listed PR appears. One `gh` process at a time; requests during a pass join the next one.
 
-The command, once per account with PRs to read, up to 50 PRs each (aliases `p0`…`p49`). Owner, repo and number come from `PrRef::parts()` and go in as variables, never into the query text. Child environment: `GH_TOKEN` and `GITHUB_TOKEN` removed, then `GH_TOKEN=<secret>` for a non-active account, plus `GH_PROMPT_DISABLED=1`, `GH_NO_UPDATE_NOTIFIER=1`, `GH_SPINNER_DISABLED=1`, `NO_COLOR=1`. Timeout 60 s. The token never appears in argv, logs, errors or tables.
+The command, once per account with PRs to read, up to 50 PRs each (aliases `p0`…`p49`). Owner, repo and number come from `PrRef::parts()` and go in as variables, never into the query text. Child environment: `GH_TOKEN` and `GITHUB_TOKEN` removed, then `GH_TOKEN=<secret>` for a non-active account, plus `GH_PROMPT_DISABLED=1`, `GH_NO_UPDATE_NOTIFIER=1`, `GH_SPINNER_DISABLED=1`, `NO_COLOR=1`. Timeout 60 s, then `gh` is killed; once it has exited or been killed, its output gets 1 s more, as in `launch`'s runner, so a process it left holding the pipes can't hold the worker. The token never appears in argv, logs, errors or tables.
 
 ```
 gh api graphql -f query=<document> -f o0=<owner> -f r0=<repo> -F n0=<number> …
@@ -219,7 +219,7 @@ When the check passes: first `set_pr_state(ref, <GitHub state>, sync:gh)` for ea
 
 **Reopened.** GitHub says open where `core` says closed: `set_pr_state(ref, Open, sync:gh)`, and `core` moves done tasks linked to it back to `in_review` (rule 7).
 
-**PRs found on threads.** Each T3 pass reads `$.pullRequests[*]` of each linked thread (open tasks only). An entry counts when its `host` is `github.com` and its `linkedAt` is at or after the earliest `linked_at` of that thread's `t3_thread` links. Its ref is `PrRef::new(repository, number)`. A ref not in `pr_seen` or `pr_waiting` goes into `pr_waiting`, and a GitHub read follows 5 s later. Once GitHub has read it: `link(task, NewLink::pr(ref).with_url(url).with_title(title).with_pr_state(<GitHub state>), sync:t3)` for each task whose thread link is no newer than the entry's `linkedAt`, then the ref moves to `pr_seen` (so a link I remove isn't re-added), then trigger 2. A ref GitHub can't read stays waiting with its error shown, retried with the account's backoff. T3's own `snapshot.state` is never used.
+**PRs found on threads.** Each T3 pass reads `$.pullRequests[*]` of each linked thread (open tasks only). An entry counts when its `host` is `github.com` and its `linkedAt` is at or after the earliest `linked_at` of that thread's `t3_thread` links. Its ref is `PrRef::new(repository, number)`. A ref not in `pr_seen` or `pr_waiting` goes into `pr_waiting`, and a GitHub read follows 5 s later. Once GitHub has read it: `link(task, NewLink::pr(ref).with_url(url).with_title(title).with_pr_state(<GitHub state>), sync:t3)` for each task whose thread link is no newer than the entry's `linkedAt`, then, only once every one of those links is in `core`, the ref moves to `pr_seen` (so a link I remove isn't re-added), then trigger 2. A link `core` refuses, such as on a busy file, leaves the ref waiting, so the next pass links it. A ref GitHub can't read stays waiting with its error shown, retried with the account's backoff. T3's own `snapshot.state` is never used.
 
 ### T3 threads
 
@@ -399,15 +399,15 @@ crates/sync/
 
 ## Success criteria
 
-- [ ] A PR merged on GitHub finishes its task within one pass when no agent on it is working, and after the agent stops otherwise; a task I reopen stays open.
-- [ ] A closed PR reopened on GitHub moves its done task back to `in_review`; T3 alone never does.
-- [ ] PRs in the second account's private repos are read; a rate limit on one account doesn't stop the other; no token is written anywhere.
-- [ ] A question in a linked T3 thread shows as `needs_me` with its text within 3 s of T3 writing it, seen through kqueue.
-- [ ] An unknown status, kind or missing key in T3's data gives "Live state broken since …" naming it, and the app keeps working.
-- [ ] Without `gh`, or signed out, PR sync is off with a plain reason and nothing else changes.
-- [ ] `thread_url` opens the thread in T3, and `SyncSnapshot.projects` lists T3's projects (each checked by hand once).
-- [ ] After the Mac sleeps past a deadline, `woke()` runs what's overdue at once.
-- [ ] Every performance target is met on this Mac, with the machine recorded.
+- [x] A PR merged on GitHub finishes its task within one pass when no agent on it is working, and after the agent stops otherwise; a task I reopen stays open (`a_pr_merging_finishes_its_task_within_one_pass`, `a_finish_is_held_while_a_thread_runs_and_released_when_it_stops`, `a_task_i_reopen_stays_open`).
+- [x] A closed PR reopened on GitHub moves its done task back to `in_review`; T3 alone never does (`closed_then_reopened_goes_back_to_in_review`, `t3_saying_merged_while_github_says_open_changes_nothing`).
+- [x] PRs in the second account's private repos are read; a rate limit on one account doesn't stop the other; no token is written anywhere (`the_second_account_is_used_only_after_not_found`, `one_account_rate_limited_while_the_other_keeps_reading`, `no_token_in_argv_tables_logs_or_debug`).
+- [ ] A question in a linked T3 thread shows as `needs_me` with its text within 3 s of T3 writing it, seen through kqueue (manual: the kqueue path is tested by `kqueue_reports_every_wal_write_from_another_process_and_rearms`, but the 3 s needs a real thread asking).
+- [x] An unknown status, kind or missing key in T3's data gives "Live state broken since …" naming it, and the app keeps working (`an_unknown_run_status_is_broken`, `an_unknown_request_kind_or_status_is_broken`, `a_missing_required_key_is_broken`, `a_missing_table_is_broken`).
+- [x] Without `gh`, or signed out, PR sync is off with a plain reason and nothing else changes (`without_gh_pr_sync_is_off_and_nothing_else_changes`, `every_account_failing_is_signed_out_and_stays_off`).
+- [ ] `thread_url` opens the thread in T3, and `SyncSnapshot.projects` lists T3's projects (manual: each checked by hand once).
+- [x] After the Mac sleeps past a deadline, `woke()` runs what's overdue at once (`after_a_six_hour_sleep_woke_runs_the_overdue_pass_at_once`, `after_a_six_hour_sleep_woke_reads_what_changed`). Setting the clock back never delays a pass past two intervals (`a_merge_is_seen_within_one_interval_after_the_clock_is_set_back_an_hour`).
+- [ ] Every performance target is met on this Mac, with the machine recorded (manual: the passes, idle CPU, wake-ups and memory are measured in `tasks/sync-todo.md`; the 3 s question and CPU while agents are busy need real T3 threads).
 
 ## Checked on this Mac
 

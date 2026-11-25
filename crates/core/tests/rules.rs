@@ -650,6 +650,146 @@ fn a_parent_in_the_tree_shows_only_its_own_repos() {
     assert_eq!(repos, vec![vec![web], vec![api]]);
 }
 
+// Rule 33: `me` edits and removes repos; removing one unlinks it from its tasks first.
+
+fn repo(s: &Store, id: RepoId) -> Option<airboss_core::Repo> {
+    s.repos().unwrap().into_iter().find(|r| r.id == id)
+}
+
+#[test]
+fn edit_repo_renames_moves_and_changes_the_remote() {
+    let mut s = store();
+    let [web, ..] = three_repos(&mut s);
+    let t = s
+        .add_task(NewTask::new("x").in_repo(web), &Actor::Me)
+        .unwrap();
+    let rx = s.subscribe();
+    let edited = s
+        .edit_repo(
+            web,
+            Some(" site "),
+            Some(Path::new("/new/site")),
+            Some(Some("git@x:site.git")),
+            &Actor::Me,
+        )
+        .unwrap();
+    assert_eq!(edited.name, "site", "trimmed");
+    assert_eq!(edited.path, "/new/site");
+    assert_eq!(edited.remote_url.as_deref(), Some("git@x:site.git"));
+    assert_eq!(repo(&s, web), Some(edited));
+    assert_eq!(s.task(t.id).unwrap().repos, vec![web], "tasks keep it");
+    assert_eq!(s.history(t.id).unwrap().len(), 1, "repos have no history");
+    assert!(rx.try_recv().is_err(), "no events, so no notification");
+
+    let cleared = s
+        .edit_repo(web, None, None, Some(None), &Actor::Me)
+        .unwrap();
+    assert_eq!(
+        (cleared.name.as_str(), cleared.remote_url),
+        ("site", None),
+        "left out: kept; Some(None): cleared"
+    );
+}
+
+#[test]
+fn edit_repo_refuses_a_taken_name_or_path_a_blank_one_or_a_missing_repo() {
+    let mut s = store();
+    let [web, api, _] = three_repos(&mut s);
+    let before = s.repos().unwrap();
+    let err = s
+        .edit_repo(web, Some("api"), None, None, &Actor::Me)
+        .unwrap_err();
+    assert!(matches!(err, Error::AlreadyExists), "{err:?}");
+    let err = s
+        .edit_repo(web, None, Some(Path::new("/w/api")), None, &Actor::Me)
+        .unwrap_err();
+    assert!(matches!(err, Error::AlreadyExists), "{err:?}");
+    for (name, path) in [(Some("  "), None), (None, Some(Path::new("")))] {
+        let err = s.edit_repo(web, name, path, None, &Actor::Me).unwrap_err();
+        assert!(matches!(err, Error::InvalidTarget), "{err:?}");
+    }
+    let err = s
+        .edit_repo(RepoId(99), Some("x"), None, None, &Actor::Me)
+        .unwrap_err();
+    assert!(matches!(err, Error::NotFound), "{err:?}");
+    // Its own name and path again is fine, and changes nothing.
+    s.edit_repo(
+        api,
+        Some("api"),
+        Some(Path::new("/w/api")),
+        None,
+        &Actor::Me,
+    )
+    .unwrap();
+    assert_eq!(s.repos().unwrap(), before);
+}
+
+#[test]
+fn remove_repo_unlinks_it_from_every_task_with_an_event_each_then_deletes_it() {
+    let mut s = store();
+    let [web, api, ios] = three_repos(&mut s);
+    let a = s
+        .add_task(NewTask::new("a").in_repo(web).in_repo(api), &Actor::Me)
+        .unwrap();
+    let b = s
+        .add_task(NewTask::new("b").in_repo(web), &Actor::Me)
+        .unwrap();
+    s.set_status(b.id, Status::Done, None, &Actor::Me).unwrap();
+    let other = s
+        .add_task(NewTask::new("c").in_repo(api), &Actor::Me)
+        .unwrap();
+    let rx = s.subscribe();
+
+    let unlinked = s.remove_repo(web, &Actor::Me).unwrap();
+    assert_eq!(unlinked, vec![a.id, b.id], "done tasks too, by id");
+    assert_eq!(repo(&s, web), None);
+    assert_eq!(s.task(a.id).unwrap().repos, vec![api]);
+    assert!(s.task(b.id).unwrap().repos.is_empty());
+    for t in [a.id, b.id] {
+        let last = s.history(t).unwrap().pop().unwrap();
+        assert_eq!(last.kind, EventKind::RepoUnlinked);
+        assert_eq!(last.body.as_deref(), Some("web"));
+        assert_eq!(last.actor, Actor::Me);
+    }
+    assert_eq!(s.history(other.id).unwrap().len(), 1, "untouched");
+    assert_eq!(
+        rx.try_recv().unwrap().len(),
+        2,
+        "one notification, both events"
+    );
+
+    // A repo no task uses goes with no event at all.
+    assert_eq!(s.remove_repo(ios, &Actor::Me).unwrap(), vec![]);
+    let err = s.remove_repo(ios, &Actor::Me).unwrap_err();
+    assert!(matches!(err, Error::NotFound), "{err:?}");
+    // Its name and path are free again.
+    s.add_repo("web", Path::new("/w/web"), None, &Actor::Me)
+        .unwrap();
+}
+
+#[test]
+fn only_me_edits_or_removes_repos() {
+    let mut s = store();
+    let [web, ..] = three_repos(&mut s);
+    let t = s
+        .add_task(NewTask::new("x").in_repo(web), &Actor::Me)
+        .unwrap();
+    for actor in [
+        agent(),
+        Actor::Plan,
+        Actor::SyncGh,
+        Actor::SyncT3,
+        Actor::Launch,
+    ] {
+        let err = s.edit_repo(web, Some("y"), None, None, &actor).unwrap_err();
+        assert!(matches!(err, Error::NotAllowed), "{actor}: {err:?}");
+        let err = s.remove_repo(web, &actor).unwrap_err();
+        assert!(matches!(err, Error::NotAllowed), "{actor}: {err:?}");
+    }
+    assert_eq!(repo(&s, web).unwrap().name, "web");
+    assert_eq!(s.task(t.id).unwrap().repos, vec![web]);
+}
+
 // Rule 25: one branch per task, set by `me` or `launch`, with an `edited` event naming it.
 
 fn last_event(s: &Store, id: TaskId) -> airboss_core::Event {

@@ -28,6 +28,7 @@ Examples:
   airboss ls
   airboss set 12 doing
   airboss accept 14
+  airboss backup ~/Backups/airboss.db
 
 Tasks live in ~/Library/Application Support/Airboss/airboss.db.
 Set AIRBOSS_DB to use another file.";
@@ -203,14 +204,24 @@ enum Command {
         #[command(flatten)]
         out: Out,
     },
-    /// Register and list repos, and link them to tasks.
+    /// Register, edit, remove and list repos, and link them to tasks.
     #[command(subcommand)]
     Repo(RepoCommand),
-    /// Show recent history, newest last.
+    /// Show recent history, newest last. Each line starts with its event id.
     Log {
-        /// Show every event after this event id instead of the last 50.
+        /// Show every event after this event id (the first column) instead of the last 50.
         #[arg(long, value_name = "EVENT")]
         after: Option<i64>,
+        #[command(flatten)]
+        out: Out,
+    },
+    /// Write a copy of the database to a file, safely, even while the app and agents use it.
+    Backup {
+        /// Where to write it, e.g. ~/Backups/airboss.db.
+        path: PathBuf,
+        /// Replace the file if there's one there already.
+        #[arg(long)]
+        force: bool,
         #[command(flatten)]
         out: Out,
     },
@@ -231,6 +242,32 @@ enum RepoCommand {
         /// Its remote URL.
         #[arg(long)]
         remote: Option<String>,
+        #[command(flatten)]
+        out: Out,
+    },
+    /// Rename a repo, point it at another folder, or change its remote.
+    Edit {
+        /// The repo's name now.
+        name: String,
+        /// Its new name.
+        #[arg(long = "name", value_name = "NEW")]
+        new_name: Option<String>,
+        /// Where it's checked out now.
+        #[arg(long)]
+        path: Option<PathBuf>,
+        /// Its new remote URL.
+        #[arg(long, conflicts_with = "no_remote")]
+        remote: Option<String>,
+        /// Clear its remote URL.
+        #[arg(long)]
+        no_remote: bool,
+        #[command(flatten)]
+        out: Out,
+    },
+    /// Remove a repo. It's unlinked from every task that has it first.
+    Rm {
+        /// The repo's name.
+        name: String,
         #[command(flatten)]
         out: Out,
     },
@@ -372,6 +409,7 @@ fn run(command: Command) -> Result<String, String> {
             cli::branch(store, id, name, out.json, style)
         }
         Command::Log { after, out } => cli::log(store, after, out.json, style),
+        Command::Backup { path, force, out } => cli::backup(store, &path, force, out.json),
         Command::Repo(repo) => match repo {
             RepoCommand::Add {
                 name,
@@ -379,6 +417,26 @@ fn run(command: Command) -> Result<String, String> {
                 remote,
                 out,
             } => cli::repo_add(store, &name, &path, remote.as_deref(), out.json),
+            RepoCommand::Edit {
+                name,
+                new_name,
+                path,
+                remote,
+                no_remote,
+                out,
+            } => {
+                let change = cli::RepoChange {
+                    name: new_name.as_deref(),
+                    path: path.as_deref(),
+                    remote: match (remote.as_deref(), no_remote) {
+                        (Some(url), _) => Some(Some(url)),
+                        (None, true) => Some(None),
+                        (None, false) => None,
+                    },
+                };
+                cli::repo_edit(store, &name, change, out.json)
+            }
+            RepoCommand::Rm { name, out } => cli::repo_rm(store, &name, out.json),
             RepoCommand::Link { task, name, out } => {
                 cli::repo_link(store, task, &name, true, out.json, style)
             }

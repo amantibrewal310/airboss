@@ -34,7 +34,7 @@ Every task has two buttons:
 
 Status comes from three sources:
 
-- **Agents** report through a local MCP server.
+- **Agents** report through `airboss mcp`, an MCP server each agent thread starts for itself over stdio.
 - **GitHub PRs** are checked with `gh`. A merged PR moves its task to done.
 - **T3 thread state** is read for linked threads by watching T3's database read-only. It feeds "needs me" (questions, failed runs) and history, but never changes a task's status (SPEC-core rule 6).
 
@@ -47,7 +47,7 @@ Why it's different: to-do apps and trackers don't know agent threads exist. T3 k
 - **Each Do it thread runs in its own worktree,** created by T3 with `--worktree`.
 - **Work across repos means one thread per repo.** Plan it splits work so each subtask sits in one repo. Do it on a parent opens one thread per repo, all on the same branch name (e.g. `task-142-booking-flow`). Each brief names its sibling thread and the API the two sides agree on.
 - **Slack:** Airboss stores only the link. The agent reads the thread through Composio's Slack connection, so Airboss needs no Slack token.
-- **Local only:** the server listens on 127.0.0.1, MCP calls need a local token, and there is no login.
+- **Local only:** there's no port, token or login. Each agent thread starts its own `airboss mcp` process and talks to it over stdin and stdout; the process works out which thread it serves from its environment (`T3CODE_THREAD_ID`, `CLAUDE_CODE_SESSION_ID` or `AIRBOSS_THREAD`) and writes straight to the same database file as the app.
 
 ## Key assumptions to test
 

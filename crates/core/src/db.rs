@@ -119,7 +119,13 @@ pub(crate) fn migrate(conn: &mut Connection, module: &str, migrations: &[Migrati
     // the file (every CLI command, every agent's `airboss mcp`) never waits for the write lock
     // another process holds, and fails only if it really has a migration to apply.
     let newest = migrations.iter().map(|m| m.version).max().unwrap_or(0);
-    if applied_version(conn, module)? >= newest {
+    let applied = applied_version(conn, module)?;
+    // A newer Airboss migrated this file. This binary doesn't know its rules, so it neither
+    // reads nor writes it; an older `airboss mcp` once wrote refs the newer one never matched.
+    if applied > newest {
+        return Err(Error::newer_database());
+    }
+    if applied == newest {
         return Ok(());
     }
     for m in migrations {
@@ -134,6 +140,20 @@ pub(crate) fn migrate(conn: &mut Connection, module: &str, migrations: &[Migrati
         };
         applied?;
         restored?;
+    }
+    // Another handle may have applied a newer one while this one waited for the lock.
+    if applied_version(conn, module)? > newest {
+        return Err(Error::newer_database());
+    }
+    Ok(())
+}
+
+/// `Error::newer_database` if a newer Airboss has migrated `core` past this binary, read
+/// inside the write transaction so nothing is written after that happens.
+pub(crate) fn refuse_newer_core(conn: &Connection) -> Result<()> {
+    let newest = CORE_MIGRATIONS.last().map_or(0, |m| m.version);
+    if applied_version(conn, "core")? > newest {
+        return Err(Error::newer_database());
     }
     Ok(())
 }
@@ -379,6 +399,46 @@ mod tests {
             |r| r.get(0),
         )
         .unwrap()
+    }
+
+    #[test]
+    fn a_database_a_newer_airboss_migrated_is_refused_and_left_alone() {
+        let (_dir, path) = temp_db();
+        {
+            let conn = open_file(&path).unwrap();
+            conn.execute(
+                "INSERT INTO schema_migrations (module, version) VALUES ('core', ?1)",
+                [CORE_VERSION + 1],
+            )
+            .unwrap();
+        }
+        let err = open_file(&path).unwrap_err();
+        assert!(err.is_newer_database(), "{err}");
+        assert_eq!(
+            err.to_string(),
+            "This database was created by a newer Airboss. Update the `airboss` command."
+        );
+        let conn = Connection::open(&path).unwrap();
+        assert_eq!(core_version(&conn), CORE_VERSION + 1, "nothing undone");
+    }
+
+    #[test]
+    fn a_module_newer_than_this_binary_knows_is_refused() {
+        let mut conn = open_memory().unwrap();
+        let both = [
+            Migration {
+                version: 1,
+                sql: "CREATE TABLE m_a (x INTEGER);",
+            },
+            Migration {
+                version: 2,
+                sql: "CREATE TABLE m_b (x INTEGER);",
+            },
+        ];
+        migrate(&mut conn, "sync", &both).unwrap();
+        migrate(&mut conn, "sync", &both).unwrap();
+        let err = migrate(&mut conn, "sync", &both[..1]).unwrap_err();
+        assert!(err.is_newer_database(), "{err}");
     }
 
     #[test]

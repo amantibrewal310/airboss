@@ -9,6 +9,7 @@ use std::sync::{Mutex, mpsc::channel};
 use std::time::{Duration, Instant};
 
 use airboss_core::{LinkKind, PrState, Status, Store};
+use airboss_services::Clock;
 use airboss_services::fakes::FakeClock;
 use airboss_services::{
     ErrorCode, PrRef, Refresh, Service, SharedStore, Source, SyncService, SyncSnapshot, ThreadKey,
@@ -159,6 +160,35 @@ fn a_merge_finishes_the_task_after_the_next_timer_pass() {
     rig.gh.set_state("acme/web#1", "MERGED");
     rig.advance(300);
     assert!(rig.wait_status(t, Status::Done));
+}
+
+#[test]
+fn a_merge_is_seen_within_one_interval_after_the_clock_is_set_back_an_hour() {
+    let core = Core::new();
+    let t = core.task("Work");
+    core.link_pr(t, "acme/web#1");
+    let rig = Rig::new(core, me().pr("acme/web#1", FakePr::open("me")));
+    rig.advance(3);
+    assert!(rig.wait(|s| !s.prs.is_empty() && s.prs.values().all(|p| p.state.is_some())));
+    rig.gh.set_state("acme/web#1", "MERGED");
+    rig.clock.set(rig.clock.now() - Duration::from_secs(3600));
+    rig.sync.woke();
+    // Time passes in 10 s steps. Before the fix the merge waited until the clock caught
+    // up again: over an hour.
+    let mut waited = 0;
+    while waited < 2 * 300 && rig.core.status(t) != Status::Done {
+        rig.advance(10);
+        waited += 10;
+        let deadline = Instant::now() + Duration::from_millis(30);
+        while Instant::now() < deadline && rig.core.status(t) != Status::Done {
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    }
+    assert!(
+        rig.wait_status(t, Status::Done),
+        "not seen after {waited} s"
+    );
+    assert!(waited <= 2 * 300, "{waited} s");
 }
 
 #[test]

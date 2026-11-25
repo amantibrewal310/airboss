@@ -85,7 +85,13 @@ pub struct Attention {
     sync: Arc<dyn SyncService>,
     stop: Arc<AtomicBool>,
     threads: Mutex<Vec<JoinHandle<()>>>,
+    /// Why the hidden-items table didn't open, shown as a connection row.
+    problem: Option<String>,
 }
+
+/// The reason on the "Needs me · Didn't start" row.
+const DIDNT_START: &str =
+    "Its table in the database couldn't be opened, so dismissed items come back and Dismiss fails.";
 
 impl std::fmt::Debug for Attention {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -121,11 +127,13 @@ pub fn start(
         ));
         empty_snapshot()
     });
-    let hidden = match &path {
+    let (hidden, problem) = match match &path {
         Some(path) => HiddenStore::open(path),
         None => HiddenStore::in_memory(),
-    }
-    .unwrap_or_else(|_| HiddenStore::unavailable());
+    } {
+        Ok(hidden) => (hidden, None),
+        Err(_) => (HiddenStore::unavailable(), Some(DIDNT_START.to_string())),
+    };
 
     // Read before the worker takes its first sync snapshot, so no change falls between.
     let seen = sync.changes().current();
@@ -165,6 +173,7 @@ pub fn start(
         sync,
         stop,
         threads: Mutex::new(vec![worker_thread, waiter]),
+        problem,
     }))
 }
 
@@ -209,9 +218,17 @@ impl Attention {
 }
 
 impl Service for Attention {
-    /// Attention depends on nothing outside the app.
+    /// Attention depends on nothing outside the app; it has a row only when its own table
+    /// didn't open.
     fn connections(&self) -> Vec<Connection> {
-        Vec::new()
+        let row = |why: &String| Connection {
+            name: "Needs me".into(),
+            ok: false,
+            state: "Didn't start".into(),
+            detail: why.clone(),
+            fix: Some("Quit and reopen Airboss. If it happens again, see app.log.".into()),
+        };
+        self.problem.iter().map(row).collect()
     }
 
     fn recheck(&self) {

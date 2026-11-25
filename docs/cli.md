@@ -40,6 +40,24 @@ Added repo booking-api at /Users/you/Workspace/booking-api
 
 Lists the registered repos: name, path and remote.
 
+### `airboss repo edit <NAME> [--name <NEW>] [--path <PATH>] [--remote <URL> | --no-remote]`
+
+Renames a repo, points it at the folder it moved to, or changes or clears its remote. Its tasks keep it, so they follow the change. A relative path is taken from the current directory.
+
+```console
+$ airboss repo edit booking-web --path ~/Code/booking-web
+Edited repo booking-web at /Users/you/Code/booking-web
+```
+
+### `airboss repo rm <NAME>`
+
+Removes a repo. It's unlinked from every task that has it first, done ones too, and each of those tasks gets a `repo unlinked` entry in its history. The tasks themselves stay.
+
+```console
+$ airboss repo rm booking-api
+Removed repo booking-api, and unlinked it from #1, #3
+```
+
 ### `airboss repo link <TASK> <NAME>` and `airboss repo unlink <TASK> <NAME>`
 
 Links a task to a repo, or unlinks it. A task can have several.
@@ -227,21 +245,37 @@ Linked slack https://acme.slack.com/archives/C01/p123 to ◑ #2 Web: slot picker
 
 ### `airboss log [--after <EVENT>]`
 
-Shows recent history across every task, newest last: the last 50 events, or every event after an event id.
+Shows recent history across every task, newest last: the last 50 events, or every event after an event id. Each line starts with its event id, the number `--after` takes; `--json` has it as `id`.
 
 ```console
 $ airboss log
-  2026-11-25 21:25  #1  me  created
-  2026-11-25 21:25  #2  me  created
-  2026-11-25 21:25  #3  me  created
-  2026-11-25 21:25  #2  me  waits on       #3
-  2026-11-25 21:25  #3  me  → in progress
-  2026-11-25 21:25  #3  me  → blocked      Waiting on the schema
-  2026-11-25 21:25  #3  me  → in progress
-  2026-11-25 21:25  #3  me  linked         pr acme/booking-api#42
+1  2026-11-25 21:25  #1  me  created
+2  2026-11-25 21:25  #2  me  created
+3  2026-11-25 21:25  #3  me  created
+4  2026-11-25 21:25  #2  me  waits on       #3
+5  2026-11-25 21:25  #3  me  → in progress
+6  2026-11-25 21:25  #3  me  → blocked      Waiting on the schema
+7  2026-11-25 21:25  #3  me  → in progress
+8  2026-11-25 21:25  #3  me  linked         pr acme/booking-api#42
+$ airboss log --after 6
+7  2026-11-25 21:25  #3  me  → in progress
+8  2026-11-25 21:25  #3  me  linked         pr acme/booking-api#42
 ```
 
 The actor column says who made each change: `me`, `agent:<thread>`, `sync:gh`, `sync:t3`, `plan` or `launch`.
+
+## Backup
+
+### `airboss backup <PATH> [--force]`
+
+Writes a copy of the whole database to `PATH`: tasks, history, links, and what sync, Do it and Needs me keep. It uses SQLite's online backup, so the copy is one consistent moment even while the app and agents are writing, and nobody has to stop. A file already at `PATH` is kept unless you give `--force`, and the database itself is never overwritten.
+
+```console
+$ airboss backup ~/Backups/airboss-2026-11-26.db
+Backed up the database to /Users/you/Backups/airboss-2026-11-26.db
+```
+
+To restore, quit Airboss, then copy the backup over `~/Library/Application Support/Airboss/airboss.db` and delete the `airboss.db-wal` and `airboss.db-shm` beside it. To look inside a backup without touching your tasks, point the CLI at it: `AIRBOSS_DB=~/Backups/airboss-2026-11-26.db airboss ls`.
 
 ## For agents
 

@@ -37,7 +37,7 @@ A module counts as done only after these are measured on a real Mac.
 | What | Target |
 |---|---|
 | App download size | under 15 MB |
-| Memory when idle (app plus its web views) | under 130 MB (revised 26 Nov 2026 from 80 MB; see tasks/program.md) |
+| Memory when idle (app plus its web views) | under 130 MB, and under 140 MB with 2,000 tasks (revised 26 Nov 2026 from 80 MB; see tasks/program.md, R4) |
 | CPU when idle | near 0%, no busy polling |
 | Cold start to usable window | under 1 s |
 | Hotkey to quick-add box on screen | under 100 ms |

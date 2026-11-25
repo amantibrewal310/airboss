@@ -85,7 +85,7 @@ These numbers come from the final bundle, in `live.py`. A CLI write reaches the 
 | Step | What happened |
 |---|---|
 | Add a parent and two children, then make B wait on A | Each write gives one patch with the right `created` ids; B shows as `todo:waiting`. |
-| Link A to the real merged PR `amantibrewal310/airboss#1` | Sync looked it up with the second `gh` account and finished A itself, as `sync:gh`, after 9.1 s. B then became ready, as the Needs me item `ready:3:…`, and the menu bar redrew with the title "1". |
+| Link A to the real merged PR `<account-1>/airboss#1` | Sync looked it up with the second `gh` account and finished A itself, as `sync:gh`, after 9.1 s. B then became ready, as the Needs me item `ready:3:…`, and the menu bar redrew with the title "1". |
 | An agent proposes 2 tasks over MCP | Both arrive as `proposed` after 41 ms. The Needs me `proposed` item shows after 241 ms, and the menu bar shows "2". |
 | Reject one, accept the other | The rejected task is in `removed`, and the accepted one moves to `todo`. The proposal item clears after 190 ms. |
 | `done` | Arrives after 43 ms. |
@@ -127,9 +127,9 @@ The test is `tests/e2e/real_launch.sh`, which runs `real_launch.rs`. It drives t
    read that as `NotAProject` ("airboss-qa-throwaway isn't a T3 project yet."), wrote no thread and
    left the task as it was.
 2. **Add to T3.** `t3 project add --title airboss-qa-throwaway <repo>` printed
-   `Added project 896bc806-4d95-4023-a9cc-3bf71360836e (airboss-qa-throwaway) at <repo>.`
+   `Added project <project-id> (airboss-qa-throwaway) at <repo>.`
 3. **Do it again.** This time stdout was
-   `{"threadId":"mcp:1adc2ab4-eef0-48fd-93da-645536524e48","projectId":"896bc806-4d95-4023-a9cc-3bf71360836e","runId":"run:thread:mcp%3A1adc2ab4-eef0-48fd-93da-645536524e48:ordinal:1"}`.
+   `{"threadId":"mcp:<thread-id>","projectId":"<project-id>","runId":"run:thread:mcp%3A<thread-id>:ordinal:1"}`.
    That's the shape `t3cli.rs` expects. The thread id contains `:`, which `parse_start` allows, and
    the deep link percent-encodes it.
 4. **The checks after the launch:**
@@ -139,20 +139,20 @@ The test is `tests/e2e/real_launch.sh`, which runs `real_launch.rs`. It drives t
    - Sync saw the thread as `Running` 254 ms later, with its branch already recorded.
      `find_thread(repo, branch)` resolved it at once.
    - The app's row chip was `Working`.
-   - `thread_url` is `t3code://threads/<env>/mcp%3A1adc…`.
-5. **An agent with the real id.** An MCP session with `T3CODE_THREAD_ID=mcp:1adc…` found the task
+   - `thread_url` is `t3code://threads/<env>/mcp%3A<thread-id>`.
+5. **An agent with the real id.** An MCP session with `T3CODE_THREAD_ID=mcp:<thread-id>` found the task
    with `mine: true`, and `link` with no ref returned launch's own link. Thread ids in a T3
    thread's environment have the same `mcp:` shape (this QA thread's own id is
-   `mcp:launch:…`), so the agent's identity matches launch's link.
+   `mcp:launch:<thread-id>`), so the agent's identity matches launch's link.
 6. **The thread itself** ran Claude (`claude-opus-5-5`) in
-   `~/.t3/worktrees/airboss-qa-throwaway/task-1-qa-throwaway-add-a698af56a0c75e41`. It committed
+   `~/.t3/worktrees/airboss-qa-throwaway/<worktree-id>`. It committed
    one line (7dced9f) and finished on its own after about 2.5 minutes, as `completed`. The `t3` CLI
    can't stop a thread: its only subcommands are `list`, `start`, `send` and `show`. The agent said
    the Airboss tools weren't available, which is right for this Mac (see R5).
 
-**To clean up in T3:** archive the thread `mcp:1adc2ab4-eef0-48fd-93da-645536524e48`, "1 QA
+**To clean up in T3:** archive the thread `mcp:<thread-id>`, "1 QA
 throwaway: add one line to the README". Then remove the project `airboss-qa-throwaway`
-(896bc806-4d95-4023-a9cc-3bf71360836e) with `t3 project remove`, and remove its worktree.
+(<project-id>) with `t3 project remove`, and remove its worktree.
 
 ### 5. Failure paths
 

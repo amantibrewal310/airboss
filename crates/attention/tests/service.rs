@@ -286,3 +286,33 @@ fn the_first_deadline_after_start_is_kept_without_woke() {
     assert_eq!(att.needs_me().items[0].task, ids[0]);
     att.shutdown();
 }
+
+#[test]
+fn a_hidden_table_that_does_not_open_shows_a_didnt_start_row() {
+    let dir = std::env::temp_dir().join(format!("airboss-attention-row-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("airboss.db");
+    let (store, _) = store_with(1, Some(&path));
+    // A table already there under attention's name: its migration can't run.
+    rusqlite::Connection::open(&path)
+        .unwrap()
+        .execute_batch("CREATE TABLE attention_hidden (x INTEGER);")
+        .unwrap();
+    let att = begin(store, &Arc::new(FakeSync::new()), Arc::new(SystemClock));
+    let rows = att.connections();
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(
+        (rows[0].name.as_str(), rows[0].ok, rows[0].state.as_str()),
+        ("Needs me", false, "Didn't start")
+    );
+    assert!(rows[0].detail.contains("Dismiss"), "{}", rows[0].detail);
+    att.shutdown();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_working_attention_has_no_connection_row() {
+    let (store, _) = store_with(1, None);
+    let att = begin(store, &Arc::new(FakeSync::new()), Arc::new(SystemClock));
+    assert!(att.connections().is_empty());
+}
