@@ -162,5 +162,37 @@ fn opening_twice_applies_once() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(applied, 1);
+    assert_eq!(applied, MIGRATIONS.len() as i64);
+}
+
+#[test]
+fn version_2_adds_the_repo_path_and_keeps_every_launch_repos_row() {
+    let dir = TempDir::new();
+    let path = dir.path().join("airboss.db");
+    let mut store = Store::open(&path).unwrap();
+    store.migrate_module("launch", &MIGRATIONS[..1]).unwrap();
+    let c = Connection::open(&path).unwrap();
+    c.execute(
+        "INSERT INTO launch_repos (repo_id, base_ref, t3_project_id) VALUES (4, 'develop', 'p4')",
+        [],
+    )
+    .unwrap();
+    store.migrate_module("launch", MIGRATIONS).unwrap();
+    let row: (i64, Option<String>, Option<String>, Option<String>) = c
+        .query_row(
+            "SELECT repo_id, base_ref, t3_project_id, repo_path FROM launch_repos",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )
+        .unwrap();
+    // Kept, with no path: launch won't trust it until it records the repo again.
+    assert_eq!(row, (4, Some("develop".into()), Some("p4".into()), None));
+    assert!(
+        c.execute(
+            "INSERT INTO launch_repos (repo_id, repo_path) VALUES (5, '')",
+            []
+        )
+        .is_err(),
+        "an empty path is refused"
+    );
 }
