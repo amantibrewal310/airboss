@@ -1,0 +1,89 @@
+import { describe, expect, it } from 'vitest';
+import { applyPatch, type RowsState } from '../../src/lib/logic/patch';
+import { clockTime, feedTime, relative, relativeLong } from '../../src/lib/logic/time';
+import { footerText, mergeConnections } from '../../src/lib/logic/connections';
+import type { Connection, RowDto } from '../../src/lib/types';
+
+const row = (id: number, extra: Partial<RowDto> = {}): RowDto => ({
+  id, parent: null, depth: 0, position: id, title: `T${id}`, status: 'todo', origin: 'me', blocked_reason: null,
+  waiting: false, waits_on: [], has_children: false, progress: null, repos: [], repos_from_subtasks: false,
+  branch: null, ready: false, ready_since: null, ready_pill: false, quiet_days: null, needs: false,
+  needs_stale: false, live: null, last_at: '2026-11-25T10:00:00.000Z', last_actor: 'me', ...extra,
+});
+
+describe('applyPatch', () => {
+  const base = (): RowsState => ({ rows: new Map([[1, row(1)], [2, row(2)], [3, row(3)]]), order: [1, 2, 3], repos: [], seq: 5 });
+
+  it('ignores a patch whose seq was already applied', () => {
+    expect(applyPatch(base(), { seq: 5, upserts: [row(1, { title: 'x' })], removed: [], order: null, repos: null, created: [] })).toBeNull();
+    expect(applyPatch(base(), { seq: 4, upserts: [], removed: [], order: null, repos: null, created: [] })).toBeNull();
+  });
+
+  it('replaces only changed rows, keeping the others’ identity', () => {
+    const s = base();
+    const next = applyPatch(s, { seq: 6, upserts: [row(2, { title: 'changed' })], removed: [], order: null, repos: null, created: [] })!;
+    expect(next.rows.get(2)!.title).toBe('changed');
+    expect(next.rows.get(1)).toBe(s.rows.get(1));
+    expect(next.rows).not.toBe(s.rows);
+    expect(next.order).toBe(s.order);
+    expect(next.seq).toBe(6);
+  });
+
+  it('takes order and repos only when sent, and drops removed rows', () => {
+    const s = base();
+    const next = applyPatch(s, { seq: 6, upserts: [], removed: [2], order: null, repos: null, created: [] })!;
+    expect(next.order).toEqual([1, 3]);
+    expect(next.rows.has(2)).toBe(false);
+    const reordered = applyPatch(next, { seq: 7, upserts: [], removed: [], order: [3, 1], repos: [{ id: 1, name: 'a', path: '/a', remote_url: null }], created: [] })!;
+    expect(reordered.order).toEqual([3, 1]);
+    expect(reordered.repos).toHaveLength(1);
+  });
+});
+
+describe('time', () => {
+  const now = Date.parse('2026-11-25T10:44:00.000Z');
+  const ago = (ms: number) => new Date(now - ms).toISOString();
+  it('writes row times short', () => {
+    expect(relative(ago(20_000), now)).toBe('now');
+    expect(relative(ago(6 * 60_000), now)).toBe('6m');
+    expect(relative(ago(3 * 3_600_000), now)).toBe('3h');
+    expect(relative(ago(2 * 86_400_000), now)).toBe('2d');
+    expect(relative(ago(15 * 86_400_000), now)).toBe('2w');
+    expect(relative(ago(90 * 86_400_000), now)).toBe('27 Aug');
+    expect(relativeLong(ago(6 * 60_000), now)).toBe('6 minutes ago');
+  });
+  it('writes feed times as relative today, the weekday this week, else the date', () => {
+    expect(feedTime(ago(6 * 60_000), now)).toBe('6m');
+    expect(feedTime('2026-11-23T09:00:00.000Z', now)).toBe('Mon');
+    expect(feedTime('2026-11-02T09:00:00.000Z', now)).toBe('2 Nov');
+  });
+  it('writes clock times for the native menu', () => {
+    const today = new Date(now - 12 * 60_000);
+    expect(clockTime(today.toISOString(), now)).toBe(today.toTimeString().slice(0, 5));
+    const mon = new Date('2026-11-23T10:32:00.000Z');
+    expect(clockTime(mon.toISOString(), now)).toBe(`Mon ${mon.toTimeString().slice(0, 5)}`);
+    expect(clockTime('2026-11-10T10:32:00.000Z', now)).toBe('10 Nov');
+  });
+});
+
+describe('connections', () => {
+  const c = (name: string, ok: boolean, state: string): Connection => ({ name, ok, state, detail: `${name} detail`, fix: ok ? null : 'fix it' });
+  it('merges rows with the same name, the worst state winning', () => {
+    const merged = mergeConnections([c('T3 Code', true, 'Connected'), c('GitHub', true, 'Signed in'), c('T3 Code', false, 'Live state broken since 14:02')], 'unknown');
+    expect(merged.map((m) => [m.name, m.ok, m.state])).toEqual([
+      ['T3 Code', false, 'Live state broken since 14:02'],
+      ['GitHub', true, 'Signed in'],
+    ]);
+  });
+  it('turns T3 Code off when launch says it is missing, and hides a healthy Claude Code row', () => {
+    const merged = mergeConnections([c('T3 Code', true, 'Connected'), c('Claude Code', true, 'Reading sessions')], { missing: { reason: 'x' } });
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({ name: 'T3 Code', ok: false, state: 'Not found' });
+  });
+  it('names the first problem, or counts them', () => {
+    expect(footerText([c('GitHub', true, 'Signed in')], null)).toEqual({ ok: true, text: 'All connected' });
+    expect(footerText([c('T3 Code', false, 'Not found')], null)).toEqual({ ok: false, text: 'T3 Code not found' });
+    expect(footerText([c('T3 Code', false, 'Not found'), c('GitHub', false, 'Not signed in')], null).text).toBe('2 connections need setup');
+    expect(footerText([], 'Database moved').text).toBe('Database moved');
+  });
+});

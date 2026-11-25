@@ -45,12 +45,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "airboss-attention"
+version = "0.1.0"
+dependencies = [
+ "airboss-core",
+ "airboss-services",
+ "rusqlite",
+]
+
+[[package]]
 name = "airboss-core"
 version = "0.1.0"
 dependencies = [
  "rusqlite",
  "serde",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "airboss-launch"
+version = "0.1.0"
+dependencies = [
+ "airboss-core",
+ "airboss-launch",
+ "airboss-services",
+ "rusqlite",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -74,6 +95,20 @@ dependencies = [
  "airboss-services",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "airboss-sync"
+version = "0.1.0"
+dependencies = [
+ "airboss-core",
+ "airboss-services",
+ "airboss-sync",
+ "notify",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

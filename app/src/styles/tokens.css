@@ -1,0 +1,229 @@
+/*
+  Airboss design tokens, from docs/design/airboss.css, DESIGN.md and the Paper file "Airboss".
+  Dark is the base. Light replaces the values when the system is light and nothing overrides
+  it, or when <html data-theme="light"> is set (the app always sets data-theme once it has
+  resolved Settings › Appearance). Components take every colour, size and duration from here.
+*/
+
+:root {
+  color-scheme: dark;
+
+  /* type */
+  --font: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --fs-display: 26px;
+  --fs-progress: 22px;
+  --fs-headline: 21px;
+  --fs-quick: 18px;
+  --fs-title: 17px;
+  --fs-field: 15px;
+  --fs-card: 14.5px;
+  --fs-notes: 13.5px;
+  --fs-body: 13px;
+  --fs-control: 12.5px;
+  --fs-meta: 12px;
+  --fs-label: 11.5px;
+  --fs-kbd: 11px;
+  --fs-initial: 10px;
+  --fs-initial-sm: 9px;
+  --track-display: -0.018em;
+  --track-title: -0.01em;
+  --track-figure: -0.03em;
+  --track-body: -0.006em;
+
+  /* surfaces */
+  --desk: #050506;
+  --bg: #0f1012;
+  --bg-side: #0a0b0c;
+  --bg-raised: #16171a;
+  --bg-input: #1b1c20;
+  --bg-hover: rgba(255, 255, 255, 0.045);
+  --bg-sel: rgba(255, 255, 255, 0.075);
+  --line: rgba(255, 255, 255, 0.07);
+  --line-2: rgba(255, 255, 255, 0.11);
+  --wave-empty: rgba(255, 255, 255, 0.09);
+  --scrim: rgba(0, 0, 0, 0.35);
+
+  /* text */
+  --text: #ededf0;
+  --text-2: #9a9ca5;
+  --text-3: #6b6e78;
+  --on-fill: #ffffff;
+  --on-fill-kbd: rgba(255, 255, 255, 0.16);
+
+  /* the one accent */
+  --accent: #7b7ff5;
+  --accent-fill: #5e63e6;
+  --accent-soft: rgba(123, 127, 245, 0.14);
+
+  /* needs me: red means "needs me" and nothing else */
+  --needs: #f2555a;
+  --needs-soft: rgba(242, 85, 90, 0.12);
+  --needs-edge: rgba(242, 85, 90, 0.22);
+
+  /* status */
+  --st-todo: #8a8d96;
+  --st-doing: #e6b450;
+  --st-review: #4cc38a;
+  --st-done: #7b7ff5;
+  --st-blocked: #f08c3a;
+  --warn-soft: rgba(240, 140, 58, 0.08);
+  --warn-edge: rgba(240, 140, 58, 0.18);
+
+  /* repos: each keeps its colour everywhere */
+  --repo-1: #5b9cff;
+  --repo-2: #e66aa6;
+  --repo-3: #3fc79a;
+  --repo-4: #f0a04a;
+
+  /* actors: the same in both themes */
+  --actor-agent: #4b4fc4;
+  --actor-me: #2c7a5a;
+  --actor-sync: #555a66;
+  --actor-plan: #8a5a2c;
+  --actor-launch: #3f6aa8;
+
+  /* focus and selection follow the system accent when Rust sends one */
+  --focus: var(--sys-accent, var(--accent));
+  --focus-soft: var(--sys-accent-soft, var(--accent-soft));
+  --selection: var(--sys-accent-soft, var(--accent-soft));
+  --kb-outline: 1px;
+
+  /* depth: shadows only for things that float */
+  --shadow-float: 0 16px 48px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --shadow-menu: 0 16px 48px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.11);
+
+  /* shape */
+  --r-xs: 4px;
+  --r-sm: 5px;
+  --r-md: 6px;
+  --r-item: 7px;
+  --r-lg: 8px;
+  --r-menu: 9px;
+  --r-pop: 10px;
+  --r-xl: 12px;
+
+  /* layout */
+  --sidebar-w: 232px;
+  --header-h: 44px;
+  --panel-w: 480px;
+  --row-h: 38px;
+  --group-h: 34px;
+  --indent: 22px;
+
+  /* motion: short and ease-out */
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --dur-hover: 120ms;
+  --dur-menu: 110ms;
+  --dur-modal: 140ms;
+  --dur-panel: 180ms;
+  --dur-exit: 180ms;
+  --dur-toast: 200ms;
+  --dur-pop: 300ms;
+  --dur-progress: 400ms;
+  --dur-fresh: 600ms;
+  --dur-pulse: 1.6s;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --desk: #e4e5e9;
+    --bg: #ffffff;
+    --bg-side: #f7f7f8;
+    --bg-raised: #ffffff;
+    --bg-input: #f3f3f5;
+    --bg-hover: rgba(0, 0, 0, 0.04);
+    --bg-sel: rgba(0, 0, 0, 0.06);
+    --line: rgba(0, 0, 0, 0.07);
+    --line-2: rgba(0, 0, 0, 0.11);
+    --wave-empty: rgba(0, 0, 0, 0.08);
+    --scrim: rgba(0, 0, 0, 0.12);
+    --text: #1b1c1f;
+    --text-2: #62656e;
+    --text-3: #8e919a;
+    --accent: #5e63e6;
+    --accent-fill: #5e63e6;
+    --accent-soft: rgba(94, 99, 230, 0.1);
+    --needs: #e03e44;
+    --needs-soft: rgba(224, 62, 68, 0.09);
+    --needs-edge: rgba(224, 62, 68, 0.2);
+    --st-todo: #9a9da5;
+    --st-doing: #d39a1d;
+    --st-review: #2a9f68;
+    --st-done: #5e63e6;
+    --st-blocked: #e0751f;
+    --warn-soft: rgba(224, 117, 31, 0.08);
+    --warn-edge: rgba(224, 117, 31, 0.2);
+    --repo-1: #2f73e0;
+    --repo-2: #cc4386;
+    --repo-3: #1f9e74;
+    --repo-4: #d07a12;
+    --shadow-float: 0 16px 48px rgba(0, 0, 0, 0.16), 0 0 0 1px rgba(0, 0, 0, 0.08);
+    --shadow-menu: 0 16px 48px rgba(0, 0, 0, 0.16), 0 0 0 1px rgba(0, 0, 0, 0.1);
+  }
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --desk: #e4e5e9;
+  --bg: #ffffff;
+  --bg-side: #f7f7f8;
+  --bg-raised: #ffffff;
+  --bg-input: #f3f3f5;
+  --bg-hover: rgba(0, 0, 0, 0.04);
+  --bg-sel: rgba(0, 0, 0, 0.06);
+  --line: rgba(0, 0, 0, 0.07);
+  --line-2: rgba(0, 0, 0, 0.11);
+  --wave-empty: rgba(0, 0, 0, 0.08);
+  --scrim: rgba(0, 0, 0, 0.12);
+  --text: #1b1c1f;
+  --text-2: #62656e;
+  --text-3: #8e919a;
+  --accent: #5e63e6;
+  --accent-fill: #5e63e6;
+  --accent-soft: rgba(94, 99, 230, 0.1);
+  --needs: #e03e44;
+  --needs-soft: rgba(224, 62, 68, 0.09);
+  --needs-edge: rgba(224, 62, 68, 0.2);
+  --st-todo: #9a9da5;
+  --st-doing: #d39a1d;
+  --st-review: #2a9f68;
+  --st-done: #5e63e6;
+  --st-blocked: #e0751f;
+  --warn-soft: rgba(224, 117, 31, 0.08);
+  --warn-edge: rgba(224, 117, 31, 0.2);
+  --repo-1: #2f73e0;
+  --repo-2: #cc4386;
+  --repo-3: #1f9e74;
+  --repo-4: #d07a12;
+  --shadow-float: 0 16px 48px rgba(0, 0, 0, 0.16), 0 0 0 1px rgba(0, 0, 0, 0.08);
+  --shadow-menu: 0 16px 48px rgba(0, 0, 0, 0.16), 0 0 0 1px rgba(0, 0, 0, 0.1);
+}
+
+/* Increase Contrast: hairlines to 20% and 30%, text-3 takes text-2, washes double, 2px outline. */
+@media (prefers-contrast: more) {
+  :root {
+    --line: rgba(255, 255, 255, 0.2);
+    --line-2: rgba(255, 255, 255, 0.3);
+    --text-3: #9a9ca5;
+    --bg-hover: rgba(255, 255, 255, 0.09);
+    --bg-sel: rgba(255, 255, 255, 0.15);
+    --accent-soft: rgba(123, 127, 245, 0.28);
+    --needs-soft: rgba(242, 85, 90, 0.24);
+    --needs-edge: rgba(242, 85, 90, 0.44);
+    --warn-soft: rgba(240, 140, 58, 0.16);
+    --kb-outline: 2px;
+  }
+  :root[data-theme="light"] {
+    --line: rgba(0, 0, 0, 0.2);
+    --line-2: rgba(0, 0, 0, 0.3);
+    --text-3: #62656e;
+    --bg-hover: rgba(0, 0, 0, 0.08);
+    --bg-sel: rgba(0, 0, 0, 0.12);
+    --accent-soft: rgba(94, 99, 230, 0.2);
+    --needs-soft: rgba(224, 62, 68, 0.18);
+    --needs-edge: rgba(224, 62, 68, 0.4);
+    --warn-soft: rgba(224, 117, 31, 0.16);
+  }
+}

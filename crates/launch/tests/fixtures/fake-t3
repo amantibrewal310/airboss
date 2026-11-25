@@ -1,0 +1,15 @@
+#!/bin/sh
+# Test fixture for launch's process runner. This is NOT T3 and starts nothing: it only echoes
+# its arguments or stdin, prints its environment or directory, sleeps, or exits as told.
+cmd="$1"
+shift
+case "$cmd" in
+  args) for a in "$@"; do printf '[%s]\n' "$a"; done ;;
+  stdin) cat ;;
+  env) env ;;
+  pwd) pwd ;;
+  exit) printf '%s\n' "$2" >&2; exit "$1" ;;
+  sleep) sleep "$1"; touch "$2" ;;
+  json) printf '{"threadId":"thread-1","projectId":"project-1","runId":null}\n' ;;
+  *) printf 'fake-t3: unknown command %s\n' "$cmd" >&2; exit 2 ;;
+esac

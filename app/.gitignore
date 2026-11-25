@@ -1,0 +1,7 @@
+node_modules/
+dist/
+dist-mock/
+tests/e2e/.results/
+playwright-report/
+.vitest-attachments/
+__screenshots__/

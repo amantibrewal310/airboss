@@ -27,7 +27,10 @@ Then, for the whole product:
 | 1 | `core` v2: what the design needs (see SPEC-core "v2") | Done (262 tests) |
 | 1 | Specs: `app`, `sync`, `launch`, `attention` | Draft 2, approved by the EM after fresh reviews |
 | 1→2 | `mcp` | Done (merged; 107 tests; start-up 2.3 ms, 5.4 MB binary) |
-| 2 | Build `app`, `sync`, `launch`, `attention` in parallel | |
+| 1→2 | `core` v3 + `crates/services` contract | Done (439 tests) |
+| 2 | Build `sync`, `launch`, `attention` | Done (merged; 843 workspace tests) |
+| 2 | Build `app` UI | Done (merged; 147 unit/component + 30 Playwright tests) |
+| 2 | Build `app` backend + wire real services | In progress |
 | 3 | Integration: one app process hosts sync, launch and attention; the CLI and `airboss mcp` share the database | |
 | 3 | QA: real-user flows, performance targets, light and dark, keyboard-only | |
 | 4 | Polish and bug-fix iterations; README and install instructions | |
