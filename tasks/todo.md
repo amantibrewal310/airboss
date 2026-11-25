@@ -84,7 +84,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
   - **Files:** `src/links.rs`, `src/permissions.rs`, `tests/links.rs`, `tests/rules.rs`
   - **Depends on:** T3
 
-- [ ] **T6. Status changes** (M)
+- [x] **T6. Status changes** (M)
   - **Description:** `set_status` with the rule 6 table as a pure function over `TaskFacts` (status, has a PR, all PRs merged or closed, any PR merged). Linking a PR to a `done` task as anyone but `me` moves it back to `in_review` (rule 7).
   - **Acceptance:**
     - Every row of the rule 6 table passes, and every case it rejects fails with the right error (`NotAllowed`, `InvalidTransition`, `NoteRequired`).
