@@ -1,0 +1,19 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "quickadd",
+  "description": "The quick-add panel: its data, creating a task, starting it, and its own size and visibility.",
+  "windows": [
+    "quickadd"
+  ],
+  "permissions": [
+    "core:event:default",
+    "allow-quickadd-data",
+    "allow-create-task",
+    "allow-do-it",
+    "allow-get-settings",
+    "allow-set-focus-context",
+    "allow-quickadd-shown",
+    "allow-quickadd-hide",
+    "allow-quickadd-resize"
+  ]
+}

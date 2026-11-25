@@ -1,0 +1,3345 @@
+{
+  "reads": {
+    "bootstrap": {
+      "accent": null,
+      "availability": {
+        "ready": {
+          "version": "0.0.24"
+        }
+      },
+      "cli": {
+        "installed": false,
+        "on_path": false,
+        "path": "/Users/me/.local/bin/airboss"
+      },
+      "connections": [
+        {
+          "detail": "Shows which agents are working or waiting on you.",
+          "fix": null,
+          "name": "T3 Code",
+          "ok": true,
+          "state": "Live state"
+        },
+        {
+          "detail": "Pull requests sync every 5 minutes. A merged PR finishes its task.",
+          "fix": null,
+          "name": "GitHub",
+          "ok": true,
+          "state": "Signed in"
+        },
+        {
+          "detail": "Agents report progress and ask questions through the airboss command.",
+          "fix": "Install the command-line tool, then copy the agent note.",
+          "name": "Agents",
+          "ok": false,
+          "state": "Not set up"
+        }
+      ],
+      "needs": {
+        "checked_at": "2026-11-25T10:44:00.000Z",
+        "count": 8,
+        "items": [
+          {
+            "context": "Agent in slot-picker asks",
+            "group": "questions",
+            "headline": "Use the existing date picker or build one? It needs full keyboard support.",
+            "key": "question:slot-picker",
+            "kind": "question",
+            "proposed": [],
+            "since": "2026-11-25T10:38:00.000Z",
+            "stale": false,
+            "target": {
+              "thread": {
+                "ref": "slot-picker",
+                "source": "t3"
+              }
+            },
+            "task": 144,
+            "task_title": "Web: slot picker"
+          },
+          {
+            "context": "Agent in tray-count wants approval",
+            "group": "questions",
+            "headline": "Allow running cargo add tray-icon?",
+            "key": "approval:tray-count",
+            "kind": "approval",
+            "proposed": [],
+            "since": "2026-11-25T10:32:00.000Z",
+            "stale": false,
+            "target": {
+              "thread": {
+                "ref": "tray-count",
+                "source": "t3"
+              }
+            },
+            "task": 133,
+            "task_title": "Menu-bar count"
+          },
+          {
+            "context": "+412 −38 · checks passed",
+            "group": "reviews",
+            "headline": "PR #31 · list_tasks and get_task",
+            "key": "review:acme/airboss#31",
+            "kind": "review",
+            "proposed": [],
+            "since": "2026-11-25T10:04:00.000Z",
+            "stale": false,
+            "target": {
+              "pr": {
+                "ref": "acme/airboss#31",
+                "url": "https://github.com/acme/airboss/pull/31"
+              }
+            },
+            "task": 128,
+            "task_title": "MCP server"
+          },
+          {
+            "context": "Thread stopped · 3 tests failed",
+            "group": "failed_runs",
+            "headline": "fix-flaky-login stopped: 3 tests failed",
+            "key": "failed:fix-flaky-login",
+            "kind": "failed_run",
+            "proposed": [],
+            "since": "2026-11-25T09:44:00.000Z",
+            "stale": false,
+            "target": {
+              "thread": {
+                "ref": "fix-flaky-login",
+                "source": "t3"
+              }
+            },
+            "task": 131,
+            "task_title": "Fix flaky login test"
+          },
+          {
+            "context": "3 proposed subtasks",
+            "group": "proposed",
+            "headline": "The agent proposed 3 subtasks",
+            "key": "proposed:150",
+            "kind": "proposed",
+            "proposed": [
+              [
+                209,
+                "List stale worktrees older than 14 days"
+              ],
+              [
+                210,
+                "Find worktrees whose branch has merged"
+              ],
+              [
+                211,
+                "Write a dry-run cleanup command"
+              ]
+            ],
+            "since": "2026-11-25T07:44:00.000Z",
+            "stale": false,
+            "target": {
+              "task": 150
+            },
+            "task": 150,
+            "task_title": "Worktree cleanup research"
+          },
+          {
+            "context": "143 merged · ready to start",
+            "group": "ready",
+            "headline": "Ready to start: 143 is done (PR #58 merged)",
+            "key": "ready:146",
+            "kind": "ready",
+            "proposed": [],
+            "since": "2026-11-25T09:44:00.000Z",
+            "stale": false,
+            "target": {
+              "task": 146
+            },
+            "task": 146,
+            "task_title": "Confirmation email"
+          },
+          {
+            "context": "All 4 subtasks done",
+            "group": "finish_it",
+            "headline": "All 4 subtasks are done. Mark the parent done?",
+            "key": "finish:110",
+            "kind": "finish_it",
+            "proposed": [],
+            "since": "2026-11-25T09:44:00.000Z",
+            "stale": false,
+            "target": {
+              "task": 110
+            },
+            "task": 110,
+            "task_title": "Dark mode tokens"
+          },
+          {
+            "context": "Quiet for 6 days",
+            "group": "quiet",
+            "headline": "No activity for 6 days. 10 open PRs, the oldest from 4 Nov.",
+            "key": "quiet:120",
+            "kind": "quiet",
+            "proposed": [],
+            "since": "2026-11-19T10:44:00.000Z",
+            "stale": false,
+            "target": {
+              "task": 120
+            },
+            "task": 120,
+            "task_title": "Payments refactor stack"
+          }
+        ],
+        "version": 1
+      },
+      "order": [
+        142,
+        143,
+        144,
+        145,
+        146,
+        147,
+        200,
+        201,
+        202,
+        203,
+        204,
+        205,
+        206,
+        207,
+        208,
+        128,
+        133,
+        131,
+        120,
+        150,
+        209,
+        210,
+        211,
+        110,
+        111,
+        112,
+        113,
+        114,
+        151,
+        152,
+        98
+      ],
+      "repos": [
+        {
+          "id": 3,
+          "name": "airboss",
+          "path": "/Users/me/code/airboss",
+          "remote_url": "git@github.com:acme/airboss.git"
+        },
+        {
+          "id": 2,
+          "name": "booking-api",
+          "path": "/Users/me/code/booking-api",
+          "remote_url": "git@github.com:acme/booking-api.git"
+        },
+        {
+          "id": 1,
+          "name": "booking-web",
+          "path": "/Users/me/code/booking-web",
+          "remote_url": "git@github.com:acme/booking-web.git"
+        },
+        {
+          "id": 4,
+          "name": "dotfiles",
+          "path": "/Users/me/code/dotfiles",
+          "remote_url": "git@github.com:acme/dotfiles.git"
+        }
+      ],
+      "rows": [
+        {
+          "blocked_reason": null,
+          "branch": "task-142-booking-flow",
+          "depth": 0,
+          "has_children": true,
+          "id": 142,
+          "last_actor": "me",
+          "last_at": "2026-11-25T10:38:00.000Z",
+          "live": null,
+          "needs": false,
+          "needs_stale": false,
+          "origin": "me",
+          "parent": null,
+          "position": 1,
+          "progress": {
+            "blocked": 0,
+            "doing": 1,
+            "done": 1,
+            "in_review": 0,
+            "total": 5
+          },
+          "quiet_days": null,
+          "ready": false,
+          "ready_pill": false,
+          "ready_since": null,
+          "repos": [
+            2,
+            1
+          ],
+          "repos_from_subtasks": true,
+          "status": "doing",
+          "title": "Booking flow",
+          "waiting": false,
+          "waits_on": []
+        },
+        {
+          "blocked_reason": null,
+          "branch": "task-142-booking-flow",
+          "depth": 1,
+          "has_children": false,
+          "id": 143,
+          "last_actor": "me",
+          "last_at": "2026-11-25T09:44:00.000Z",
+          "live": null,
+          "needs": false,
+          "needs_stale": false,
+          "origin": "me",
+          "parent": 142,
+          "position": 1,
+          "progress": null,
+          "quiet_days": null,
+          "ready": false,
+          "ready_pill": false,
+          "ready_since": null,
+          "repos": [
+            2
+          ],
+          "repos_from_subtasks": false,
+          "status": "done",
+          "title": "API: slots endpoint",
+          "waiting": false,
+          "waits_on": []
+        },
+        {
+          "blocked_reason": null,
+          "branch": "task-142-booking-flow",
+          "depth": 1,
+          "has_children": false,
+          "id": 144,
+          "last_actor": "agent:t3/slot-picker",
+          "last_at": "2026-11-25T10:38:00.000Z",
+          "live": "working",
+          "needs": true,
+          "needs_stale": false,
+          "origin": "me",
+          "parent": 142,
+          "position": 2,
+          "progress": null,
+          "quiet_days": null,
+          "ready": false,
+          "ready_pill": false,
+          "ready_since": null,
+          "repos": [
+            1
+          ],
+          "repos_from_subtasks": false,
+          "status": "doing",
+          "title": "Web: slot picker",
+          "waiting": false,
+          "waits_on": []
+        },
+        {
+          "blocked_reason": null,
+          "branch": "task-142-booking-flow",
+          "depth": 1,
+          "has_children": false,
+          "id": 145,
+          "last_actor": "me",
+          "last_at": "2026-11-23T10:44:00.000Z",
+          "live": null,
+          "needs": false,
+          "needs_stale": false,
+          "origin": "me",
+          "parent": 142,
+          "position": 3,
+          "progress": null,
+          "quiet_days": null,
+          "ready": false,
+          "ready_pill": false,
+          "ready_since": null,
+          "repos": [
+            1
+          ],
+          "repos_from_subtasks": false,
+          "status": "todo",
+          "title": "Web: confirm screen",
+          "waiting": true,
+          "waits_on": [
+            144
+          ]
+        },
+        {
+          "blocked_reason": null,
+          "branch": "task-142-booking-flow",
+          "depth": 1,
+          "has_children": false,
+          "id": 146,
+          "last_actor": "me",
+          "last_at": "2026-11-25T09:44:00.000Z",
+          "live": null,
+          "needs": true,
+          "needs_stale": false,
+          "origin": "me",
+          "parent": 142,
+          "position": 4,
+          "progress": null,
+          "quiet_days": null,
+          "ready": true,
+          "ready_pill": true,
+          "ready_since": "2026-11-25T09:44:00.000Z",
+          "repos": [
+            2
+          ],
+          "repos_from_subtasks": false,
+          "status": "todo",
+          "title": "Confirmation email",
+          "waiting": false,
+          "waits_on": []
+        },
+        {
+          "blocked_reason": null,
+          "branch": "task-142-booking-flow",
+          "depth": 1,
+          "has_children": false,
+          "id": 147,
+          "last_actor": "me",
+          "last_at": "2026-11-23T10:44:00.000Z",
+          "live": null,
+          "needs": false,
+          "needs_stale": false,
+          "origin": "me",
+          "parent": 142,
+          "position": 5,
+          "progress": null,
+          "quiet_days": null,
+          "ready": false,
+          "ready_pill": false,
+          "ready_since": null,
+          "repos": [
+            2,
+            1
+          ],
+          "repos_from_subtasks": false,
+          "status": "todo",
+          "title": "End-to-end tests",
+          "waiting": true,
+          "waits_on": [
+            144,
+            145,
+            146
+          ]
+        },
+        {
+          "blocked_reason": null,
+          "branch": "task-200-refunds",
+          "depth": 0,
+          "has_children": true,
+          "id": 200,
+          "last_actor": "me",
+          "last_at": "2026-11-25T10:24:00.000Z",
+          "live": null,
+          "needs": false,
+          "needs_stale": false,
+          "origin": "me",
+          "parent": null,
+          "position": 2,
+          "progress": {
+            "blocked": 1,
+            "doing": 1,
+            "done": 1,
+            "in_review": 1,
+            "total": 8
+          },
+          "quiet_days": null,
+          "ready": false,
+          "ready_pill": false,
+          "ready_since": null,
+          "repos": [
+            2,
+            1
+          ],
+          "repos_from_subtasks": true,
+          "status": "doing",
+          "title": "Refunds",
+          "waiting": false,
+          "waits_on": []
+        },
+        {
+          "blocked_reason": null,
+          "branch": "task-200-refunds",
+          "depth": 1,
+          "has_children": false,
+          "id": 201,
+          "last_actor": "me",
+          "last_at": "2026-11-24T10:44:00.000Z",
+          "live": null,
+          "needs": false,
+          "needs_stale": false,
+          "origin": "me",
+          "parent": 200,
+          "position": 1,
+          "progress": null,
+          "quiet_days": null,
+          "ready": false,
+          "ready_pill": false,
+          "ready_since": null,
+          "repos": [
+            2
+          ],
+          "repos_from_subtasks": false,
+          "status": "done",
+          "title": "Schema: refunds table",
+          "waiting": false,
+          "waits_on": []
+        },
+        {
+          "blocked_reason": null,
+          "branch": "task-200-refunds",
+          "depth": 1,
+          "has_children": false,
+          "id": 202,
+          "last_actor": "agent:t3/refund-service",
+          "last_at": "2026-11-25T10:24:00.000Z",
+          "live": "working",
+          "needs": false,
+          "needs_stale": false,
+          "origin": "me",
+          "parent": 200,
+          "position": 2,
+          "progress": null,
+          "quiet_days": null,
+          "ready": false,
+          "ready_pill": false,
+          "ready_since": null,
+          "repos": [
+            2
+          ],
+          "repos_from_subtasks": false,
+          "status": "doing",
+          "title": "Refund service",
+          "waiting": false,
+          "waits_on": []
+        },
+        {
+          "blocked_reason": "Needs test keys from the payments dashboard",
+          "branch": "task-200-refunds",
+          "depth": 1,
+          "has_children": false,
+          "id": 203,
+          "last_actor": "me",
+          "last_at": "2026-11-25T05:44:00.000Z",
+          "live": null,
+          "needs": false,
+          "needs_stale": false,
+          "origin": "me",
+          "parent": 200,
+          "position": 3,
+          "progress": null,
+          "quiet_days": null,
+          "ready": false,
+          "ready_pill": false,
+          "ready_since": null,
+          "repos": [
+            2
+          ],
+          "repos_from_subtasks": false,
+          "status": "blocked",
+          "title": "Payment webhook",
+          "waiting": false,
+          "waits_on": []
+        },
+        {
+          "blocked_reason": null,
+          "branch": "task-200-refunds",
+          "depth": 1,
+          "has_children": false,
+          "id": 204,
+          "last_actor": "me",
+          "last_at": "2026-11-25T08:44:00.000Z",
+          "live": null,
+          "needs": false,
+          "needs_stale": false,
+          "origin": "me",
+          "parent": 200,
+          "position": 4,
+          "progress": null,
+          "quiet_days": null,
+          "ready": false,
+          "ready_pill": false,
+          "ready_since": null,
+          "repos": [
+            1
+          ],
+          "repos_from_subtasks": false,
+          "status": "in_review",
+          "title": "Refund button",
+          "waiting": false,
+          "waits_on": []
+        },
+        {
+          "blocked_reason": null,
+          "branch": "task-200-refunds",
+          "depth": 1,
+          "has_children": false,
+          "id": 205,
+          "last_actor": "me",
+          "last_at": "2026-11-24T10:44:00.000Z",
+          "live": null,
+          "needs": false,
+          "needs_stale": false,
+          "origin": "me",
+          "parent": 200,
+          "position": 5,
+          "progress": null,
+          "quiet_days": null,
+          "ready": false,
+          "ready_pill": false,
+          "ready_since": null,
+          "repos": [
+            1
+          ],
+          "repos_from_subtasks": false,
+          "status": "todo",
+          "title": "Refund status page",
+          "waiting": true,
+          "waits_on": [
+            202,
+            204
+          ]
+        },
+        {
+          "blocked_reason": null,
+          "branch": "task-200-refunds",
+          "depth": 1,
+          "has_children": false,
+          "id": 206,
+          "last_actor": "me",
+          "last_at": "2026-11-24T10:44:00.000Z",
+          "live": null,
+          "needs": false,
+          "needs_stale": false,
+          "origin": "me",
+          "parent": 200,
+          "position": 6,
+          "progress": null,
+          "quiet_days": null,
+          "ready": true,
+          "ready_pill": false,
+          "ready_since": "2026-11-24T10:44:00.000Z",
+          "repos": [],
+          "repos_from_subtasks": false,
+          "status": "todo",
+          "title": "Write refund policy copy",
+          "waiting": false,
+          "waits_on": []
+        },
+        {
+          "blocked_reason": null,
+          "branch": "task-200-refunds",
+          "depth": 1,
+          "has_children": false,
+          "id": 207,
+          "last_actor": "me",
+          "last_at": "2026-11-24T10:44:00.000Z",
+          "live": null,
+          "needs": false,
+          "needs_stale": false,
+          "origin": "me",
+          "parent": 200,
+          "position": 7,
+          "progress": null,
+          "quiet_days": null,
+          "ready": false,
+          "ready_pill": false,
+          "ready_since": null,
+          "repos": [],
+          "repos_from_subtasks": false,
+          "status": "todo",
+          "title": "Announce to support",
+          "waiting": true,
+          "waits_on": [
+            205
+          ]
+        },
+        {
+          "blocked_reason": null,
+          "branch": "task-200-refunds",
+          "depth": 1,
+          "has_children": false,
+          "id": 208,
+          "last_actor": "me",
+          "last_at": "2026-11-24T10:44:00.000Z",
+          "live": null,
+          "needs": false,
+          "needs_stale": false,
+          "origin": "me",
+          "parent": 200,
+          "position": 8,
+          "progress": null,
+          "quiet_days": null,
+          "ready": false,
+          "ready_pill": false,
+          "ready_since": null,
+          "repos": [
+            2
+          ],
+          "repos_from_subtasks": false,
+          "status": "todo",
+          "title": "Backfill old refunds",
+          "waiting": true,
+          "waits_on": [
+            128
+          ]
+        },
+        {
+          "blocked_reason": null,
+          "branch": null,
+          "depth": 0,
+          "has_children": false,
+          "id": 128,
+          "last_actor": "me",
+          "last_at": "2026-11-25T10:04:00.000Z",
+          "live": "stopped",
+          "needs": true,
+          "needs_stale": false,
+          "origin": "me",
+          "parent": null,
+          "position": 3,
+          "progress": null,
+          "quiet_days": null,
+          "ready": false,
+          "ready_pill": false,
+          "ready_since": null,
+          "repos": [
+            3
+          ],
+          "repos_from_subtasks": false,
+          "status": "in_review",
+          "title": "MCP server",
+          "waiting": false,
+          "waits_on": []
+        },
+        {
+          "blocked_reason": null,
+          "branch": null,
+          "depth": 0,
+          "has_children": false,
+          "id": 133,
+          "last_actor": "agent:t3/tray-count",
+          "last_at": "2026-11-25T10:32:00.000Z",
+          "live": "waiting_on_you",
+          "needs": true,
+          "needs_stale": false,
+          "origin": "me",
+          "parent": null,
+          "position": 4,
+          "progress": null,
+          "quiet_days": null,
+          "ready": false,
+          "ready_pill": false,
+          "ready_since": null,
+          "repos": [
+            3
+          ],
+          "repos_from_subtasks": false,
+          "status": "doing",
+          "title": "Menu-bar count",
+          "waiting": false,
+          "waits_on": []
+        },
+        {
+          "blocked_reason": null,
+          "branch": null,
+          "depth": 0,
+          "has_children": false,
+          "id": 131,
+          "last_actor": "agent:t3/fix-flaky-login",
+          "last_at": "2026-11-25T09:44:00.000Z",
+          "live": "stopped",
+          "needs": true,
+          "needs_stale": false,
+          "origin": "me",
+          "parent": null,
+          "position": 5,
+          "progress": null,
+          "quiet_days": null,
+          "ready": false,
+          "ready_pill": false,
+          "ready_since": null,
+          "repos": [
+            1
+          ],
+          "repos_from_subtasks": false,
+          "status": "doing",
+          "title": "Fix flaky login test",
+          "waiting": false,
+          "waits_on": []
+        },
+        {
+          "blocked_reason": null,
+          "branch": null,
+          "depth": 0,
+          "has_children": false,
+          "id": 120,
+          "last_actor": "me",
+          "last_at": "2026-11-19T10:44:00.000Z",
+          "live": null,
+          "needs": true,
+          "needs_stale": false,
+          "origin": "me",
+          "parent": null,
+          "position": 6,
+          "progress": null,
+          "quiet_days": 6,
+          "ready": false,
+          "ready_pill": false,
+          "ready_since": null,
+          "repos": [
+            2,
+            1
+          ],
+          "repos_from_subtasks": false,
+          "status": "in_review",
+          "title": "Payments refactor stack",
+          "waiting": false,
+          "waits_on": []
+        },
+        {
+          "blocked_reason": null,
+          "branch": null,
+          "depth": 0,
+          "has_children": true,
+          "id": 150,
+          "last_actor": "me",
+          "last_at": "2026-11-25T07:44:00.000Z",
+          "live": null,
+          "needs": true,
+          "needs_stale": false,
+          "origin": "me",
+          "parent": null,
+          "position": 7,
+          "progress": {
+            "blocked": 0,
+            "doing": 0,
+            "done": 0,
+            "in_review": 0,
+            "total": 3
+          },
+          "quiet_days": null,
+          "ready": false,
+          "ready_pill": false,
+          "ready_since": null,
+          "repos": [
+            3
+          ],
+          "repos_from_subtasks": false,
+          "status": "todo",
+          "title": "Worktree cleanup research",
+          "waiting": false,
+          "waits_on": []
+        },
+        {
+          "blocked_reason": null,
+          "branch": null,
+          "depth": 1,
+          "has_children": false,
+          "id": 209,
+          "last_actor": "agent:t3/worktree-research",
+          "last_at": "2026-11-25T07:44:00.000Z",
+          "live": null,
+          "needs": false,
+          "needs_stale": false,
+          "origin": "agent",
+          "parent": 150,
+          "position": 1,
+          "progress": null,
+          "quiet_days": null,
+          "ready": false,
+          "ready_pill": false,
+          "ready_since": null,
+          "repos": [],
+          "repos_from_subtasks": false,
+          "status": "proposed",
+          "title": "List stale worktrees older than 14 days",
+          "waiting": false,
+          "waits_on": []
+        },
+        {
+          "blocked_reason": null,
+          "branch": null,
+          "depth": 1,
+          "has_children": false,
+          "id": 210,
+          "last_actor": "agent:t3/worktree-research",
+          "last_at": "2026-11-25T07:44:00.000Z",
+          "live": null,
+          "needs": false,
+          "needs_stale": false,
+          "origin": "agent",
+          "parent": 150,
+          "position": 2,
+          "progress": null,
+          "quiet_days": null,
+          "ready": false,
+          "ready_pill": false,
+          "ready_since": null,
+          "repos": [],
+          "repos_from_subtasks": false,
+          "status": "proposed",
+          "title": "Find worktrees whose branch has merged",
+          "waiting": false,
+          "waits_on": []
+        },
+        {
+          "blocked_reason": null,
+          "branch": null,
+          "depth": 1,
+          "has_children": false,
+          "id": 211,
+          "last_actor": "agent:t3/worktree-research",
+          "last_at": "2026-11-25T07:44:00.000Z",
+          "live": null,
+          "needs": false,
+          "needs_stale": false,
+          "origin": "agent",
+          "parent": 150,
+          "position": 3,
+          "progress": null,
+          "quiet_days": null,
+          "ready": false,
+          "ready_pill": false,
+          "ready_since": null,
+          "repos": [],
+          "repos_from_subtasks": false,
+          "status": "proposed",
+          "title": "Write a dry-run cleanup command",
+          "waiting": false,
+          "waits_on": []
+        },
+        {
+          "blocked_reason": null,
+          "branch": null,
+          "depth": 0,
+          "has_children": true,
+          "id": 110,
+          "last_actor": "me",
+          "last_at": "2026-11-25T09:44:00.000Z",
+          "live": null,
+          "needs": true,
+          "needs_stale": false,
+          "origin": "me",
+          "parent": null,
+          "position": 8,
+          "progress": {
+            "blocked": 0,
+            "doing": 0,
+            "done": 4,
+            "in_review": 0,
+            "total": 4
+          },
+          "quiet_days": null,
+          "ready": false,
+          "ready_pill": false,
+          "ready_since": null,
+          "repos": [
+            1
+          ],
+          "repos_from_subtasks": false,
+          "status": "doing",
+          "title": "Dark mode tokens",
+          "waiting": false,
+          "waits_on": []
+        },
+        {
+          "blocked_reason": null,
+          "branch": null,
+          "depth": 1,
+          "has_children": false,
+          "id": 111,
+          "last_actor": "me",
+          "last_at": "2026-11-22T10:44:00.000Z",
+          "live": null,
+          "needs": false,
+          "needs_stale": false,
+          "origin": "me",
+          "parent": 110,
+          "position": 1,
+          "progress": null,
+          "quiet_days": null,
+          "ready": false,
+          "ready_pill": false,
+          "ready_since": null,
+          "repos": [
+            1
+          ],
+          "repos_from_subtasks": false,
+          "status": "done",
+          "title": "Colour tokens",
+          "waiting": false,
+          "waits_on": []
+        },
+        {
+          "blocked_reason": null,
+          "branch": null,
+          "depth": 1,
+          "has_children": false,
+          "id": 112,
+          "last_actor": "me",
+          "last_at": "2026-11-22T10:44:00.000Z",
+          "live": null,
+          "needs": false,
+          "needs_stale": false,
+          "origin": "me",
+          "parent": 110,
+          "position": 2,
+          "progress": null,
+          "quiet_days": null,
+          "ready": false,
+          "ready_pill": false,
+          "ready_since": null,
+          "repos": [
+            1
+          ],
+          "repos_from_subtasks": false,
+          "status": "done",
+          "title": "Swap hard-coded colours",
+          "waiting": false,
+          "waits_on": []
+        },
+        {
+          "blocked_reason": null,
+          "branch": null,
+          "depth": 1,
+          "has_children": false,
+          "id": 113,
+          "last_actor": "me",
+          "last_at": "2026-11-22T10:44:00.000Z",
+          "live": null,
+          "needs": false,
+          "needs_stale": false,
+          "origin": "me",
+          "parent": 110,
+          "position": 3,
+          "progress": null,
+          "quiet_days": null,
+          "ready": false,
+          "ready_pill": false,
+          "ready_since": null,
+          "repos": [
+            1
+          ],
+          "repos_from_subtasks": false,
+          "status": "done",
+          "title": "Dark screenshots",
+          "waiting": false,
+          "waits_on": []
+        },
+        {
+          "blocked_reason": null,
+          "branch": null,
+          "depth": 1,
+          "has_children": false,
+          "id": 114,
+          "last_actor": "me",
+          "last_at": "2026-11-22T10:44:00.000Z",
+          "live": null,
+          "needs": false,
+          "needs_stale": false,
+          "origin": "me",
+          "parent": 110,
+          "position": 4,
+          "progress": null,
+          "quiet_days": null,
+          "ready": false,
+          "ready_pill": false,
+          "ready_since": null,
+          "repos": [
+            1
+          ],
+          "repos_from_subtasks": false,
+          "status": "done",
+          "title": "Contrast check",
+          "waiting": false,
+          "waits_on": []
+        },
+        {
+          "blocked_reason": null,
+          "branch": null,
+          "depth": 0,
+          "has_children": false,
+          "id": 151,
+          "last_actor": "me",
+          "last_at": "2026-11-23T10:44:00.000Z",
+          "live": null,
+          "needs": false,
+          "needs_stale": false,
+          "origin": "me",
+          "parent": null,
+          "position": 9,
+          "progress": null,
+          "quiet_days": null,
+          "ready": true,
+          "ready_pill": false,
+          "ready_since": "2026-11-23T10:44:00.000Z",
+          "repos": [
+            3,
+            4
+          ],
+          "repos_from_subtasks": false,
+          "status": "todo",
+          "title": "Rotate local MCP token",
+          "waiting": false,
+          "waits_on": []
+        },
+        {
+          "blocked_reason": null,
+          "branch": null,
+          "depth": 0,
+          "has_children": false,
+          "id": 152,
+          "last_actor": "me",
+          "last_at": "2026-11-21T10:44:00.000Z",
+          "live": null,
+          "needs": false,
+          "needs_stale": false,
+          "origin": "me",
+          "parent": null,
+          "position": 10,
+          "progress": null,
+          "quiet_days": null,
+          "ready": true,
+          "ready_pill": false,
+          "ready_since": "2026-11-21T10:44:00.000Z",
+          "repos": [],
+          "repos_from_subtasks": false,
+          "status": "todo",
+          "title": "Read sortie prior art",
+          "waiting": false,
+          "waits_on": []
+        },
+        {
+          "blocked_reason": null,
+          "branch": null,
+          "depth": 0,
+          "has_children": false,
+          "id": 98,
+          "last_actor": "me",
+          "last_at": "2026-11-11T10:44:00.000Z",
+          "live": null,
+          "needs": false,
+          "needs_stale": false,
+          "origin": "me",
+          "parent": null,
+          "position": 11,
+          "progress": null,
+          "quiet_days": null,
+          "ready": false,
+          "ready_pill": false,
+          "ready_since": null,
+          "repos": [
+            4
+          ],
+          "repos_from_subtasks": false,
+          "status": "done",
+          "title": "New laptop setup",
+          "waiting": false,
+          "waits_on": []
+        }
+      ],
+      "seq": 2,
+      "settings": {
+        "appearance": "system",
+        "folded": [],
+        "hotkey": "Control+Alt+N",
+        "open_at_login": true,
+        "quickadd_release_after_min": null
+      }
+    },
+    "get_settings": {
+      "appearance": "system",
+      "folded": [],
+      "hotkey": "Control+Alt+N",
+      "open_at_login": true,
+      "quickadd_release_after_min": null
+    },
+    "plans": [
+      {
+        "blocked": 0,
+        "current_wave": 0,
+        "finish_it": false,
+        "id": 142,
+        "last_at": "2026-11-25T10:38:00.000Z",
+        "next_up": [
+          {
+            "id": 146,
+            "title": "Confirmation email"
+          }
+        ],
+        "progress": {
+          "blocked": 0,
+          "doing": 1,
+          "done": 1,
+          "in_review": 0,
+          "total": 5
+        },
+        "repos": [
+          2,
+          1
+        ],
+        "status": "doing",
+        "title": "Booking flow",
+        "waiting": false,
+        "waves": 3,
+        "working": 1
+      },
+      {
+        "blocked": 1,
+        "current_wave": 0,
+        "finish_it": false,
+        "id": 200,
+        "last_at": "2026-11-25T10:24:00.000Z",
+        "next_up": [
+          {
+            "id": 206,
+            "title": "Write refund policy copy"
+          }
+        ],
+        "progress": {
+          "blocked": 1,
+          "doing": 1,
+          "done": 1,
+          "in_review": 1,
+          "total": 8
+        },
+        "repos": [
+          2,
+          1
+        ],
+        "status": "doing",
+        "title": "Refunds",
+        "waiting": false,
+        "waves": 4,
+        "working": 1
+      },
+      {
+        "blocked": 0,
+        "current_wave": null,
+        "finish_it": false,
+        "id": 150,
+        "last_at": "2026-11-25T07:44:00.000Z",
+        "next_up": [],
+        "progress": {
+          "blocked": 0,
+          "doing": 0,
+          "done": 0,
+          "in_review": 0,
+          "total": 3
+        },
+        "repos": [
+          3
+        ],
+        "status": "todo",
+        "title": "Worktree cleanup research",
+        "waiting": false,
+        "waves": 0,
+        "working": 0
+      },
+      {
+        "blocked": 0,
+        "current_wave": null,
+        "finish_it": true,
+        "id": 110,
+        "last_at": "2026-11-25T09:44:00.000Z",
+        "next_up": [],
+        "progress": {
+          "blocked": 0,
+          "doing": 0,
+          "done": 4,
+          "in_review": 0,
+          "total": 4
+        },
+        "repos": [
+          1
+        ],
+        "status": "doing",
+        "title": "Dark mode tokens",
+        "waiting": false,
+        "waves": 1,
+        "working": 0
+      }
+    ],
+    "quickadd_data": {
+      "parents": [
+        {
+          "depth": 0,
+          "id": 142,
+          "status": "doing",
+          "title": "Booking flow",
+          "waiting": false
+        },
+        {
+          "depth": 1,
+          "id": 144,
+          "status": "doing",
+          "title": "Web: slot picker",
+          "waiting": false
+        },
+        {
+          "depth": 1,
+          "id": 145,
+          "status": "todo",
+          "title": "Web: confirm screen",
+          "waiting": true
+        },
+        {
+          "depth": 1,
+          "id": 146,
+          "status": "todo",
+          "title": "Confirmation email",
+          "waiting": false
+        },
+        {
+          "depth": 1,
+          "id": 147,
+          "status": "todo",
+          "title": "End-to-end tests",
+          "waiting": true
+        },
+        {
+          "depth": 0,
+          "id": 200,
+          "status": "doing",
+          "title": "Refunds",
+          "waiting": false
+        },
+        {
+          "depth": 1,
+          "id": 202,
+          "status": "doing",
+          "title": "Refund service",
+          "waiting": false
+        },
+        {
+          "depth": 1,
+          "id": 203,
+          "status": "blocked",
+          "title": "Payment webhook",
+          "waiting": false
+        },
+        {
+          "depth": 1,
+          "id": 204,
+          "status": "in_review",
+          "title": "Refund button",
+          "waiting": false
+        },
+        {
+          "depth": 1,
+          "id": 205,
+          "status": "todo",
+          "title": "Refund status page",
+          "waiting": true
+        },
+        {
+          "depth": 1,
+          "id": 206,
+          "status": "todo",
+          "title": "Write refund policy copy",
+          "waiting": false
+        },
+        {
+          "depth": 1,
+          "id": 207,
+          "status": "todo",
+          "title": "Announce to support",
+          "waiting": true
+        },
+        {
+          "depth": 1,
+          "id": 208,
+          "status": "todo",
+          "title": "Backfill old refunds",
+          "waiting": true
+        },
+        {
+          "depth": 0,
+          "id": 128,
+          "status": "in_review",
+          "title": "MCP server",
+          "waiting": false
+        },
+        {
+          "depth": 0,
+          "id": 133,
+          "status": "doing",
+          "title": "Menu-bar count",
+          "waiting": false
+        },
+        {
+          "depth": 0,
+          "id": 131,
+          "status": "doing",
+          "title": "Fix flaky login test",
+          "waiting": false
+        },
+        {
+          "depth": 0,
+          "id": 120,
+          "status": "in_review",
+          "title": "Payments refactor stack",
+          "waiting": false
+        },
+        {
+          "depth": 0,
+          "id": 150,
+          "status": "todo",
+          "title": "Worktree cleanup research",
+          "waiting": false
+        },
+        {
+          "depth": 0,
+          "id": 110,
+          "status": "doing",
+          "title": "Dark mode tokens",
+          "waiting": false
+        },
+        {
+          "depth": 0,
+          "id": 151,
+          "status": "todo",
+          "title": "Rotate local MCP token",
+          "waiting": false
+        },
+        {
+          "depth": 0,
+          "id": 152,
+          "status": "todo",
+          "title": "Read sortie prior art",
+          "waiting": false
+        }
+      ],
+      "repos": [
+        {
+          "id": 3,
+          "name": "airboss",
+          "path": "/Users/me/code/airboss",
+          "remote_url": "git@github.com:acme/airboss.git"
+        },
+        {
+          "id": 2,
+          "name": "booking-api",
+          "path": "/Users/me/code/booking-api",
+          "remote_url": "git@github.com:acme/booking-api.git"
+        },
+        {
+          "id": 1,
+          "name": "booking-web",
+          "path": "/Users/me/code/booking-web",
+          "remote_url": "git@github.com:acme/booking-web.git"
+        },
+        {
+          "id": 4,
+          "name": "dotfiles",
+          "path": "/Users/me/code/dotfiles",
+          "remote_url": "git@github.com:acme/dotfiles.git"
+        }
+      ]
+    },
+    "run_map": {
+      "edges": [
+        {
+          "done": true,
+          "from": 201,
+          "to": 202
+        },
+        {
+          "done": true,
+          "from": 201,
+          "to": 203
+        },
+        {
+          "done": false,
+          "from": 202,
+          "to": 205
+        },
+        {
+          "done": false,
+          "from": 204,
+          "to": 205
+        },
+        {
+          "done": false,
+          "from": 205,
+          "to": 207
+        }
+      ],
+      "nodes": [
+        201,
+        202,
+        203,
+        204,
+        205,
+        206,
+        207,
+        208
+      ],
+      "outside": [
+        {
+          "blockers": [
+            128
+          ],
+          "task": 208
+        }
+      ],
+      "tangled": [],
+      "waves": [
+        [
+          201,
+          204,
+          206
+        ],
+        [
+          202,
+          203
+        ],
+        [
+          205
+        ],
+        [
+          207,
+          208
+        ]
+      ]
+    },
+    "t3_projects": [
+      {
+        "added": true,
+        "is_git": false,
+        "name": "booking-web",
+        "path": "/Users/me/code/booking-web"
+      },
+      {
+        "added": true,
+        "is_git": false,
+        "name": "booking-api",
+        "path": "/Users/me/code/booking-api"
+      },
+      {
+        "added": true,
+        "is_git": false,
+        "name": "airboss",
+        "path": "/Users/me/code/airboss"
+      },
+      {
+        "added": true,
+        "is_git": false,
+        "name": "dotfiles",
+        "path": "/Users/me/code/dotfiles"
+      },
+      {
+        "added": false,
+        "is_git": false,
+        "name": "notes",
+        "path": "/Users/me/code/notes"
+      }
+    ],
+    "task_detail": {
+      "blocks": [],
+      "history": [
+        {
+          "actor": "agent:t3/slot-picker",
+          "at": "2026-11-25T10:38:00.000Z",
+          "body": "Asked whether to reuse the date picker.",
+          "id": 285,
+          "kind": "note",
+          "task": 144,
+          "thread_title": "slot-picker",
+          "to_status": null
+        },
+        {
+          "actor": "me",
+          "at": "2026-11-25T10:38:00.000Z",
+          "body": null,
+          "id": 279,
+          "kind": "status",
+          "task": 144,
+          "thread_title": null,
+          "to_status": "doing"
+        },
+        {
+          "actor": "me",
+          "at": "2026-11-25T09:44:00.000Z",
+          "body": null,
+          "id": 278,
+          "kind": "status",
+          "task": 143,
+          "thread_title": null,
+          "to_status": "done"
+        },
+        {
+          "actor": "me",
+          "at": "2026-11-25T10:38:00.000Z",
+          "body": null,
+          "id": 277,
+          "kind": "status",
+          "task": 142,
+          "thread_title": null,
+          "to_status": "doing"
+        },
+        {
+          "actor": "agent:t3/slot-picker",
+          "at": "2026-11-25T10:38:00.000Z",
+          "body": "t3_thread slot-picker",
+          "id": 262,
+          "kind": "linked",
+          "task": 144,
+          "thread_title": "slot-picker",
+          "to_status": null
+        },
+        {
+          "actor": "me",
+          "at": "2026-11-25T09:44:00.000Z",
+          "body": "pr acme/booking-api#58",
+          "id": 258,
+          "kind": "linked",
+          "task": 143,
+          "thread_title": null,
+          "to_status": null
+        },
+        {
+          "actor": "me",
+          "at": "2026-11-25T09:44:00.000Z",
+          "body": "slack /archives/C0BOOKING/p1764000000",
+          "id": 257,
+          "kind": "linked",
+          "task": 146,
+          "thread_title": null,
+          "to_status": null
+        },
+        {
+          "actor": "me",
+          "at": "2026-11-25T10:38:00.000Z",
+          "body": "doc ~/plans/booking-flow.md",
+          "id": 256,
+          "kind": "linked",
+          "task": 142,
+          "thread_title": null,
+          "to_status": null
+        },
+        {
+          "actor": "me",
+          "at": "2026-11-25T10:38:00.000Z",
+          "body": "slack /archives/C0BOOKING/p1764000000",
+          "id": 255,
+          "kind": "linked",
+          "task": 142,
+          "thread_title": null,
+          "to_status": null
+        },
+        {
+          "actor": "me",
+          "at": "2026-11-25T09:44:00.000Z",
+          "body": "body",
+          "id": 253,
+          "kind": "edited",
+          "task": 146,
+          "thread_title": null,
+          "to_status": null
+        },
+        {
+          "actor": "me",
+          "at": "2026-11-25T10:38:00.000Z",
+          "body": "body",
+          "id": 252,
+          "kind": "edited",
+          "task": 144,
+          "thread_title": null,
+          "to_status": null
+        },
+        {
+          "actor": "me",
+          "at": "2026-11-25T10:38:00.000Z",
+          "body": "body",
+          "id": 251,
+          "kind": "edited",
+          "task": 142,
+          "thread_title": null,
+          "to_status": null
+        },
+        {
+          "actor": "me",
+          "at": "2026-11-25T10:38:00.000Z",
+          "body": "branch: task-142-booking-flow",
+          "id": 249,
+          "kind": "edited",
+          "task": 142,
+          "thread_title": null,
+          "to_status": null
+        },
+        {
+          "actor": "me",
+          "at": "2026-11-23T10:44:00.000Z",
+          "body": "waits on #146",
+          "id": 242,
+          "kind": "waits_on_added",
+          "task": 147,
+          "thread_title": null,
+          "to_status": null
+        },
+        {
+          "actor": "me",
+          "at": "2026-11-23T10:44:00.000Z",
+          "body": "waits on #145",
+          "id": 241,
+          "kind": "waits_on_added",
+          "task": 147,
+          "thread_title": null,
+          "to_status": null
+        },
+        {
+          "actor": "me",
+          "at": "2026-11-23T10:44:00.000Z",
+          "body": "waits on #144",
+          "id": 240,
+          "kind": "waits_on_added",
+          "task": 147,
+          "thread_title": null,
+          "to_status": null
+        },
+        {
+          "actor": "me",
+          "at": "2026-11-25T09:44:00.000Z",
+          "body": "waits on #143",
+          "id": 239,
+          "kind": "waits_on_added",
+          "task": 146,
+          "thread_title": null,
+          "to_status": null
+        },
+        {
+          "actor": "me",
+          "at": "2026-11-23T10:44:00.000Z",
+          "body": "waits on #144",
+          "id": 238,
+          "kind": "waits_on_added",
+          "task": 145,
+          "thread_title": null,
+          "to_status": null
+        },
+        {
+          "actor": "me",
+          "at": "2026-11-25T10:38:00.000Z",
+          "body": null,
+          "id": 228,
+          "kind": "moved",
+          "task": 142,
+          "thread_title": null,
+          "to_status": null
+        },
+        {
+          "actor": "me",
+          "at": "2026-11-23T10:44:00.000Z",
+          "body": null,
+          "id": 156,
+          "kind": "created",
+          "task": 147,
+          "thread_title": null,
+          "to_status": null
+        },
+        {
+          "actor": "me",
+          "at": "2026-11-25T09:44:00.000Z",
+          "body": null,
+          "id": 154,
+          "kind": "created",
+          "task": 146,
+          "thread_title": null,
+          "to_status": null
+        },
+        {
+          "actor": "me",
+          "at": "2026-11-23T10:44:00.000Z",
+          "body": null,
+          "id": 152,
+          "kind": "created",
+          "task": 145,
+          "thread_title": null,
+          "to_status": null
+        },
+        {
+          "actor": "me",
+          "at": "2026-11-25T10:38:00.000Z",
+          "body": null,
+          "id": 150,
+          "kind": "created",
+          "task": 144,
+          "thread_title": null,
+          "to_status": null
+        },
+        {
+          "actor": "me",
+          "at": "2026-11-25T09:44:00.000Z",
+          "body": null,
+          "id": 148,
+          "kind": "created",
+          "task": 143,
+          "thread_title": null,
+          "to_status": null
+        },
+        {
+          "actor": "me",
+          "at": "2026-11-25T10:38:00.000Z",
+          "body": null,
+          "id": 146,
+          "kind": "created",
+          "task": 142,
+          "thread_title": null,
+          "to_status": null
+        }
+      ],
+      "history_more": false,
+      "links": [
+        {
+          "id": 1,
+          "kind": "slack",
+          "linked_at": "2026-11-25T10:38:00.000Z",
+          "linked_by": "me",
+          "pr": null,
+          "pr_state": null,
+          "ref": "/archives/C0BOOKING/p1764000000",
+          "task": 142,
+          "thread": null,
+          "title": "#booking thread",
+          "url": "https://acme.slack.com/archives/C0BOOKING/p1764000000"
+        },
+        {
+          "id": 2,
+          "kind": "doc",
+          "linked_at": "2026-11-25T10:38:00.000Z",
+          "linked_by": "me",
+          "pr": null,
+          "pr_state": null,
+          "ref": "~/plans/booking-flow.md",
+          "task": 142,
+          "thread": null,
+          "title": "booking-flow.md",
+          "url": null
+        }
+      ],
+      "needs": [],
+      "prepared": {
+        "branch": null,
+        "choices": [],
+        "from_subtasks": false,
+        "needs_choice": false,
+        "repos": [],
+        "research_dir": "/tmp/airboss-research",
+        "started": [],
+        "waiting_on": []
+      },
+      "req": 1,
+      "suggested_prs": [],
+      "task": {
+        "blocked_reason": null,
+        "body": "Let people pick a slot and get a confirmation. Split across the API and the web app. The Slack thread has the product asks; the plan has the phases.",
+        "branch": "task-142-booking-flow",
+        "created_at": "2026-11-25T10:38:00.000Z",
+        "id": 142,
+        "origin": "me",
+        "parent": null,
+        "plan_key": null,
+        "position": 1,
+        "repos": [],
+        "status": "doing",
+        "title": "Booking flow"
+      },
+      "waits_on": [],
+      "waves": {
+        "edges": [
+          {
+            "done": true,
+            "from": 143,
+            "to": 146
+          },
+          {
+            "done": false,
+            "from": 144,
+            "to": 145
+          },
+          {
+            "done": false,
+            "from": 144,
+            "to": 147
+          },
+          {
+            "done": false,
+            "from": 145,
+            "to": 147
+          },
+          {
+            "done": false,
+            "from": 146,
+            "to": 147
+          }
+        ],
+        "nodes": [
+          143,
+          144,
+          145,
+          146,
+          147
+        ],
+        "outside": [],
+        "tangled": [],
+        "waves": [
+          [
+            143,
+            144
+          ],
+          [
+            145,
+            146
+          ],
+          [
+            147
+          ]
+        ]
+      }
+    }
+  },
+  "script": [
+    {
+      "args": {
+        "ids": [
+          209
+        ]
+      },
+      "command": "accept_proposals",
+      "events": [
+        {
+          "event": "tree:patch",
+          "payload": {
+            "created": [],
+            "order": null,
+            "removed": [],
+            "repos": null,
+            "seq": 3,
+            "upserts": [
+              {
+                "blocked_reason": null,
+                "branch": null,
+                "depth": 0,
+                "has_children": true,
+                "id": 150,
+                "last_actor": "me",
+                "last_at": "2026-11-25T10:44:00.000Z",
+                "live": null,
+                "needs": true,
+                "needs_stale": false,
+                "origin": "me",
+                "parent": null,
+                "position": 7,
+                "progress": {
+                  "blocked": 0,
+                  "doing": 0,
+                  "done": 0,
+                  "in_review": 0,
+                  "total": 3
+                },
+                "quiet_days": null,
+                "ready": false,
+                "ready_pill": false,
+                "ready_since": null,
+                "repos": [
+                  3
+                ],
+                "repos_from_subtasks": false,
+                "status": "todo",
+                "title": "Worktree cleanup research",
+                "waiting": false,
+                "waits_on": []
+              },
+              {
+                "blocked_reason": null,
+                "branch": null,
+                "depth": 1,
+                "has_children": false,
+                "id": 209,
+                "last_actor": "me",
+                "last_at": "2026-11-25T10:44:00.000Z",
+                "live": null,
+                "needs": false,
+                "needs_stale": false,
+                "origin": "agent",
+                "parent": 150,
+                "position": 1,
+                "progress": null,
+                "quiet_days": null,
+                "ready": true,
+                "ready_pill": false,
+                "ready_since": "2026-11-25T07:44:00.000Z",
+                "repos": [],
+                "repos_from_subtasks": false,
+                "status": "todo",
+                "title": "List stale worktrees older than 14 days",
+                "waiting": false,
+                "waits_on": []
+              }
+            ]
+          }
+        }
+      ],
+      "response": {
+        "created": [],
+        "order": null,
+        "removed": [],
+        "repos": null,
+        "seq": 3,
+        "upserts": [
+          {
+            "blocked_reason": null,
+            "branch": null,
+            "depth": 0,
+            "has_children": true,
+            "id": 150,
+            "last_actor": "me",
+            "last_at": "2026-11-25T10:44:00.000Z",
+            "live": null,
+            "needs": true,
+            "needs_stale": false,
+            "origin": "me",
+            "parent": null,
+            "position": 7,
+            "progress": {
+              "blocked": 0,
+              "doing": 0,
+              "done": 0,
+              "in_review": 0,
+              "total": 3
+            },
+            "quiet_days": null,
+            "ready": false,
+            "ready_pill": false,
+            "ready_since": null,
+            "repos": [
+              3
+            ],
+            "repos_from_subtasks": false,
+            "status": "todo",
+            "title": "Worktree cleanup research",
+            "waiting": false,
+            "waits_on": []
+          },
+          {
+            "blocked_reason": null,
+            "branch": null,
+            "depth": 1,
+            "has_children": false,
+            "id": 209,
+            "last_actor": "me",
+            "last_at": "2026-11-25T10:44:00.000Z",
+            "live": null,
+            "needs": false,
+            "needs_stale": false,
+            "origin": "agent",
+            "parent": 150,
+            "position": 1,
+            "progress": null,
+            "quiet_days": null,
+            "ready": true,
+            "ready_pill": false,
+            "ready_since": "2026-11-25T07:44:00.000Z",
+            "repos": [],
+            "repos_from_subtasks": false,
+            "status": "todo",
+            "title": "List stale worktrees older than 14 days",
+            "waiting": false,
+            "waits_on": []
+          }
+        ]
+      }
+    },
+    {
+      "args": {
+        "ids": [
+          210
+        ],
+        "reason": null
+      },
+      "command": "reject_proposals",
+      "events": [],
+      "response": {
+        "patch": null,
+        "undo": {
+          "id": 1,
+          "label": "Reject 210"
+        }
+      }
+    },
+    {
+      "args": {
+        "key": "question:slot-picker"
+      },
+      "command": "needs_dismiss",
+      "events": [],
+      "response": {
+        "patch": null,
+        "undo": {
+          "id": 2,
+          "label": "Dismiss 144"
+        }
+      }
+    },
+    {
+      "args": {
+        "entry": null
+      },
+      "command": "undo",
+      "events": [],
+      "response": {
+        "message": "Undid “Dismiss 144”",
+        "patch": null
+      }
+    },
+    {
+      "args": {
+        "id": 145
+      },
+      "command": "toggle_done",
+      "events": [
+        {
+          "event": "tree:patch",
+          "payload": {
+            "created": [],
+            "order": null,
+            "removed": [],
+            "repos": null,
+            "seq": 4,
+            "upserts": [
+              {
+                "blocked_reason": null,
+                "branch": "task-142-booking-flow",
+                "depth": 0,
+                "has_children": true,
+                "id": 142,
+                "last_actor": "me",
+                "last_at": "2026-11-25T10:44:00.000Z",
+                "live": null,
+                "needs": false,
+                "needs_stale": false,
+                "origin": "me",
+                "parent": null,
+                "position": 1,
+                "progress": {
+                  "blocked": 0,
+                  "doing": 1,
+                  "done": 2,
+                  "in_review": 0,
+                  "total": 5
+                },
+                "quiet_days": null,
+                "ready": false,
+                "ready_pill": false,
+                "ready_since": null,
+                "repos": [
+                  2,
+                  1
+                ],
+                "repos_from_subtasks": true,
+                "status": "doing",
+                "title": "Booking flow",
+                "waiting": false,
+                "waits_on": []
+              },
+              {
+                "blocked_reason": null,
+                "branch": "task-142-booking-flow",
+                "depth": 1,
+                "has_children": false,
+                "id": 145,
+                "last_actor": "me",
+                "last_at": "2026-11-25T10:44:00.000Z",
+                "live": null,
+                "needs": false,
+                "needs_stale": false,
+                "origin": "me",
+                "parent": 142,
+                "position": 3,
+                "progress": null,
+                "quiet_days": null,
+                "ready": false,
+                "ready_pill": false,
+                "ready_since": null,
+                "repos": [
+                  1
+                ],
+                "repos_from_subtasks": false,
+                "status": "done",
+                "title": "Web: confirm screen",
+                "waiting": true,
+                "waits_on": [
+                  144
+                ]
+              },
+              {
+                "blocked_reason": null,
+                "branch": "task-142-booking-flow",
+                "depth": 1,
+                "has_children": false,
+                "id": 147,
+                "last_actor": "me",
+                "last_at": "2026-11-23T10:44:00.000Z",
+                "live": null,
+                "needs": false,
+                "needs_stale": false,
+                "origin": "me",
+                "parent": 142,
+                "position": 5,
+                "progress": null,
+                "quiet_days": null,
+                "ready": false,
+                "ready_pill": false,
+                "ready_since": null,
+                "repos": [
+                  2,
+                  1
+                ],
+                "repos_from_subtasks": false,
+                "status": "todo",
+                "title": "End-to-end tests",
+                "waiting": true,
+                "waits_on": [
+                  144,
+                  146
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "event": "needs:changed",
+          "payload": {
+            "checked_at": "2026-11-25T10:44:00.000Z",
+            "count": 8,
+            "items": [
+              {
+                "context": "Agent in slot-picker asks",
+                "group": "questions",
+                "headline": "Use the existing date picker or build one? It needs full keyboard support.",
+                "key": "question:slot-picker",
+                "kind": "question",
+                "proposed": [],
+                "since": "2026-11-25T10:38:00.000Z",
+                "stale": false,
+                "target": {
+                  "thread": {
+                    "ref": "slot-picker",
+                    "source": "t3"
+                  }
+                },
+                "task": 144,
+                "task_title": "Web: slot picker"
+              },
+              {
+                "context": "Agent in tray-count wants approval",
+                "group": "questions",
+                "headline": "Allow running cargo add tray-icon?",
+                "key": "approval:tray-count",
+                "kind": "approval",
+                "proposed": [],
+                "since": "2026-11-25T10:32:00.000Z",
+                "stale": false,
+                "target": {
+                  "thread": {
+                    "ref": "tray-count",
+                    "source": "t3"
+                  }
+                },
+                "task": 133,
+                "task_title": "Menu-bar count"
+              },
+              {
+                "context": "+412 −38 · checks passed",
+                "group": "reviews",
+                "headline": "PR #31 · list_tasks and get_task",
+                "key": "review:acme/airboss#31",
+                "kind": "review",
+                "proposed": [],
+                "since": "2026-11-25T10:04:00.000Z",
+                "stale": false,
+                "target": {
+                  "pr": {
+                    "ref": "acme/airboss#31",
+                    "url": "https://github.com/acme/airboss/pull/31"
+                  }
+                },
+                "task": 128,
+                "task_title": "MCP server"
+              },
+              {
+                "context": "Thread stopped · 3 tests failed",
+                "group": "failed_runs",
+                "headline": "fix-flaky-login stopped: 3 tests failed",
+                "key": "failed:fix-flaky-login",
+                "kind": "failed_run",
+                "proposed": [],
+                "since": "2026-11-25T09:44:00.000Z",
+                "stale": false,
+                "target": {
+                  "thread": {
+                    "ref": "fix-flaky-login",
+                    "source": "t3"
+                  }
+                },
+                "task": 131,
+                "task_title": "Fix flaky login test"
+              },
+              {
+                "context": "3 proposed subtasks",
+                "group": "proposed",
+                "headline": "The agent proposed 3 subtasks",
+                "key": "proposed:150",
+                "kind": "proposed",
+                "proposed": [
+                  [
+                    209,
+                    "List stale worktrees older than 14 days"
+                  ],
+                  [
+                    210,
+                    "Find worktrees whose branch has merged"
+                  ],
+                  [
+                    211,
+                    "Write a dry-run cleanup command"
+                  ]
+                ],
+                "since": "2026-11-25T07:44:00.000Z",
+                "stale": false,
+                "target": {
+                  "task": 150
+                },
+                "task": 150,
+                "task_title": "Worktree cleanup research"
+              },
+              {
+                "context": "143 merged · ready to start",
+                "group": "ready",
+                "headline": "Ready to start: 143 is done (PR #58 merged)",
+                "key": "ready:146",
+                "kind": "ready",
+                "proposed": [],
+                "since": "2026-11-25T09:44:00.000Z",
+                "stale": false,
+                "target": {
+                  "task": 146
+                },
+                "task": 146,
+                "task_title": "Confirmation email"
+              },
+              {
+                "context": "All 4 subtasks done",
+                "group": "finish_it",
+                "headline": "All 4 subtasks are done. Mark the parent done?",
+                "key": "finish:110",
+                "kind": "finish_it",
+                "proposed": [],
+                "since": "2026-11-25T09:44:00.000Z",
+                "stale": false,
+                "target": {
+                  "task": 110
+                },
+                "task": 110,
+                "task_title": "Dark mode tokens"
+              },
+              {
+                "context": "Quiet for 6 days",
+                "group": "quiet",
+                "headline": "No activity for 6 days. 10 open PRs, the oldest from 4 Nov.",
+                "key": "quiet:120",
+                "kind": "quiet",
+                "proposed": [],
+                "since": "2026-11-19T10:44:00.000Z",
+                "stale": false,
+                "target": {
+                  "task": 120
+                },
+                "task": 120,
+                "task_title": "Payments refactor stack"
+              }
+            ],
+            "version": 3
+          }
+        }
+      ],
+      "response": {
+        "patch": {
+          "created": [],
+          "order": null,
+          "removed": [],
+          "repos": null,
+          "seq": 4,
+          "upserts": [
+            {
+              "blocked_reason": null,
+              "branch": "task-142-booking-flow",
+              "depth": 0,
+              "has_children": true,
+              "id": 142,
+              "last_actor": "me",
+              "last_at": "2026-11-25T10:44:00.000Z",
+              "live": null,
+              "needs": false,
+              "needs_stale": false,
+              "origin": "me",
+              "parent": null,
+              "position": 1,
+              "progress": {
+                "blocked": 0,
+                "doing": 1,
+                "done": 2,
+                "in_review": 0,
+                "total": 5
+              },
+              "quiet_days": null,
+              "ready": false,
+              "ready_pill": false,
+              "ready_since": null,
+              "repos": [
+                2,
+                1
+              ],
+              "repos_from_subtasks": true,
+              "status": "doing",
+              "title": "Booking flow",
+              "waiting": false,
+              "waits_on": []
+            },
+            {
+              "blocked_reason": null,
+              "branch": "task-142-booking-flow",
+              "depth": 1,
+              "has_children": false,
+              "id": 145,
+              "last_actor": "me",
+              "last_at": "2026-11-25T10:44:00.000Z",
+              "live": null,
+              "needs": false,
+              "needs_stale": false,
+              "origin": "me",
+              "parent": 142,
+              "position": 3,
+              "progress": null,
+              "quiet_days": null,
+              "ready": false,
+              "ready_pill": false,
+              "ready_since": null,
+              "repos": [
+                1
+              ],
+              "repos_from_subtasks": false,
+              "status": "done",
+              "title": "Web: confirm screen",
+              "waiting": true,
+              "waits_on": [
+                144
+              ]
+            },
+            {
+              "blocked_reason": null,
+              "branch": "task-142-booking-flow",
+              "depth": 1,
+              "has_children": false,
+              "id": 147,
+              "last_actor": "me",
+              "last_at": "2026-11-23T10:44:00.000Z",
+              "live": null,
+              "needs": false,
+              "needs_stale": false,
+              "origin": "me",
+              "parent": 142,
+              "position": 5,
+              "progress": null,
+              "quiet_days": null,
+              "ready": false,
+              "ready_pill": false,
+              "ready_since": null,
+              "repos": [
+                2,
+                1
+              ],
+              "repos_from_subtasks": false,
+              "status": "todo",
+              "title": "End-to-end tests",
+              "waiting": true,
+              "waits_on": [
+                144,
+                146
+              ]
+            }
+          ]
+        },
+        "undo": {
+          "id": 3,
+          "label": "Mark done 145"
+        }
+      }
+    },
+    {
+      "args": {
+        "id": 146,
+        "note": "Waiting on the mail queue",
+        "status": "blocked"
+      },
+      "command": "set_status",
+      "events": [
+        {
+          "event": "tree:patch",
+          "payload": {
+            "created": [],
+            "order": null,
+            "removed": [],
+            "repos": null,
+            "seq": 5,
+            "upserts": [
+              {
+                "blocked_reason": null,
+                "branch": "task-142-booking-flow",
+                "depth": 0,
+                "has_children": true,
+                "id": 142,
+                "last_actor": "me",
+                "last_at": "2026-11-25T10:44:00.000Z",
+                "live": null,
+                "needs": false,
+                "needs_stale": false,
+                "origin": "me",
+                "parent": null,
+                "position": 1,
+                "progress": {
+                  "blocked": 1,
+                  "doing": 1,
+                  "done": 2,
+                  "in_review": 0,
+                  "total": 5
+                },
+                "quiet_days": null,
+                "ready": false,
+                "ready_pill": false,
+                "ready_since": null,
+                "repos": [
+                  2,
+                  1
+                ],
+                "repos_from_subtasks": true,
+                "status": "doing",
+                "title": "Booking flow",
+                "waiting": false,
+                "waits_on": []
+              },
+              {
+                "blocked_reason": "Waiting on the mail queue",
+                "branch": "task-142-booking-flow",
+                "depth": 1,
+                "has_children": false,
+                "id": 146,
+                "last_actor": "me",
+                "last_at": "2026-11-25T10:44:00.000Z",
+                "live": null,
+                "needs": true,
+                "needs_stale": false,
+                "origin": "me",
+                "parent": 142,
+                "position": 4,
+                "progress": null,
+                "quiet_days": null,
+                "ready": false,
+                "ready_pill": true,
+                "ready_since": null,
+                "repos": [
+                  2
+                ],
+                "repos_from_subtasks": false,
+                "status": "blocked",
+                "title": "Confirmation email",
+                "waiting": false,
+                "waits_on": []
+              }
+            ]
+          }
+        }
+      ],
+      "response": {
+        "patch": {
+          "created": [],
+          "order": null,
+          "removed": [],
+          "repos": null,
+          "seq": 5,
+          "upserts": [
+            {
+              "blocked_reason": null,
+              "branch": "task-142-booking-flow",
+              "depth": 0,
+              "has_children": true,
+              "id": 142,
+              "last_actor": "me",
+              "last_at": "2026-11-25T10:44:00.000Z",
+              "live": null,
+              "needs": false,
+              "needs_stale": false,
+              "origin": "me",
+              "parent": null,
+              "position": 1,
+              "progress": {
+                "blocked": 1,
+                "doing": 1,
+                "done": 2,
+                "in_review": 0,
+                "total": 5
+              },
+              "quiet_days": null,
+              "ready": false,
+              "ready_pill": false,
+              "ready_since": null,
+              "repos": [
+                2,
+                1
+              ],
+              "repos_from_subtasks": true,
+              "status": "doing",
+              "title": "Booking flow",
+              "waiting": false,
+              "waits_on": []
+            },
+            {
+              "blocked_reason": "Waiting on the mail queue",
+              "branch": "task-142-booking-flow",
+              "depth": 1,
+              "has_children": false,
+              "id": 146,
+              "last_actor": "me",
+              "last_at": "2026-11-25T10:44:00.000Z",
+              "live": null,
+              "needs": true,
+              "needs_stale": false,
+              "origin": "me",
+              "parent": 142,
+              "position": 4,
+              "progress": null,
+              "quiet_days": null,
+              "ready": false,
+              "ready_pill": true,
+              "ready_since": null,
+              "repos": [
+                2
+              ],
+              "repos_from_subtasks": false,
+              "status": "blocked",
+              "title": "Confirmation email",
+              "waiting": false,
+              "waits_on": []
+            }
+          ]
+        },
+        "undo": {
+          "id": 4,
+          "label": "Mark blocked 146"
+        }
+      }
+    },
+    {
+      "args": {
+        "direction": "up",
+        "id": 146
+      },
+      "command": "reorder",
+      "events": [
+        {
+          "event": "tree:patch",
+          "payload": {
+            "created": [],
+            "order": [
+              142,
+              143,
+              144,
+              146,
+              145,
+              147,
+              200,
+              201,
+              202,
+              203,
+              204,
+              205,
+              206,
+              207,
+              208,
+              128,
+              133,
+              131,
+              120,
+              150,
+              209,
+              210,
+              211,
+              110,
+              111,
+              112,
+              113,
+              114,
+              151,
+              152,
+              98
+            ],
+            "removed": [],
+            "repos": null,
+            "seq": 6,
+            "upserts": [
+              {
+                "blocked_reason": null,
+                "branch": "task-142-booking-flow",
+                "depth": 0,
+                "has_children": true,
+                "id": 142,
+                "last_actor": "me",
+                "last_at": "2026-11-25T10:44:00.000Z",
+                "live": null,
+                "needs": false,
+                "needs_stale": false,
+                "origin": "me",
+                "parent": null,
+                "position": 1,
+                "progress": {
+                  "blocked": 1,
+                  "doing": 1,
+                  "done": 2,
+                  "in_review": 0,
+                  "total": 5
+                },
+                "quiet_days": null,
+                "ready": false,
+                "ready_pill": false,
+                "ready_since": null,
+                "repos": [
+                  2,
+                  1
+                ],
+                "repos_from_subtasks": true,
+                "status": "doing",
+                "title": "Booking flow",
+                "waiting": false,
+                "waits_on": []
+              },
+              {
+                "blocked_reason": "Waiting on the mail queue",
+                "branch": "task-142-booking-flow",
+                "depth": 1,
+                "has_children": false,
+                "id": 146,
+                "last_actor": "me",
+                "last_at": "2026-11-25T10:44:00.000Z",
+                "live": null,
+                "needs": true,
+                "needs_stale": false,
+                "origin": "me",
+                "parent": 142,
+                "position": 3,
+                "progress": null,
+                "quiet_days": null,
+                "ready": false,
+                "ready_pill": true,
+                "ready_since": null,
+                "repos": [
+                  2
+                ],
+                "repos_from_subtasks": false,
+                "status": "blocked",
+                "title": "Confirmation email",
+                "waiting": false,
+                "waits_on": []
+              },
+              {
+                "blocked_reason": null,
+                "branch": "task-142-booking-flow",
+                "depth": 1,
+                "has_children": false,
+                "id": 145,
+                "last_actor": "me",
+                "last_at": "2026-11-25T10:44:00.000Z",
+                "live": null,
+                "needs": false,
+                "needs_stale": false,
+                "origin": "me",
+                "parent": 142,
+                "position": 4,
+                "progress": null,
+                "quiet_days": null,
+                "ready": false,
+                "ready_pill": false,
+                "ready_since": null,
+                "repos": [
+                  1
+                ],
+                "repos_from_subtasks": false,
+                "status": "done",
+                "title": "Web: confirm screen",
+                "waiting": true,
+                "waits_on": [
+                  144
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "response": {
+        "patch": {
+          "created": [],
+          "order": [
+            142,
+            143,
+            144,
+            146,
+            145,
+            147,
+            200,
+            201,
+            202,
+            203,
+            204,
+            205,
+            206,
+            207,
+            208,
+            128,
+            133,
+            131,
+            120,
+            150,
+            209,
+            210,
+            211,
+            110,
+            111,
+            112,
+            113,
+            114,
+            151,
+            152,
+            98
+          ],
+          "removed": [],
+          "repos": null,
+          "seq": 6,
+          "upserts": [
+            {
+              "blocked_reason": null,
+              "branch": "task-142-booking-flow",
+              "depth": 0,
+              "has_children": true,
+              "id": 142,
+              "last_actor": "me",
+              "last_at": "2026-11-25T10:44:00.000Z",
+              "live": null,
+              "needs": false,
+              "needs_stale": false,
+              "origin": "me",
+              "parent": null,
+              "position": 1,
+              "progress": {
+                "blocked": 1,
+                "doing": 1,
+                "done": 2,
+                "in_review": 0,
+                "total": 5
+              },
+              "quiet_days": null,
+              "ready": false,
+              "ready_pill": false,
+              "ready_since": null,
+              "repos": [
+                2,
+                1
+              ],
+              "repos_from_subtasks": true,
+              "status": "doing",
+              "title": "Booking flow",
+              "waiting": false,
+              "waits_on": []
+            },
+            {
+              "blocked_reason": "Waiting on the mail queue",
+              "branch": "task-142-booking-flow",
+              "depth": 1,
+              "has_children": false,
+              "id": 146,
+              "last_actor": "me",
+              "last_at": "2026-11-25T10:44:00.000Z",
+              "live": null,
+              "needs": true,
+              "needs_stale": false,
+              "origin": "me",
+              "parent": 142,
+              "position": 3,
+              "progress": null,
+              "quiet_days": null,
+              "ready": false,
+              "ready_pill": true,
+              "ready_since": null,
+              "repos": [
+                2
+              ],
+              "repos_from_subtasks": false,
+              "status": "blocked",
+              "title": "Confirmation email",
+              "waiting": false,
+              "waits_on": []
+            },
+            {
+              "blocked_reason": null,
+              "branch": "task-142-booking-flow",
+              "depth": 1,
+              "has_children": false,
+              "id": 145,
+              "last_actor": "me",
+              "last_at": "2026-11-25T10:44:00.000Z",
+              "live": null,
+              "needs": false,
+              "needs_stale": false,
+              "origin": "me",
+              "parent": 142,
+              "position": 4,
+              "progress": null,
+              "quiet_days": null,
+              "ready": false,
+              "ready_pill": false,
+              "ready_since": null,
+              "repos": [
+                1
+              ],
+              "repos_from_subtasks": false,
+              "status": "done",
+              "title": "Web: confirm screen",
+              "waiting": true,
+              "waits_on": [
+                144
+              ]
+            }
+          ]
+        },
+        "undo": {
+          "id": 5,
+          "label": "Move 146"
+        }
+      }
+    },
+    {
+      "args": {
+        "task": {
+          "body": "Draft for the booking launch",
+          "links": [],
+          "parent": null,
+          "repos": [
+            1
+          ],
+          "then": "none",
+          "title": "Write the release notes"
+        }
+      },
+      "command": "create_task",
+      "events": [
+        {
+          "event": "tree:patch",
+          "payload": {
+            "created": [
+              212
+            ],
+            "order": [
+              142,
+              143,
+              144,
+              146,
+              145,
+              147,
+              200,
+              201,
+              202,
+              203,
+              204,
+              205,
+              206,
+              207,
+              208,
+              128,
+              133,
+              131,
+              120,
+              150,
+              209,
+              210,
+              211,
+              110,
+              111,
+              112,
+              113,
+              114,
+              151,
+              152,
+              98,
+              212
+            ],
+            "removed": [],
+            "repos": null,
+            "seq": 7,
+            "upserts": [
+              {
+                "blocked_reason": null,
+                "branch": null,
+                "depth": 0,
+                "has_children": false,
+                "id": 212,
+                "last_actor": "me",
+                "last_at": "2026-11-25T10:44:00.000Z",
+                "live": null,
+                "needs": false,
+                "needs_stale": false,
+                "origin": "me",
+                "parent": null,
+                "position": 12,
+                "progress": null,
+                "quiet_days": null,
+                "ready": true,
+                "ready_pill": false,
+                "ready_since": "2026-11-25T10:44:00.000Z",
+                "repos": [
+                  1
+                ],
+                "repos_from_subtasks": false,
+                "status": "todo",
+                "title": "Write the release notes",
+                "waiting": false,
+                "waits_on": []
+              }
+            ]
+          }
+        }
+      ],
+      "response": {
+        "id": 212,
+        "launch": null,
+        "link_errors": [],
+        "patch": {
+          "created": [
+            212
+          ],
+          "order": [
+            142,
+            143,
+            144,
+            146,
+            145,
+            147,
+            200,
+            201,
+            202,
+            203,
+            204,
+            205,
+            206,
+            207,
+            208,
+            128,
+            133,
+            131,
+            120,
+            150,
+            209,
+            210,
+            211,
+            110,
+            111,
+            112,
+            113,
+            114,
+            151,
+            152,
+            98,
+            212
+          ],
+          "removed": [],
+          "repos": null,
+          "seq": 7,
+          "upserts": [
+            {
+              "blocked_reason": null,
+              "branch": null,
+              "depth": 0,
+              "has_children": false,
+              "id": 212,
+              "last_actor": "me",
+              "last_at": "2026-11-25T10:44:00.000Z",
+              "live": null,
+              "needs": false,
+              "needs_stale": false,
+              "origin": "me",
+              "parent": null,
+              "position": 12,
+              "progress": null,
+              "quiet_days": null,
+              "ready": true,
+              "ready_pill": false,
+              "ready_since": "2026-11-25T10:44:00.000Z",
+              "repos": [
+                1
+              ],
+              "repos_from_subtasks": false,
+              "status": "todo",
+              "title": "Write the release notes",
+              "waiting": false,
+              "waits_on": []
+            }
+          ]
+        }
+      }
+    },
+    {
+      "args": {
+        "id": 144,
+        "text": "Use the existing date picker."
+      },
+      "command": "add_note",
+      "events": [
+        {
+          "event": "tree:patch",
+          "payload": {
+            "created": [],
+            "order": null,
+            "removed": [],
+            "repos": null,
+            "seq": 8,
+            "upserts": [
+              {
+                "blocked_reason": null,
+                "branch": "task-142-booking-flow",
+                "depth": 0,
+                "has_children": true,
+                "id": 142,
+                "last_actor": "me",
+                "last_at": "2026-11-25T10:44:00.000Z",
+                "live": null,
+                "needs": false,
+                "needs_stale": false,
+                "origin": "me",
+                "parent": null,
+                "position": 1,
+                "progress": {
+                  "blocked": 1,
+                  "doing": 1,
+                  "done": 2,
+                  "in_review": 0,
+                  "total": 5
+                },
+                "quiet_days": null,
+                "ready": false,
+                "ready_pill": false,
+                "ready_since": null,
+                "repos": [
+                  2,
+                  1
+                ],
+                "repos_from_subtasks": true,
+                "status": "doing",
+                "title": "Booking flow",
+                "waiting": false,
+                "waits_on": []
+              },
+              {
+                "blocked_reason": null,
+                "branch": "task-142-booking-flow",
+                "depth": 1,
+                "has_children": false,
+                "id": 144,
+                "last_actor": "me",
+                "last_at": "2026-11-25T10:44:00.000Z",
+                "live": "working",
+                "needs": true,
+                "needs_stale": false,
+                "origin": "me",
+                "parent": 142,
+                "position": 2,
+                "progress": null,
+                "quiet_days": null,
+                "ready": false,
+                "ready_pill": false,
+                "ready_since": null,
+                "repos": [
+                  1
+                ],
+                "repos_from_subtasks": false,
+                "status": "doing",
+                "title": "Web: slot picker",
+                "waiting": false,
+                "waits_on": []
+              }
+            ]
+          }
+        }
+      ],
+      "response": {
+        "created": [],
+        "order": null,
+        "removed": [],
+        "repos": null,
+        "seq": 8,
+        "upserts": [
+          {
+            "blocked_reason": null,
+            "branch": "task-142-booking-flow",
+            "depth": 0,
+            "has_children": true,
+            "id": 142,
+            "last_actor": "me",
+            "last_at": "2026-11-25T10:44:00.000Z",
+            "live": null,
+            "needs": false,
+            "needs_stale": false,
+            "origin": "me",
+            "parent": null,
+            "position": 1,
+            "progress": {
+              "blocked": 1,
+              "doing": 1,
+              "done": 2,
+              "in_review": 0,
+              "total": 5
+            },
+            "quiet_days": null,
+            "ready": false,
+            "ready_pill": false,
+            "ready_since": null,
+            "repos": [
+              2,
+              1
+            ],
+            "repos_from_subtasks": true,
+            "status": "doing",
+            "title": "Booking flow",
+            "waiting": false,
+            "waits_on": []
+          },
+          {
+            "blocked_reason": null,
+            "branch": "task-142-booking-flow",
+            "depth": 1,
+            "has_children": false,
+            "id": 144,
+            "last_actor": "me",
+            "last_at": "2026-11-25T10:44:00.000Z",
+            "live": "working",
+            "needs": true,
+            "needs_stale": false,
+            "origin": "me",
+            "parent": 142,
+            "position": 2,
+            "progress": null,
+            "quiet_days": null,
+            "ready": false,
+            "ready_pill": false,
+            "ready_since": null,
+            "repos": [
+              1
+            ],
+            "repos_from_subtasks": false,
+            "status": "doing",
+            "title": "Web: slot picker",
+            "waiting": false,
+            "waits_on": []
+          }
+        ]
+      }
+    },
+    {
+      "args": {
+        "id": 152,
+        "title": "Read prior art on agent fleets"
+      },
+      "command": "rename_task",
+      "events": [
+        {
+          "event": "tree:patch",
+          "payload": {
+            "created": [],
+            "order": null,
+            "removed": [],
+            "repos": null,
+            "seq": 9,
+            "upserts": [
+              {
+                "blocked_reason": null,
+                "branch": null,
+                "depth": 0,
+                "has_children": false,
+                "id": 152,
+                "last_actor": "me",
+                "last_at": "2026-11-25T10:44:00.000Z",
+                "live": null,
+                "needs": false,
+                "needs_stale": false,
+                "origin": "me",
+                "parent": null,
+                "position": 10,
+                "progress": null,
+                "quiet_days": null,
+                "ready": true,
+                "ready_pill": false,
+                "ready_since": "2026-11-21T10:44:00.000Z",
+                "repos": [],
+                "repos_from_subtasks": false,
+                "status": "todo",
+                "title": "Read prior art on agent fleets",
+                "waiting": false,
+                "waits_on": []
+              }
+            ]
+          }
+        }
+      ],
+      "response": {
+        "created": [],
+        "order": null,
+        "removed": [],
+        "repos": null,
+        "seq": 9,
+        "upserts": [
+          {
+            "blocked_reason": null,
+            "branch": null,
+            "depth": 0,
+            "has_children": false,
+            "id": 152,
+            "last_actor": "me",
+            "last_at": "2026-11-25T10:44:00.000Z",
+            "live": null,
+            "needs": false,
+            "needs_stale": false,
+            "origin": "me",
+            "parent": null,
+            "position": 10,
+            "progress": null,
+            "quiet_days": null,
+            "ready": true,
+            "ready_pill": false,
+            "ready_since": "2026-11-21T10:44:00.000Z",
+            "repos": [],
+            "repos_from_subtasks": false,
+            "status": "todo",
+            "title": "Read prior art on agent fleets",
+            "waiting": false,
+            "waits_on": []
+          }
+        ]
+      }
+    }
+  ]
+}
