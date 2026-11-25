@@ -8,6 +8,7 @@ mod error;
 mod events;
 mod model;
 mod permissions;
+mod positions;
 mod tasks;
 mod tx;
 
@@ -130,6 +131,7 @@ pub(crate) mod fault {
     }
 
     pub(crate) const TASK_INSERTED: &str = "tasks::add after insert";
+    pub(crate) const MOVE_RENUMBERED: &str = "positions::move_task after renumber";
 
     pub(crate) fn arm(point: &'static str) {
         ARMED.with(|a| a.set(Some(point)));
@@ -147,6 +149,7 @@ pub(crate) mod fault {
 #[cfg(not(test))]
 pub(crate) mod fault {
     pub(crate) const TASK_INSERTED: &str = "tasks::add after insert";
+    pub(crate) const MOVE_RENUMBERED: &str = "positions::move_task after renumber";
 
     #[inline(always)]
     pub(crate) fn hit(_point: &str) -> crate::Result<()> {
