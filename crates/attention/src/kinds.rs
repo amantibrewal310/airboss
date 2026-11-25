@@ -1,12 +1,15 @@
 //! One function per kind (Quiet is in `quiet.rs`). Each adds its entries, unsorted and
 //! unhidden; `compute` orders and hides them.
 
-use airboss_core::{PrState, TaskNode};
+use std::collections::{BTreeMap, HashMap, HashSet};
+
+use airboss_core::{PrState, Status, TaskId, TaskNode};
+use airboss_services::time::from_ts;
 use airboss_services::{
     Checks, NeedsKind, PrView, RequestKind, Review, Target, ThreadState, ThreadView,
 };
 
-use crate::compute::{Ctx, Entry, ItemFor, stamp};
+use crate::compute::{Ctx, Entry, ItemFor, count, is_open, stamp};
 
 /// Questions, approvals and failed runs, from linked threads.
 pub(crate) fn threads(ctx: &Ctx<'_>, out: &mut Vec<Entry>) {
@@ -179,11 +182,203 @@ fn review_context(pr: &PrView) -> String {
     }
 }
 
-/// Proposed subtasks. Added in a later step.
-pub(crate) fn proposed(_ctx: &Ctx<'_>, _out: &mut Vec<Entry>) {}
+/// Open proposals: one item per parent, and each top-level proposal on its own.
+pub(crate) fn proposed(ctx: &Ctx<'_>, out: &mut Vec<Entry>) {
+    // By parent, or by the proposal itself when it's top-level (`true`).
+    let mut groups: BTreeMap<(TaskId, bool), Vec<&TaskNode>> = BTreeMap::new();
+    for node in &ctx.core.tree {
+        if node.task.status == Status::Proposed {
+            let owner = node
+                .task
+                .parent
+                .map_or((node.task.id, true), |p| (p, false));
+            groups.entry(owner).or_default().push(node);
+        }
+    }
+    for ((owner, top_level), mut nodes) in groups {
+        let Some(owner_node) = ctx.node(owner) else {
+            continue;
+        };
+        nodes.sort_by_key(|n| n.task.id);
+        let n = nodes.len();
+        let newest = nodes.iter().map(|n| n.task.created_at.as_str()).max();
+        let (key, headline, context) = match top_level {
+            true => (
+                format!("proposed:{}", owner.0),
+                "The agent proposed a task".to_string(),
+                "Proposed task".to_string(),
+            ),
+            false => {
+                let largest = nodes.last().map_or(owner.0, |n| n.task.id.0);
+                (
+                    format!("proposed:{}:{largest}", owner.0),
+                    format!("The agent proposed {}", count(n, "subtask")),
+                    format!("{} proposed {}", n, plural(n, "subtask")),
+                )
+            }
+        };
+        let mut item = ItemFor {
+            kind: NeedsKind::Proposed,
+            key,
+            node: owner_node,
+            since: stamp(newest.unwrap_or(&owner_node.task.created_at)),
+            headline,
+            context,
+            target: Target::Task(owner),
+        }
+        .build(false);
+        item.proposed = nodes
+            .iter()
+            .map(|n| (n.task.id, n.task.title.clone()))
+            .collect();
+        out.push(Entry {
+            item,
+            tasks: vec![owner],
+            changes_at: None,
+        });
+    }
+}
 
-/// Tasks that became ready. Added in a later step.
-pub(crate) fn ready(_ctx: &Ctx<'_>, _out: &mut Vec<Entry>) {}
+/// Tasks in `ready` that waited on something, while `since` is inside the window. Each
+/// leaves the list when its window ends.
+pub(crate) fn ready(ctx: &Ctx<'_>, out: &mut Vec<Entry>) {
+    if ctx.core.ready.is_empty() {
+        return;
+    }
+    // `edges` are sorted by task, then blocker, so each list is in id order.
+    let mut blockers: HashMap<TaskId, Vec<TaskId>> = HashMap::new();
+    for &(task, on) in &ctx.core.edges {
+        blockers.entry(task).or_default().push(on);
+    }
+    let merged: HashSet<TaskId> = ctx
+        .sync
+        .pr_tasks
+        .iter()
+        .filter(|(pr, _)| {
+            ctx.sync
+                .prs
+                .get(*pr)
+                .is_some_and(|p| p.state == Some(PrState::Merged))
+        })
+        .flat_map(|(_, tasks)| tasks.iter().copied())
+        .collect();
+    let window_start = ctx.cutoff(ctx.cfg.ready_window);
+    for r in &ctx.core.ready {
+        let Some(on) = blockers.get(&r.task.id) else {
+            continue;
+        };
+        let since = stamp(&r.since);
+        if since.as_str() <= window_start.as_str() {
+            continue;
+        }
+        let Some(node) = ctx.node(r.task.id) else {
+            continue;
+        };
+        let (headline, context) = ready_text(on, &merged);
+        let item = ItemFor {
+            kind: NeedsKind::Ready,
+            key: format!("ready:{}:{since}", r.task.id.0),
+            node,
+            since: since.clone(),
+            headline,
+            context,
+            target: Target::Task(r.task.id),
+        };
+        out.push(Entry {
+            item: item.build(false),
+            tasks: vec![r.task.id],
+            changes_at: from_ts(&since).and_then(|t| t.checked_add(ctx.cfg.ready_window)),
+        });
+    }
+}
 
-/// Parents whose subtasks are all done. Added in a later step.
-pub(crate) fn finish(_ctx: &Ctx<'_>, _out: &mut Vec<Entry>) {}
+/// "Ready to start: 143 and 145 are done" · "143 merged and 145 done · ready to start".
+fn ready_text(on: &[TaskId], merged: &HashSet<TaskId>) -> (String, String) {
+    if on.len() > 2 {
+        return (
+            format!("Ready to start: {} tasks it waited on are done", on.len()),
+            format!("{} tasks done · ready to start", on.len()),
+        );
+    }
+    let ids: Vec<String> = on.iter().map(|t| t.0.to_string()).collect();
+    let verb = match on.len() {
+        1 => "is",
+        _ => "are",
+    };
+    let headline = format!("Ready to start: {} {verb} done", ids.join(" and "));
+    let done = |t: &TaskId| match merged.contains(t) {
+        true => "merged",
+        false => "done",
+    };
+    let context = match on {
+        [a, b] if done(a) != done(b) => format!("{} {} and {} {}", a.0, done(a), b.0, done(b)),
+        _ => format!("{} {}", ids.join(" and "), on.first().map_or("done", done)),
+    };
+    (headline, format!("{context} · ready to start"))
+}
+
+/// Open parents whose direct subtasks that aren't dropped are all done, with at least one.
+/// A proposed subtask counts as not done.
+pub(crate) fn finish(ctx: &Ctx<'_>, out: &mut Vec<Entry>) {
+    // Per parent position: kept subtasks, done ones, the newest done one's last event.
+    let mut kids: Vec<(usize, usize, Option<&str>)> = vec![(0, 0, None); ctx.core.tree.len()];
+    for node in &ctx.core.tree {
+        let Some(&p) = node.task.parent.and_then(|p| ctx.index.get(&p)) else {
+            continue;
+        };
+        let k = &mut kids[p];
+        match node.task.status {
+            Status::Dropped => {}
+            Status::Done => {
+                k.0 += 1;
+                k.1 += 1;
+                let at = node.last_event_at.as_str();
+                if k.2.is_none_or(|newest| at > newest) {
+                    k.2 = Some(at);
+                }
+            }
+            _ => k.0 += 1,
+        }
+    }
+    for (node, &(kept, done, newest)) in ctx.core.tree.iter().zip(&kids) {
+        let Some(newest) = newest.filter(|_| kept > 0 && kept == done) else {
+            continue;
+        };
+        if !is_open(node.task.status) {
+            continue;
+        }
+        let since = stamp(newest);
+        let (headline, context) = match done {
+            1 => (
+                "1 subtask is done. Mark the parent done?".to_string(),
+                "1 subtask done".to_string(),
+            ),
+            n => (
+                format!("All {n} subtasks are done. Mark the parent done?"),
+                format!("All {n} subtasks done"),
+            ),
+        };
+        let item = ItemFor {
+            kind: NeedsKind::FinishIt,
+            key: format!("finish:{}:{since}", node.task.id.0),
+            node,
+            since,
+            headline,
+            context,
+            target: Target::Task(node.task.id),
+        };
+        out.push(Entry {
+            item: item.build(false),
+            tasks: vec![node.task.id],
+            changes_at: None,
+        });
+    }
+}
+
+/// The noun, plural unless there's one.
+fn plural(n: usize, noun: &str) -> String {
+    match n {
+        1 => noun.to_string(),
+        _ => format!("{noun}s"),
+    }
+}

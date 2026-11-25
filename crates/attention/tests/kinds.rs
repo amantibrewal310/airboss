@@ -97,7 +97,11 @@ fn a_question_on_a_closed_task_is_hidden() {
         let sync = Links::new()
             .thread(asking("a1", RequestKind::Question, "Q?"), &[5])
             .build();
-        assert!(run(core, sync, at(3, 0)).items.is_empty(), "{status:?}");
+        let out = run(core, sync, at(3, 0));
+        assert!(
+            out.items.iter().all(|i| i.kind != NeedsKind::Question),
+            "{status:?}"
+        );
     }
 }
 
@@ -379,4 +383,270 @@ fn a_review_without_ready_since_uses_its_last_update() {
     let out = run(review_core(), Links::new().pr(p, &[5]).build(), at(3, 0));
     assert_eq!(out.items[0].since, ts(2, 2));
     assert!(out.items[0].stale);
+}
+
+// ---------- Proposed ----------
+
+#[test]
+fn proposals_under_one_parent_are_one_item() {
+    let core = Core::new()
+        .titled(150, None, Doing, &ts(1, 0), "Clean up worktrees")
+        .titled(152, Some(150), Proposed, &ts(2, 0), "Find merged branches")
+        .created(&ts(2, 0))
+        .titled(151, Some(150), Proposed, &ts(2, 1), "List stale worktrees")
+        .created(&ts(2, 1))
+        .titled(153, Some(150), Todo, &ts(1, 0), "Already accepted")
+        .build();
+    let out = run(core, Links::new().build(), at(3, 0));
+    assert_eq!(out.items.len(), 1);
+    let item = &out.items[0];
+    assert_eq!(item.key, key("proposed:150:152"));
+    assert_eq!(item.kind, NeedsKind::Proposed);
+    assert_eq!(item.group, NeedsGroup::Proposed);
+    assert_eq!(item.task, id(150));
+    assert_eq!(item.task_title, "Clean up worktrees");
+    assert_eq!(item.since, ts(2, 1));
+    assert_eq!(item.headline, "The agent proposed 2 subtasks");
+    assert_eq!(item.context, "2 proposed subtasks");
+    assert_eq!(item.target, Target::Task(id(150)));
+    assert_eq!(
+        item.proposed,
+        vec![
+            (id(151), "List stale worktrees".to_string()),
+            (id(152), "Find merged branches".to_string())
+        ]
+    );
+}
+
+#[test]
+fn a_new_proposal_under_the_same_parent_is_a_new_occurrence() {
+    let core = Core::new()
+        .task(1, None, Doing, &ts(1, 0))
+        .task(2, Some(1), Proposed, &ts(1, 0))
+        .task(9, Some(1), Proposed, &ts(1, 0))
+        .build();
+    assert_eq!(
+        keys(&run(core, Links::new().build(), at(3, 0))),
+        vec!["proposed:1:9"]
+    );
+}
+
+#[test]
+fn one_proposed_subtask_reads_singular() {
+    let core = Core::new()
+        .task(1, None, Doing, &ts(1, 0))
+        .task(2, Some(1), Proposed, &ts(1, 0))
+        .build();
+    let item = run(core, Links::new().build(), at(3, 0)).items.remove(0);
+    assert_eq!(item.headline, "The agent proposed 1 subtask");
+    assert_eq!(item.context, "1 proposed subtask");
+}
+
+#[test]
+fn a_top_level_proposal_is_its_own_item() {
+    let core = Core::new()
+        .titled(7, None, Proposed, &ts(1, 0), "Add a dark mode")
+        .created(&ts(1, 2))
+        .titled(8, None, Proposed, &ts(1, 0), "Add a light mode")
+        .build();
+    let out = run(core, Links::new().build(), at(3, 0));
+    assert_eq!(keys(&out), vec!["proposed:7", "proposed:8"]);
+    let item = &out.items[0];
+    assert_eq!(item.task, id(7));
+    assert_eq!(item.since, ts(1, 2));
+    assert_eq!(item.headline, "The agent proposed a task");
+    assert_eq!(item.context, "Proposed task");
+    assert_eq!(item.proposed, vec![(id(7), "Add a dark mode".to_string())]);
+}
+
+// ---------- Ready ----------
+
+#[test]
+fn a_task_whose_blocker_finished_is_ready() {
+    let core = Core::new()
+        .task(143, None, Done, &ts(1, 0))
+        .titled(146, None, Todo, &ts(1, 0), "Ship it")
+        .edge(146, 143)
+        .ready(146, &ts(2, 0))
+        .build();
+    let out = run(core, Links::new().build(), at(3, 0));
+    let item = &out.items[0];
+    assert_eq!(item.key, key(&format!("ready:146:{}", ts(2, 0))));
+    assert_eq!(item.kind, NeedsKind::Ready);
+    assert_eq!(item.group, NeedsGroup::Ready);
+    assert_eq!(item.task, id(146));
+    assert_eq!(item.task_title, "Ship it");
+    assert_eq!(item.since, ts(2, 0));
+    assert_eq!(item.headline, "Ready to start: 143 is done");
+    assert_eq!(item.context, "143 done · ready to start");
+    assert_eq!(item.target, Target::Task(id(146)));
+}
+
+#[test]
+fn ready_names_two_blockers_in_id_order_and_counts_more() {
+    let two = Core::new()
+        .task(145, None, Done, &ts(1, 0))
+        .task(143, None, Dropped, &ts(1, 0))
+        .task(146, None, Todo, &ts(1, 0))
+        .edge(146, 145)
+        .edge(146, 143)
+        .ready(146, &ts(2, 0))
+        .build();
+    let item = run(two, Links::new().build(), at(3, 0)).items.remove(0);
+    assert_eq!(item.headline, "Ready to start: 143 and 145 are done");
+    assert_eq!(item.context, "143 and 145 done · ready to start");
+
+    let three = Core::new()
+        .task(1, None, Done, &ts(1, 0))
+        .task(2, None, Done, &ts(1, 0))
+        .task(3, None, Done, &ts(1, 0))
+        .task(4, None, Todo, &ts(1, 0))
+        .edge(4, 1)
+        .edge(4, 2)
+        .edge(4, 3)
+        .ready(4, &ts(2, 0))
+        .build();
+    let item = run(three, Links::new().build(), at(3, 0)).items.remove(0);
+    assert_eq!(
+        item.headline,
+        "Ready to start: 3 tasks it waited on are done"
+    );
+    assert_eq!(item.context, "3 tasks done · ready to start");
+}
+
+#[test]
+fn ready_says_merged_when_a_blockers_pr_merged() {
+    let core = || {
+        Core::new()
+            .task(143, None, Done, &ts(1, 0))
+            .task(145, None, Done, &ts(1, 0))
+            .task(146, None, Todo, &ts(1, 0))
+            .edge(146, 143)
+            .ready(146, &ts(2, 0))
+    };
+    let mut merged = pr(58);
+    merged.state = Some(PrState::Merged);
+    let sync = || Links::new().pr(merged.clone(), &[143]).build();
+    let item = run(core().build(), sync(), at(3, 0)).items.remove(0);
+    assert_eq!(item.headline, "Ready to start: 143 is done");
+    assert_eq!(item.context, "143 merged · ready to start");
+
+    let item = run(core().edge(146, 145).build(), sync(), at(3, 0))
+        .items
+        .remove(0);
+    assert_eq!(item.context, "143 merged and 145 done · ready to start");
+
+    // An open PR on the blocker isn't "merged".
+    let item = run(
+        core().build(),
+        Links::new().pr(pr(59), &[143]).build(),
+        at(3, 0),
+    )
+    .items
+    .remove(0);
+    assert_eq!(item.context, "143 done · ready to start");
+}
+
+#[test]
+fn a_ready_task_that_never_waited_isnt_news() {
+    let core = Core::new()
+        .task(146, None, Todo, &ts(1, 0))
+        .ready(146, &ts(2, 0))
+        .build();
+    assert!(run(core, Links::new().build(), at(3, 0)).items.is_empty());
+}
+
+#[test]
+fn readiness_older_than_the_window_is_hidden() {
+    let core = || {
+        Core::new()
+            .task(1, None, Done, &ts(0, 0))
+            .task(2, None, Todo, &ts(0, 0))
+            .edge(2, 1)
+            .ready(2, &ts(1, 0))
+            .build()
+    };
+    // Just inside 7 days, then exactly 7 days.
+    let inside = run(
+        core(),
+        Links::new().build(),
+        at(8, 0) - Duration::from_millis(1),
+    );
+    assert_eq!(inside.items.len(), 1);
+    assert!(run(core(), Links::new().build(), at(8, 0)).items.is_empty());
+}
+
+// ---------- Finish it? ----------
+
+#[test]
+fn an_open_parent_with_every_subtask_done_asks_to_finish() {
+    let core = Core::new()
+        .titled(110, None, Doing, &ts(1, 0), "Menu bar")
+        .task(111, Some(110), Done, &ts(2, 0))
+        .task(112, Some(110), Done, &ts(2, 4))
+        .task(113, Some(110), Dropped, &ts(2, 9))
+        .build();
+    let out = run(core, Links::new().build(), at(3, 0));
+    let item = &out.items[0];
+    assert_eq!(item.key, key(&format!("finish:110:{}", ts(2, 4))));
+    assert_eq!(item.kind, NeedsKind::FinishIt);
+    assert_eq!(item.group, NeedsGroup::FinishIt);
+    assert_eq!(item.task, id(110));
+    assert_eq!(item.since, ts(2, 4));
+    assert_eq!(
+        item.headline,
+        "All 2 subtasks are done. Mark the parent done?"
+    );
+    assert_eq!(item.context, "All 2 subtasks done");
+    assert_eq!(item.target, Target::Task(id(110)));
+}
+
+#[test]
+fn finish_it_is_hidden_unless_every_kept_subtask_is_done() {
+    let cases: [(&str, Vec<airboss_core::Status>); 4] = [
+        ("an open subtask", vec![Done, Doing]),
+        ("a proposed subtask", vec![Done, Proposed]),
+        ("only dropped subtasks", vec![Dropped, Dropped]),
+        ("no subtasks", vec![]),
+    ];
+    for (why, kids) in cases {
+        let mut core = Core::new().task(1, None, Doing, &ts(1, 0));
+        for (i, s) in kids.into_iter().enumerate() {
+            core = core.task(10 + i as i64, Some(1), s, &ts(1, 0));
+        }
+        let out = run(core.build(), Links::new().build(), at(3, 0));
+        assert!(
+            out.items.iter().all(|i| i.kind != NeedsKind::FinishIt),
+            "{why}"
+        );
+    }
+}
+
+#[test]
+fn a_closed_parent_isnt_asked_to_finish() {
+    for status in [Done, Dropped, Proposed] {
+        let core = Core::new()
+            .task(1, None, status, &ts(1, 0))
+            .task(2, Some(1), Done, &ts(1, 0))
+            .build();
+        let out = run(core, Links::new().build(), at(3, 0));
+        assert!(
+            out.items.iter().all(|i| i.kind != NeedsKind::FinishIt),
+            "{status:?}"
+        );
+    }
+}
+
+#[test]
+fn finish_it_counts_direct_subtasks_only() {
+    // 1's only child is 2, which is done; 3 under 2 doesn't count for 1.
+    let core = Core::new()
+        .task(1, None, Doing, &ts(1, 0))
+        .task(2, Some(1), Done, &ts(1, 0))
+        .task(3, Some(2), Done, &ts(1, 0))
+        .build();
+    let out = run(core, Links::new().build(), at(3, 0));
+    let item = out.items.iter().find(|i| i.task == id(1)).unwrap();
+    assert_eq!(item.headline, "1 subtask is done. Mark the parent done?");
+    assert_eq!(item.context, "1 subtask done");
 }
