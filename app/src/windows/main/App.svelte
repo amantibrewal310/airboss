@@ -11,6 +11,8 @@
   import TaskPage from './TaskPage.svelte';
   import NeedsInbox from './NeedsInbox.svelte';
   import PlansGrid from './PlansGrid.svelte';
+  import Overlays from './Overlays.svelte';
+  import Toasts from './Toasts.svelte';
 
   let { app }: { app: App } = $props();
   // svelte-ignore state_referenced_locally
@@ -50,6 +52,8 @@
     {/if}
   </main>
 </div>
+<Overlays />
+<Toasts />
 
 <style>
   .win {

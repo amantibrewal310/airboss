@@ -36,6 +36,8 @@ export const ICONS = {
   gear: 'M8 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM8 1.8v1.7M8 12.5v1.7M1.8 8h1.7M12.5 8h1.7M3.6 3.6l1.2 1.2M11.2 11.2l1.2 1.2M3.6 12.4l1.2-1.2M11.2 4.8l1.2-1.2',
   undo: 'M5 4.5 2.5 7 5 9.5M2.5 7H10a3.5 3.5 0 0 1 0 7H7',
   keyboard: 'M1.5 4.5h13v8h-13ZM4 7h.01M6.5 7h.01M9 7h.01M11.5 7h.01M5 10h6',
+  up: 'M8 13V3M4 7l4-4 4 4',
+  down: 'M8 3v10M4 9l4 4 4-4',
 } as const;
 
 export type IconName = keyof typeof ICONS;

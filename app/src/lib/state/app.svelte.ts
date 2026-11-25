@@ -23,6 +23,7 @@ import type {
   RunMap,
   Settings,
   Status,
+  T3ProjectRow,
   TaskId,
   ThreadKey,
   ToastEvent,
@@ -942,6 +943,31 @@ export class App {
     }
   }
 
+  /** Accept or reject one proposal from anywhere (the status menu of a proposed task). */
+  async acceptOne(id: TaskId): Promise<void> {
+    const item = this.needs.visible.find((n) => n.kind === 'proposed' && n.proposed.some(([p]) => p === id));
+    if (item) return this.acceptProposals(item, [id]);
+    try {
+      this.applyWrite(await api.acceptProposals([id]));
+      this.toast(`Accepted ${id}`);
+    } catch (e) {
+      this.fail(e);
+    }
+  }
+
+  async rejectOne(id: TaskId): Promise<void> {
+    const item = this.needs.visible.find((n) => n.kind === 'proposed' && n.proposed.some(([p]) => p === id));
+    if (item) return this.rejectProposals(item, [id]);
+    this.tasks.hide([id], true);
+    try {
+      const w = await api.rejectProposals([id], null);
+      this.undoToast(`Rejected ${id}`, w, { rows: [id] });
+    } catch (e) {
+      this.tasks.hide([id], false);
+      this.fail(e);
+    }
+  }
+
   // ================================================================== undo
 
   async undo(entry: number | null = null): Promise<void> {
@@ -1005,6 +1031,40 @@ export class App {
     } catch (e) {
       this.fail(e);
     }
+  }
+
+  async t3Projects(): Promise<T3ProjectRow[]> {
+    try {
+      return await api.t3Projects();
+    } catch (e) {
+      this.fail(e);
+      return [];
+    }
+  }
+
+  async pickFolder(): Promise<string | null> {
+    try {
+      return await api.pickFolder();
+    } catch (e) {
+      this.fail(e);
+      return null;
+    }
+  }
+
+  /** Returns an error message to show inline, or null. */
+  async addRepos(paths: string[]): Promise<string | null> {
+    try {
+      const res = await api.addRepos(paths);
+      this.applyWrite(res.patch);
+      this.toast(res.repos.length === 1 ? `Added ${res.repos[0]!.name}` : `Added ${res.repos.length} repos`);
+      return null;
+    } catch (e) {
+      return asAppError(e).message;
+    }
+  }
+
+  async setOpenAtLogin(on: boolean): Promise<void> {
+    await this.saveSettings({ ...this.settings, open_at_login: on });
   }
 
   async copy(what: 'agent_note' | 'setup_command'): Promise<void> {

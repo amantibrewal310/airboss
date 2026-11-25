@@ -7,9 +7,10 @@
     label,
     top = '16%',
     width = 680,
+    clip = true,
     onclose,
     children,
-  }: { label: string; top?: string; width?: number; onclose: () => void; children: Snippet } = $props();
+  }: { label: string; top?: string; width?: number; clip?: boolean; onclose: () => void; children: Snippet } = $props();
 
   let el: HTMLDivElement | undefined = $state();
 
@@ -35,6 +36,7 @@
   <div
     bind:this={el}
     class="modal"
+    class:clip
     style:top
     style:width="min({width}px, calc(100% - 32px))"
     role="dialog"
@@ -62,9 +64,11 @@
     background: var(--bg-raised);
     border-radius: var(--r-xl);
     box-shadow: var(--shadow-float);
-    overflow: hidden;
     outline: none;
     animation: rise var(--dur-modal) var(--ease);
+  }
+  .clip {
+    overflow: hidden;
   }
   @keyframes fade {
     from {
