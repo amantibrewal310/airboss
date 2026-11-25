@@ -15,7 +15,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
 
 ## Phase 1: Foundation
 
-- [ ] **T1. Crate and launch's tables** (S)
+- [x] **T1. Crate and launch's tables** (S)
   - **Description:** `crates/launch` (`airboss-launch`) in the workspace with the spec's dependencies; `db.rs` opens launch's own connection and runs migration `launch` v1 through `migrate_module`.
   - **Acceptance:** each CHECK rejects its bad row; the one-pending index refuses a second pending row for the same task, repo and mode (null repo included) and allows one after it settles; opening twice applies once.
   - **Verify:** `tests/migrations.rs`.

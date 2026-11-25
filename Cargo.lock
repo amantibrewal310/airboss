@@ -12,6 +12,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "airboss-launch"
+version = "0.1.0"
+dependencies = [
+ "airboss-core",
+ "rusqlite",
+]
+
+[[package]]
 name = "airboss-mcp"
 version = "0.1.0"
 dependencies = [
