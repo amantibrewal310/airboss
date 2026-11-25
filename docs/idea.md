@@ -77,6 +77,7 @@ Why it's different: to-do apps and trackers don't know agent threads exist. T3 k
 - **`migrate` for old repo backlogs:** new work going through the list matters more.
 - **Linear/Jira sync and a status update for my manager:** neither is one of the success measures.
 - **A Slack app, or a Slack token in Airboss:** Composio already reads Slack for the agent.
+- **Starting the next wave of tasks automatically:** v1 shows the run order (a topological sort into waves), and I start each task myself.
 - **An overnight queue of unattended agents:** wait until the core has proven itself.
 - **Start for other agent tools:** T3 already runs Claude and Codex.
 - **Model calls inside the app:** they would need an API key and billing.
