@@ -3,11 +3,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use airboss_core::{Actor, Error, EventKind, NewTask, PlanTask, Status, Store, TaskId};
+mod common;
 
-fn store() -> Store {
-    Store::open_in_memory().unwrap()
-}
+use airboss_core::{Actor, Error, EventKind, NewTask, PlanTask, Status, Store, TaskId};
+use common::{Lcg, store};
 
 fn add(store: &mut Store, title: &str, parent: Option<TaskId>) -> TaskId {
     let new = NewTask::new(title);
@@ -470,23 +469,6 @@ fn a_move_that_changes_nothing_writes_no_event() {
 }
 
 // ---- Property: 500 random moves keep every group 1..n ----
-
-/// A tiny linear congruential generator, so the test needs no `rand`.
-struct Lcg(u64);
-
-impl Lcg {
-    fn next(&mut self) -> u64 {
-        self.0 = self
-            .0
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1442695040888963407);
-        self.0 >> 33
-    }
-
-    fn below(&mut self, n: usize) -> usize {
-        (self.next() % n as u64) as usize
-    }
-}
 
 #[test]
 fn five_hundred_random_moves_keep_every_group_gap_free() {

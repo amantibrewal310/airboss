@@ -3,13 +3,12 @@
 
 use std::path::Path;
 
+mod common;
+
 use airboss_core::{
     Actor, DepRef, Error, Event, EventKind, NewTask, Origin, PlanTask, Status, Store, Task, TaskId,
 };
-
-fn store() -> Store {
-    Store::open_in_memory().unwrap()
-}
+use common::store;
 
 fn top(s: &mut Store, title: &str) -> TaskId {
     s.add_task(NewTask::new(title), &Actor::Me).unwrap().id
