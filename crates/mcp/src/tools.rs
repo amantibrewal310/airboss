@@ -461,7 +461,10 @@ pub fn link(store: &mut Store, who: &Identity, args: Link) -> Result<LinkView, T
     store
         .link(id, new, &who.actor)
         .map(LinkView::from)
-        .map_err(|e| explain(store, &who.actor, e, &Subject::task(id)))
+        .map_err(|e| match e {
+            airboss_core::Error::InvalidTarget if kind == LinkKind::Pr => ToolError::bad_pr_ref(),
+            e => explain(store, &who.actor, e, &Subject::task(id)),
+        })
 }
 
 fn missing_ref(kind: LinkKind) -> ToolError {

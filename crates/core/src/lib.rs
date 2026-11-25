@@ -14,25 +14,27 @@ mod permissions;
 mod plans;
 mod positions;
 mod repos;
+mod snapshot;
 mod sql;
 mod status;
 mod tasks;
 mod tx;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, Sender};
 
 use rusqlite::Connection;
 
 use crate::tx::Tx;
 
+pub use db::Migration;
 pub use error::{Error, Result};
 pub use model::TaskEdit;
 pub use model::{
     Actor, Event, EventKind, NewTask, Origin, Repo, Status, Task, TaskNode, UnknownValue,
 };
+pub use model::{CoreSnapshot, Dependencies, OutsideWait, ReadyTask, RunOrder};
 pub use model::{DepRef, PlanResult, PlanTask};
-pub use model::{Dependencies, OutsideWait, ReadyTask, RunOrder};
 pub use model::{Link, LinkKind, NewLink, PrState};
 
 macro_rules! id_type {
@@ -83,6 +85,15 @@ impl Store {
         Ok(Store::with(db::open_memory()?))
     }
 
+    /// The database file's absolute path, as SQLite resolved it, so another module can open
+    /// its own `Store` on the same file from any working directory. `None` in memory.
+    pub fn path(&self) -> Option<PathBuf> {
+        self.conn
+            .path()
+            .filter(|p| !p.is_empty())
+            .map(PathBuf::from)
+    }
+
     fn with(conn: Connection) -> Store {
         Store {
             conn,
@@ -111,6 +122,16 @@ impl Store {
         let (tx, rx) = std::sync::mpsc::channel();
         self.subscribers.push(tx);
         rx
+    }
+
+    /// SQLite's `PRAGMA data_version`. It changes when **another** connection, such as
+    /// `airboss mcp` in its own process, commits to the file, and never for this handle's own
+    /// commits, which `subscribe` reports instead (rule 23). Compare two readings to see
+    /// whether anything outside changed.
+    pub fn data_version(&self) -> Result<i64> {
+        Ok(self
+            .conn
+            .pragma_query_value(None, "data_version", |r| r.get(0))?)
     }
 
     /// Every event after `cursor`, oldest first. Event ids only grow, so this is the

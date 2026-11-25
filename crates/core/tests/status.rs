@@ -22,7 +22,7 @@ fn task_in(from: Status, prs: &[PrState]) -> (Store, TaskId) {
     for (i, &state) in prs.iter().enumerate() {
         s.link(
             id,
-            NewLink::pr(format!("acme/web#{i}")).with_pr_state(state),
+            NewLink::pr(format!("acme/web#{}", i + 1)).with_pr_state(state),
             &Actor::Me,
         )
         .unwrap();
@@ -462,7 +462,7 @@ fn a_pr_reopened_on_github_reopens_its_done_task_for_review() {
 #[test]
 fn a_pr_reopened_on_github_leaves_open_work_alone() {
     let (mut s, id) = task_in(Doing, &[PrState::Closed]);
-    s.set_pr_state("acme/web#0", PrState::Open, &Actor::SyncGh)
+    s.set_pr_state("acme/web#1", PrState::Open, &Actor::SyncGh)
         .unwrap();
     assert_eq!(s.task(id).unwrap().status, Doing);
     assert_eq!(

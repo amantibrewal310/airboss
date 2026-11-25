@@ -567,6 +567,34 @@ fn branch_sets_and_clears() {
 }
 
 #[test]
+fn a_branch_name_git_would_misread_is_refused_plainly() {
+    let dir = TempDir::new();
+    let db = dir.db();
+    ok(&db, &["add", "Task"]);
+    for bad in ["a..b", "feature/", "x.lock", "has space", "/abs"] {
+        let err = fails(&db, &["branch", "1", bad]);
+        assert!(err.contains("A branch name uses only"), "{bad}: {err}");
+    }
+    assert!(json(&db, &["show", "1"])["task"]["branch"].is_null());
+}
+
+#[test]
+fn link_refuses_a_malformed_pr_ref_plainly() {
+    let dir = TempDir::new();
+    let db = dir.db();
+    ok(&db, &["add", "Code"]);
+    let err = fails(&db, &["link", "1", "pr", "web#42"]);
+    assert!(err.contains("owner/repo#42"), "{err}");
+    assert_eq!(
+        ok(
+            &db,
+            &["link", "1", "pr", "https://github.com/Acme/Web/pull/42"]
+        ),
+        "Linked pr acme/web#42 to ○ #1 Code\n"
+    );
+}
+
+#[test]
 fn every_write_is_recorded_as_me() {
     let dir = TempDir::new();
     let db = dir.db();

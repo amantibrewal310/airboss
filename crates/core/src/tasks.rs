@@ -294,6 +294,24 @@ pub(crate) fn edit(tx: &mut Tx<'_>, id: TaskId, edit: TaskEdit, actor: &Actor) -
     get(tx, id)
 }
 
+/// Rule 25: `Error::InvalidTarget` unless `git` and `t3` can only read `name` as a branch:
+/// `[A-Za-z0-9._/-]`, at most 200 characters, no `..`, not starting with `-` or `/`, and not
+/// ending with `/` or `.lock`.
+pub(crate) fn check_branch_name(name: &str) -> Result<()> {
+    let chars_ok = name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '/' | '-'));
+    let shape_ok = !name.contains("..")
+        && !name.starts_with(['-', '/'])
+        && !name.ends_with('/')
+        && !name.ends_with(".lock");
+    if chars_ok && shape_ok && name.len() <= 200 {
+        Ok(())
+    } else {
+        Err(Error::InvalidTarget)
+    }
+}
+
 /// Sets the branch and writes one `edited` event naming it. A blank name clears it, and
 /// setting the branch it already has writes nothing (rule 25).
 pub(crate) fn set_branch(
@@ -303,8 +321,11 @@ pub(crate) fn set_branch(
     actor: &Actor,
 ) -> Result<Task> {
     allowed(Call::SetBranch, actor)?;
-    let before = get(tx, id)?;
     let branch = branch.map(str::trim).filter(|b| !b.is_empty());
+    if let Some(name) = branch {
+        check_branch_name(name)?;
+    }
+    let before = get(tx, id)?;
     if branch == before.branch.as_deref() {
         return Ok(before);
     }

@@ -7,7 +7,7 @@ use rusqlite::{Connection, params};
 
 use crate::events;
 use crate::model::{
-    Actor, Dependencies, EventKind, OutsideWait, ReadyTask, RunOrder, Status, Task,
+    Actor, Dependencies, EventKind, OutsideWait, ReadyTask, RunOrder, Status, Task, TaskNode,
 };
 use crate::permissions::{Call, allowed};
 use crate::sql::{SUBTREE_CTE, query_all};
@@ -43,6 +43,12 @@ impl crate::Store {
         ready(&self.conn)
     }
 
+    /// Every dependency in the store as `(waiting, waits_on)`, finished tasks included, so
+    /// a map can draw every line from one read.
+    pub fn dependency_edges(&self) -> Result<Vec<(TaskId, TaskId)>> {
+        edges(&self.conn)
+    }
+
     /// The waves `parent`'s open subtasks can run in (rule 18). Subtasks that lifting
     /// deeper dependencies tangles into a loop go in `tangled`, after the waves.
     pub fn run_order(&self, parent: TaskId) -> Result<RunOrder> {
@@ -66,21 +72,37 @@ SELECT t.id, ifnull(
 FROM tasks t WHERE t.status = 'todo'";
 
 fn ready(conn: &Connection) -> Result<Vec<ReadyTask>> {
+    ready_from(conn, &tasks::tree(conn)?)
+}
+
+/// The ready list worked out from a tree already built on `conn`, so a caller that has the
+/// tree never builds it twice (rule 30). Read it in the same transaction as the tree.
+pub(crate) fn ready_from(conn: &Connection, tree: &[TaskNode]) -> Result<Vec<ReadyTask>> {
     let mut since: HashMap<TaskId, String> = query_all(conn, READY_SINCE_SQL, [], |r| {
         Ok((TaskId(r.get(0)?), r.get(1)?))
     })?
     .into_iter()
     .collect();
-    Ok(tasks::tree(conn)?
-        .into_iter()
+    Ok(tree
+        .iter()
         .filter(|n| n.task.status == Status::Todo && !n.waiting)
         .map(|n| ReadyTask {
             since: since
                 .remove(&n.task.id)
                 .unwrap_or_else(|| n.task.created_at.clone()),
-            task: n.task,
+            task: n.task.clone(),
         })
         .collect())
+}
+
+/// Every `(waiting, waits_on)` pair, finished tasks included, sorted (rule 30).
+pub(crate) fn edges(conn: &Connection) -> Result<Vec<(TaskId, TaskId)>> {
+    query_all(
+        conn,
+        "SELECT task_id, waits_on_id FROM task_deps ORDER BY task_id, waits_on_id",
+        [],
+        |r| Ok((TaskId(r.get(0)?), TaskId(r.get(1)?))),
+    )
 }
 
 /// True when either task is an ancestor of the other (rule 15).
