@@ -26,7 +26,7 @@ Then, for the whole product:
 | 0 | App design | Done (merged e63a45b) |
 | 1 | `core` v2: what the design needs (see SPEC-core "v2") | Done (262 tests) |
 | 1 | Specs: `app`, `sync`, `launch`, `attention` | Drafted; under fresh review |
-| 1→2 | `mcp`: spec drafted; build after `core` v2 lands | Next |
+| 1→2 | `mcp` | Done (merged; 107 tests; start-up 2.3 ms, 5.4 MB binary) |
 | 2 | Build `app`, `sync`, `launch`, `attention` in parallel | |
 | 3 | Integration: one app process hosts sync, launch and attention; the CLI and `airboss mcp` share the database | |
 | 3 | QA: real-user flows, performance targets, light and dark, keyboard-only | |

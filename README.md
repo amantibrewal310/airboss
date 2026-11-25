@@ -6,7 +6,7 @@ Jot down a task in a couple of seconds, whether it's a one-line bug fix or a who
 
 On an aircraft carrier, the air boss launches every plane, tracks each one in the air and decides who lands next. Airboss does that for your agent threads.
 
-> **Status:** early. The `core` library (task tree, history, links, dependencies, run order) is built and tested in `crates/core`. The MCP server, the Mac app, launching and sync come next. See [CAPABILITIES.md](CAPABILITIES.md).
+> **Status:** early. `core` (task tree, history, links, dependencies, run order) and the `airboss` binary (an MCP server for agents plus a CLI for you) are built and tested. The Mac app, launching, sync and Needs me are being built. See [CAPABILITIES.md](CAPABILITIES.md) and [tasks/program.md](tasks/program.md).
 
 ## What it will do
 
