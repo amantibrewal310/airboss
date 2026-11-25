@@ -127,24 +127,24 @@ mod tests {
 
     #[test]
     fn a_t3_thread_running_claude_code_knows_both_ids_but_is_named_by_t3() {
-        let id = with(&[(T3_THREAD, "97b5"), (CLAUDE_SESSION, "3944a606")]);
+        let id = with(&[(T3_THREAD, "97b5"), (CLAUDE_SESSION, "5e551011")]);
         assert_eq!(id.actor, agent("t3/97b5"));
         assert_eq!(
             id.thread_links(),
             vec![
                 (LinkKind::T3Thread, "97b5"),
-                (LinkKind::ClaudeSession, "3944a606")
+                (LinkKind::ClaudeSession, "5e551011")
             ]
         );
     }
 
     #[test]
     fn a_claude_code_session_outside_t3_is_named_by_its_session() {
-        let id = with(&[(CLAUDE_SESSION, "3944a606")]);
-        assert_eq!(id.actor, agent("claude/3944a606"));
+        let id = with(&[(CLAUDE_SESSION, "5e551011")]);
+        assert_eq!(id.actor, agent("claude/5e551011"));
         assert_eq!(
             id.thread_links(),
-            vec![(LinkKind::ClaudeSession, "3944a606")]
+            vec![(LinkKind::ClaudeSession, "5e551011")]
         );
         assert_eq!(id.warning, None);
     }
