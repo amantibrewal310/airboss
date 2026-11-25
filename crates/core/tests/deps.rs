@@ -1,7 +1,7 @@
 //! Dependencies, loops, waiting and run order (rules 14–18).
 #![allow(clippy::unwrap_used)]
 
-use airboss_core::{Actor, Error, EventKind, NewTask, Store, Task, TaskId};
+use airboss_core::{Actor, Error, EventKind, NewTask, RunOrder, Store, Task, TaskId};
 
 fn store() -> Store {
     Store::open_in_memory().unwrap()
@@ -277,6 +277,102 @@ fn ready_lists_unblocked_todo_tasks_in_tree_order() {
     let ready = ids(&s.ready().unwrap());
     assert_eq!(ready, vec![p, p1, q]);
     assert!(!ready.contains(&proposal), "proposals are not ready");
+}
+
+// ---- T11: run order ----
+
+fn wave_ids(order: &RunOrder) -> Vec<Vec<TaskId>> {
+    order.waves.iter().map(|w| ids(w)).collect()
+}
+
+#[test]
+fn a_diamond_runs_in_three_waves() {
+    let mut s = store();
+    let p = top(&mut s, "Project");
+    let [a, b, c, d] = ["A", "B", "C", "D"].map(|t| under(&mut s, p, t));
+    for (task, on) in [(b, a), (c, a), (d, b), (d, c)] {
+        s.add_dependency(task, on, &Actor::Me).unwrap();
+    }
+    let order = s.run_order(p).unwrap();
+    assert_eq!(wave_ids(&order), vec![vec![a], vec![b, c], vec![d]]);
+    assert!(order.waiting_outside.is_empty());
+}
+
+#[test]
+fn tasks_keep_their_sibling_order_within_a_wave() {
+    let mut s = store();
+    let p = top(&mut s, "Project");
+    let [z, y, x] = ["Z", "Y", "X"].map(|t| under(&mut s, p, t));
+    s.add_dependency(z, x, &Actor::Me).unwrap();
+    let order = s.run_order(p).unwrap();
+    assert_eq!(wave_ids(&order), vec![vec![y, x], vec![z]]);
+}
+
+#[test]
+fn steps_waiting_across_phases_make_the_phases_wait() {
+    let mut s = store();
+    let project = top(&mut s, "Project");
+    let [p1, p2, p3] = ["Phase 1", "Phase 2", "Phase 3"].map(|t| under(&mut s, project, t));
+    let s1a = under(&mut s, p1, "Step 1a");
+    let s1b = under(&mut s, p1, "Step 1b");
+    let s2a = under(&mut s, p2, "Step 2a");
+    let s2a1 = under(&mut s, s2a, "Step 2a.1");
+    let s2b = under(&mut s, p2, "Step 2b");
+    under(&mut s, p3, "Step 3a");
+    s.add_dependency(s2b, s1a, &Actor::Me).unwrap();
+    s.add_dependency(s2a1, s1b, &Actor::Me).unwrap();
+    // A dependency inside one phase doesn't make it wait on itself.
+    s.add_dependency(s1b, s1a, &Actor::Me).unwrap();
+
+    let order = s.run_order(project).unwrap();
+    assert_eq!(wave_ids(&order), vec![vec![p1, p3], vec![p2]]);
+
+    // Inside a phase, its own steps are ordered.
+    let inner = s.run_order(p1).unwrap();
+    assert_eq!(wave_ids(&inner), vec![vec![s1a], vec![s1b]]);
+}
+
+#[test]
+fn a_subtask_with_an_open_blocker_outside_waits_outside() {
+    let mut s = store();
+    let elsewhere = top(&mut s, "Elsewhere");
+    let p = top(&mut s, "Project");
+    let [a, b, c] = ["A", "B", "C"].map(|t| under(&mut s, p, t));
+    let a1 = under(&mut s, a, "A1");
+    s.add_dependency(a1, elsewhere, &Actor::Me).unwrap();
+    // C waits on A, so it can't start before A either.
+    s.add_dependency(c, a, &Actor::Me).unwrap();
+
+    let order = s.run_order(p).unwrap();
+    assert_eq!(wave_ids(&order), vec![vec![b]]);
+    assert_eq!(ids(&order.waiting_outside), vec![a, c]);
+}
+
+#[test]
+fn a_loop_made_only_by_lifting_is_rejected() {
+    let mut s = store();
+    let p = top(&mut s, "Project");
+    let x = under(&mut s, p, "X");
+    let y = under(&mut s, p, "Y");
+    let [x1, x2] = ["X1", "X2"].map(|t| under(&mut s, x, t));
+    let [y1, y2] = ["Y1", "Y2"].map(|t| under(&mut s, y, t));
+    // No loop between tasks, but X waits on Y and Y waits on X.
+    s.add_dependency(x1, y1, &Actor::Me).unwrap();
+    s.add_dependency(y2, x2, &Actor::Me).unwrap();
+    assert!(matches!(s.run_order(p), Err(Error::Loop)));
+}
+
+#[test]
+fn run_order_of_a_missing_parent_is_not_found() {
+    let s = store();
+    assert!(matches!(s.run_order(TaskId(7)), Err(Error::NotFound)));
+}
+
+#[test]
+fn a_task_with_no_subtasks_has_an_empty_run_order() {
+    let mut s = store();
+    let p = top(&mut s, "Leaf");
+    assert_eq!(s.run_order(p).unwrap(), RunOrder::default());
 }
 
 // ---- Early performance check (run with `--release -- --ignored perf`) ----
