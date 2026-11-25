@@ -471,6 +471,9 @@ pub struct RunOrder {
     pub waves: Vec<Vec<Task>>,
     /// Subtasks that wait, directly or through a sibling, on an open task outside the parent.
     pub waiting_outside: Vec<Task>,
+    /// Subtasks that can't be placed in a wave because their lifted dependencies form a
+    /// loop, or wait on one, in sibling order. Kept apart so the rest of the order shows.
+    pub tangled: Vec<Task>,
 }
 
 /// What a plan step waits on: another step in the same plan, or a task that already exists.

@@ -398,17 +398,25 @@ fn a_subtask_with_an_open_blocker_outside_waits_outside() {
 }
 
 #[test]
-fn a_loop_made_only_by_lifting_is_rejected() {
+fn a_loop_made_only_by_lifting_goes_in_a_tangled_group_after_the_waves() {
     let mut s = store();
     let p = top(&mut s, "Project");
+    let w = under(&mut s, p, "W");
     let x = under(&mut s, p, "X");
     let y = under(&mut s, p, "Y");
+    let z = under(&mut s, p, "Z");
     let [x1, x2] = ["X1", "X2"].map(|t| under(&mut s, x, t));
     let [y1, y2] = ["Y1", "Y2"].map(|t| under(&mut s, y, t));
     // No loop between tasks, but X waits on Y and Y waits on X.
     s.add_dependency(x1, y1, &Actor::Me).unwrap();
     s.add_dependency(y2, x2, &Actor::Me).unwrap();
-    assert!(matches!(s.run_order(p), Err(Error::Loop)));
+    // W waits on the tangle, so it can't be placed either; Z is free.
+    s.add_dependency(w, x2, &Actor::Me).unwrap();
+
+    let order = s.run_order(p).unwrap();
+    assert_eq!(wave_ids(&order), vec![vec![z]]);
+    assert_eq!(ids(&order.tangled), vec![w, x, y]);
+    assert!(order.waiting_outside.is_empty());
 }
 
 #[test]
