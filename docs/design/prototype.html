@@ -137,6 +137,7 @@ kbd{font:500 11px var(--font);color:var(--text-2);background:var(--bg-input);bor
 .row .prog{font-size:11.5px;color:var(--text-3);display:flex;align-items:center;gap:4px}
 .row .sp{flex:1;min-width:8px}
 .row .meta{display:flex;align-items:center;gap:8px;color:var(--text-2);font-size:12px}
+.rtag{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--text-3);white-space:nowrap}
 .pill{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 8px;border-radius:11px;border:1px solid var(--line-2);font-size:11.5px;color:var(--text-2);white-space:nowrap}
 .pill.warn{color:var(--st-blocked);border-color:color-mix(in srgb,var(--st-blocked) 35%,transparent)}
 .pill.need{color:var(--needs);border-color:color-mix(in srgb,var(--needs) 35%,transparent);background:var(--needs-soft)}
@@ -361,16 +362,16 @@ kbd{font:500 11px var(--font);color:var(--text-2);background:var(--bg-input);bor
 /* =========================================================== data (sample) */
 const REPOS={"airboss":"var(--repo-3)","booking-web":"var(--repo-1)","booking-api":"var(--repo-2)","dotfiles":"var(--repo-4)"};
 const T={};
-function add(id,title,status,parent,repo,x={}){T[id]=Object.assign({id,title,status,parent,repo,notes:"",links:[],waits:[],open:false,updated:"3d",by:"me",blocked:"",branch:""},x);}
+function add(id,title,status,parent,repo,x={}){const repos=repo==null?[]:Array.isArray(repo)?repo:[repo];T[id]=Object.assign({id,title,status,parent,repos,repoBy:null,notes:"",links:[],waits:[],open:false,updated:"3d",by:"me",blocked:"",branch:""},x);}
 add(142,"Booking flow","doing",null,null,{open:true,branch:"task-142-booking-flow",notes:"Let people pick a slot and get a confirmation. Split across the API and the web app. The Slack thread has the product asks; the plan has the phases.",links:[["slack","#booking thread"],["doc","booking-flow.md"]],updated:"6m",by:"agent"});
 add(143,"API: slots endpoint","done",142,"booking-api",{links:[["pr","PR #58 · merged"]],updated:"1h",by:"sync"});
 add(144,"Web: slot picker","doing",142,"booking-web",{links:[["thread","slot-picker"]],updated:"6m",by:"agent",notes:"Keyboard support is a must: arrows move between slots, Return books."});
 add(145,"Web: confirm screen","todo",142,"booking-web",{waits:[144],updated:"2d",by:"plan"});
 add(146,"Confirmation email","todo",142,"booking-api",{waits:[143],updated:"1h",by:"sync",notes:"Send the confirmation once a slot is held. Use the existing mail queue, not a new provider. Include the .ics file and a cancel link.",links:[["slack","#booking thread"]]});
-add(147,"End-to-end tests","todo",142,"booking-web",{waits:[144,145,146],updated:"2d",by:"plan"});
+add(147,"End-to-end tests","todo",142,["booking-web","booking-api"],{waits:[144,145,146],updated:"2d",by:"plan"});
 add(200,"Refunds","doing",null,null,{branch:"task-200-refunds",updated:"20m",by:"agent",notes:"Refunds from the booking page, end to end."});
 add(201,"Schema: refunds table","done",200,"booking-api",{updated:"1d",by:"sync"});
-add(202,"Refund service","doing",200,"booking-api",{waits:[201],links:[["thread","refund-service"]],updated:"20m",by:"agent"});
+add(202,"Refund service","doing",200,"booking-api",{repoBy:"agent",waits:[201],links:[["thread","refund-service"]],updated:"20m",by:"agent"});
 add(203,"Payment webhook","blocked",200,"booking-api",{waits:[201],blocked:"Needs test keys from the payments dashboard",updated:"5h",by:"agent"});
 add(204,"Refund button","in_review",200,"booking-web",{links:[["pr","PR #61 · checks passed"]],updated:"2h",by:"agent"});
 add(205,"Refund status page","todo",200,"booking-web",{waits:[202,204],updated:"1d",by:"plan"});
@@ -379,12 +380,12 @@ add(207,"Announce to support","todo",200,null,{waits:[205],updated:"1d",by:"plan
 add(208,"Backfill old refunds","todo",200,"booking-api",{waits:[128],updated:"1d",by:"plan"});
 add(128,"MCP server","in_review",null,"airboss",{links:[["pr","PR #31 · +412 −38"]],updated:"40m",by:"agent"});
 add(133,"Menu-bar count","doing",null,"airboss",{links:[["thread","tray-count"]],updated:"12m",by:"agent"});
-add(131,"Fix flaky login test","doing",null,"booking-web",{links:[["thread","fix-flaky-login"]],updated:"1h",by:"agent"});
-add(120,"Payments refactor stack","in_review",null,"booking-api",{updated:"6d",by:"agent",links:[["pr","10 open PRs"]]});
+add(131,"Fix flaky login test","doing",null,"booking-web",{repoBy:"agent",links:[["thread","fix-flaky-login"]],updated:"1h",by:"agent"});
+add(120,"Payments refactor stack","in_review",null,["booking-api","booking-web"],{updated:"6d",by:"agent",links:[["pr","10 open PRs"]]});
 add(150,"Worktree cleanup research","todo",null,"airboss",{updated:"3h",by:"agent"});
 add(110,"Dark mode tokens","doing",null,"booking-web",{updated:"1h",by:"sync"});
 add(111,"Colour tokens","done",110,"booking-web");add(112,"Swap hard-coded colours","done",110,"booking-web");add(113,"Dark screenshots","done",110,"booking-web");add(114,"Contrast check","done",110,"booking-web");
-add(151,"Rotate local MCP token","todo",null,"airboss",{updated:"2d"});
+add(151,"Rotate local MCP token","todo",null,["airboss","dotfiles"],{updated:"2d"});
 add(152,"Read sortie prior art","todo",null,null,{updated:"4d"});
 add(98,"New laptop setup","done",null,"dotfiles",{updated:"2w"});
 const LIVE={144:["run","slot-picker","Agent working · asked a question 6m ago"],202:["run","refund-service","Agent working · 20m"],133:["wait","tray-count","Waiting for your approval"],131:["stop","fix-flaky-login","Stopped · 3 tests failed"],128:["stop","mcp-server","Finished · PR #31 open"]};
@@ -449,6 +450,9 @@ const ic=(n,s=16)=>`<svg class="i" viewBox="0 0 16 16" style="width:${s}px;heigh
 const rdot=r=>r?`<span class="rdot" style="--c:${REPOS[r]}"></span>`:"";
 const av=w=>`<span class="av av-${w}" title="${w}">${{agent:"A",me:"Y",sync:"S",plan:"P",launch:"L"}[w]||"?"}</span>`;
 const needsFor=id=>NEEDS.filter(n=>n.task===id);
+/* repos are optional tags: a task's own, or for a parent the union of its subtasks' */
+function reposOf(t){ if(t.repos.length) return t.repos; const u=new Set(); const walk=p=>kids(p).forEach(k=>{T[k].repos.forEach(r=>u.add(r)); walk(k);}); walk(t.id); return [...u]; }
+const rdots=rs=>rs.map(r=>rdot(r)).join("");
 /* progress: share of leaf subtasks (any depth) that are done; dropped ones don't count */
 function progress(id){
   const c={done:0,in_review:0,doing:0,blocked:0,todo:0,total:0};
@@ -499,7 +503,7 @@ function renderSide(){
 function filterFn(){
   if(filter==="ready") return t=>t.status==="todo"&&!waitingOn(t).length&&!kids(t.id).length;
   if(filter==="prog") return t=>t.status==="doing"||t.status==="in_review";
-  if(filter.startsWith("r:")) {const r=filter.slice(2); return t=>t.repo===r;}
+  if(filter.startsWith("r:")) {const r=filter.slice(2); return t=>reposOf(t).includes(r);}
   return null;
 }
 function rows(){
@@ -522,8 +526,8 @@ function rowHtml(id,d){
   if(t.status==="blocked") meta+=`<span class="pill warn">Blocked</span>`;
   if(g==="waiting") meta+=`<span class="pill" title="waits on ${w.join(", ")}">${ic("dep",12)}<span class="long">waits on ${w.join(", ")}</span><span class="short">${w.length}</span></span>`;
   if(t.status==="todo"&&!w.length&&!k.length&&needsFor(id).some(n=>n.kind==="play")) meta+=`<span class="pill ok">Ready</span>`;
-  const repos=t.repo?[t.repo]:[...new Set(k.map(c=>T[c].repo).filter(Boolean))];
-  meta+=repos.map(r=>`<span class="pill rn">${rdot(r)}${r}</span>`).join("");
+  const repos=reposOf(t);
+  meta+=repos.slice(0,2).map(r=>`<span class="pill rn">${rdot(r)}${r}</span>`).join("")+(repos.length>2?`<span class="pill rn">+${repos.length-2}</span>`:"");
   const lv=LIVE[id]; const live=lv&&isOpen(t.status)?`<span class="live l-${lv[0]}" title="${esc(lv[2])}"><i></i><span class="lt">${{run:"Agent working",wait:"Waiting on you",stop:"Stopped"}[lv[0]]}</span></span>`:"";
   return `<div class="${cls.join(" ")}" data-id="${id}" style="--d:${d}">${k.length?`<span class="disc" data-disc="${id}"><svg viewBox="0 0 12 12" class="i">${I.chev}</svg></span>`:'<span class="disc"></span>'}<span class="stbtn" data-stp="${id}" title="Change status (S)">${st(g)}</span><span class="id">${id}</span>${title}${prog}${live}${needsFor(id).length?'<span class="dot" title="Needs you"></span>':""}<span class="sp"></span><span class="meta">${meta}</span>${repos.map(r=>`<span class="rd" title="${r}">${rdot(r)}</span>`).join("")}${av(t.by)}<span class="when">${t.updated}</span></div>`;
 }
@@ -557,12 +561,12 @@ function wireList(){
 
 /* =========================================================== peek + page */
 function propsHtml(t){
-  const k=kids(t.id), repos=t.repo?[t.repo]:[...new Set(k.map(c=>T[c].repo).filter(Boolean))];
+  const k=kids(t.id), repos=reposOf(t);
   const blocks=Object.values(T).filter(x=>x.waits.includes(t.id));
   return `<div class="props">
   <div class="l">Status</div><div class="v" data-stv="${t.id}" style="cursor:pointer">${st(gk(t))}${LABEL[gk(t)]}${t.status==="blocked"?`<span class="faint">· ${esc(t.blocked)}</span>`:""}</div>
   ${k.length?(()=>{const c=progress(t.id);return `<div class="l">Progress</div><div class="v" style="gap:10px">${bar(c)}<span style="white-space:nowrap;font-variant-numeric:tabular-nums">${c.pct}% <span class="faint">· ${c.done} of ${c.total}</span></span></div>`;})():""}
-  <div class="l">Repo</div><div class="v">${repos.length?repos.map(r=>`<span class="tag">${rdot(r)}${r}</span>`).join(""):'<span class="faint">None</span>'}</div>
+  <div class="l">Repos</div><div class="v">${repos.map(r=>`<span class="tag">${rdot(r)}${r}</span>`).join("")}${!t.repos.length&&k.length&&repos.length?'<span class="faint">· from subtasks</span>':""}<span class="tag link" data-linkrepo="${t.id}" style="color:var(--text-2)">${ic("link",12)}${repos.length?"Link repo":"Link a repo"}</span></div>
   ${t.branch?`<div class="l">Branch</div><div class="v"><span class="tag mono">${ic("branch",12)}${t.branch}</span></div>`:""}
   ${t.parent!=null?`<div class="l">Parent</div><div class="v"><span class="tag link" data-go="${t.parent}">${st(gk(T[t.parent]))}${t.parent} ${esc(T[t.parent].title)}</span></div>`:""}
   <div class="l">Waits on</div><div class="v">${t.waits.length?t.waits.map(w=>`<span class="tag link" data-go="${w}">${st(gk(T[w]))}${w}</span>`).join(""):'<span class="faint">Nothing · ⌘D to add</span>'}</div>
@@ -581,7 +585,7 @@ function subtasksHtml(t,wide){
   const done=k.filter(c=>T[c].status==="done").length;
   let inner;
   if(roMode==="map" && wide) inner=runMap(t.id, wide);
-  else inner=Array.from({length:W.count},(_,i)=>{const ids=W.ids.filter(id=>W.wave[id]===i); return `<div class="wv"><div class="wv-h">Wave ${i+1}${i===0?" · can start now":""}<span>${ids.length>1?"· in parallel":""}</span></div>${ids.map(id=>{const s=T[id],w=waitingOn(s),o=W.outside(id);return `<div class="sub${gk(s)==="waiting"?" wait":""}" data-go="${id}">${st(gk(s))}<span class="num" style="width:30px">${id}</span><span class="t">${esc(s.title)}</span>${s.status==="blocked"?'<span class="pill warn">Blocked</span>':""}${w.length?`<span class="pill">${ic("dep",12)}${o.length?"outside: ":""}${w.join(", ")}</span>`:""}${s.status==="todo"&&!w.length?'<span class="pill ok">Ready</span>':""}${rdot(s.repo)}</div>`;}).join("")}</div>`;}).join("");
+  else inner=Array.from({length:W.count},(_,i)=>{const ids=W.ids.filter(id=>W.wave[id]===i); return `<div class="wv"><div class="wv-h">Wave ${i+1}${i===0?" · can start now":""}<span>${ids.length>1?"· in parallel":""}</span></div>${ids.map(id=>{const s=T[id],w=waitingOn(s),o=W.outside(id);return `<div class="sub${gk(s)==="waiting"?" wait":""}" data-go="${id}">${st(gk(s))}<span class="num" style="width:30px">${id}</span><span class="t">${esc(s.title)}</span>${s.status==="blocked"?'<span class="pill warn">Blocked</span>':""}${w.length?`<span class="pill">${ic("dep",12)}${o.length?"outside: ":""}${w.join(", ")}</span>`:""}${s.status==="todo"&&!w.length?'<span class="pill ok">Ready</span>':""}${rdots(s.repos)}</div>`;}).join("")}</div>`;}).join("");
   const c=progress(t.id);
   const big=`<div class="pbig"><span class="pct">${c.pct}%</span>${bar(c)}<span class="faint" style="white-space:nowrap">${c.done} of ${c.total} done</span></div><div class="legend">${SEG.map(([k,col,l])=>c[k]?`<span><i style="background:${col}"></i>${l} ${c[k]}</span>`:"").join("")}${c.todo?`<span><i style="background:var(--bg-input);box-shadow:inset 0 0 0 1px var(--line-2)"></i>Todo ${c.todo}</span>`:""}</div>`;
   return `<div class="sec"><div class="sec-h">Subtasks <span class="faint" style="font-weight:500">${W.count} waves</span><span class="sp"></span>${wide?tg:""}</div>${big}${inner}<div class="faint" style="font-size:12px;margin-top:6px">Nothing starts by itself. Select a ready task and press ⌘↩.</div></div>`;
@@ -610,6 +614,7 @@ function peekHtml(id){
 function wireDetail(root){
   root.querySelectorAll("[data-go]").forEach(e=>e.onclick=ev=>{ev.stopPropagation(); const id=+e.dataset.go; page?openPage(id):selectTask(id,true);});
   root.querySelectorAll("[data-stv]").forEach(e=>e.onclick=ev=>{ev.stopPropagation(); const b=e.getBoundingClientRect(); statusMenu(b.left,b.bottom+4,+e.dataset.stv);});
+  root.querySelectorAll("[data-linkrepo]").forEach(e=>e.onclick=ev=>{ev.stopPropagation(); const b=e.getBoundingClientRect(); repoMenu(b.left,b.bottom+4,+e.dataset.linkrepo);});
   root.querySelectorAll("[data-link]").forEach(e=>e.onclick=()=>toast("Opens "+e.dataset.link));
   root.querySelectorAll("[data-act]").forEach(b=>b.onclick=ev=>{ev.stopPropagation(); act(b.dataset.act, NEEDS.find(n=>n.id===b.dataset.n), b.dataset.k);});
   root.querySelectorAll("[data-a]").forEach(b=>b.onclick=()=>{const a=b.dataset.a; if(a==="do") doIt(sel); if(a==="plan") planIt(sel); if(a==="expand") openPage(sel); if(a==="close"){peek=false;renderAll();} if(a==="back") closePage();});
@@ -635,27 +640,25 @@ function waves(pid){
 }
 function runMap(pid){
   const {ids,wave,count,outside}=waves(pid);
-  const lanes=[...new Set(ids.map(id=>T[id].repo||"none"))];
-  const avail=Math.min(780,($("#main").clientWidth||1000)-280-84); const W=Math.max(460,avail), LW=Math.min(110,W*0.16), CW=(W-LW)/count;
-  const slot={},used={}; ids.forEach(id=>{const k=(T[id].repo||"none")+"|"+wave[id]; slot[id]=used[k]=(used[k]??-1)+1;});
-  const ls=l=>Math.max(1,...ids.filter(id=>(T[id].repo||"none")===l).map(id=>slot[id]+1));
-  const tops=[];let y=28; lanes.forEach((l,i)=>{tops[i]=y;y+=ls(l)*58+24;}); const H=y;
-  const pos=id=>[LW+wave[id]*CW+14, tops[lanes.indexOf(T[id].repo||"none")]+20+slot[id]*58];
-  const col=id=>T[id].repo?REPOS[T[id].repo]:"var(--text-3)";
-  let svg=""; for(let i=1;i<count;i++){const x=LW+i*CW; svg+=`<line x1="${x}" y1="0" x2="${x}" y2="${H}" stroke="var(--line)"/>`;}
+  const W=Math.max(460,Math.min(780,($("#main").clientWidth||1000)-280-84)), CW=W/count, RH=80;
+  const slot={},used={}; ids.forEach(id=>{slot[id]=used[wave[id]]=(used[wave[id]]??-1)+1;});
+  const rows=Math.max(...Object.values(used))+1, H=30+rows*RH+6;
+  const pos=id=>[wave[id]*CW+14, 40+slot[id]*RH];
+  let svg=""; for(let i=1;i<count;i++){const x=i*CW; svg+=`<line x1="${x}" y1="0" x2="${x}" y2="${H}" stroke="var(--line)"/>`;}
   ids.forEach(id=>{const [bx,by]=pos(id);
     T[id].waits.filter(w=>ids.includes(w)).forEach(w=>{const [ax,ay]=pos(w),dn=!isOpen(T[w].status),a2=ax+9;
-      const d=ay===by?`M${a2} ${ay} H${bx-9}`:`M${a2} ${ay} H${bx-44} C${bx-22} ${ay} ${bx-28} ${by} ${bx-9} ${by}`;
-      svg+=`<path data-f="${w}" data-t="${id}" d="${d}" fill="none" stroke="${col(w)}" stroke-width="1.75" stroke-linecap="round" ${dn?"":'stroke-dasharray="2 5"'}/>`;});
-    outside(id).forEach(o=>{svg+=`<path data-f="${o}" data-t="${id}" d="M${bx-60} ${by} H${bx-9}" fill="none" stroke="var(--text-3)" stroke-width="1.75" stroke-linecap="round" stroke-dasharray="2 5"/>`;});
+      const skip=wave[id]-wave[w]>1, ch=Math.max(ay,by)+62;
+      const d=skip?`M${a2} ${ay} H${ax+CW-46} C${ax+CW-24} ${ay} ${ax+CW-30} ${ch} ${ax+CW-8} ${ch} H${bx-46} C${bx-24} ${ch} ${bx-30} ${by} ${bx-9} ${by}`
+        :ay===by?`M${a2} ${ay} H${bx-9}`:`M${a2} ${ay} H${bx-44} C${bx-22} ${ay} ${bx-28} ${by} ${bx-9} ${by}`;
+      svg+=`<path data-f="${w}" data-t="${id}" d="${d}" fill="none" stroke="${dn?"var(--text-3)":"var(--text-2)"}" stroke-width="1.75" stroke-linecap="round" ${dn?"":'stroke-dasharray="2 5"'}/>`;});
+    outside(id).forEach(o=>{svg+=`<path data-f="${o}" data-t="${id}" d="M${bx-52} ${by} H${bx-9}" fill="none" stroke="var(--text-3)" stroke-width="1.75" stroke-linecap="round" stroke-dasharray="2 5"/>`;});
   });
-  const heads=Array.from({length:count},(_,i)=>`<div class="ro-colh" style="left:${LW+i*CW+6}px">Wave ${i+1}</div>`).join("");
-  const lab=lanes.map((l,i)=>`<div class="lane" style="top:${tops[i]+11}px">${l==="none"?'<span class="rdot" style="--c:var(--text-3)"></span>No repo':rdot(l)+l}</div>`).join("");
+  const heads=Array.from({length:count},(_,i)=>`<div class="ro-colh" style="left:${i*CW+6}px">Wave ${i+1}</div>`).join("");
   const stops=ids.map(id=>{const t=T[id],[x,yy]=pos(id),g=gk(t),w=waitingOn(t),o=outside(id);
     let sub=g==="waiting"?`waits on ${w.join(", ")}`:LABEL[t.status].toLowerCase(); if(o.length) sub=`waits outside: ${o.join(", ")}`;
     if(t.status==="blocked") sub=`<span style="color:var(--st-blocked)">blocked</span>`; if(t.status==="todo"&&!w.length) sub=`<span style="color:var(--st-review)">ready</span>`;
-    return `<div class="ro-st" data-st="${id}" style="left:${x-8}px;top:${yy-8}px">${st(g)}</div><div class="stop${g==="waiting"?" wait":""}${roFocus===id?" sel":""}" data-st="${id}" style="left:${x-8}px;top:${yy+11}px;width:${CW-14}px"><b>${esc(t.title)}</b><small>${id} · ${sub}</small></div>`;}).join("");
-  return `<div class="ro" id="ro" style="width:${W}px;height:${H}px">${heads}<svg width="${W}" height="${H}">${svg}</svg>${lab}${stops}</div><div class="faint" style="display:flex;gap:16px;font-size:11.5px;margin-top:4px"><span>— done, can follow</span><span>┄ still waiting</span><span>Hover a task to trace its lines · double-click to open</span></div>`;
+    return `<div class="ro-st" data-st="${id}" style="left:${x-8}px;top:${yy-8}px">${st(g)}</div><div class="stop${g==="waiting"?" wait":""}${roFocus===id?" sel":""}" data-st="${id}" style="left:${x-8}px;top:${yy+11}px;width:${CW-14}px"><b>${esc(t.title)}</b><small>${id} · ${sub}${t.repos.length?" · "+rdots(t.repos):""}</small></div>`;}).join("");
+  return `<div class="ro" id="ro" style="width:${W}px;height:${H}px">${heads}<svg width="${W}" height="${H}">${svg}</svg>${stops}</div><div class="faint" style="display:flex;gap:16px;font-size:11.5px;margin-top:4px"><span>— done, can follow</span><span>┄ still waiting</span><span>Hover a task to trace its lines · double-click to open</span></div>`;
 }
 function wireMap(root){
   const ro=root.querySelector("#ro"); if(!ro) return;
@@ -694,11 +697,11 @@ function act(a,n,k){
     case "keep": removeNeed(n,"Kept open"); break;
     case "snooze": removeNeed(n,"Snoozed until Sat 28 Nov"); break;
     case "goto": openPage(n.task); break;
-    case "acceptall": n.proposed.forEach(p=>addTask(p,n.task,t.repo,"agent")); t.open=true; removeNeed(n,`Added ${n.proposed.length} subtasks to ${n.task}`); break;
+    case "acceptall": n.proposed.forEach(p=>addTask(p,n.task,null,"agent")); t.open=true; removeNeed(n,`Added ${n.proposed.length} subtasks to ${n.task}`); break;
     case "rejectall": removeNeed(n,"Rejected all 3"); break;
     default: { let title=n.proposed[+k];
       if(a==="edit1"){const v=prompt("Edit the subtask; it's accepted when you save",title); if(v==null) return; title=v.trim()||title;}
-      if(a!=="rej1"){const id=addTask(title,n.task,t.repo,"agent"); t.open=true; toast(`Added ${id} under ${n.task}`);} else toast("Rejected");
+      if(a!=="rej1"){const id=addTask(title,n.task,null,"agent"); t.open=true; toast(`Added ${id} under ${n.task}`);} else toast("Rejected");
       n.proposed.splice(+k,1); if(!n.proposed.length) removeNeed(n); else renderAll(); }
   }
 }
@@ -713,7 +716,7 @@ function renderPlans(){
     const ready=W.ids.filter(x=>T[x].status==="todo"&&!waitingOn(T[x]).length);
     const blocked=W.ids.filter(x=>T[x].status==="blocked");
     const running=W.ids.filter(x=>LIVE[x]&&LIVE[x][0]==="run");
-    const repos=[...new Set(W.ids.map(x=>T[x].repo).filter(Boolean))];
+    const repos=reposOf(t);
     return `<div class="plan${i===planSel?" sel":""}" data-plan="${id}" data-pi="${i}">
       <h3>${st(gk(t))}${esc(t.title)}<span class="num" style="margin-left:auto">${id}</span></h3>
       <div style="display:flex;align-items:baseline;gap:10px;margin:12px 0 8px"><span class="pct">${c.pct}%</span><span class="faint">${c.done} of ${c.total} done</span><span style="margin-left:auto">${ring(c.pct,22)}</span></div>
@@ -742,6 +745,10 @@ function menuAt(x,y,items){
   m._key=e=>{ if(e.key==="Escape"){closeCtx();return true;} if(e.key==="ArrowDown"||e.key==="ArrowUp"){hl=(hl+(e.key==="ArrowDown"?1:-1)+opts.length)%opts.length; opts.forEach((o,i)=>o.classList.toggle("hl",i===hl)); return true;} if(e.key==="Enter"&&hl>=0){opts[hl].click(); return true;} const n=+e.key; if(n>=1&&n<=opts.length&&m.dataset.num){opts[n-1].click(); return true;} return false; };
   return m;
 }
+function repoMenu(x,y,id){
+  const t=T[id];
+  menuAt(x,y,Object.keys(REPOS).map(r=>({icon:`<span style="width:14px;display:inline-flex;color:var(--accent)">${t.repos.includes(r)?ic("check",13):""}</span>${rdot(r)}`,label:r,run:()=>{t.repos=t.repos.includes(r)?t.repos.filter(x=>x!==r):[...t.repos,r]; t.by="me"; t.updated="now"; renderAll(); toast(t.repos.includes(r)?`Linked ${r} to ${id}`:`Unlinked ${r} from ${id}`); const el=document.querySelector(`[data-linkrepo="${id}"]`); if(el){const b=el.getBoundingClientRect(); repoMenu(b.left,b.bottom+4,id);}}})));
+}
 function statusMenu(x,y,id){
   const list=["todo","doing","in_review","blocked","done","dropped"];
   const m=menuAt(x,y,list.map((s,i)=>({icon:st(s),label:LABEL[s],k:String(i+1),run:()=>setStatus(id,s)})));
@@ -763,6 +770,7 @@ function ctxMenu(x,y,id){
     {icon:ic("check",14),label:T[id].status==="done"?"Mark not done":"Mark done",k:"Space",run:()=>toggleDone(id)},
     {icon:ic("edit",14),label:"Rename",k:"↩",run:()=>{renaming=id;renderAll();}},
     {icon:ic("dep",14),label:"Add waits-on…",k:"⌘D",run:()=>toast("Pick the task it waits on")},
+    {icon:ic("repo",14),label:"Link repos…",k:"R",run:()=>{const r=document.querySelector(`.row[data-id="${id}"]`)?.getBoundingClientRect()||{left:400,bottom:200}; repoMenu(r.left+60,r.bottom,id);}},
     {icon:ic("expand",14),label:"Open page",k:"⌘↓",run:()=>openPage(id)},
     {icon:ic("link",14),label:"Copy task number",k:"⇧⌘C",run:()=>toast(`Copied ${id}`)},"-",
     {icon:ic("x",14),label:"Drop",k:"⌘⌫",danger:true,run:()=>setStatus(id,"dropped")},
@@ -777,12 +785,20 @@ function openList(f){view="list";filter=f||"all";page=false;kbFocus="list";if(se
 function selectTask(id,reveal){ if(reveal){ancestors(id).forEach(a=>T[a].open=true); if(view!=="list"||!rows().some(r=>r[0]===id)){view="list";filter="all";}} sel=id; peek=true; roFocus=null; renderAll(); }
 function openPage(id){ancestors(id).forEach(a=>T[a].open=true); if(view!=="list"){view="list";filter="all";} sel=id; page=true; roFocus=null; renderAll(); }
 function closePage(){page=false; renderAll();}
+let doItRepo=null;
 function doIt(id,fromNeeds){
   const tid=roFocus||id; if(!tid){toast("Select a task first");return;} const t=T[tid];
   if(t.status==="done"){toast(`${tid} is already done`);return;}
   const w=waitingOn(t); if(w.length){toast(`${tid} still waits on ${w.join(", ")}`);return;}
   const k=kids(tid).filter(c=>isOpen(T[c].status));
-  if(k.length){const r=[...new Set(k.map(c=>T[c].repo).filter(Boolean))]; toast(`Starting ${r.length} threads, one per repo, on <span class="mono">${t.branch||"task-"+tid}</span>`);} else toast(`Starting a T3 thread for <b>${tid}</b>${t.repo?" in "+t.repo:""}`);
+  const rs=reposOf(t);
+  if(!rs.length&&!doItRepo){ const b=document.querySelector('[data-a="do"]')?.getBoundingClientRect()||{left:innerWidth/2,bottom:120};
+    menuAt(b.left-120,b.bottom+6,[...Object.keys(REPOS).map(r=>({icon:rdot(r),label:"Start in "+r,run:()=>{doItRepo=r; t.repos=[r]; doIt(tid);}})),"-",{icon:ic("search",14),label:"No repo: research only",k:"",run:()=>{doItRepo="agent"; doIt(tid);}}]);
+    return; }
+  if(doItRepo==="agent") toast(`Starting a research thread for <b>${tid}</b> with no repo.`);
+  else if(rs.length>1) toast(`Starting ${rs.length} threads, one per repo, on <span class="mono">${t.branch||"task-"+tid}</span>`);
+  else toast(`Starting a T3 thread for <b>${tid}</b> in ${rs[0]}`);
+  doItRepo=null;
   t.status="doing"; t.by="launch"; t.updated="now"; if(!t.links.some(l=>l[0]==="thread")) t.links.push(["thread","task-"+tid]);
   NEEDS=NEEDS.filter(n=>!(n.kind==="play"&&n.task===tid)); renderAll();
 }
@@ -799,20 +815,20 @@ function addTask(title,parent,repo,by="me",x={}){const id=nextId++; add(id,title
 
 /* =========================================================== quick add (new task modal) */
 let qa=null;
-function openQA(){ qa={title:"",desc:"",slack:null,repo:null,parent:(view==="list"&&sel&&!page)?null:null,dd:null,hl:0,q:""}; $("#qaS").classList.add("open"); renderQA(); $("#qaT").focus(); }
+function openQA(){ qa={title:"",desc:"",slack:null,repos:[],parent:(view==="list"&&sel&&!page)?null:null,dd:null,hl:0,q:""}; $("#qaS").classList.add("open"); renderQA(); $("#qaT").focus(); }
 function closeQA(){$("#qaS").classList.remove("open"); qa=null;}
 function renderQA(){
-  const ddHtml=(kind)=>{ if(qa.dd!==kind) return ""; const opts=kind==="repo"?["No repo",...Object.keys(REPOS)]:["Top level",...ORDER[null].filter(id=>isOpen(T[id].status)).map(String)];
+  const ddHtml=(kind)=>{ if(qa.dd!==kind) return ""; const opts=kind==="repo"?Object.keys(REPOS):["Top level",...ORDER[null].filter(id=>isOpen(T[id].status)).map(String)];
     const f=opts.filter(o=>(kind==="parent"&&o!=="Top level"?o+" "+T[+o].title:o).toLowerCase().includes(qa.q.toLowerCase())); qa.opts=f; qa.hl=Math.min(qa.hl,Math.max(0,f.length-1));
-    return `<div class="dd"><input id="ddIn" value="${esc(qa.q)}" placeholder="${kind==="repo"?"Repo…":"Parent…"}">${f.map((o,i)=>`<div class="o${i===qa.hl?" hl":""}" data-o="${esc(o)}">${kind==="repo"?(o==="No repo"?'<span class="rdot" style="--c:var(--text-3)"></span>':rdot(o)):(o==="Top level"?ic("list",13):st(gk(T[+o])))}${kind==="parent"&&o!=="Top level"?o+" "+esc(T[+o].title):o}</div>`).join("")}</div>`; };
+    return `<div class="dd"><input id="ddIn" value="${esc(qa.q)}" placeholder="${kind==="repo"?"Link repos…":"Parent…"}">${f.map((o,i)=>`<div class="o${i===qa.hl?" hl":""}" data-o="${esc(o)}">${kind==="repo"?`<span style="width:14px;display:inline-flex;color:var(--accent)">${qa.repos.includes(o)?ic("check",13):""}</span>${rdot(o)}`:(o==="Top level"?ic("list",13):st(gk(T[+o])))}${kind==="parent"&&o!=="Top level"?o+" "+esc(T[+o].title):o}</div>`).join("")}</div>`; };
   $("#qa").innerHTML=`<div class="top"><span class="tag" style="height:20px">${ic("check",11)}Airboss</span>›<span>New task</span><span style="flex:1"></span><span>⌃⌥Space from any app</span></div>
   <input class="ttl" id="qaT" placeholder="Task title" value="${esc(qa.title)}" autocomplete="off" spellcheck="false">
   <textarea class="desc" id="qaD" placeholder="Add notes, or paste a Slack link…">${esc(qa.desc)}</textarea>
   <div class="pills"><span class="pp set">${st("todo")}Todo</span>
-   <span class="pp${qa.repo?" set":""}${qa.dd==="repo"?" focus":""}" id="ppRepo">${qa.repo?rdot(qa.repo):ic("repo",13)}${qa.repo||"Repo"}${ddHtml("repo")}</span>
+   <span class="pp${qa.repos.length?" set":""}${qa.dd==="repo"?" focus":""}" id="ppRepo">${qa.repos.length?rdots(qa.repos):ic("repo",13)}${qa.repos.length?qa.repos.join(", "):"Repos"}${ddHtml("repo")}</span>
    <span class="pp${qa.parent?" set":""}${qa.dd==="parent"?" focus":""}" id="ppParent">${ic("tree",13)}${qa.parent?qa.parent+" "+esc(T[qa.parent].title):"Parent"}${ddHtml("parent")}</span>
    ${qa.slack?`<span class="pp set">${ic("slack",13)}Slack · ${esc(qa.slack)}<span id="slx" style="display:flex;color:var(--text-3)">${ic("x",11)}</span></span>`:""}</div>
-  <div class="ft"><span><kbd>⇥</kbd> repo</span><span><kbd>⇧</kbd><kbd>⇥</kbd> parent</span><span class="sp"></span><span><kbd>⌘</kbd><kbd>↩</kbd> create and Do it</span><button class="btn pri" id="qaGo">Create task <kbd>↩</kbd></button></div>`;
+  <div class="ft"><span><kbd>⇥</kbd> repos</span><span><kbd>⇧</kbd><kbd>⇥</kbd> parent</span><span class="sp"></span><span><kbd>⌘</kbd><kbd>↩</kbd> create and Do it</span><button class="btn pri" id="qaGo">Create task <kbd>↩</kbd></button></div>`;
   const tI=$("#qaT"), dI=$("#qaD");
   tI.oninput=()=>qa.title=tI.value; dI.oninput=()=>qa.desc=dI.value;
   const paste=e=>{const txt=(e.clipboardData||window.clipboardData).getData("text"); const m=txt.match(/https?:\/\/[\w.-]*slack\.com\/\S+/); if(m){e.preventDefault(); const ch=(m[0].match(/archives\/(\w+)/)||[])[1]; qa.slack=ch?"#"+ch.toLowerCase().slice(0,10):"thread"; const rest=txt.replace(m[0],"").trim(); if(rest&&!qa.title) qa.title=rest; renderQA(); $("#qaT").focus(); toast("Slack link attached. The agent reads the thread.");}};
@@ -824,7 +840,7 @@ function renderQA(){
   const sx=$("#slx"); if(sx) sx.onclick=e=>{e.stopPropagation(); qa.slack=null; renderQA();};
   const dd=$("#ddIn"); if(dd){dd.focus(); dd.setSelectionRange(dd.value.length,dd.value.length); dd.oninput=()=>{qa.q=dd.value;qa.hl=0;renderQA();}; dd.onkeydown=qaKey; document.querySelectorAll(".dd .o").forEach(o=>o.onclick=ev=>{ev.stopPropagation(); pickDD(o.dataset.o);});}
 }
-function pickDD(o){ if(qa.dd==="repo") qa.repo=o==="No repo"?null:o; else qa.parent=o==="Top level"?null:+o; if(qa.dd==="parent"&&qa.parent&&!qa.repo) qa.repo=null; qa.dd=null; renderQA(); $("#qaT").focus(); }
+function pickDD(o){ if(qa.dd==="repo"){ qa.repos=qa.repos.includes(o)?qa.repos.filter(x=>x!==o):[...qa.repos,o]; renderQA(); return; } qa.parent=o==="Top level"?null:+o; qa.dd=null; renderQA(); $("#qaT").focus(); }
 function qaKey(e){
   e.stopPropagation();
   if(e.key==="Escape"){e.preventDefault(); if(qa.dd){qa.dd=null;renderQA();$("#qaT").focus();} else closeQA(); return;}
@@ -836,7 +852,7 @@ function qaKey(e){
 function createFromQA(go){
   const title=(qa.title||"").trim(); if(!title){toast("Give the task a title"); $("#qaT").focus(); return;}
   const x={notes:qa.desc}; if(qa.slack) x.links=[["slack",qa.slack]];
-  const id=addTask(title,qa.parent,qa.repo,"me",x); const p=qa.parent; closeQA(); if(p!=null) T[p].open=true;
+  const id=addTask(title,qa.parent,qa.repos,"me",x); const p=qa.parent; closeQA(); if(p!=null) T[p].open=true;
   toast(`Created <b>${id}</b> ${esc(title)}`);
   if(view!=="list"){view="list";filter="all";}
   sel=id; peek=true; renderAll(); const r=document.querySelector(`.row[data-id="${id}"]`); if(r){r.classList.add("enter"); r.scrollIntoView({block:"nearest"});}
@@ -855,7 +871,7 @@ function renderPal(){
   const cs=CMDS.filter(c=>!q||fz(q,c[0])).slice(0,q?5:4);
   palItems=[...ts.map(x=>({task:x.t.id})),...cs.map(c=>({c}))]; palHl=Math.min(palHl,Math.max(0,palItems.length-1));
   let i=0,h="";
-  if(ts.length) h+=`<div class="grp-l">${q?"Tasks":"Jump to"}</div>`+ts.map(x=>`<div class="it${i++===palHl?" hl":""}" data-i="${i-1}">${st(gk(x.t))}<span class="num" style="width:30px">${x.t.id}</span><span class="t">${esc(x.t.title)}</span>${rdot(x.t.repo)}</div>`).join("");
+  if(ts.length) h+=`<div class="grp-l">${q?"Tasks":"Jump to"}</div>`+ts.map(x=>`<div class="it${i++===palHl?" hl":""}" data-i="${i-1}">${st(gk(x.t))}<span class="num" style="width:30px">${x.t.id}</span><span class="t">${esc(x.t.title)}</span>${rdots(reposOf(x.t))}</div>`).join("");
   if(cs.length) h+=`<div class="grp-l">Commands</div>`+cs.map(c=>`<div class="it${i++===palHl?" hl":""}" data-i="${i-1}">${ic("cmd",15)}<span class="t">${c[0]}</span>${c[1]?c[1].split(" ").map(k=>`<kbd>${k}</kbd>`).join(""):""}</div>`).join("");
   $("#palRes").innerHTML=h||`<div class="empty" style="padding:24px">No match. <kbd>↩</kbd> creates “${esc(q)}” as a new task.</div>`;
   $("#palRes").querySelectorAll("[data-i]").forEach(e=>e.onclick=()=>{palHl=+e.dataset.i; runPal();});
@@ -866,7 +882,7 @@ $("#palIn").addEventListener("keydown",e=>{e.stopPropagation(); if(e.key==="Esca
 
 /* =========================================================== shortcuts sheet + tray */
 function openSheet(){
-  const K=[["Needs me","G N"],["Ready to start","G R"],["All tasks","G A"],["Jump to task","⌘ K"],["New task","C"],["Quick add from any app","⌃ ⌥ Space"],["Do it","⌘ ↩"],["Plan it","⇧ ⌘ ↩"],["Move","↑ ↓"],["Open / fold","→ ←"],["Mark done","Space"],["Change status","S"],["Plans","G L"],["Rename","↩"],["Open full page","⌘ ↓"],["Close page / peek","Esc"],["Open thread or PR","⌘ O"],["Add waits-on","⌘ D"],["Add link","⌘ L"],["Mark blocked","⌘ B"],["Needs me: main action","↩"],["Needs me: dismiss","⌘ ⌫"],["Switch list / detail","Tab"],["This sheet","?"]];
+  const K=[["Needs me","G N"],["Ready to start","G R"],["All tasks","G A"],["Jump to task","⌘ K"],["New task","C"],["Quick add from any app","⌃ ⌥ Space"],["Do it","⌘ ↩"],["Plan it","⇧ ⌘ ↩"],["Move","↑ ↓"],["Open / fold","→ ←"],["Mark done","Space"],["Change status","S"],["Link repos","R"],["Plans","G L"],["Rename","↩"],["Open full page","⌘ ↓"],["Close page / peek","Esc"],["Open thread or PR","⌘ O"],["Add waits-on","⌘ D"],["Add link","⌘ L"],["Mark blocked","⌘ B"],["Needs me: main action","↩"],["Needs me: dismiss","⌘ ⌫"],["Switch list / detail","Tab"],["This sheet","?"]];
   $("#sheet").innerHTML=`<h2>Keyboard shortcuts</h2><div class="cols">${K.map(k=>`<div class="k"><span>${k[0]}</span><span>${k[1].split(" ").map(x=>`<kbd>${x}</kbd>`).join("")}</span></div>`).join("")}</div><div class="faint" style="font-size:12px;margin-top:12px">Every shortcut also lives in the Task and View menus. Esc closes.</div>`;
   $("#shS").classList.add("open");
 }
@@ -924,6 +940,7 @@ document.addEventListener("keydown",e=>{
   if(k==="ArrowRight"){e.preventDefault(); if(kids(sel).length){ if(!t.open){t.open=true;renderAll();} else {sel=kids(sel)[0];renderAll();} } return;}
   if(k==="ArrowLeft"){e.preventDefault(); if(t.open&&kids(sel).length){t.open=false;renderAll();} else if(t.parent!=null&&r.includes(t.parent)){sel=t.parent;renderAll();} return;}
   if(k===" "){e.preventDefault(); toggleDone(sel); return;}
+  if(k==="r"&&!m&&sel){e.preventDefault(); const r=document.querySelector(`.row[data-id="${sel}"]`)?.getBoundingClientRect(); if(r) repoMenu(r.left+60,r.bottom,sel); return;}
   if(k==="s"&&!m){e.preventDefault(); const b=document.querySelector(`.row[data-id="${sel}"] .stbtn`); if(b){const r=b.getBoundingClientRect(); statusMenu(r.left,r.bottom+4,sel);} return;}
   if(k==="Enter"){e.preventDefault(); renaming=sel; renderAll(); return;}
 });

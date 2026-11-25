@@ -32,6 +32,7 @@ To-do apps and trackers don't know agent threads exist. T3 knows threads but not
 ## Capabilities and Constraints
 
 - Task tree of any depth. Statuses: proposed, todo, doing, in_review, blocked, done, dropped. "Waiting" (on other tasks) is worked out, not stored. A parent's subtasks have a run order in waves.
+- A task is linked to the repos it touches, usually known up front, and can be linked to several. Do it starts one thread per linked repo on a shared branch. A task with no repo (research, writing) is rare.
 - Each task has notes, links (T3 threads, Claude sessions, PRs, Slack, docs, GitHub issues), dependencies and a full history with actors (me, an agent, sync, plan, launch).
 - Agents only propose subtasks; the user accepts, edits or rejects them. Code is done only when its PR merges.
 - Needs me: agent questions and approvals, PRs to review, failed runs, proposed subtasks, tasks that just became ready, parents whose subtasks are all done, work quiet 5+ days.

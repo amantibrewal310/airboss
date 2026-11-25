@@ -296,7 +296,7 @@ A near-black, low-contrast base with one cool accent, one alarm red, a five-colo
 
 ### Tertiary (status and repos)
 - **Status set**: todo grey (st-todo), in-progress amber (st-doing), in-review green (st-review), blocked orange (st-blocked), done indigo (st-done, the same as the accent). Each status also has its own icon shape (see Components).
-- **Repo set** (repo-1 to repo-4): blue, pink, green, orange. Each repo keeps one colour everywhere: its dot in the sidebar, pills, tags, the run-order lane and the lines drawn from its tasks. Tasks with no repo use text-3 grey.
+- **Repo set** (repo-1 to repo-4): blue, pink, green, orange. Each repo keeps one colour everywhere: its dot in the sidebar, row tags, property tags and run-order stations. Repo colour never colours lines or lanes, since a task can have no repo or several.
 - **Actor set** (actor-agent, actor-me, actor-sync, actor-plan, actor-launch): fills for the 18–20px initial avatars in rows and the activity feed. They are the same in both themes.
 
 ### Neutral
@@ -403,15 +403,22 @@ Progress is done ÷ all leaf subtasks at any depth. Only leaves count, so nested
 - Rows show the ring plus "done/total"; the page shows "35% · 7 of 20 done".
 
 ### Task rows
-- 38px, fixed. Left to right: fold arrow, status icon, id (34px, tabular), title, progress ring and fraction, live chip, needs-me dot, a flexible gap, pills (Blocked, waits on, Ready, repo), actor avatar, time.
+- 38px, fixed. Left to right: fold arrow, status icon, id (34px, tabular), title, progress ring and fraction, live chip, needs-me dot, a flexible gap, pills (Blocked, waits on, Ready), repo tags, actor avatar, time.
 - Hover uses the hover wash; selection the selected wash; keyboard focus adds a 1px inset indigo outline.
 - Done rows dim their title to secondary text.
-- A parent with no repo of its own shows the repos of its subtasks.
+- Repo pills (dot plus name) show every linked repo, up to two, then "+1". A task with no repo shows none.
+- A parent with no repos of its own shows the union of its subtasks' repos.
 - Rename happens in place: the title becomes an input with an indigo border.
 
 ### Pills and tags
-- **Pill** (22px, fully rounded, hairline border, label type): Blocked (orange), Ready (green), "waits on 144, 145" (neutral, with the dependency icon), repo (with its dot).
+- **Pill** (22px, fully rounded, hairline border, label type): Blocked (orange), Ready (green), "waits on 144, 145" (neutral, with the dependency icon), repo (with its dot; one per linked repo).
 - **Tag** (22px, 5px corners, Field Grey): property values in the detail panel: repos, branch (mono), parent, waits-on and blocks (each with the other task's status icon), links.
+
+### Repos are linked, one or several
+- A task is linked to the repos it touches, usually known when it's created. One task can be linked to several (for example booking-web and booking-api). A task with no repo is rare: research, writing, a decision.
+- The detail panel shows "Repos" as tags plus a "Link repo" control that opens a checklist of repos. R on a selected row and "Link repos…" in the right-click menu open the same checklist. A parent with none of its own shows its subtasks' repos with "· from subtasks".
+- New task: "Repos" is a multi-select; ↩ or a click toggles each repo.
+- Do it: one repo starts one thread there; several start one thread per repo on a shared branch; none opens a small menu, "Start in <repo>" for each repo plus "No repo: research only".
 
 ### Live agent chips
 Shown after the title only while a thread is attached and the task is open. A 20px rounded chip with a 6px dot and a label:
@@ -430,13 +437,13 @@ In the Threads section of the detail panel the labels shorten to Running, Waitin
 
 ### Run-order map
 A parent's subtasks drawn as a map, on the full task page:
-- **Lanes** are repos (with their dot and name), plus a grey "No repo" lane. **Columns** are waves, headed "Wave 1", "Wave 2", split by hairlines.
-- **Stations** are the subtasks' 16px status icons, ringed in the surface colour so lines stop cleanly. Under each: the title (12.5px, 500) and "id · state" (11.5px). State reads "ready" in green, "blocked" in orange, "waits on 202, 204" or "waits outside: 128".
-- **Lines** run from blocker to task in the blocker's repo colour, 1.75px with round caps: solid when the blocker is done, dashed (2 on, 5 off) while waiting. A line that changes lane bends with a smooth curve just before the task.
+- **Columns** are waves, headed "Wave 1", "Wave 2", split by hairlines. Within a wave, tasks stack in sibling order, 80px apart. There are no repo lanes: repos are optional, so a station shows its repo dots in its subline instead.
+- **Stations** are the subtasks' 16px status icons, ringed in the surface colour so lines stop cleanly. Under each: the title (12.5px, 500) and "id · state" (11.5px). State reads "ready" in green, "blocked" in orange, "waits on 202, 204" or "waits outside: 128", followed by the task's repo dots if it has any.
+- **Lines** run from blocker to task, 1.75px with round caps, in neutral grey: solid (text-3) when the blocker is done, dashed (2 on, 5 off, text-2) while waiting. A line between neighbouring waves bends with a smooth curve just before the task. A line that skips a wave drops into the gap between rows, runs along it, and rises into the task, so it never crosses another station.
 - **Outside blocker:** a short grey dashed stub (about 50px) into the station, with no source drawn.
 - **Hover** a station to trace it: its lines thicken to 2.5px and all others fade to 18%. Click selects (indigo wash; ⌘↩ starts it); double-click opens it.
 - A legend under the map explains solid and dashed lines.
-- **Waves list:** the other form of the same data. "Wave 1 · can start now", "· in parallel" when a wave holds more than one task, then 32px rows with status, id, title, pills and repo dot. The detail panel always uses the Waves list; the full page has a Waves / Map switch and opens on Map.
+- **Waves list:** the other form of the same data. "Wave 1 · can start now", "· in parallel" when a wave holds more than one task, then 32px rows with status, id, title, pills and any repo dots. The detail panel always uses the Waves list; the full page has a Waves / Map switch and opens on Map.
 - **Large parents:** fall back to the Waves list. The prototype has no automatic threshold yet: the map is 460–780px wide and its columns just get narrower as waves are added, so pick the cut-off when building.
 
 ### Plans cards
@@ -450,7 +457,7 @@ Raised cards, 12px corners, hairline border; hover lifts 1px and darkens the bor
 ### Menus, Jump and quick add
 - **Menus** (status picker, right-click): raised, 9px corners, 30px items with an icon, label and a shortcut hint at the right. Arrow keys move, ↩ picks, Esc closes.
 - **Jump (⌘K):** 640px, 13% from the top. A 52px input at 15px, then tasks and commands in 38px rows with their key caps. With no match, ↩ creates the text as a new task.
-- **Quick add:** 680px. Title (18px), notes, then property pills (status, repo, parent). Tab opens repo, Shift-Tab parent. Pasting a chat link attaches it as a link and keeps the rest as the title.
+- **Quick add:** 680px. Title (18px), notes, then property pills (status, "Repos · optional" multi-select, parent). Tab opens repos, Shift-Tab parent. Pasting a chat link attaches it as a link and keeps the rest as the title.
 - **Toasts:** bottom right, raised, with an indigo spark icon; they rise 6px in and leave after 2.8s.
 - **Menu-bar dropdown:** 360px, the Needs me count and up to six items, then Open (⌘0) and Quick add (⌃⌥Space).
 
@@ -464,6 +471,7 @@ Single-letter keys only work when no field has focus. Every shortcut also lives 
 | Return | Rename the task; in Needs me, run the main action; in Plans, open |
 | Space | Mark done or not done |
 | S, then 1–6 | Change status |
+| R | Link repos (checklist) |
 | ⌘↩ | Do it (in Needs me: the main action) |
 | ⇧⌘↩ | Plan it |
 | ⌘K | Jump to a task or command |
@@ -498,7 +506,7 @@ Short and ease-out (`cubic-bezier(.2,.8,.2,1)`). Most moves take 120–200ms:
 - **Do** keep task rows at exactly 38px and truncate instead of wrapping.
 - **Do** show status by shape and colour together; never colour alone.
 - **Do** use tabular figures for every id, count, percentage and time.
-- **Do** give each repo one colour and use it for its dot, pill, lane and lines.
+- **Do** give each repo one colour and use it for its dots and tags. **Don't** colour lines or lanes by repo.
 - **Do** show the shortcut on the primary button of a view, and list every shortcut in the Task and View menus.
 - **Do** describe connection problems in plain words, with details in the popover.
 - **Do** scope every component's class names. The prototype had real bugs from shared global names (`.plan`, `.stop`, `.empty`); in Svelte, keep styles in the component and avoid bare global classes.
@@ -517,6 +525,7 @@ Short and ease-out (`cubic-bezier(.2,.8,.2,1)`). Most moves take 120–200ms:
 
 Things the design shows that SPEC-core.md doesn't store or expose yet. Owner in brackets.
 
+- **Several repos per task** [core]: `tasks.repo_id` holds one repo or none, but a task can be linked to several repos (a `task_repos` table, with an event when a repo is linked or unlinked), and a parent's view is the union of its subtasks'. `launch` then starts one thread per linked repo on a shared branch.
 - **A stable colour per repo** [app settings, or a column on `repos`]: `repos` stores name, path and a project id only, and the design gives each repo one colour everywhere.
 - **Dismiss and snooze state for Needs me items, with an until-time** [attention]: core has no Needs me items at all; Dismiss and "Snooze 3 days" need to survive a restart.
 - **History for a task and its subtasks together** [core]: the API has only `history(id)`, but a parent's activity feed shows its subtasks' events ("143 moved to Done").
