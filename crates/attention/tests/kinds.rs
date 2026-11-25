@@ -650,3 +650,166 @@ fn finish_it_counts_direct_subtasks_only() {
     assert_eq!(item.headline, "1 subtask is done. Mark the parent done?");
     assert_eq!(item.context, "1 subtask done");
 }
+
+// ---------- Quiet ----------
+
+fn quiet_items(out: &airboss_attention::Computed) -> Vec<i64> {
+    out.items
+        .iter()
+        .filter(|i| i.kind == NeedsKind::Quiet)
+        .map(|i| i.task.0)
+        .collect()
+}
+
+#[test]
+fn work_with_no_activity_for_five_days_is_quiet() {
+    let core = Core::new()
+        .titled(120, None, Doing, &ts(1, 0), "Search")
+        .build();
+    let out = run(core, Links::new().build(), at(7, 5));
+    let item = &out.items[0];
+    assert_eq!(item.key, key(&format!("quiet:120:{}", ts(1, 0))));
+    assert_eq!(item.kind, NeedsKind::Quiet);
+    assert_eq!(item.group, NeedsGroup::Quiet);
+    assert_eq!(item.task_title, "Search");
+    assert_eq!(item.since, ts(1, 0));
+    assert_eq!(item.headline, "No activity for 6 days.");
+    assert_eq!(item.context, "Quiet for 6 days");
+    assert_eq!(item.target, Target::Task(id(120)));
+}
+
+#[test]
+fn only_work_in_progress_goes_quiet() {
+    for (status, quiet) in [
+        (Doing, true),
+        (InReview, true),
+        (Blocked, true),
+        (Todo, false),
+        (Done, false),
+        (Dropped, false),
+    ] {
+        let core = Core::new().task(1, None, status, &ts(0, 0)).build();
+        let out = run(core, Links::new().build(), at(9, 0));
+        assert_eq!(quiet_items(&out) == vec![1], quiet, "{status:?}");
+    }
+}
+
+#[test]
+fn four_days_isnt_quiet() {
+    let core = Core::new().task(1, None, Doing, &ts(1, 0)).build();
+    assert!(run(core, Links::new().build(), at(5, 23)).items.is_empty());
+}
+
+#[test]
+fn a_running_or_waiting_agent_anywhere_below_keeps_work_from_quiet() {
+    for state in [Running, NeedsMe] {
+        let core = Core::new()
+            .task(1, None, Doing, &ts(0, 0))
+            .task(2, Some(1), Doing, &ts(0, 0))
+            .build();
+        let mut t = thread("a1", state);
+        t.last_activity_at = Some(ts(0, 0));
+        let sync = Links::new().thread(t, &[2]).build();
+        assert!(
+            quiet_items(&run(core, sync, at(20, 0))).is_empty(),
+            "{state:?}"
+        );
+    }
+}
+
+#[test]
+fn recent_thread_or_pr_activity_below_keeps_work_from_quiet() {
+    let core = || {
+        Core::new()
+            .task(1, None, Doing, &ts(0, 0))
+            .task(2, Some(1), InReview, &ts(0, 0))
+            .build()
+    };
+    let mut t = thread("a1", Idle);
+    t.last_activity_at = Some(ts(8, 0));
+    let sync = Links::new().thread(t, &[2]).build();
+    assert!(quiet_items(&run(core(), sync, at(10, 0))).is_empty());
+
+    let mut p = pr(1);
+    p.state = Some(PrState::Merged);
+    p.updated_at = Some("2026-11-09T00:00:00Z".into());
+    let sync = Links::new().pr(p, &[2]).build();
+    assert!(quiet_items(&run(core(), sync, at(10, 0))).is_empty());
+}
+
+#[test]
+fn quiet_counts_the_tasks_open_prs() {
+    let mut a = pr(1);
+    a.updated_at = Some(ts(0, 0));
+    let mut b = a.clone();
+    b.r#ref = pr_ref(2);
+    let mut merged = a.clone();
+    merged.r#ref = pr_ref(3);
+    merged.state = Some(PrState::Merged);
+    let core = || Core::new().task(1, None, Doing, &ts(0, 0)).build();
+    // A running agent would hold the review, not the quiet; here nobody runs, so both show.
+    let sync = Links::new()
+        .pr(a.clone(), &[1])
+        .pr(b, &[1])
+        .pr(merged, &[1])
+        .build();
+    let out = run(core(), sync, at(9, 0));
+    let quiet = out
+        .items
+        .iter()
+        .find(|i| i.kind == NeedsKind::Quiet)
+        .unwrap();
+    assert_eq!(quiet.headline, "No activity for 9 days. 2 open PRs.");
+
+    let out = run(core(), Links::new().pr(a, &[1]).build(), at(9, 0));
+    let quiet = out
+        .items
+        .iter()
+        .find(|i| i.kind == NeedsKind::Quiet)
+        .unwrap();
+    assert_eq!(quiet.headline, "No activity for 9 days. 1 open PR.");
+}
+
+#[test]
+fn a_quiet_parent_hides_its_quiet_subtasks() {
+    let core = Core::new()
+        .task(1, None, Doing, &ts(0, 0))
+        .task(2, Some(1), Doing, &ts(0, 0))
+        .task(3, Some(2), Blocked, &ts(0, 0))
+        .build();
+    assert_eq!(
+        quiet_items(&run(core, Links::new().build(), at(9, 0))),
+        vec![1]
+    );
+}
+
+#[test]
+fn a_quiet_subtask_under_active_or_idle_parents_shows() {
+    // The parent had its own event yesterday, so it isn't quiet; its subtask is.
+    let active = Core::new()
+        .task(1, None, Doing, &ts(8, 0))
+        .task(2, Some(1), Doing, &ts(0, 0))
+        .build();
+    assert_eq!(
+        quiet_items(&run(active, Links::new().build(), at(9, 0))),
+        vec![2]
+    );
+    // A todo parent never goes quiet, so it hides nothing.
+    let todo = Core::new()
+        .task(1, None, Todo, &ts(0, 0))
+        .task(2, Some(1), Doing, &ts(0, 0))
+        .build();
+    assert_eq!(
+        quiet_items(&run(todo, Links::new().build(), at(9, 0))),
+        vec![2]
+    );
+}
+
+#[test]
+fn quiet_from_a_stale_source_is_stale() {
+    let core = Core::new().task(1, None, Doing, &ts(0, 0)).build();
+    let mut t = thread("a1", Idle);
+    t.stale = true;
+    let sync = Links::new().thread(t, &[1]).build();
+    assert!(run(core, sync, at(9, 0)).items[0].stale);
+}
