@@ -25,3 +25,7 @@ airboss-sync = { path = ".", features = ["fakes"] }
 
 [lints]
 workspace = true
+
+[[example]]
+name = "idle"
+required-features = ["fakes"]
