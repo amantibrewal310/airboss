@@ -1,3 +1,5 @@
+import './styles/tokens.css';
+import './styles/base.css';
 import { mount } from 'svelte';
 import QuickAdd from './windows/quickadd/QuickAdd.svelte';
 
