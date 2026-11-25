@@ -88,9 +88,13 @@ Four tables, starting from the draft-2 schema tested on 25 Nov 2026 in a throwaw
 8. **An agent's new subtasks start as `proposed`.** Only `me` can accept them (moving them to `todo`) or reject them (deleting them).
 9. **`plan` creates subtasks as `todo` directly,** because I settled the plan.
 10. **No cycles.** A task can't be moved under itself or under one of its own subtasks.
-11. **Every change writes exactly one event, in the same transaction.** This covers creating, editing, moving, status changes and links. If the change fails, no event is written.
+11. **Every change writes one event per task it changes, in the same transaction.** This covers creating, editing, moving, status changes and links. If the change fails, no event is written. A move writes one event, for the moved task only: renumbering its siblings writes none.
 12. **Adding the same plan twice adds nothing new.** `add_tasks` skips a subtask whose title already exists under the same parent.
 13. **Deleting is only for `me`.** Agents and sync can drop a task, but never delete one.
+14. **`sync:t3` never changes status.** It only adds events and links. Status comes from agents, me and merged PRs.
+15. **Dropping a task drops its whole subtree** as one change, with an event for each task dropped. Subtasks already `done` stay `done`.
+16. **A parent is never finished automatically.** When its last subtask becomes `done`, the parent stays as it is. `attention` suggests finishing it, and I decide.
+17. **Siblings are ordered by whole-number positions (1, 2, 3, …).** Positions are renumbered on every move, so they stay gap-free.
 
 ## API shape
 
@@ -145,7 +149,7 @@ fn check_allowed(actor: &Actor, to: Status) -> Result<()> {
 
 ## Testing strategy
 
-- Tests come first: one failing test per rule (1–13) before its code. Rule tests live in `tests/rules.rs`, named after the rule, e.g. `agent_cannot_set_done`.
+- Tests come first: one failing test per rule (1–17) before its code. Rule tests live in `tests/rules.rs`, named after the rule, e.g. `agent_cannot_set_done`.
 - Every test uses `Store::open_in_memory()`, so no test touches disk or another test's data.
 - Tree tests cover nesting 5 levels deep, moving a subtree, reordering, and the cycle check.
 - **Performance checks** run in release mode, `#[ignore]`d by default:
@@ -164,7 +168,7 @@ fn check_allowed(actor: &Actor, to: Status) -> Result<()> {
   - Keep `core` free of network calls and of Tauri.
 - **Ask first:**
   - Adding any dependency.
-  - Changing a rule (6–13).
+  - Changing a rule (6–17).
   - Changing the schema once the app is in daily use; that needs a new migration file, never an edited one.
 - **Never:**
   - Read or write T3's or Claude Code's files from `core`.
@@ -173,7 +177,7 @@ fn check_allowed(actor: &Actor, to: Status) -> Result<()> {
 
 ## Success criteria
 
-- [ ] `cargo test -p airboss-core` passes, with a test for every rule 1–13.
+- [ ] `cargo test -p airboss-core` passes, with a test for every rule 1–17.
 - [ ] Agents get `NotAllowed` for `done`, for `todo`, and for deleting a task.
 - [ ] `sync:gh` can set `done` only on a task with a merged linked PR.
 - [ ] An agent's subtasks come back from `proposed()` and don't appear as `todo` until I accept them.
@@ -183,9 +187,13 @@ fn check_allowed(actor: &Actor, to: Status) -> Result<()> {
 - [ ] `clippy -D warnings` and `fmt --check` are clean.
 - [ ] Opening an existing database file runs any pending migrations once and keeps the data.
 
-## Open questions (recommendation in brackets)
+## Decisions (settled 25 Nov 2026)
 
-1. **Ordering among siblings:** whole-number positions renumbered on every move, or text keys that slot in between without touching other rows? [Whole numbers. Renumbering 50 siblings takes microseconds and is easier to read.]
-2. **Does finishing every subtask finish the parent?** [No. `attention` suggests "all subtasks done — finish the parent?" and I decide.]
-3. **Can `sync:t3` change status,** for example `doing` when a linked thread starts? [No. `sync` only adds events and links. Status comes from agents, me, and merged PRs.]
-4. **Is a dropped parent's subtree also dropped?** [Yes, as one change with an event for each task.]
+- **Sibling order:** whole numbers, renumbered on a move (rule 17). Text keys only pay off for sync between devices or people, which Airboss doesn't do.
+- **Parent done:** never automatic. `attention` suggests it (rule 16).
+- **`sync:t3`:** doesn't touch status, for now, to keep it simple (rule 14).
+- **Dropping a parent:** drops its subtree (rule 15).
+
+## Open questions
+
+None.
