@@ -6,8 +6,10 @@
 mod db;
 mod error;
 mod events;
+mod links;
 mod model;
 mod permissions;
+mod status;
 mod tasks;
 mod tx;
 
@@ -18,9 +20,11 @@ use rusqlite::Connection;
 use crate::tx::Tx;
 
 pub use error::{Error, Result};
+pub use model::TaskEdit;
 pub use model::{
     Actor, Event, EventKind, NewTask, Origin, Repo, Status, Task, TaskNode, UnknownValue,
 };
+pub use model::{Link, LinkKind, NewLink, PrState};
 
 macro_rules! id_type {
     ($(#[$doc:meta])* $name:ident) => {
@@ -130,6 +134,12 @@ pub(crate) mod fault {
     }
 
     pub(crate) const TASK_INSERTED: &str = "tasks::add after insert";
+    pub(crate) const TASK_EDITED: &str = "tasks::edit after update";
+    pub(crate) const NOTE_RECORDED: &str = "tasks::add_note after event";
+    pub(crate) const LINK_INSERTED: &str = "links::link after insert";
+    pub(crate) const LINK_DELETED: &str = "links::unlink after delete";
+    pub(crate) const PR_STATE_RECORDED: &str = "links::set_pr_state after one task";
+    pub(crate) const STATUS_UPDATED: &str = "status::apply after update";
 
     pub(crate) fn arm(point: &'static str) {
         ARMED.with(|a| a.set(Some(point)));
@@ -147,6 +157,12 @@ pub(crate) mod fault {
 #[cfg(not(test))]
 pub(crate) mod fault {
     pub(crate) const TASK_INSERTED: &str = "tasks::add after insert";
+    pub(crate) const TASK_EDITED: &str = "tasks::edit after update";
+    pub(crate) const NOTE_RECORDED: &str = "tasks::add_note after event";
+    pub(crate) const LINK_INSERTED: &str = "links::link after insert";
+    pub(crate) const LINK_DELETED: &str = "links::unlink after delete";
+    pub(crate) const PR_STATE_RECORDED: &str = "links::set_pr_state after one task";
+    pub(crate) const STATUS_UPDATED: &str = "status::apply after update";
 
     #[inline(always)]
     pub(crate) fn hit(_point: &str) -> crate::Result<()> {
