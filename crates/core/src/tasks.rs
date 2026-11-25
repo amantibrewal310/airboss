@@ -79,36 +79,63 @@ pub(crate) fn clean_title(title: &str) -> Result<&str> {
     }
 }
 
-pub(crate) fn add(tx: &mut Tx<'_>, new: NewTask, actor: &Actor) -> Result<Task> {
-    allowed(Call::AddTask, actor)?;
-    // An agent's task is only a proposal until I accept it (rule 8).
-    let (origin, status) = match actor {
-        Actor::Agent(_) => (Origin::Agent, Status::Proposed),
-        _ => (Origin::Me, Status::Todo),
-    };
-    let title = clean_title(&new.title)?;
-    if let Some(parent) = new.parent {
+/// Writes one task row at the end of `parent`'s children, with no event. `title` is
+/// already cleaned. An agent's task is only a proposal until I accept it (rule 8); any
+/// other starts `todo`.
+pub(crate) fn insert_row(
+    conn: &Connection,
+    parent: Option<TaskId>,
+    repo: Option<RepoId>,
+    title: &str,
+    body: Option<&str>,
+    origin: Origin,
+    plan_key: Option<&str>,
+) -> Result<TaskId> {
+    if let Some(parent) = parent {
         // Rule 12: not under a proposed, done or dropped parent.
-        crate::positions::ensure_open_parent(tx, parent)?;
+        crate::positions::ensure_open_parent(conn, parent)?;
     }
-    if let Some(repo) = new.repo {
-        ensure_repo_exists(tx, repo)?;
+    if let Some(repo) = repo {
+        ensure_repo_exists(conn, repo)?;
     }
-    let position = next_position(tx, new.parent)?;
-    tx.execute(
-        "INSERT INTO tasks (parent_id, repo_id, title, body, status, position, origin)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+    let status = match origin {
+        Origin::Agent => Status::Proposed,
+        _ => Status::Todo,
+    };
+    let position = next_position(conn, parent)?;
+    conn.execute(
+        "INSERT INTO tasks (parent_id, repo_id, title, body, status, position, origin, plan_key)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         params![
-            new.parent.map(|p| p.0),
-            new.repo.map(|r| r.0),
+            parent.map(|p| p.0),
+            repo.map(|r| r.0),
             title,
-            new.body,
+            body,
             status.as_str(),
             position,
-            origin.as_str()
+            origin.as_str(),
+            plan_key
         ],
     )?;
-    let id = TaskId(tx.last_insert_rowid());
+    Ok(TaskId(conn.last_insert_rowid()))
+}
+
+pub(crate) fn add(tx: &mut Tx<'_>, new: NewTask, actor: &Actor) -> Result<Task> {
+    allowed(Call::AddTask, actor)?;
+    let origin = match actor {
+        Actor::Agent(_) => Origin::Agent,
+        _ => Origin::Me,
+    };
+    let title = clean_title(&new.title)?;
+    let id = insert_row(
+        tx,
+        new.parent,
+        new.repo,
+        title,
+        new.body.as_deref(),
+        origin,
+        None,
+    )?;
     fault::hit(fault::TASK_INSERTED)?;
     events::record(tx, id, EventKind::Created, None, None, actor)?;
     get(tx, id)

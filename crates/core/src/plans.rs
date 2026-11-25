@@ -11,9 +11,8 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::deps;
 use crate::events;
-use crate::model::{Actor, DepRef, EventKind, Origin, PlanResult, PlanTask, Status};
+use crate::model::{Actor, DepRef, EventKind, Origin, PlanResult, PlanTask};
 use crate::permissions::{Call, allowed};
-use crate::positions::ensure_open_parent;
 use crate::tasks::{clean_title, ensure_exists};
 use crate::tx::Tx;
 use crate::{Error, Result, TaskId, fault};
@@ -162,29 +161,18 @@ fn existing(conn: &Connection, parent: Option<TaskId>, key: &str) -> Result<Opti
 }
 
 /// Writes one new step at the end of its siblings. Its event comes later, once its
-/// dependencies are known.
+/// dependencies are known. Rule 12 is only checked where something new goes: a finished
+/// step whose plan is sent again unchanged still changes nothing.
 fn insert(conn: &Connection, parent: Option<TaskId>, step: &PlanTask) -> Result<TaskId> {
-    if let Some(p) = parent {
-        // Rule 12. Only checked where something new goes: a finished step whose plan
-        // is sent again unchanged still changes nothing.
-        ensure_open_parent(conn, p)?;
-    }
-    let position = crate::tasks::next_position(conn, parent)?;
-    conn.execute(
-        "INSERT INTO tasks (parent_id, repo_id, title, body, status, position, origin, plan_key)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-        params![
-            parent.map(|p| p.0),
-            step.repo.map(|r| r.0),
-            clean_title(&step.title)?,
-            step.body,
-            Status::Todo.as_str(),
-            position,
-            Origin::Plan.as_str(),
-            step.key
-        ],
-    )?;
-    Ok(TaskId(conn.last_insert_rowid()))
+    crate::tasks::insert_row(
+        conn,
+        parent,
+        step.repo,
+        clean_title(&step.title)?,
+        step.body.as_deref(),
+        Origin::Plan,
+        Some(&step.key),
+    )
 }
 
 #[cfg(test)]
