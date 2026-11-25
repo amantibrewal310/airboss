@@ -1,5 +1,7 @@
 //! Adding, editing and reading tasks.
 
+use std::collections::HashMap;
+
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use crate::events::{self, bad_text};
@@ -7,7 +9,7 @@ use crate::model::{Actor, EventKind, NewTask, Origin, Status, Task, TaskEdit, Ta
 use crate::permissions::{Call, allowed};
 use crate::sql::query_all;
 use crate::tx::Tx;
-use crate::{Error, RepoId, Result, TaskId, fault};
+use crate::{Error, EventId, RepoId, Result, TaskId, fault};
 
 impl crate::Store {
     /// Adds one task at the end of its siblings, with a `created` event.
@@ -192,6 +194,9 @@ pub(crate) fn add(tx: &mut Tx<'_>, new: NewTask, actor: &Actor) -> Result<Task> 
 
 /// The whole tree, depth-first, siblings in position order. Hides proposals I rejected: tasks
 /// still `dropped` whose latest status change was a `rejected` event.
+///
+/// Each node's own newest event comes from one index lookup in the same query; the
+/// subtree's newest is then one pass in Rust from the leaves up (rule 28).
 pub(crate) fn tree(conn: &Connection) -> Result<Vec<TaskNode>> {
     let sql = format!(
         "WITH RECURSIVE walk(id, depth, path) AS (
@@ -202,21 +207,55 @@ pub(crate) fn tree(conn: &Connection) -> Result<Vec<TaskNode>> {
          )
          SELECT {TASK_COLUMNS}, w.depth,
                 EXISTS (SELECT 1 FROM task_deps d JOIN tasks b ON b.id = d.waits_on_id
-                        WHERE d.task_id = t.id AND b.status NOT IN ('done', 'dropped'))
+                        WHERE d.task_id = t.id AND b.status NOT IN ('done', 'dropped')),
+                le.id, le.at, le.actor
          FROM walk w JOIN tasks t ON t.id = w.id
+         LEFT JOIN task_events le
+                ON le.id = (SELECT max(e.id) FROM task_events e WHERE e.task_id = t.id)
          WHERE NOT (t.status = 'dropped'
                     AND (SELECT e.kind FROM task_events e
                          WHERE e.task_id = t.id AND e.kind IN ('status', 'rejected')
                          ORDER BY e.id DESC LIMIT 1) = 'rejected')
          ORDER BY w.path"
     );
-    query_all(conn, &sql, [], |row| {
-        Ok(TaskNode {
+    let n = TASK_COLUMN_COUNT;
+    // Every task has a `created` event (rule 21), so a null here is a damaged file and the
+    // read fails on it.
+    let rows = query_all(conn, &sql, [], |row| {
+        let actor: String = row.get(n + 4)?;
+        let at: String = row.get(n + 3)?;
+        let node = TaskNode {
             task: from_row(row)?,
-            depth: row.get(TASK_COLUMN_COUNT)?,
-            waiting: row.get(TASK_COLUMN_COUNT + 1)?,
-        })
-    })
+            depth: row.get(n)?,
+            waiting: row.get(n + 1)?,
+            last_event_at: at.clone(),
+            last_actor: actor.parse().map_err(|_| bad_text(n + 4, &actor))?,
+            subtree_last_event_at: at,
+        };
+        Ok((node, EventId(row.get(n + 2)?)))
+    })?;
+    Ok(with_subtree_activity(rows))
+}
+
+/// Fills in each node's `subtree_last_event_at` from its own newest event and its
+/// descendants'. `rows` are depth-first, so walking them backwards reaches every child
+/// before its parent. Newest goes by event id.
+fn with_subtree_activity(mut rows: Vec<(TaskNode, EventId)>) -> Vec<TaskNode> {
+    let index: HashMap<TaskId, usize> = rows
+        .iter()
+        .enumerate()
+        .map(|(i, (node, _))| (node.task.id, i))
+        .collect();
+    for i in (0..rows.len()).rev() {
+        let Some(&p) = rows[i].0.task.parent.and_then(|p| index.get(&p)) else {
+            continue;
+        };
+        if rows[i].1 > rows[p].1 {
+            rows[p].1 = rows[i].1;
+            rows[p].0.subtree_last_event_at = rows[i].0.subtree_last_event_at.clone();
+        }
+    }
+    rows.into_iter().map(|(node, _)| node).collect()
 }
 
 /// Applies `me`'s edit and writes one `edited` event naming the fields that changed.

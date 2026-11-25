@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 mod common;
 
-use airboss_core::{Actor, NewTask, Status, Store, TaskId};
+use airboss_core::{Actor, NewTask, RepoId, Status, Store, TaskId};
 use common::{Lcg, TempDir};
 
 fn machine() -> String {
@@ -46,14 +46,27 @@ fn report(name: &str, p: Duration, target: Duration, runs: usize) {
     );
 }
 
-/// 20 top-level tasks, 10 children each, 9 grandchildren each: 2,020 tasks.
+/// 20 top-level tasks, 10 children each, 9 grandchildren each: 2,020 tasks. Each top-level
+/// task links two of three repos, and each grandchild one or two.
 /// Then about 1,000 dependencies between grandchildren of different parents, always from a
 /// later task to an earlier one, so none is a loop or an ancestor link.
 fn big_tree(store: &mut Store) -> Vec<TaskId> {
+    let repos: Vec<RepoId> = ["web", "api", "ios"]
+        .iter()
+        .map(|name| {
+            let path = std::path::PathBuf::from(format!("/src/{name}"));
+            store.add_repo(name, &path, None, &Actor::Me).unwrap().id
+        })
+        .collect();
     let mut leaves = vec![];
     for a in 0..20 {
         let top = store
-            .add_task(NewTask::new(format!("Top {a}")), &Actor::Me)
+            .add_task(
+                NewTask::new(format!("Top {a}"))
+                    .in_repo(repos[a % 3])
+                    .in_repo(repos[(a + 1) % 3]),
+                &Actor::Me,
+            )
             .unwrap();
         for b in 0..10 {
             let mid = store
@@ -65,7 +78,10 @@ fn big_tree(store: &mut Store) -> Vec<TaskId> {
             for c in 0..9 {
                 let leaf = store
                     .add_task(
-                        NewTask::new(format!("Leaf {a}.{b}.{c}")).under(mid.id),
+                        NewTask::new(format!("Leaf {a}.{b}.{c}"))
+                            .under(mid.id)
+                            .in_repo(repos[c % 3])
+                            .in_repo(repos[b % 3]),
                         &Actor::Me,
                     )
                     .unwrap();
@@ -108,6 +124,8 @@ fn perf_tree_of_2000_tasks_with_1000_dependencies() {
             let tree = store.tree().unwrap();
             let elapsed = t.elapsed();
             assert!(tree.iter().any(|n| n.waiting));
+            assert!(tree[0].subtree_last_event_at > tree[0].last_event_at);
+            assert_eq!(tree[0].task.repos.len(), 2);
             elapsed
         })
         .collect();

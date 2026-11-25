@@ -86,3 +86,60 @@ fn subtree_history_names_each_events_actor() {
         (a, agent(), Some("on it"))
     );
 }
+
+fn node(s: &Store, id: TaskId) -> airboss_core::TaskNode {
+    s.tree()
+        .unwrap()
+        .into_iter()
+        .find(|n| n.task.id == id)
+        .unwrap()
+}
+
+fn newest_at(s: &Store, id: TaskId) -> String {
+    s.history(id).unwrap().pop().unwrap().at
+}
+
+#[test]
+fn a_tree_node_carries_its_own_newest_event_and_actor() {
+    let mut s = store();
+    let t = top(&mut s, "T");
+    let fresh = node(&s, t);
+    assert_eq!(fresh.last_actor, Actor::Me);
+    assert_eq!(fresh.last_event_at, newest_at(&s, t));
+
+    s.add_note(t, "picked up", &agent()).unwrap();
+    let n = node(&s, t);
+    assert_eq!(n.last_actor, agent());
+    assert_eq!(n.last_event_at, newest_at(&s, t));
+    assert_eq!(n.subtree_last_event_at, n.last_event_at);
+}
+
+#[test]
+fn a_subtrees_newest_event_comes_up_from_a_grandchild() {
+    let mut s = store();
+    let [p, a, a1, q] = three_levels(&mut s);
+    s.add_note(a1, "newest of all", &agent()).unwrap();
+    let deepest = newest_at(&s, a1);
+
+    for id in [p, a, a1] {
+        assert_eq!(node(&s, id).subtree_last_event_at, deepest, "{id:?}");
+    }
+    // Each keeps its own newest event and actor.
+    let parent = node(&s, p);
+    assert_eq!(parent.last_event_at, newest_at(&s, p));
+    assert_eq!(parent.last_actor, Actor::Me);
+    // Another tree is untouched.
+    assert_eq!(node(&s, q).subtree_last_event_at, newest_at(&s, q));
+}
+
+#[test]
+fn the_newest_event_goes_by_event_id_not_time() {
+    let mut s = store();
+    let p = top(&mut s, "P");
+    let a = under(&mut s, p, "A");
+    s.add_note(p, "parent note", &Actor::Me).unwrap();
+    let newest = s.history_with_subtasks(p, 1).unwrap().remove(0);
+    assert_eq!(newest.task, p);
+    assert_eq!(node(&s, p).subtree_last_event_at, newest.at);
+    assert_eq!(node(&s, a).subtree_last_event_at, newest_at(&s, a));
+}

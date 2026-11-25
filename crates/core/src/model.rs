@@ -235,6 +235,12 @@ pub struct TaskNode {
     pub depth: u32,
     /// True while any task it waits on is neither done nor dropped (rule 16).
     pub waiting: bool,
+    /// When its own newest event happened (rule 28).
+    pub last_event_at: String,
+    /// Who made its own newest event.
+    pub last_actor: Actor,
+    /// When the newest event in it or anywhere under it happened, for "quiet for 5+ days".
+    pub subtree_last_event_at: String,
 }
 
 /// A git repo tasks can point at.
