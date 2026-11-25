@@ -484,6 +484,15 @@ impl NewLink {
     }
 }
 
+/// Every dependency of one task, both ways, finished tasks included (rule 27).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Dependencies {
+    /// What the task waits on, by id. Done and dropped blockers are here too.
+    pub waits_on: Vec<Task>,
+    /// What waits on the task, by id.
+    pub blocks: Vec<Task>,
+}
+
 /// The order a parent's open subtasks can run in (rule 18). Only shown; nothing starts itself.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RunOrder {

@@ -27,12 +27,12 @@ use rusqlite::Connection;
 use crate::tx::Tx;
 
 pub use error::{Error, Result};
-pub use model::RunOrder;
 pub use model::TaskEdit;
 pub use model::{
     Actor, Event, EventKind, NewTask, Origin, Repo, Status, Task, TaskNode, UnknownValue,
 };
 pub use model::{DepRef, PlanResult, PlanTask};
+pub use model::{Dependencies, RunOrder};
 pub use model::{Link, LinkKind, NewLink, PrState};
 
 macro_rules! id_type {

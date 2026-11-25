@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use rusqlite::{Connection, params};
 
 use crate::events;
-use crate::model::{Actor, EventKind, RunOrder, Status, Task};
+use crate::model::{Actor, Dependencies, EventKind, RunOrder, Status, Task};
 use crate::permissions::{Call, allowed};
 use crate::sql::{SUBTREE_CTE, query_all};
 use crate::tasks::{self, TASK_COLUMNS, ensure_exists};
@@ -27,6 +27,12 @@ impl crate::Store {
     /// The tasks `id` still waits on: its blockers that are neither done nor dropped.
     pub fn waits_on(&self, id: TaskId) -> Result<Vec<Task>> {
         open_blockers(&self.conn, id)
+    }
+
+    /// Every task `id` waits on and every task waiting on it, finished ones included, so
+    /// the app can draw done blockers too (rule 27).
+    pub fn dependencies(&self, id: TaskId) -> Result<Dependencies> {
+        dependencies(&self.conn, id)
     }
 
     /// What can be picked up now: `todo` tasks with no open blockers, in tree order.
@@ -153,6 +159,26 @@ fn open_blockers(conn: &Connection, id: TaskId) -> Result<Vec<Task>> {
         params![id.0],
         tasks::from_row,
     )
+}
+
+fn dependencies(conn: &Connection, id: TaskId) -> Result<Dependencies> {
+    ensure_exists(conn, id)?;
+    // `from` is the column naming `id`, `to` the one naming the other task.
+    let side = |from: &str, to: &str| {
+        query_all(
+            conn,
+            &format!(
+                "SELECT {TASK_COLUMNS} FROM task_deps d JOIN tasks t ON t.id = d.{to}
+                 WHERE d.{from} = ?1 ORDER BY t.id"
+            ),
+            params![id.0],
+            tasks::from_row,
+        )
+    };
+    Ok(Dependencies {
+        waits_on: side("task_id", "waits_on_id")?,
+        blocks: side("waits_on_id", "task_id")?,
+    })
 }
 
 /// Rule 17, run by `delete_task` before it deletes `id`: every task outside the doomed

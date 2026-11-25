@@ -42,6 +42,44 @@ fn kinds(store: &Store, id: TaskId) -> Vec<EventKind> {
 
 // ---- T10: dependencies, loops and waiting ----
 
+// Rule 27: every dependency, both ways, finished ones included.
+
+#[test]
+fn dependencies_lists_both_directions_with_finished_blockers() {
+    let mut s = store();
+    let [a, b, c, d, e] = ["A", "B", "C", "D", "E"].map(|t| top(&mut s, t));
+    // C waits on A (done) and B (open); D and E wait on C.
+    for (task, on) in [(c, b), (c, a), (d, c), (e, c)] {
+        s.add_dependency(task, on, &Actor::Me).unwrap();
+    }
+    set_status(&mut s, a, Status::Done);
+    set_status(&mut s, e, Status::Dropped);
+
+    let deps = s.dependencies(c).unwrap();
+    assert_eq!(ids(&deps.waits_on), vec![a, b]);
+    assert_eq!(ids(&deps.blocks), vec![d, e]);
+    assert_eq!(deps.waits_on[0].status, Status::Done);
+    // `waits_on` still lists open blockers only.
+    assert_eq!(ids(&s.waits_on(c).unwrap()), vec![b]);
+}
+
+#[test]
+fn a_task_with_no_dependencies_has_empty_lists() {
+    let mut s = store();
+    let a = top(&mut s, "A");
+    let deps = s.dependencies(a).unwrap();
+    assert!(deps.waits_on.is_empty() && deps.blocks.is_empty());
+}
+
+#[test]
+fn dependencies_of_a_missing_task_is_not_found() {
+    let s = store();
+    assert!(matches!(
+        s.dependencies(TaskId(8)).unwrap_err(),
+        Error::NotFound
+    ));
+}
+
 #[test]
 fn a_chain_waits_link_by_link_and_only_its_head_is_ready() {
     let mut s = store();
