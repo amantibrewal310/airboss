@@ -4,6 +4,7 @@
 //! See `SPEC-core.md` at the repo root for the rules enforced here.
 
 mod db;
+mod deps;
 mod error;
 mod events;
 mod model;
@@ -130,6 +131,9 @@ pub(crate) mod fault {
     }
 
     pub(crate) const TASK_INSERTED: &str = "tasks::add after insert";
+    pub(crate) const DEP_ADDED: &str = "deps::add after event";
+    pub(crate) const DEP_REMOVED: &str = "deps::remove after event";
+    pub(crate) const DEPS_CLEARED: &str = "deps::on_task_deleting after events";
 
     pub(crate) fn arm(point: &'static str) {
         ARMED.with(|a| a.set(Some(point)));
@@ -147,6 +151,9 @@ pub(crate) mod fault {
 #[cfg(not(test))]
 pub(crate) mod fault {
     pub(crate) const TASK_INSERTED: &str = "tasks::add after insert";
+    pub(crate) const DEP_ADDED: &str = "deps::add after event";
+    pub(crate) const DEP_REMOVED: &str = "deps::remove after event";
+    pub(crate) const DEPS_CLEARED: &str = "deps::on_task_deleting after events";
 
     #[inline(always)]
     pub(crate) fn hit(_point: &str) -> crate::Result<()> {

@@ -114,14 +114,17 @@ pub(crate) fn tree(conn: &Connection) -> Result<Vec<TaskNode>> {
              SELECT c.id, w.depth + 1, w.path || '.' || printf('%010d', c.position)
              FROM tasks c JOIN walk w ON c.parent_id = w.id
          )
-         SELECT {TASK_COLUMNS}, w.depth FROM walk w JOIN tasks t ON t.id = w.id ORDER BY w.path"
+         SELECT {TASK_COLUMNS}, w.depth,
+                EXISTS (SELECT 1 FROM task_deps d JOIN tasks b ON b.id = d.waits_on_id
+                        WHERE d.task_id = t.id AND b.status NOT IN ('done', 'dropped'))
+         FROM walk w JOIN tasks t ON t.id = w.id ORDER BY w.path"
     );
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map([], |row| {
         Ok(TaskNode {
             task: from_row(row)?,
             depth: row.get(11)?,
-            waiting: false,
+            waiting: row.get(12)?,
         })
     })?;
     rows.collect::<rusqlite::Result<Vec<_>>>()
