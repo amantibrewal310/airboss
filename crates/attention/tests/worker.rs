@@ -204,3 +204,37 @@ fn for_task_keeps_list_order() {
     use airboss_services::NeedsKind as K;
     assert_eq!(kinds, vec![K::FailedRun, K::Proposed, K::Quiet]);
 }
+
+#[test]
+fn an_idle_hour_wakes_at_most_four_times() {
+    // Work that's active, a question and a review: nothing has a deadline within the hour.
+    let core = Core::new()
+        .task(1, None, Doing, &ts(2, 0))
+        .task(2, None, InReview, &ts(2, 0))
+        .build();
+    let mut t = thread("a1", NeedsMe);
+    t.request = Some(request(
+        "r1",
+        airboss_services::RequestKind::Question,
+        "Q?",
+        &ts(2, 0),
+    ));
+    let sync = Links::new().thread(t, &[1]).pr(pr(1), &[2]).build();
+    let (mut w, _) = worker(core, sync, at(3, 0));
+    let (start, end) = (at(3, 0), at(3, 1));
+    let mut now = start;
+    let mut wakes = 0;
+    loop {
+        let Step::Wait(next) = w.handle(AttentionMsg::Tick, now) else {
+            panic!("stopped");
+        };
+        assert!(next > now);
+        if next >= end {
+            break;
+        }
+        wakes += 1;
+        now = next;
+    }
+    assert!(wakes <= 4, "{wakes} wake-ups in an idle hour");
+    assert!(wakes >= 3, "the 15-minute cap still wakes it");
+}

@@ -97,7 +97,12 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
 - [ ] **T10. Performance** (S)
   - **Description:** `#[ignore]` checks: `compute` on 2,000 tasks, 1,000 edges, 50 linked threads, 100 PRs and 200 hidden rows (95th percentile), and dismiss to updated list. Each prints the machine.
   - **Acceptance:** under 5 ms and under 20 ms; numbers recorded here.
-  - **Verify:** `cargo test -p airboss-attention --release -- --ignored perf --nocapture`.
+  - **Verify:** `cargo test -p airboss-attention --release --test perf -- --ignored --nocapture`.
+  - **Measured 26 Nov 2026** (Apple M4, 10 cores, 16 GB, macOS 27.2.1, release):
+    - `compute`, 2,000 tasks, 1,000 edges, 150 ready, 50 threads, 100 PRs, 200 hidden rows (871 live, 771 shown): p50 0.54 ms, **p95 0.61 ms** (target 5 ms), 1,000 runs
+    - dismiss to updated list, 2,000 tasks in a real store: p50 0.33 ms, **p95 0.39 ms** (target 20 ms)
+    - sync change to `changes()` bumped: p50 158.5 ms, **p95 160.6 ms** (target 200 ms, 150 ms settle included)
+    - an idle hour: 3 wake-ups, each one `compute` (`tests/worker.rs`; target at most 4)
   - **Files:** `tests/perf.rs`
   - **Depends on:** T9
 
