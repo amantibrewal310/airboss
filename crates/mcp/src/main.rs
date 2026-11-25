@@ -207,9 +207,9 @@ enum Command {
     /// Register, edit, remove and list repos, and link them to tasks.
     #[command(subcommand)]
     Repo(RepoCommand),
-    /// Show recent history, newest last.
+    /// Show recent history, newest last. Each line starts with its event id.
     Log {
-        /// Show every event after this event id instead of the last 50.
+        /// Show every event after this event id (the first column) instead of the last 50.
         #[arg(long, value_name = "EVENT")]
         after: Option<i64>,
         #[command(flatten)]

@@ -379,7 +379,9 @@ fn body_after<'a>(what: &str, body: &'a str) -> &'a str {
     body.strip_prefix(what).map(str::trim_start).unwrap_or(body)
 }
 
-fn events_table(events: &[&EventView], style: Style, with_task: bool) -> String {
+/// History lines. `in_log` is for `airboss log`: each line starts with its event id, the
+/// number `--after` takes, and names its task.
+fn events_table(events: &[&EventView], style: Style, in_log: bool) -> String {
     let actor_w = events
         .iter()
         .map(|e| width(&e.actor.to_string()))
@@ -391,10 +393,19 @@ fn events_table(events: &[&EventView], style: Style, with_task: bool) -> String 
         .map(|e| width(&id_text(e.task)))
         .max()
         .unwrap_or(0);
+    let event_w = events
+        .iter()
+        .map(|e| width(&e.id.0.to_string()))
+        .max()
+        .unwrap_or(0);
     let mut out = String::new();
     for e in events {
-        let mut line = format!("  {}  ", style.dim(&short_time(&e.at)));
-        if with_task {
+        let lead = match in_log {
+            true => style.dim(&right(&e.id.0.to_string(), event_w)),
+            false => String::new(),
+        };
+        let mut line = format!("{lead}  {}  ", style.dim(&short_time(&e.at)));
+        if in_log {
             let _ = write!(line, "{}  ", right(&id_text(e.task), task_w));
         }
         let _ = write!(

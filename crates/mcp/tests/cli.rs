@@ -250,6 +250,17 @@ fn log_shows_recent_history_newest_last() {
         lines[0].contains("#1  me") && lines[0].contains("created"),
         "{text}"
     );
+    // Each line starts with its event id, the number `--after` takes.
+    let ids: Vec<i64> = json(&dir.db(), &["log"])
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["id"].as_i64().unwrap())
+        .collect();
+    let width = ids.iter().max().unwrap().to_string().len();
+    for (line, id) in lines.iter().zip(&ids) {
+        assert!(line.starts_with(&format!("{id:>width$}  ")), "{line}");
+    }
     assert!(lines.last().unwrap().contains("linked"), "{text}");
     assert!(text.contains("→ in progress"), "{text}");
     assert!(text.contains("agent:t3/x"), "{text}");
@@ -265,6 +276,15 @@ fn log_after_shows_only_newer_events() {
     let newer = json(&dir.db(), &["log", "--after", &after]);
     assert_eq!(newer.as_array().unwrap().len(), 1);
     assert_eq!(newer[0]["kind"], "linked");
+
+    // The id on a text line works too.
+    let text = ok(&dir.db(), &["log"]);
+    let second_last = text.lines().rev().nth(1).unwrap();
+    let id = second_last.split_whitespace().next().unwrap();
+    assert_eq!(id, after);
+    let newer = ok(&dir.db(), &["log", "--after", id]);
+    assert_eq!(newer.lines().count(), 1);
+    assert!(newer.contains("linked"), "{newer}");
 }
 
 #[test]

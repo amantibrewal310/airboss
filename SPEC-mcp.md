@@ -255,7 +255,7 @@ Where the build differs from, or fills in, the text above:
 - **A database from a newer Airboss** (core rule 32) is refused with `core`'s own sentence, "This database was created by a newer Airboss. Update the `airboss` command.", on its own: at start, `airboss mcp` and every CLI command print it to stderr and exit 1, and a server that's already running returns it as the tool error for every write.
 - **`AIRBOSS_THREAD`** may be written `t3/<id>` or `claude/<id>`; then `mine` and linking this thread work too. A leading `agent:` is ignored.
 - **Tool annotations:** `list_tasks` and `get_task` are marked read-only; `link` and `import_plan` idempotent; none is destructive.
-- **CLI details:** `airboss branch <task> --clear` clears a branch; `airboss ls --ready` shows since when each task has been ready; `airboss log` shows the last 50 events unless given `--after`; `ls` keeps a done or dropped parent when something under it is open, so the tree keeps its shape. Waiting is drawn as todo's ring with a "waiting" pill, and proposed as the dotted ring.
+- **CLI details:** `airboss branch <task> --clear` clears a branch; `airboss ls --ready` shows since when each task has been ready; `airboss log` shows the last 50 events unless given `--after`, each line starting with its event id (the number `--after` takes); `ls` keeps a done or dropped parent when something under it is open, so the tree keeps its shape. Waiting is drawn as todo's ring with a "waiting" pill, and proposed as the dotted ring.
 
 ## Open questions
 

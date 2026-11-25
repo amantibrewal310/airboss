@@ -245,18 +245,21 @@ Linked slack https://acme.slack.com/archives/C01/p123 to ◑ #2 Web: slot picker
 
 ### `airboss log [--after <EVENT>]`
 
-Shows recent history across every task, newest last: the last 50 events, or every event after an event id.
+Shows recent history across every task, newest last: the last 50 events, or every event after an event id. Each line starts with its event id, the number `--after` takes; `--json` has it as `id`.
 
 ```console
 $ airboss log
-  2026-11-25 21:25  #1  me  created
-  2026-11-25 21:25  #2  me  created
-  2026-11-25 21:25  #3  me  created
-  2026-11-25 21:25  #2  me  waits on       #3
-  2026-11-25 21:25  #3  me  → in progress
-  2026-11-25 21:25  #3  me  → blocked      Waiting on the schema
-  2026-11-25 21:25  #3  me  → in progress
-  2026-11-25 21:25  #3  me  linked         pr acme/booking-api#42
+1  2026-11-25 21:25  #1  me  created
+2  2026-11-25 21:25  #2  me  created
+3  2026-11-25 21:25  #3  me  created
+4  2026-11-25 21:25  #2  me  waits on       #3
+5  2026-11-25 21:25  #3  me  → in progress
+6  2026-11-25 21:25  #3  me  → blocked      Waiting on the schema
+7  2026-11-25 21:25  #3  me  → in progress
+8  2026-11-25 21:25  #3  me  linked         pr acme/booking-api#42
+$ airboss log --after 6
+7  2026-11-25 21:25  #3  me  → in progress
+8  2026-11-25 21:25  #3  me  linked         pr acme/booking-api#42
 ```
 
 The actor column says who made each change: `me`, `agent:<thread>`, `sync:gh`, `sync:t3`, `plan` or `launch`.
