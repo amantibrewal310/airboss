@@ -36,7 +36,7 @@ Status comes from three sources:
 
 - **Agents** report through a local MCP server.
 - **GitHub PRs** are checked with `gh`. A merged PR moves its task to done.
-- **T3 thread state** is read for linked threads: the `t3` CLI where it can, and T3's database read-only where the CLI can't.
+- **T3 thread state** is read for linked threads by watching T3's database read-only. It feeds "needs me" (questions, failed runs) and history, but never changes a task's status (SPEC-core rule 6).
 
 Why it's different: to-do apps and trackers don't know agent threads exist. T3 knows threads, but not tasks or plans. Airboss joins the task, its threads, its PRs and its plan.
 
