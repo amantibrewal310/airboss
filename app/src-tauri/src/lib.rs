@@ -7,6 +7,7 @@ pub mod catchup;
 pub mod classify;
 pub mod commands;
 pub mod connections;
+pub mod dbhealth;
 pub mod dto;
 pub mod errors;
 pub mod ipc;

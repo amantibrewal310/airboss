@@ -372,6 +372,7 @@ The stores are classes in `lib/state/*.svelte.ts`, one exported instance each, w
 | A service (`gh` signed out, T3 missing, watcher failed) | The connections footer turns orange and names it, and the popover gives the fix. Never a stream of toasts. |
 | Do it, when the main window is hidden (from quick add) | On any failure or partial failure, Rust shows the main window, selects the task and shows the toast. A success shows nothing. |
 | The database won't open at start | A full-window state: "Airboss can't open its database", the path, the reason, "Show in Finder" and "Try again". |
+| The database breaks while the app runs (integration QA R2) | The same state, headed "Airboss's database stopped working", with "Show in Finder" only: the fix is to quit and reopen. Two cheap signs (`dbhealth.rs`): a `core` call failing with an I/O or corruption error (`Error::is_storage_failure`: SQLite's `IOERR`, `CORRUPT`, `NOTADB` or `CANTOPEN`, not busy or locked), and one `stat` on each catch-up showing the `-wal` file gone or replaced (another device or inode than the one the app holds). The app sends `db:unavailable` once, and from then on every command except `open_url`, `ui_ready`, `show_main`, `set_focus_context` and the quick-add panel's answers fails with `db_unavailable`, so nothing is saved into a database that will lose it. SQLite isn't repaired. |
 
 Red is never used for errors (The Red Is Mine Rule).
 
@@ -977,6 +978,7 @@ Writes return `Patch` (shown as → P). All `core` calls act as `me`, with one l
 | `toast` | `{text, actions, undo?}` | Rust needs a toast the UI didn't ask for (a Do it result after the panel closed) |
 | `appearance:changed` | `{accent?, theme}` | the system accent or appearance changed |
 | `error:background` | `{source, message}` | the watcher or an app thread failed; also updates the footer |
+| `db:unavailable` | `AppError` (`db_unavailable`, message, detail `"<path>: <reason>"`) | the database broke while the app ran (once); the UI shows the database problem state |
 
 ## Appendix C: Keyboard map and focus rules
 
@@ -1027,4 +1029,6 @@ Global, from any app: the quick-add hotkey (⌃⌥N by default), on Pressed only
 | `AlreadyStarting` | (no toast; the button already says "Starting…") |
 | Undo refused | "144 changed since; nothing was undone." |
 | `Internal` | "Something went wrong inside Airboss; details are in the log." |
+| `DbUnavailable`, at start | "Airboss can't open its database", with `"<path>: <reason>"` as detail |
+| `DbUnavailable`, while running | "Quit Airboss (⌘Q) and open it again. Changes made since the problem began may not have been saved. Troubleshooting has more." |
 | A `ServiceError` | its own `message`, from the service's spec |

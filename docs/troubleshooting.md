@@ -93,6 +93,26 @@ A new database comes with new settings, so it's a first run, and that turns open
 - **"Airboss can't open its database"** fills the window, with the path and the reason, **Show in Finder** and **Try again**.
 - **"Database moved"** in the footer: the file was moved or replaced while the app was open. Quit Airboss and open it again.
 
+### "Airboss's database stopped working"
+
+This fills the window when the database breaks while Airboss is open. It shows the path and what happened, with **Show in Finder**. Until you quit, every change is refused rather than saved somewhere it would be lost. It appears when:
+
+- **The `-wal` file was deleted or replaced** while Airboss had the database open, for example by a clean-up script, or by deleting `airboss.db-wal` by hand. That file is SQLite's write-ahead log: recent changes live there until SQLite copies them into `airboss.db`. Deleting it while the database is open is SQLite's behaviour, not something Airboss can undo: changes not yet copied are lost, and the CLI and agents get "disk I/O error" when they open the database.
+- **A read or write failed with an I/O or corruption error** ("disk I/O error", "database disk image is malformed"), for example when the disk is failing, or a sync or backup tool rewrote the file.
+
+What to do:
+
+1. **Quit Airboss** (⌘Q) and open it again. When nothing has the database open, SQLite starts a new write-ahead log, and the window comes back. Changes made just before the problem may be missing; check the latest ones in the activity list.
+2. **If it says the same again,** the file itself is damaged. Quit Airboss, then check it:
+
+   ```sh
+   sqlite3 ~/Library/Application\ Support/Airboss/airboss.db "PRAGMA integrity_check"
+   ```
+
+   Anything but `ok` means restoring `airboss.db` from a backup (Time Machine, for example), with Airboss quit. Airboss doesn't try to repair the file.
+
+Never delete `airboss.db-wal` or `airboss.db-shm` while Airboss, the CLI or an agent has the database open. With everything quit, SQLite removes them itself.
+
 ## Logs
 
 - **The app** logs to `~/Library/Logs/Airboss/app.log`: start-up, connections, refused hotkeys, background errors and panics, plus every line from its services, tagged `airboss-sync`, `airboss-launch` or `airboss-attention` (for example "Claude sync broken: ps failed"). That holds when Airboss opens from Finder or at login, where nothing reads stderr. The file is rotated at 1 MB and the last two are kept, as `app_<date>.log`.

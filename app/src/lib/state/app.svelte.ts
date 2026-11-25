@@ -85,6 +85,8 @@ export class App {
   cli = $state.raw<CliStatus>({ installed: false, path: '~/.local/bin/airboss', on_path: true });
   ready = $state(false);
   fatal = $state.raw<AppError | null>(null);
+  /** The database broke after start (R2), rather than failing to open. */
+  fatalLost = $state(false);
   now = $state(clockNow());
   plans = $state.raw<PlanCard[]>([]);
   plansLoaded = $state(false);
@@ -177,6 +179,7 @@ export class App {
       on('toast', (t) => this.toastEvent(t)),
       on('appearance:changed', (a) => applyAccent(document.documentElement, a.accent)),
       on('error:background', (e) => (this.conn.background = e.message)),
+      on('db:unavailable', (e) => this.lost(e)),
     ]);
     const tick = () => (this.now = clockNow());
     setInterval(() => {
@@ -536,10 +539,18 @@ export class App {
     this.toasts.push({ text, tone, actions, ...(detail ? { detail } : {}) });
   }
 
+  /** The database broke while the app ran: the full-window state, until Airboss is quit. */
+  lost(e: AppError): void {
+    if (this.fatal) return;
+    this.fatalLost = true;
+    this.fatal = e;
+  }
+
   fail(e: unknown): void {
     const err = asAppError(e);
     // Appendix D: no toast; the button already says "Starting…".
     if (err.code === 'already_starting') return;
+    if (err.code === 'db_unavailable') return this.lost(err);
     this.toast(err.message, 'warn');
   }
 

@@ -12,6 +12,7 @@ use airboss_services::{Clock, SharedStore};
 use tauri_plugin_log::log;
 
 use crate::catchup::{CatchUp, Trigger};
+use crate::dbhealth::DbHealth;
 use crate::dto::{ConnectionsChanged, RowDto};
 use crate::errors::{AppError, AppResult, Ctx};
 use crate::menu::{FocusContext, MenuState, menu_state};
@@ -115,6 +116,8 @@ pub struct AppState {
     pub(crate) problems: Mutex<Problems>,
     pub(crate) timing: Mutex<Timing>,
     pub(crate) watch: Mutex<Option<Watch>>,
+    /// Whether the database broke while the app runs (R2).
+    pub(crate) db: Mutex<DbHealth>,
     pub(crate) config: AppConfig,
     pub(crate) stopping: AtomicBool,
     pub(crate) main_shown: AtomicBool,
@@ -133,6 +136,8 @@ impl AppState {
         config: AppConfig,
     ) -> AppResult<Arc<AppState>> {
         let first = CatchUp::first(&store, &services, clock.now())?;
+        // After the first reads, so the WAL exists and its identity is the one the app holds.
+        let db = DbHealth::new(lock(&store).path());
         let settings = config.settings.clone();
         let state = Arc::new_cyclic(|me| AppState {
             store,
@@ -149,6 +154,7 @@ impl AppState {
             problems: Mutex::new(Problems::default()),
             timing: Mutex::new(Timing::default()),
             watch: Mutex::new(None),
+            db: Mutex::new(db),
             main_shown: AtomicBool::new(false),
             stopping: AtomicBool::new(false),
             fold_saver: Mutex::new(None),
@@ -177,7 +183,13 @@ impl AppState {
             self.store.clear_poison();
             poisoned.into_inner()
         });
-        f(&mut guard)
+        let result = f(&mut guard);
+        drop(guard);
+        if let Err(e) = &result {
+            // An I/O or corruption error is the database problem state (R2), not a failed save.
+            self.saw_core_error(e);
+        }
+        result
     }
 
     /// The same, with the error in the user's words.

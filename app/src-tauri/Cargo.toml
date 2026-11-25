@@ -44,6 +44,8 @@ ts-rs = "=12.0.1"
 # Tests and the fixtures recorder run on the services' fakes.
 airboss-services = { path = "../../crates/services", features = ["fakes"] }
 tauri = { version = "=2.12.7", features = ["tray-icon", "macos-private-api", "image-png", "test"] }
+# Only to build SQLite's own errors in tests (core's version).
+rusqlite = "=0.43.0"
 
 [build-dependencies]
 tauri-build = { version = "=2.7.6", features = [] }

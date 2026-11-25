@@ -16,6 +16,7 @@ use crate::dto::{
     AppearanceChanged, BackgroundError, ConnectionsChanged, MenuAction, NavOpen, Patch,
     QuickaddReset, ToastEvent,
 };
+use crate::errors::AppError;
 use crate::menu::MenuState;
 use crate::settings::Appearance;
 
@@ -31,6 +32,8 @@ pub enum UiEvent {
     Toast(ToastEvent),
     AppearanceChanged(AppearanceChanged),
     ErrorBackground(BackgroundError),
+    /// The database broke while the app ran: the full-window database problem state.
+    DbUnavailable(AppError),
 }
 
 impl UiEvent {
@@ -46,6 +49,7 @@ impl UiEvent {
             UiEvent::Toast(_) => "toast",
             UiEvent::AppearanceChanged(_) => "appearance:changed",
             UiEvent::ErrorBackground(_) => "error:background",
+            UiEvent::DbUnavailable(_) => "db:unavailable",
         }
     }
 
@@ -64,6 +68,7 @@ impl UiEvent {
             UiEvent::Toast(t) => json(t),
             UiEvent::AppearanceChanged(a) => json(a),
             UiEvent::ErrorBackground(e) => json(e),
+            UiEvent::DbUnavailable(e) => json(e),
         }
     }
 

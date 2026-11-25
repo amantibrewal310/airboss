@@ -7,6 +7,7 @@
 
 import type {
   AddReposResult,
+  AppError,
   AppearanceChanged,
   BackgroundError,
   Bootstrap,
@@ -105,6 +106,8 @@ export interface Events {
   toast: ToastEvent;
   'appearance:changed': AppearanceChanged;
   'error:background': BackgroundError;
+  /** The database broke while the app ran (R2): the full-window database problem state. */
+  'db:unavailable': AppError;
 }
 
 export type CommandName = keyof Commands;
@@ -126,5 +129,5 @@ export const COMMAND_NAMES = [
 
 export const EVENT_NAMES = [
   'tree:patch', 'needs:changed', 'connections:changed', 'menu:action', 'nav:open',
-  'quickadd:reset', 'toast', 'appearance:changed', 'error:background',
+  'quickadd:reset', 'toast', 'appearance:changed', 'error:background', 'db:unavailable',
 ] as const satisfies readonly EventName[];

@@ -37,3 +37,53 @@ pub enum Error {
 
 /// Shorthand used across the crate.
 pub type Result<T> = std::result::Result<T, Error>;
+
+impl Error {
+    /// SQLite couldn't read or write the file itself: an I/O error, corruption, a file that
+    /// isn't a database, or one it can't open. Not a busy or locked database, and not a rule.
+    /// The app shows these as a database problem instead of a failed save.
+    pub fn is_storage_failure(&self) -> bool {
+        use rusqlite::ErrorCode as C;
+        match self {
+            Error::Db(e) => matches!(
+                e.sqlite_error_code(),
+                Some(C::SystemIoFailure | C::DatabaseCorrupt | C::NotADatabase | C::CannotOpen)
+            ),
+            _ => false,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::ffi;
+
+    fn sqlite(code: i32) -> Error {
+        Error::Db(rusqlite::Error::SqliteFailure(ffi::Error::new(code), None))
+    }
+
+    #[test]
+    fn io_errors_and_corruption_are_storage_failures_and_nothing_else_is() {
+        for code in [
+            ffi::SQLITE_IOERR,
+            ffi::SQLITE_IOERR_SHORT_READ,
+            ffi::SQLITE_IOERR_FSTAT,
+            ffi::SQLITE_CORRUPT,
+            ffi::SQLITE_NOTADB,
+            ffi::SQLITE_CANTOPEN,
+        ] {
+            assert!(sqlite(code).is_storage_failure(), "{code}");
+        }
+        for code in [
+            ffi::SQLITE_BUSY,
+            ffi::SQLITE_LOCKED,
+            ffi::SQLITE_CONSTRAINT,
+            ffi::SQLITE_FULL,
+        ] {
+            assert!(!sqlite(code).is_storage_failure(), "{code}");
+        }
+        assert!(!Error::NotFound.is_storage_failure());
+        assert!(!Error::Db(rusqlite::Error::QueryReturnedNoRows).is_storage_failure());
+    }
+}

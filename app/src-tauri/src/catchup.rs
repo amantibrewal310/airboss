@@ -295,6 +295,10 @@ impl AppState {
     }
 
     fn handle(&self, causes: Causes) {
+        if causes.core || causes.focus || causes.wake {
+            // One stat: is the WAL the app holds still there (R2)?
+            self.check_db_files();
+        }
         if causes.wake {
             for s in self.services.all() {
                 s.woke();

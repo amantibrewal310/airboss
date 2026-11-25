@@ -59,7 +59,7 @@
 <svelte:document onfocusin={() => app.setZone(zoneOf(document.activeElement, !!app.ui.overlay))} />
 
 {#if app.fatal}
-  <DbError error={app.fatal} />
+  <DbError error={app.fatal} lost={app.fatalLost} />
 {:else}
 <div class="win">
   <Sidebar />

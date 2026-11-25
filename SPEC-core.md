@@ -386,6 +386,9 @@ pub enum DepRef { Key(String), Task(TaskId) }
 
 pub enum Error { EmptyTitle, AlreadyExists, NotFound, NotAllowed, InvalidTransition, NoteRequired, InvalidTarget, Loop,
                  DuplicateKey, Db(rusqlite::Error) }
+impl Error {
+    pub fn is_storage_failure(&self) -> bool;  // Db with SQLite's IOERR, CORRUPT, NOTADB or CANTOPEN (not BUSY or LOCKED);
+}                                              // the app shows these as its database problem state (integration QA R2)
 ```
 
 `Store` isn't shared between threads by itself. The app holds one `Store` behind a mutex. Every call is short, so `mcp`, `app` and `sync` waiting on one lock stays well under the 20 ms MCP target.
