@@ -5,6 +5,7 @@ use rusqlite::{Connection, OptionalExtension, Row, params};
 use crate::events::{self, bad_text};
 use crate::model::{Actor, EventKind, Link, LinkKind, NewLink, PrState, Status};
 use crate::permissions::{Call, allowed};
+use crate::sql::query_all;
 use crate::tasks::ensure_exists;
 use crate::tx::Tx;
 use crate::{Error, LinkId, Result, TaskId, fault, status};
@@ -112,15 +113,13 @@ pub(crate) fn set_pr_state(
     actor: &Actor,
 ) -> Result<Vec<TaskId>> {
     allowed(Call::SetPrState, actor)?;
-    let tasks: Vec<TaskId> = {
-        let mut stmt = tx.prepare(
-            "SELECT task_id FROM links WHERE kind = 'pr' AND ref = ?1 AND pr_state <> ?2
-             ORDER BY task_id",
-        )?;
-        let rows = stmt.query_map(params![pr_ref, state.as_str()], |r| r.get(0))?;
-        rows.map(|r| r.map(TaskId))
-            .collect::<rusqlite::Result<_>>()?
-    };
+    let tasks = query_all(
+        tx,
+        "SELECT task_id FROM links WHERE kind = 'pr' AND ref = ?1 AND pr_state <> ?2
+         ORDER BY task_id",
+        params![pr_ref, state.as_str()],
+        |r| r.get(0).map(TaskId),
+    )?;
     let body = format!("{pr_ref} {state}");
     for &task in &tasks {
         tx.execute(
@@ -140,12 +139,12 @@ pub(crate) fn set_pr_state(
 
 pub(crate) fn links(conn: &Connection, task: TaskId) -> Result<Vec<Link>> {
     ensure_exists(conn, task)?;
-    let mut stmt = conn.prepare(&format!(
-        "SELECT {LINK_COLUMNS} FROM links WHERE task_id = ?1 ORDER BY id"
-    ))?;
-    let rows = stmt.query_map(params![task.0], from_row)?;
-    rows.collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(Error::from)
+    query_all(
+        conn,
+        &format!("SELECT {LINK_COLUMNS} FROM links WHERE task_id = ?1 ORDER BY id"),
+        params![task.0],
+        from_row,
+    )
 }
 
 pub(crate) fn tasks_for_link(
@@ -153,12 +152,12 @@ pub(crate) fn tasks_for_link(
     kind: LinkKind,
     r#ref: &str,
 ) -> Result<Vec<TaskId>> {
-    let mut stmt =
-        conn.prepare("SELECT task_id FROM links WHERE kind = ?1 AND ref = ?2 ORDER BY task_id")?;
-    let rows = stmt.query_map(params![kind.as_str(), r#ref], |r| r.get(0))?;
-    rows.map(|r| r.map(TaskId))
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(Error::from)
+    query_all(
+        conn,
+        "SELECT task_id FROM links WHERE kind = ?1 AND ref = ?2 ORDER BY task_id",
+        params![kind.as_str(), r#ref],
+        |r| r.get(0).map(TaskId),
+    )
 }
 
 impl crate::Store {

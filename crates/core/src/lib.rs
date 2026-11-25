@@ -13,6 +13,7 @@ mod model;
 mod permissions;
 mod plans;
 mod positions;
+mod sql;
 mod status;
 mod tasks;
 mod tx;

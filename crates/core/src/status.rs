@@ -4,6 +4,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::events::{self, bad_text};
 use crate::model::{Actor, EventKind, Status, Task};
+use crate::sql::query_all;
 use crate::tx::Tx;
 use crate::{Error, Result, TaskId, fault, tasks};
 
@@ -122,19 +123,18 @@ pub(crate) const DROPPED_WITH: &str = "dropped with #";
 
 /// Rule 9: drops every open task under `id`, with one event each. `done` ones stay `done`.
 fn drop_subtree(tx: &mut Tx<'_>, id: TaskId, actor: &Actor) -> Result<()> {
-    let open: Vec<TaskId> = {
-        let mut stmt = tx.prepare(
-            "WITH RECURSIVE sub(id) AS (
-                 SELECT id FROM tasks WHERE parent_id = ?1
-                 UNION ALL
-                 SELECT t.id FROM tasks t JOIN sub ON t.parent_id = sub.id
-             )
-             SELECT t.id FROM tasks t JOIN sub ON t.id = sub.id
-             WHERE t.status NOT IN ('done', 'dropped') ORDER BY t.id",
-        )?;
-        let rows = stmt.query_map(params![id.0], |r| r.get(0).map(TaskId))?;
-        rows.collect::<rusqlite::Result<_>>()?
-    };
+    let open = query_all(
+        tx,
+        "WITH RECURSIVE sub(id) AS (
+             SELECT id FROM tasks WHERE parent_id = ?1
+             UNION ALL
+             SELECT t.id FROM tasks t JOIN sub ON t.parent_id = sub.id
+         )
+         SELECT t.id FROM tasks t JOIN sub ON t.id = sub.id
+         WHERE t.status NOT IN ('done', 'dropped') ORDER BY t.id",
+        params![id.0],
+        |r| r.get(0).map(TaskId),
+    )?;
     let body = format!("{DROPPED_WITH}{}", id.0);
     for task in open {
         apply(tx, task, Status::Dropped, Some(&body), actor)?;

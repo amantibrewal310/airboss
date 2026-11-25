@@ -3,6 +3,7 @@
 use rusqlite::{Connection, Row, params};
 
 use crate::model::{Actor, Event, EventKind, Status};
+use crate::sql::query_all;
 use crate::tx::Tx;
 use crate::{Error, EventId, Result, TaskId};
 
@@ -67,20 +68,20 @@ pub(crate) fn bad_text(column: usize, text: &str) -> rusqlite::Error {
 /// A task's history, oldest first.
 pub(crate) fn history(conn: &Connection, task: TaskId) -> Result<Vec<Event>> {
     crate::tasks::ensure_exists(conn, task)?;
-    let mut stmt = conn.prepare(&format!(
-        "SELECT {EVENT_COLUMNS} FROM task_events WHERE task_id = ?1 ORDER BY id"
-    ))?;
-    let rows = stmt.query_map(params![task.0], from_row)?;
-    rows.collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(Error::from)
+    query_all(
+        conn,
+        &format!("SELECT {EVENT_COLUMNS} FROM task_events WHERE task_id = ?1 ORDER BY id"),
+        params![task.0],
+        from_row,
+    )
 }
 
 /// Every event with an id above `cursor`, in id order.
 pub(crate) fn after(conn: &Connection, cursor: EventId) -> Result<Vec<Event>> {
-    let mut stmt = conn.prepare(&format!(
-        "SELECT {EVENT_COLUMNS} FROM task_events WHERE id > ?1 ORDER BY id"
-    ))?;
-    let rows = stmt.query_map(params![cursor.0], from_row)?;
-    rows.collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(Error::from)
+    query_all(
+        conn,
+        &format!("SELECT {EVENT_COLUMNS} FROM task_events WHERE id > ?1 ORDER BY id"),
+        params![cursor.0],
+        from_row,
+    )
 }

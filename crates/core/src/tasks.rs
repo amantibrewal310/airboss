@@ -7,6 +7,7 @@ use rusqlite::{Connection, OptionalExtension, Row, params};
 use crate::events::{self, bad_text};
 use crate::model::{Actor, EventKind, NewTask, Origin, Repo, Status, Task, TaskEdit, TaskNode};
 use crate::permissions::{Call, allowed};
+use crate::sql::query_all;
 use crate::status::DROPPED_WITH;
 use crate::tx::Tx;
 use crate::{Error, RepoId, Result, TaskId, fault};
@@ -128,16 +129,13 @@ pub(crate) fn tree(conn: &Connection) -> Result<Vec<TaskNode>> {
                                            OR e.body LIKE '{DROPPED_WITH}%')))
          ORDER BY w.path"
     );
-    let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt.query_map([], |row| {
+    query_all(conn, &sql, [], |row| {
         Ok(TaskNode {
             task: from_row(row)?,
             depth: row.get(11)?,
             waiting: row.get(12)?,
         })
-    })?;
-    rows.collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(Error::from)
+    })
 }
 
 pub(crate) fn ensure_repo_exists(conn: &Connection, id: RepoId) -> Result<()> {
@@ -179,17 +177,19 @@ pub(crate) fn add_repo(
 }
 
 pub(crate) fn repos(conn: &Connection) -> Result<Vec<Repo>> {
-    let mut stmt = conn.prepare("SELECT id, name, path, remote_url FROM repos ORDER BY name")?;
-    let rows = stmt.query_map([], |r| {
-        Ok(Repo {
-            id: RepoId(r.get(0)?),
-            name: r.get(1)?,
-            path: r.get(2)?,
-            remote_url: r.get(3)?,
-        })
-    })?;
-    rows.collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(Error::from)
+    query_all(
+        conn,
+        "SELECT id, name, path, remote_url FROM repos ORDER BY name",
+        [],
+        |r| {
+            Ok(Repo {
+                id: RepoId(r.get(0)?),
+                name: r.get(1)?,
+                path: r.get(2)?,
+                remote_url: r.get(3)?,
+            })
+        },
+    )
 }
 
 /// Applies `me`'s edit and writes one `edited` event naming the fields that changed.

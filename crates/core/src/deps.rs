@@ -8,6 +8,7 @@ use rusqlite::{Connection, params};
 use crate::events;
 use crate::model::{Actor, EventKind, RunOrder, Status, Task};
 use crate::permissions::{Call, allowed};
+use crate::sql::query_all;
 use crate::tasks::{self, TASK_COLUMNS, ensure_exists};
 use crate::tx::Tx;
 use crate::{Error, Result, TaskId, fault};
@@ -147,14 +148,16 @@ fn exists(conn: &Connection, task: TaskId, waits_on: TaskId) -> Result<bool> {
 
 fn open_blockers(conn: &Connection, id: TaskId) -> Result<Vec<Task>> {
     ensure_exists(conn, id)?;
-    let mut stmt = conn.prepare(&format!(
-        "SELECT {TASK_COLUMNS} FROM task_deps d JOIN tasks t ON t.id = d.waits_on_id
-         WHERE d.task_id = ?1 AND t.status NOT IN ('done', 'dropped')
-         ORDER BY t.id"
-    ))?;
-    let rows = stmt.query_map(params![id.0], tasks::from_row)?;
-    rows.collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(Error::from)
+    query_all(
+        conn,
+        &format!(
+            "SELECT {TASK_COLUMNS} FROM task_deps d JOIN tasks t ON t.id = d.waits_on_id
+             WHERE d.task_id = ?1 AND t.status NOT IN ('done', 'dropped')
+             ORDER BY t.id"
+        ),
+        params![id.0],
+        tasks::from_row,
+    )
 }
 
 /// Each task outside `?1`'s subtree that waits on something inside it, with the blockers
@@ -175,13 +178,9 @@ ORDER BY d.task_id";
 /// subtree that waits on something in it loses those dependencies and gets one
 /// `waits_on_removed` event. Dependencies inside the subtree go with it, unrecorded.
 pub(crate) fn on_task_deleting(tx: &mut Tx<'_>, id: TaskId, actor: &Actor) -> Result<()> {
-    let waiters = {
-        let mut stmt = tx.prepare(WAITERS_ON_SUBTREE_SQL)?;
-        let rows = stmt.query_map(params![id.0], |r| {
-            Ok((TaskId(r.get(0)?), r.get::<_, String>(1)?))
-        })?;
-        rows.collect::<rusqlite::Result<Vec<_>>>()?
-    };
+    let waiters = query_all(tx, WAITERS_ON_SUBTREE_SQL, params![id.0], |r| {
+        Ok((TaskId(r.get(0)?), r.get::<_, String>(1)?))
+    })?;
     tx.execute(
         "WITH RECURSIVE sub(id) AS (
              SELECT ?1
@@ -224,15 +223,16 @@ WHERE st.status NOT IN ('done', 'dropped') AND bt.status NOT IN ('done', 'droppe
 
 fn run_order(conn: &Connection, parent: TaskId) -> Result<RunOrder> {
     ensure_exists(conn, parent)?;
-    let children = {
-        let mut stmt = conn.prepare(&format!(
+    let children = query_all(
+        conn,
+        &format!(
             "SELECT {TASK_COLUMNS} FROM tasks t
              WHERE t.parent_id = ?1 AND t.status NOT IN ('done', 'dropped')
              ORDER BY t.position"
-        ))?;
-        let rows = stmt.query_map(params![parent.0], tasks::from_row)?;
-        rows.collect::<rusqlite::Result<Vec<_>>>()?
-    };
+        ),
+        params![parent.0],
+        tasks::from_row,
+    )?;
     let index: HashMap<TaskId, usize> = children
         .iter()
         .enumerate()
