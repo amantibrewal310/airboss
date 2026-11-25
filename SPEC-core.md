@@ -18,8 +18,8 @@ Every other module reads and writes tasks only through `core`: `mcp` for agents,
 
 ## Tech stack
 
-- **Rust 2021.** `core` is a library crate, `airboss-core`, with no Tauri dependency, so it builds and tests fast on its own.
-- **Dependencies:** `rusqlite` (the `bundled` feature, so it carries its own SQLite), `serde` (for types that `mcp` and `app` send as JSON) and `thiserror`. Nothing else without asking.
+- **Rust edition 2024**, the latest edition, on stable Rust 1.100 (pinned in `rust-toolchain.toml`). `core` is a library crate, `airboss-core`, with no Tauri dependency, so it builds and tests fast on its own.
+- **Dependencies:** `rusqlite` 0.43 (the `bundled` feature, so it carries its own SQLite), `serde` 1 (for types that `mcp` and `app` send as JSON) and `thiserror` 2. Nothing else without asking.
 - **SQLite settings,** applied on open: WAL mode, `foreign_keys = ON`, `busy_timeout = 2000`. Schema versions are tracked with `PRAGMA user_version` and SQL files embedded in the crate.
 - **Time:** UTC text written by SQLite, `strftime('%Y-%m-%dT%H:%M:%fZ','now')`.
 
