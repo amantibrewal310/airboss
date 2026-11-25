@@ -58,7 +58,7 @@ Some tests are `#[ignore]` because they're slow or read real files. Run them whe
 ```sh
 cargo test -p airboss-core --release -- --ignored perf                # performance checks
 cargo test -p airboss-mcp --release -- --ignored perf                 # start-up and call times
-cargo test -p airboss-app -- --ignored perf                           # rebuild, diff and write timings
+cargo test -p airboss-app --release --test perf -- --ignored          # rebuild, diff and write timings
 cargo test -p airboss-sync --release --test real_t3 -- --ignored      # T3 Code's real database, read-only
 ```
 
