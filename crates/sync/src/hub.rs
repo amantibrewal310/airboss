@@ -124,8 +124,10 @@ impl Hub {
         if parts.threads == *part {
             return false;
         }
+        let rows = connection_rows(&parts);
         parts.threads = part.clone();
-        self.rebuild(&parts)
+        let changed = self.rebuild(&parts);
+        self.rows_moved(changed, &rows, &parts)
     }
 
     pub(crate) fn publish_prs(&self, part: &PrsPart) -> bool {
@@ -133,8 +135,20 @@ impl Hub {
         if parts.prs == *part {
             return false;
         }
+        let rows = connection_rows(&parts);
         parts.prs = part.clone();
-        self.rebuild(&parts)
+        let changed = self.rebuild(&parts);
+        self.rows_moved(changed, &rows, &parts)
+    }
+
+    /// The app reads `connections()` only when `changes()` moves: a health change that
+    /// leaves the snapshot alone (`gh` signed out, T3 missing) bumps it too.
+    fn rows_moved(&self, bumped: bool, before: &[Connection], parts: &Parts) -> bool {
+        if !bumped && connection_rows(parts) != before {
+            self.changes.bump();
+            return true;
+        }
+        bumped
     }
 
     fn rebuild(&self, parts: &Parts) -> bool {
@@ -197,21 +211,24 @@ impl Hub {
 
     /// The connection rows (SPEC-sync, "Trait methods").
     pub fn connections(&self) -> Vec<Connection> {
-        let parts = lock(&self.parts);
-        let mut rows = vec![github_row(&parts.prs), t3_row(&parts.threads)];
-        if parts.threads.claude.state == HealthState::Broken {
-            // "Claude Code", as the app names it everywhere; its "Agents" row is the airboss
-            // command, and rows with one name merge.
-            rows.push(Connection {
-                name: "Claude Code".into(),
-                ok: false,
-                state: "Sessions can't be read".into(),
-                detail: "Shows Claude Code sessions run outside T3.".into(),
-                fix: parts.threads.claude.detail.clone(),
-            });
-        }
-        rows
+        connection_rows(&lock(&self.parts))
     }
+}
+
+fn connection_rows(parts: &Parts) -> Vec<Connection> {
+    let mut rows = vec![github_row(&parts.prs), t3_row(&parts.threads)];
+    if parts.threads.claude.state == HealthState::Broken {
+        // "Claude Code", as the app names it everywhere; its "Agents" row is the airboss
+        // command, and rows with one name merge.
+        rows.push(Connection {
+            name: "Claude Code".into(),
+            ok: false,
+            state: "Sessions can't be read".into(),
+            detail: "Shows Claude Code sessions run outside T3.".into(),
+            fix: parts.threads.claude.detail.clone(),
+        });
+    }
+    rows
 }
 
 const GITHUB_DETAIL: &str = "Pull requests sync every 5 minutes. A merged PR finishes its task.";
@@ -300,6 +317,8 @@ fn t3_row(t: &ThreadsPart) -> Connection {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used)]
+
     use super::*;
 
     /// At start-up, before either worker's first pass, the footer mustn't claim T3 isn't
@@ -314,6 +333,42 @@ mod tests {
         };
         assert_eq!(state("GitHub"), Some((true, "Checking".into(), None)));
         assert_eq!(state("T3 Code"), Some((true, "Checking".into(), None)));
+    }
+
+    /// The app re-reads `connections()` only when `changes()` moves, so a change of health
+    /// alone (gh signed out, with no PR data to change the snapshot) must move it too.
+    #[test]
+    fn a_health_change_alone_moves_changes_so_the_footer_follows() {
+        let hub = Hub::new();
+        let before = hub.changes().current();
+        let mut prs = PrsPart::default();
+        prs.gh.set(
+            HealthState::Off,
+            "Run `gh auth login` in a terminal.",
+            UNIX_EPOCH,
+        );
+        hub.publish_prs(&prs);
+        assert!(hub.changes().current() > before, "no bump for signed out");
+        let gh = hub
+            .connections()
+            .into_iter()
+            .find(|r| r.name == "GitHub")
+            .unwrap();
+        assert_eq!((gh.ok, gh.state.as_str()), (false, "Not signed in"));
+
+        let before = hub.changes().current();
+        let mut threads = ThreadsPart::default();
+        threads
+            .t3
+            .set(HealthState::Off, "T3 isn't installed", UNIX_EPOCH);
+        hub.publish_threads(&threads);
+        assert!(hub.changes().current() > before, "no bump for T3 missing");
+
+        // Publishing the same again moves nothing.
+        let before = hub.changes().current();
+        hub.publish_threads(&threads);
+        hub.publish_prs(&prs);
+        assert_eq!(hub.changes().current(), before);
     }
 
     #[test]
