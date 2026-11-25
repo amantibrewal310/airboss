@@ -120,6 +120,6 @@ fn a_task_reads_back_with_everything_it_was_given() {
     let read = store.task(added.id).unwrap();
     assert_eq!(read, added);
     assert_eq!(read.body.as_deref(), Some("Use the new API"));
-    assert_eq!(read.repo, Some(repo.id));
+    assert_eq!(read.repos, vec![repo.id]);
     assert_eq!(store.repos().unwrap(), vec![repo]);
 }

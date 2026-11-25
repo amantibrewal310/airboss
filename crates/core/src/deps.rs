@@ -1,12 +1,14 @@
 //! Dependencies between tasks: adding and removing them, the loop check, waiting and run
 //! order (rules 14–18).
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use rusqlite::{Connection, params};
 
 use crate::events;
-use crate::model::{Actor, EventKind, RunOrder, Status, Task};
+use crate::model::{
+    Actor, Dependencies, EventKind, OutsideWait, ReadyTask, RunOrder, Status, Task,
+};
 use crate::permissions::{Call, allowed};
 use crate::sql::{SUBTREE_CTE, query_all};
 use crate::tasks::{self, TASK_COLUMNS, ensure_exists};
@@ -29,13 +31,16 @@ impl crate::Store {
         open_blockers(&self.conn, id)
     }
 
-    /// What can be picked up now: `todo` tasks with no open blockers, in tree order.
-    pub fn ready(&self) -> Result<Vec<Task>> {
-        Ok(tasks::tree(&self.conn)?
-            .into_iter()
-            .filter(|n| n.task.status == Status::Todo && !n.waiting)
-            .map(|n| n.task)
-            .collect())
+    /// Every task `id` waits on and every task waiting on it, finished ones included, so
+    /// the app can draw done blockers too (rule 27).
+    pub fn dependencies(&self, id: TaskId) -> Result<Dependencies> {
+        dependencies(&self.conn, id)
+    }
+
+    /// What can be picked up now: `todo` tasks with no open blockers, in tree order, each
+    /// with the time it became ready (rule 26).
+    pub fn ready(&self) -> Result<Vec<ReadyTask>> {
+        ready(&self.conn)
     }
 
     /// The waves `parent`'s open subtasks can run in (rule 18). Subtasks that lifting
@@ -43,6 +48,39 @@ impl crate::Store {
     pub fn run_order(&self, parent: TaskId) -> Result<RunOrder> {
         run_order(&self.conn, parent)
     }
+}
+
+/// For every `todo` task, the time of the newest event that could have made it ready: its
+/// own `created` or `waits_on_removed` event, or a current blocker finishing. Newest goes
+/// by event id (rule 26).
+const READY_SINCE_SQL: &str = "
+SELECT t.id, ifnull(
+    (SELECT e.at FROM task_events e WHERE e.id = max(
+        ifnull((SELECT max(o.id) FROM task_events o
+                WHERE o.task_id = t.id AND o.kind IN ('created', 'waits_on_removed')), 0),
+        ifnull((SELECT max(f.id) FROM task_deps d JOIN task_events f ON f.task_id = d.waits_on_id
+                WHERE d.task_id = t.id
+                  AND (f.kind = 'rejected'
+                       OR (f.kind = 'status' AND f.to_status IN ('done', 'dropped')))), 0))),
+    t.created_at)
+FROM tasks t WHERE t.status = 'todo'";
+
+fn ready(conn: &Connection) -> Result<Vec<ReadyTask>> {
+    let mut since: HashMap<TaskId, String> = query_all(conn, READY_SINCE_SQL, [], |r| {
+        Ok((TaskId(r.get(0)?), r.get(1)?))
+    })?
+    .into_iter()
+    .collect();
+    Ok(tasks::tree(conn)?
+        .into_iter()
+        .filter(|n| n.task.status == Status::Todo && !n.waiting)
+        .map(|n| ReadyTask {
+            since: since
+                .remove(&n.task.id)
+                .unwrap_or_else(|| n.task.created_at.clone()),
+            task: n.task,
+        })
+        .collect())
 }
 
 /// True when either task is an ancestor of the other (rule 15).
@@ -155,6 +193,26 @@ fn open_blockers(conn: &Connection, id: TaskId) -> Result<Vec<Task>> {
     )
 }
 
+fn dependencies(conn: &Connection, id: TaskId) -> Result<Dependencies> {
+    ensure_exists(conn, id)?;
+    // `from` is the column naming `id`, `to` the one naming the other task.
+    let side = |from: &str, to: &str| {
+        query_all(
+            conn,
+            &format!(
+                "SELECT {TASK_COLUMNS} FROM task_deps d JOIN tasks t ON t.id = d.{to}
+                 WHERE d.{from} = ?1 ORDER BY t.id"
+            ),
+            params![id.0],
+            tasks::from_row,
+        )
+    };
+    Ok(Dependencies {
+        waits_on: side("task_id", "waits_on_id")?,
+        blocks: side("waits_on_id", "task_id")?,
+    })
+}
+
 /// Rule 17, run by `delete_task` before it deletes `id`: every task outside the doomed
 /// subtree that waits on something in it loses those dependencies and gets one
 /// `waits_on_removed` event. Dependencies inside the subtree go with it, unrecorded.
@@ -196,14 +254,15 @@ pub(crate) fn on_task_deleting(tx: &mut Tx<'_>, id: TaskId, actor: &Actor) -> Re
 }
 
 /// Every dependency between two open tasks that starts in `?1`'s subtree, lifted to the
-/// direct subtasks the two ends sit under. A null blocker side means the blocker is outside.
+/// direct subtasks the two ends sit under. A null blocker side means the blocker is outside,
+/// and the third column names it.
 const LIFTED_SQL: &str = "
 WITH RECURSIVE sub(id, top) AS (
     SELECT id, id FROM tasks WHERE parent_id = ?1
     UNION ALL
     SELECT t.id, sub.top FROM tasks t JOIN sub ON t.parent_id = sub.id
 )
-SELECT DISTINCT s.top, b.top
+SELECT DISTINCT s.top, b.top, CASE WHEN b.top IS NULL THEN d.waits_on_id END
 FROM sub s
 JOIN tasks st ON st.id = s.id
 JOIN task_deps d ON d.task_id = s.id
@@ -234,7 +293,8 @@ fn run_order(conn: &Connection, parent: TaskId) -> Result<RunOrder> {
     // `unblocks[y]` lists the subtasks waiting on y.
     let mut unblocks: Vec<Vec<usize>> = vec![Vec::new(); n];
     let mut waits_for = vec![0usize; n];
-    let mut outside = vec![false; n];
+    // The open tasks outside the parent holding each subtask; empty while nothing does.
+    let mut outside: Vec<BTreeSet<TaskId>> = vec![BTreeSet::new(); n];
     let mut stmt = conn.prepare(LIFTED_SQL)?;
     let mut rows = stmt.query(params![parent.0])?;
     while let Some(row) = rows.next()? {
@@ -243,7 +303,9 @@ fn run_order(conn: &Connection, parent: TaskId) -> Result<RunOrder> {
             continue;
         };
         match row.get::<_, Option<i64>>(1)? {
-            None => outside[x] = true,
+            None => {
+                outside[x].insert(TaskId(row.get(2)?));
+            }
             Some(y) => {
                 if let Some(&y) = index.get(&TaskId(y))
                     && y != x
@@ -278,28 +340,35 @@ fn run_order(conn: &Connection, parent: TaskId) -> Result<RunOrder> {
         tangled[i] = false;
     }
 
-    // Waiting on a subtask that waits outside is waiting outside too. Waves are in
-    // dependency order, so one pass reaches everything downstream.
+    // Waiting on a subtask that waits outside is waiting outside too, on the same blockers.
+    // Waves are in dependency order, so one pass reaches everything downstream.
     for &y in waves.iter().flatten() {
-        if outside[y] {
+        if !outside[y].is_empty() {
+            let held = outside[y].clone();
             for &x in &unblocks[y] {
-                outside[x] = true;
+                outside[x].extend(&held);
             }
         }
     }
-    let pick = |ids: &[usize], want_outside: bool| -> Vec<Task> {
-        ids.iter()
-            .filter(|&&i| !tangled[i] && outside[i] == want_outside)
-            .map(|&i| children[i].clone())
-            .collect()
-    };
+    let placed = |i: &usize| !tangled[*i];
     Ok(RunOrder {
         waves: waves
             .iter()
-            .map(|w| pick(w, false))
+            .map(|w| {
+                w.iter()
+                    .filter(|&i| placed(i) && outside[*i].is_empty())
+                    .map(|&i| children[i].clone())
+                    .collect::<Vec<_>>()
+            })
             .filter(|w| !w.is_empty())
             .collect(),
-        waiting_outside: pick(&(0..n).collect::<Vec<_>>(), true),
+        waiting_outside: (0..n)
+            .filter(|i| placed(i) && !outside[*i].is_empty())
+            .map(|i| OutsideWait {
+                task: children[i].clone(),
+                blockers: outside[i].iter().copied().collect(),
+            })
+            .collect(),
         tangled: (0..n)
             .filter(|&i| tangled[i])
             .map(|i| children[i].clone())

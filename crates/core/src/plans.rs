@@ -45,7 +45,7 @@ fn add_tasks(
     validate(tx, &steps)?;
 
     let mut out = PlanResult::default();
-    place(tx, parent, plan, &mut out)?;
+    place(tx, parent, plan, actor, &mut out)?;
     fault::hit(fault::PLAN_TASKS_WRITTEN)?;
 
     // `out.keys` is in the same depth-first order as `steps`.
@@ -108,7 +108,7 @@ fn validate(conn: &Connection, steps: &[&PlanTask]) -> Result<()> {
             return Err(Error::DuplicateKey(step.key.clone()));
         }
         clean_title(&step.title)?;
-        if let Some(repo) = step.repo {
+        for &repo in &step.repos {
             crate::tasks::ensure_repo_exists(conn, repo)?;
         }
     }
@@ -128,6 +128,7 @@ fn place(
     tx: &Tx<'_>,
     parent: Option<TaskId>,
     steps: &[PlanTask],
+    actor: &Actor,
     out: &mut PlanResult,
 ) -> Result<()> {
     for step in steps {
@@ -137,13 +138,13 @@ fn place(
                 id
             }
             None => {
-                let id = insert(tx, parent, step)?;
+                let id = insert(tx, parent, step, actor)?;
                 out.created.push(id);
                 id
             }
         };
         out.keys.push((step.key.clone(), id));
-        place(tx, Some(id), &step.children, out)?;
+        place(tx, Some(id), &step.children, actor, out)?;
     }
     Ok(())
 }
@@ -160,18 +161,27 @@ fn existing(conn: &Connection, parent: Option<TaskId>, key: &str) -> Result<Opti
         .map(TaskId))
 }
 
-/// Writes one new step at the end of its siblings. Its event comes later, once its
-/// dependencies are known. Rule 12 is only checked where something new goes: a finished
-/// step whose plan is sent again unchanged still changes nothing.
-fn insert(conn: &Connection, parent: Option<TaskId>, step: &PlanTask) -> Result<TaskId> {
+/// Writes one new step at the end of its siblings, with its repos. Its event comes later,
+/// once its dependencies are known. Rule 12 is only checked where something new goes: a
+/// finished step whose plan is sent again unchanged still changes nothing. An existing
+/// step's repos are left alone too (rule 24).
+fn insert(
+    conn: &Connection,
+    parent: Option<TaskId>,
+    step: &PlanTask,
+    actor: &Actor,
+) -> Result<TaskId> {
     crate::tasks::insert_row(
         conn,
-        parent,
-        step.repo,
-        clean_title(&step.title)?,
-        step.body.as_deref(),
-        Origin::Plan,
-        Some(&step.key),
+        crate::tasks::NewRow {
+            parent,
+            repos: &step.repos,
+            title: clean_title(&step.title)?,
+            body: step.body.as_deref(),
+            origin: Origin::Plan,
+            plan_key: Some(&step.key),
+        },
+        actor,
     )
 }
 

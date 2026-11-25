@@ -1,33 +1,17 @@
-//! Adding and reading tasks and repos.
+//! Adding, editing and reading tasks.
 
-use std::path::Path;
+use std::collections::HashMap;
 
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use crate::events::{self, bad_text};
-use crate::model::{Actor, EventKind, NewTask, Origin, Repo, Status, Task, TaskEdit, TaskNode};
+use crate::model::{Actor, EventKind, NewTask, Origin, Status, Task, TaskEdit, TaskNode};
 use crate::permissions::{Call, allowed};
 use crate::sql::query_all;
 use crate::tx::Tx;
-use crate::{Error, RepoId, Result, TaskId, fault};
+use crate::{Error, EventId, RepoId, Result, TaskId, fault};
 
 impl crate::Store {
-    /// Registers a repo tasks can point at. Only `me` does this.
-    pub fn add_repo(
-        &mut self,
-        name: &str,
-        path: &Path,
-        remote: Option<&str>,
-        actor: &Actor,
-    ) -> Result<Repo> {
-        self.write(|tx| add_repo(tx, name, path, remote, actor))
-    }
-
-    /// Every registered repo, by name.
-    pub fn repos(&self) -> Result<Vec<Repo>> {
-        repos(&self.conn)
-    }
-
     /// Adds one task at the end of its siblings, with a `created` event.
     pub fn add_task(&mut self, new: NewTask, actor: &Actor) -> Result<Task> {
         self.write(|tx| add(tx, new, actor))
@@ -43,9 +27,14 @@ impl crate::Store {
         tree(&self.conn)
     }
 
-    /// Changes a task's title, notes or repo. Only `me` does this (rule 8).
+    /// Changes a task's title or notes. Only `me` does this (rule 8).
     pub fn edit_task(&mut self, id: TaskId, change: TaskEdit, actor: &Actor) -> Result<Task> {
         self.write(|tx| edit(tx, id, change, actor))
+    }
+
+    /// Sets or clears the branch the task's threads share (rule 25). `me` and `launch` only.
+    pub fn set_branch(&mut self, id: TaskId, branch: Option<&str>, actor: &Actor) -> Result<Task> {
+        self.write(|tx| set_branch(tx, id, branch, actor))
     }
 
     /// Adds a note to a task's history. Anyone but `plan` may (rule 8).
@@ -54,25 +43,41 @@ impl crate::Store {
     }
 }
 
-pub(crate) const TASK_COLUMNS: &str = "t.id, t.parent_id, t.repo_id, t.title, t.body, t.status, \
-     t.blocked_reason, t.position, t.origin, t.plan_key, t.created_at";
+/// A task's columns (table alias `t`), its repos last as ids joined by commas in repo-name
+/// order. The repos come from an index lookup per row, so every reader gets them without a
+/// second query.
+pub(crate) const TASK_COLUMNS: &str = "t.id, t.parent_id, t.title, t.body, t.status, \
+     t.blocked_reason, t.position, t.origin, t.plan_key, t.created_at, t.branch, \
+     (SELECT group_concat(tr.repo_id, ',' ORDER BY r.name) \
+      FROM task_repos tr JOIN repos r ON r.id = tr.repo_id WHERE tr.task_id = t.id)";
+
+/// How many columns [`TASK_COLUMNS`] selects, so queries can read their own columns after it.
+pub(crate) const TASK_COLUMN_COUNT: usize = 12;
 
 /// Reads a row selected with [`TASK_COLUMNS`] (table alias `t`).
 pub(crate) fn from_row(row: &Row<'_>) -> rusqlite::Result<Task> {
-    let status: String = row.get(5)?;
-    let origin: String = row.get(8)?;
+    let status: String = row.get(4)?;
+    let origin: String = row.get(7)?;
+    let repos: Option<String> = row.get(11)?;
     Ok(Task {
         id: TaskId(row.get(0)?),
         parent: row.get::<_, Option<i64>>(1)?.map(TaskId),
-        repo: row.get::<_, Option<i64>>(2)?.map(RepoId),
-        title: row.get(3)?,
-        body: row.get(4)?,
-        status: status.parse().map_err(|_| bad_text(5, &status))?,
-        blocked_reason: row.get(6)?,
-        position: row.get(7)?,
-        origin: Origin::parse(&origin).ok_or_else(|| bad_text(8, &origin))?,
-        plan_key: row.get(9)?,
-        created_at: row.get(10)?,
+        repos: match repos {
+            Some(list) => list
+                .split(',')
+                .map(|id| id.parse().map(RepoId).map_err(|_| bad_text(11, &list)))
+                .collect::<rusqlite::Result<_>>()?,
+            None => Vec::new(),
+        },
+        title: row.get(2)?,
+        body: row.get(3)?,
+        status: status.parse().map_err(|_| bad_text(4, &status))?,
+        blocked_reason: row.get(5)?,
+        position: row.get(6)?,
+        origin: Origin::parse(&origin).ok_or_else(|| bad_text(7, &origin))?,
+        plan_key: row.get(8)?,
+        branch: row.get(10)?,
+        created_at: row.get(9)?,
     })
 }
 
@@ -121,45 +126,47 @@ pub(crate) fn clean_title(title: &str) -> Result<&str> {
     }
 }
 
-/// Writes one task row at the end of `parent`'s children, with no event. `title` is
-/// already cleaned. An agent's task is only a proposal until I accept it (rule 8); any
-/// other starts `todo`.
-pub(crate) fn insert_row(
-    conn: &Connection,
-    parent: Option<TaskId>,
-    repo: Option<RepoId>,
-    title: &str,
-    body: Option<&str>,
-    origin: Origin,
-    plan_key: Option<&str>,
-) -> Result<TaskId> {
-    if let Some(parent) = parent {
+/// One new task row for [`insert_row`]. `title` is already cleaned.
+pub(crate) struct NewRow<'a> {
+    pub parent: Option<TaskId>,
+    pub repos: &'a [RepoId],
+    pub title: &'a str,
+    pub body: Option<&'a str>,
+    pub origin: Origin,
+    pub plan_key: Option<&'a str>,
+}
+
+/// Writes one task row at the end of `parent`'s children, and links its repos, with no
+/// event. An agent's task is only a proposal until I accept it (rule 8); any other starts
+/// `todo`.
+pub(crate) fn insert_row(conn: &Connection, row: NewRow<'_>, actor: &Actor) -> Result<TaskId> {
+    if let Some(parent) = row.parent {
         // Rule 12: not under a proposed, done or dropped parent.
         crate::positions::ensure_open_parent(conn, parent)?;
     }
-    if let Some(repo) = repo {
-        ensure_repo_exists(conn, repo)?;
-    }
-    let status = match origin {
+    let status = match row.origin {
         Origin::Agent => Status::Proposed,
         _ => Status::Todo,
     };
-    let position = next_position(conn, parent)?;
+    let position = next_position(conn, row.parent)?;
     conn.execute(
-        "INSERT INTO tasks (parent_id, repo_id, title, body, status, position, origin, plan_key)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        "INSERT INTO tasks (parent_id, title, body, status, position, origin, plan_key)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         params![
-            parent.map(|p| p.0),
-            repo.map(|r| r.0),
-            title,
-            body,
+            row.parent.map(|p| p.0),
+            row.title,
+            row.body,
             status.as_str(),
             position,
-            origin.as_str(),
-            plan_key
+            row.origin.as_str(),
+            row.plan_key
         ],
     )?;
-    Ok(TaskId(conn.last_insert_rowid()))
+    let id = TaskId(conn.last_insert_rowid());
+    for &repo in row.repos {
+        crate::repos::insert_link(conn, id, repo, actor)?;
+    }
+    Ok(id)
 }
 
 pub(crate) fn add(tx: &mut Tx<'_>, new: NewTask, actor: &Actor) -> Result<Task> {
@@ -168,15 +175,17 @@ pub(crate) fn add(tx: &mut Tx<'_>, new: NewTask, actor: &Actor) -> Result<Task> 
         Actor::Agent(_) => Origin::Agent,
         _ => Origin::Me,
     };
-    let title = clean_title(&new.title)?;
     let id = insert_row(
         tx,
-        new.parent,
-        new.repo,
-        title,
-        new.body.as_deref(),
-        origin,
-        None,
+        NewRow {
+            parent: new.parent,
+            repos: &new.repos,
+            title: clean_title(&new.title)?,
+            body: new.body.as_deref(),
+            origin,
+            plan_key: None,
+        },
+        actor,
     )?;
     fault::hit(fault::TASK_INSERTED)?;
     events::record(tx, id, EventKind::Created, None, None, actor)?;
@@ -185,6 +194,9 @@ pub(crate) fn add(tx: &mut Tx<'_>, new: NewTask, actor: &Actor) -> Result<Task> 
 
 /// The whole tree, depth-first, siblings in position order. Hides proposals I rejected: tasks
 /// still `dropped` whose latest status change was a `rejected` event.
+///
+/// Each node's own newest event comes from one index lookup in the same query; the
+/// subtree's newest is then one pass in Rust from the leaves up (rule 28).
 pub(crate) fn tree(conn: &Connection) -> Result<Vec<TaskNode>> {
     let sql = format!(
         "WITH RECURSIVE walk(id, depth, path) AS (
@@ -195,66 +207,55 @@ pub(crate) fn tree(conn: &Connection) -> Result<Vec<TaskNode>> {
          )
          SELECT {TASK_COLUMNS}, w.depth,
                 EXISTS (SELECT 1 FROM task_deps d JOIN tasks b ON b.id = d.waits_on_id
-                        WHERE d.task_id = t.id AND b.status NOT IN ('done', 'dropped'))
+                        WHERE d.task_id = t.id AND b.status NOT IN ('done', 'dropped')),
+                le.id, le.at, le.actor
          FROM walk w JOIN tasks t ON t.id = w.id
+         LEFT JOIN task_events le
+                ON le.id = (SELECT max(e.id) FROM task_events e WHERE e.task_id = t.id)
          WHERE NOT (t.status = 'dropped'
                     AND (SELECT e.kind FROM task_events e
                          WHERE e.task_id = t.id AND e.kind IN ('status', 'rejected')
                          ORDER BY e.id DESC LIMIT 1) = 'rejected')
          ORDER BY w.path"
     );
-    query_all(conn, &sql, [], |row| {
-        Ok(TaskNode {
+    let n = TASK_COLUMN_COUNT;
+    // Every task has a `created` event (rule 21), so a null here is a damaged file and the
+    // read fails on it.
+    let rows = query_all(conn, &sql, [], |row| {
+        let actor: String = row.get(n + 4)?;
+        let at: String = row.get(n + 3)?;
+        let node = TaskNode {
             task: from_row(row)?,
-            depth: row.get(11)?,
-            waiting: row.get(12)?,
-        })
-    })
-}
-
-pub(crate) fn add_repo(
-    tx: &mut Tx<'_>,
-    name: &str,
-    path: &Path,
-    remote: Option<&str>,
-    actor: &Actor,
-) -> Result<Repo> {
-    allowed(Call::AddRepo, actor)?;
-    let path = path.to_string_lossy();
-    tx.execute(
-        "INSERT INTO repos (name, path, remote_url) VALUES (?1, ?2, ?3)",
-        params![name, path, remote],
-    )
-    .map_err(|e| match e {
-        rusqlite::Error::SqliteFailure(f, _)
-            if f.extended_code == rusqlite::ffi::SQLITE_CONSTRAINT_UNIQUE =>
-        {
-            Error::AlreadyExists
-        }
-        other => Error::Db(other),
+            depth: row.get(n)?,
+            waiting: row.get(n + 1)?,
+            last_event_at: at.clone(),
+            last_actor: actor.parse().map_err(|_| bad_text(n + 4, &actor))?,
+            subtree_last_event_at: at,
+        };
+        Ok((node, EventId(row.get(n + 2)?)))
     })?;
-    Ok(Repo {
-        id: RepoId(tx.last_insert_rowid()),
-        name: name.to_string(),
-        path: path.into_owned(),
-        remote_url: remote.map(str::to_string),
-    })
+    Ok(with_subtree_activity(rows))
 }
 
-pub(crate) fn repos(conn: &Connection) -> Result<Vec<Repo>> {
-    query_all(
-        conn,
-        "SELECT id, name, path, remote_url FROM repos ORDER BY name",
-        [],
-        |r| {
-            Ok(Repo {
-                id: RepoId(r.get(0)?),
-                name: r.get(1)?,
-                path: r.get(2)?,
-                remote_url: r.get(3)?,
-            })
-        },
-    )
+/// Fills in each node's `subtree_last_event_at` from its own newest event and its
+/// descendants'. `rows` are depth-first, so walking them backwards reaches every child
+/// before its parent. Newest goes by event id.
+fn with_subtree_activity(mut rows: Vec<(TaskNode, EventId)>) -> Vec<TaskNode> {
+    let index: HashMap<TaskId, usize> = rows
+        .iter()
+        .enumerate()
+        .map(|(i, (node, _))| (node.task.id, i))
+        .collect();
+    for i in (0..rows.len()).rev() {
+        let Some(&p) = rows[i].0.task.parent.and_then(|p| index.get(&p)) else {
+            continue;
+        };
+        if rows[i].1 > rows[p].1 {
+            rows[p].1 = rows[i].1;
+            rows[p].0.subtree_last_event_at = rows[i].0.subtree_last_event_at.clone();
+        }
+    }
+    rows.into_iter().map(|(node, _)| node).collect()
 }
 
 /// Applies `me`'s edit and writes one `edited` event naming the fields that changed.
@@ -267,14 +268,9 @@ pub(crate) fn edit(tx: &mut Tx<'_>, id: TaskId, edit: TaskEdit, actor: &Actor) -
         None => before.title.clone(),
     };
     let body = edit.body.unwrap_or_else(|| before.body.clone());
-    let repo = edit.repo.unwrap_or(before.repo);
-    if let Some(r) = repo {
-        ensure_repo_exists(tx, r)?;
-    }
     let changed: Vec<&str> = [
         (title != before.title, "title"),
         (body != before.body, "body"),
-        (repo != before.repo, "repo"),
     ]
     .into_iter()
     .filter_map(|(c, name)| c.then_some(name))
@@ -283,8 +279,8 @@ pub(crate) fn edit(tx: &mut Tx<'_>, id: TaskId, edit: TaskEdit, actor: &Actor) -
         return Ok(before);
     }
     tx.execute(
-        "UPDATE tasks SET title = ?2, body = ?3, repo_id = ?4 WHERE id = ?1",
-        params![id.0, title, body, repo.map(|r| r.0)],
+        "UPDATE tasks SET title = ?2, body = ?3 WHERE id = ?1",
+        params![id.0, title, body],
     )?;
     fault::hit(fault::TASK_EDITED)?;
     events::record(
@@ -295,6 +291,33 @@ pub(crate) fn edit(tx: &mut Tx<'_>, id: TaskId, edit: TaskEdit, actor: &Actor) -
         Some(&changed.join(", ")),
         actor,
     )?;
+    get(tx, id)
+}
+
+/// Sets the branch and writes one `edited` event naming it. A blank name clears it, and
+/// setting the branch it already has writes nothing (rule 25).
+pub(crate) fn set_branch(
+    tx: &mut Tx<'_>,
+    id: TaskId,
+    branch: Option<&str>,
+    actor: &Actor,
+) -> Result<Task> {
+    allowed(Call::SetBranch, actor)?;
+    let before = get(tx, id)?;
+    let branch = branch.map(str::trim).filter(|b| !b.is_empty());
+    if branch == before.branch.as_deref() {
+        return Ok(before);
+    }
+    tx.execute(
+        "UPDATE tasks SET branch = ?2 WHERE id = ?1",
+        params![id.0, branch],
+    )?;
+    fault::hit(fault::BRANCH_SET)?;
+    let body = match branch {
+        Some(b) => format!("branch: {b}"),
+        None => "branch cleared".to_string(),
+    };
+    events::record(tx, id, EventKind::Edited, None, Some(&body), actor)?;
     get(tx, id)
 }
 
@@ -334,6 +357,19 @@ mod tests {
         assert!(store.edit_task(t.id, edit, &Actor::Me).is_err());
         assert_eq!(counts(&store), before);
         assert_eq!(store.task(t.id).unwrap(), t);
+    }
+
+    #[test]
+    fn a_failed_set_branch_leaves_the_task_and_history_unchanged() {
+        let mut store = Store::open_in_memory().unwrap();
+        let t = store.add_task(NewTask::new("Before"), &Actor::Me).unwrap();
+        let before = counts(&store);
+        let committed = store.last_committed.clone();
+        fault::arm(fault::BRANCH_SET);
+        assert!(store.set_branch(t.id, Some("b"), &Actor::Launch).is_err());
+        assert_eq!(counts(&store), before);
+        assert_eq!(store.task(t.id).unwrap(), t);
+        assert_eq!(store.last_committed, committed);
     }
 
     #[test]

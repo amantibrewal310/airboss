@@ -34,6 +34,7 @@ fn linking_writes_the_link_and_one_linked_event() {
     assert_eq!(link.r#ref, "t3/97b5");
     assert_eq!(link.url.as_deref(), Some("https://t3/97b5"));
     assert_eq!(link.pr_state, None);
+    assert_eq!(link.title, None, "no title: the app shows the ref");
     assert_eq!(link.linked_by, agent("t3/97b5"));
     assert_eq!(s.links(t).unwrap(), vec![link]);
     assert_eq!(kinds(&s, t), vec![EventKind::Created, EventKind::Linked]);
@@ -258,4 +259,54 @@ fn setting_the_state_a_pr_already_has_changes_nothing() {
             .unwrap()
             .is_empty()
     );
+}
+
+#[test]
+fn a_link_keeps_its_title() {
+    let mut s = store();
+    let t = task(&mut s, "Booking");
+    let link = s
+        .link(
+            t,
+            NewLink::new(LinkKind::Slack, "C01/p123").with_title("#booking thread"),
+            &Actor::Me,
+        )
+        .unwrap();
+    assert_eq!(link.title.as_deref(), Some("#booking thread"));
+    assert_eq!(s.links(t).unwrap(), vec![link]);
+}
+
+#[test]
+fn a_blank_link_title_is_no_title() {
+    let mut s = store();
+    let t = task(&mut s, "Booking");
+    let link = s
+        .link(
+            t,
+            NewLink::new(LinkKind::Doc, "booking-flow.md").with_title("  "),
+            &Actor::Me,
+        )
+        .unwrap();
+    assert_eq!(link.title, None);
+}
+
+#[test]
+fn linking_again_with_another_title_returns_the_link_as_it_was() {
+    let mut s = store();
+    let t = task(&mut s, "Booking");
+    let first = s
+        .link(
+            t,
+            NewLink::new(LinkKind::Doc, "flow.md").with_title("Flow"),
+            &Actor::Me,
+        )
+        .unwrap();
+    let again = s
+        .link(
+            t,
+            NewLink::new(LinkKind::Doc, "flow.md").with_title("Other"),
+            &Actor::Me,
+        )
+        .unwrap();
+    assert_eq!(again, first);
 }

@@ -44,7 +44,7 @@ impl crate::Store {
     }
 }
 
-const LINK_COLUMNS: &str = "id, task_id, kind, ref, url, pr_state, linked_by, linked_at";
+const LINK_COLUMNS: &str = "id, task_id, kind, ref, url, pr_state, linked_by, linked_at, title";
 
 fn from_row(row: &Row<'_>) -> rusqlite::Result<Link> {
     let kind: String = row.get(2)?;
@@ -62,6 +62,7 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<Link> {
         },
         linked_by: linked_by.parse().map_err(|_| bad_text(6, &linked_by))?,
         linked_at: row.get(7)?,
+        title: row.get(8)?,
     })
 }
 
@@ -96,15 +97,21 @@ pub(crate) fn link(tx: &mut Tx<'_>, task: TaskId, new: NewLink, actor: &Actor) -
         LinkKind::Pr => Some(new.pr_state.unwrap_or(PrState::Open)),
         _ => new.pr_state,
     };
+    let title = new
+        .title
+        .as_deref()
+        .map(str::trim)
+        .filter(|t| !t.is_empty());
     tx.execute(
-        "INSERT INTO links (task_id, kind, ref, url, pr_state, linked_by)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        "INSERT INTO links (task_id, kind, ref, url, pr_state, title, linked_by)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         params![
             task.0,
             new.kind.as_str(),
             new.r#ref,
             new.url,
             pr_state.map(PrState::as_str),
+            title,
             actor.to_string()
         ],
     )?;

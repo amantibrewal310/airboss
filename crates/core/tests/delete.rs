@@ -4,7 +4,7 @@
 mod common;
 
 use airboss_core::{Actor, Error, EventKind, LinkKind, NewLink, NewTask, Status, Store, TaskId};
-use common::{agent, store};
+use common::{agent, store, tick};
 
 fn top(s: &mut Store, title: &str) -> TaskId {
     s.add_task(NewTask::new(title), &Actor::Me).unwrap().id
@@ -218,8 +218,14 @@ fn deleting_a_blocker_tells_its_waiters_and_makes_them_ready() {
     let w2 = top(&mut s, "W2");
     s.add_dependency(w1, blocker, &Actor::Me).unwrap();
     s.add_dependency(w2, inner, &Actor::Me).unwrap();
-    assert!(!s.ready().unwrap().iter().any(|t| t.id == w1 || t.id == w2));
+    assert!(
+        !s.ready()
+            .unwrap()
+            .iter()
+            .any(|r| r.task.id == w1 || r.task.id == w2)
+    );
 
+    tick();
     s.delete_task(blocker, &Actor::Me).unwrap();
 
     for w in [w1, w2] {
@@ -228,8 +234,12 @@ fn deleting_a_blocker_tells_its_waiters_and_makes_them_ready() {
         assert_eq!(last.actor, Actor::Me);
         assert!(s.waits_on(w).unwrap().is_empty());
     }
-    let ready: Vec<_> = s.ready().unwrap().iter().map(|t| t.id).collect();
+    let ready: Vec<_> = s.ready().unwrap().into_iter().map(|r| r.task.id).collect();
     assert_eq!(ready, vec![w1, w2]);
+    // Ready since the delete freed them (rule 26).
+    for r in s.ready().unwrap() {
+        assert_eq!(r.since, s.history(r.task.id).unwrap().pop().unwrap().at);
+    }
 }
 
 #[test]

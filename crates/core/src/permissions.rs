@@ -12,6 +12,9 @@ pub(crate) enum Call {
     AddTask,
     AddPlan,
     EditTask,
+    /// `link_repo` and `unlink_repo`.
+    ChangeRepos,
+    SetBranch,
     AddNote,
     MoveTask,
     DeleteTask,
@@ -40,11 +43,13 @@ pub(crate) fn allowed(call: Call, actor: &Actor) -> Result<()> {
     let ok = match call {
         AddRepo | EditTask | MoveTask | DeleteTask => *actor == Me,
         AddTask | Unlink => matches!(actor, Me | Agent(_)),
-        AddPlan | ChangeDependency => matches!(actor, Me | Plan),
+        AddPlan | ChangeRepos | ChangeDependency => matches!(actor, Me | Plan),
         // A plan arrives as a tree of tasks; it has nothing to say about one afterwards.
         AddNote => *actor != Plan,
         Link => true,
         SetPrState => matches!(actor, Me | SyncGh),
+        // `launch` names the branch when it starts the first thread.
+        SetBranch => matches!(actor, Me | Launch),
     };
     if ok { Ok(()) } else { Err(Error::NotAllowed) }
 }
@@ -74,6 +79,8 @@ mod tests {
             (Call::AddTask, vec![me.clone(), agent.clone()]),
             (Call::AddPlan, vec![me.clone(), Actor::Plan]),
             (Call::EditTask, vec![me.clone()]),
+            (Call::ChangeRepos, vec![me.clone(), Actor::Plan]),
+            (Call::SetBranch, vec![me.clone(), Actor::Launch]),
             (
                 Call::AddNote,
                 every_actor()

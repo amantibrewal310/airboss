@@ -174,7 +174,8 @@ impl Origin {
 pub struct Task {
     pub id: TaskId,
     pub parent: Option<TaskId>,
-    pub repo: Option<RepoId>,
+    /// The repos it's linked to, sorted by repo name. Only its own, not its subtasks'.
+    pub repos: Vec<RepoId>,
     pub title: String,
     pub body: Option<String>,
     pub status: Status,
@@ -182,6 +183,8 @@ pub struct Task {
     pub position: u32,
     pub origin: Origin,
     pub plan_key: Option<String>,
+    /// The branch every thread for this task shares; `None` until one is chosen.
+    pub branch: Option<String>,
     pub created_at: String,
 }
 
@@ -190,7 +193,7 @@ pub struct Task {
 pub struct NewTask {
     pub title: String,
     pub parent: Option<TaskId>,
-    pub repo: Option<RepoId>,
+    pub repos: Vec<RepoId>,
     pub body: Option<String>,
 }
 
@@ -209,9 +212,11 @@ impl NewTask {
         self
     }
 
-    /// Ties the task to a repo.
+    /// Links the task to a repo. Call it again for more; a repo given twice is linked once.
     pub fn in_repo(mut self, repo: RepoId) -> NewTask {
-        self.repo = Some(repo);
+        if !self.repos.contains(&repo) {
+            self.repos.push(repo);
+        }
         self
     }
 
@@ -230,6 +235,12 @@ pub struct TaskNode {
     pub depth: u32,
     /// True while any task it waits on is neither done nor dropped (rule 16).
     pub waiting: bool,
+    /// When its own newest event happened (rule 28).
+    pub last_event_at: String,
+    /// Who made its own newest event.
+    pub last_actor: Actor,
+    /// When the newest event in it or anywhere under it happened, for "quiet for 5+ days".
+    pub subtree_last_event_at: String,
 }
 
 /// A git repo tasks can point at.
@@ -257,6 +268,10 @@ pub enum EventKind {
     WaitsOnRemoved,
     /// I turned down an agent's proposal. The task is `dropped` and hidden from the tree.
     Rejected,
+    /// A repo was linked to the task; the body names it.
+    RepoLinked,
+    /// A repo was unlinked from the task; the body names it.
+    RepoUnlinked,
 }
 
 impl EventKind {
@@ -273,6 +288,8 @@ impl EventKind {
             EventKind::WaitsOnAdded => "waits_on_added",
             EventKind::WaitsOnRemoved => "waits_on_removed",
             EventKind::Rejected => "rejected",
+            EventKind::RepoLinked => "repo_linked",
+            EventKind::RepoUnlinked => "repo_unlinked",
         }
     }
 
@@ -289,6 +306,8 @@ impl EventKind {
             "waits_on_added" => EventKind::WaitsOnAdded,
             "waits_on_removed" => EventKind::WaitsOnRemoved,
             "rejected" => EventKind::Rejected,
+            "repo_linked" => EventKind::RepoLinked,
+            "repo_unlinked" => EventKind::RepoUnlinked,
             _ => return None,
         })
     }
@@ -306,13 +325,12 @@ pub struct Event {
     pub at: String,
 }
 
-/// What `me` changes about a task. `None` leaves a field as it is; for body and repo,
-/// `Some(None)` clears it.
+/// What `me` changes about a task. `None` leaves a field as it is; for the body,
+/// `Some(None)` clears it. Repos change through `link_repo` and `unlink_repo`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskEdit {
     pub title: Option<String>,
     pub body: Option<Option<String>>,
-    pub repo: Option<Option<RepoId>>,
 }
 
 impl TaskEdit {
@@ -325,12 +343,6 @@ impl TaskEdit {
     /// Replaces the notes; `None` clears them.
     pub fn body(mut self, body: Option<&str>) -> TaskEdit {
         self.body = Some(body.map(str::to_string));
-        self
-    }
-
-    /// Points the task at a repo; `None` unties it.
-    pub fn repo(mut self, repo: Option<RepoId>) -> TaskEdit {
-        self.repo = Some(repo);
         self
     }
 }
@@ -425,6 +437,8 @@ pub struct Link {
     pub url: Option<String>,
     /// Set exactly for PR links (rule 3).
     pub pr_state: Option<PrState>,
+    /// What the app shows, e.g. "#booking thread"; `None` means show the ref.
+    pub title: Option<String>,
     pub linked_by: Actor,
     pub linked_at: String,
 }
@@ -436,6 +450,8 @@ pub struct NewLink {
     pub r#ref: String,
     pub url: Option<String>,
     pub pr_state: Option<PrState>,
+    #[serde(default)]
+    pub title: Option<String>,
 }
 
 impl NewLink {
@@ -446,6 +462,7 @@ impl NewLink {
             r#ref: r#ref.into(),
             url: None,
             pr_state: None,
+            title: None,
         }
     }
 
@@ -460,11 +477,34 @@ impl NewLink {
         self
     }
 
+    /// Names the link for display, e.g. "booking-flow.md"; a blank title is no title.
+    pub fn with_title(mut self, title: impl Into<String>) -> NewLink {
+        self.title = Some(title.into());
+        self
+    }
+
     /// Records a PR's known state, e.g. one that already merged.
     pub fn with_pr_state(mut self, state: PrState) -> NewLink {
         self.pr_state = Some(state);
         self
     }
+}
+
+/// A task that can be picked up now, and since when (rule 26).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReadyTask {
+    pub task: Task,
+    /// When its last blocker finished or was removed; its creation time if it never waited.
+    pub since: String,
+}
+
+/// Every dependency of one task, both ways, finished tasks included (rule 27).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Dependencies {
+    /// What the task waits on, by id. Done and dropped blockers are here too.
+    pub waits_on: Vec<Task>,
+    /// What waits on the task, by id.
+    pub blocks: Vec<Task>,
 }
 
 /// The order a parent's open subtasks can run in (rule 18). Only shown; nothing starts itself.
@@ -474,10 +514,19 @@ pub struct RunOrder {
     /// Siblings keep their order within a wave.
     pub waves: Vec<Vec<Task>>,
     /// Subtasks that wait, directly or through a sibling, on an open task outside the parent.
-    pub waiting_outside: Vec<Task>,
+    pub waiting_outside: Vec<OutsideWait>,
     /// Subtasks that can't be placed in a wave because their lifted dependencies form a
     /// loop, or wait on one, in sibling order. Kept apart so the rest of the order shows.
     pub tangled: Vec<Task>,
+}
+
+/// A subtask held back by open tasks outside its parent (rule 18).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OutsideWait {
+    pub task: Task,
+    /// The open tasks outside the parent that hold it, directly, through its subtree, or
+    /// through a sibling it waits on; sorted by id.
+    pub blockers: Vec<TaskId>,
 }
 
 /// What a plan step waits on: another step in the same plan, or a task that already exists.
@@ -499,7 +548,8 @@ pub struct PlanTask {
     pub key: String,
     pub title: String,
     pub body: Option<String>,
-    pub repo: Option<RepoId>,
+    #[serde(default)]
+    pub repos: Vec<RepoId>,
     #[serde(default)]
     pub depends_on: Vec<DepRef>,
     #[serde(default)]
@@ -513,7 +563,7 @@ impl PlanTask {
             key: key.into(),
             title: title.into(),
             body: None,
-            repo: None,
+            repos: Vec::new(),
             depends_on: Vec::new(),
             children: Vec::new(),
         }
@@ -525,9 +575,11 @@ impl PlanTask {
         self
     }
 
-    /// Ties the step to a repo.
+    /// Links the step to a repo. Call it again for more; a repo given twice is linked once.
     pub fn in_repo(mut self, repo: RepoId) -> PlanTask {
-        self.repo = Some(repo);
+        if !self.repos.contains(&repo) {
+            self.repos.push(repo);
+        }
         self
     }
 

@@ -4,7 +4,7 @@
 mod common;
 
 use airboss_core::{Actor, Error, EventKind, NewTask, RunOrder, Status, Store, Task, TaskId};
-use common::store;
+use common::{store, tick};
 
 fn top(store: &mut Store, title: &str) -> TaskId {
     store.add_task(NewTask::new(title), &Actor::Me).unwrap().id
@@ -15,6 +15,10 @@ fn under(store: &mut Store, parent: TaskId, title: &str) -> TaskId {
         .add_task(NewTask::new(title).under(parent), &Actor::Me)
         .unwrap()
         .id
+}
+
+fn ready_tasks(s: &Store) -> Vec<Task> {
+    s.ready().unwrap().into_iter().map(|r| r.task).collect()
 }
 
 fn ids(tasks: &[Task]) -> Vec<TaskId> {
@@ -42,6 +46,44 @@ fn kinds(store: &Store, id: TaskId) -> Vec<EventKind> {
 
 // ---- T10: dependencies, loops and waiting ----
 
+// Rule 27: every dependency, both ways, finished ones included.
+
+#[test]
+fn dependencies_lists_both_directions_with_finished_blockers() {
+    let mut s = store();
+    let [a, b, c, d, e] = ["A", "B", "C", "D", "E"].map(|t| top(&mut s, t));
+    // C waits on A (done) and B (open); D and E wait on C.
+    for (task, on) in [(c, b), (c, a), (d, c), (e, c)] {
+        s.add_dependency(task, on, &Actor::Me).unwrap();
+    }
+    set_status(&mut s, a, Status::Done);
+    set_status(&mut s, e, Status::Dropped);
+
+    let deps = s.dependencies(c).unwrap();
+    assert_eq!(ids(&deps.waits_on), vec![a, b]);
+    assert_eq!(ids(&deps.blocks), vec![d, e]);
+    assert_eq!(deps.waits_on[0].status, Status::Done);
+    // `waits_on` still lists open blockers only.
+    assert_eq!(ids(&s.waits_on(c).unwrap()), vec![b]);
+}
+
+#[test]
+fn a_task_with_no_dependencies_has_empty_lists() {
+    let mut s = store();
+    let a = top(&mut s, "A");
+    let deps = s.dependencies(a).unwrap();
+    assert!(deps.waits_on.is_empty() && deps.blocks.is_empty());
+}
+
+#[test]
+fn dependencies_of_a_missing_task_is_not_found() {
+    let s = store();
+    assert!(matches!(
+        s.dependencies(TaskId(8)).unwrap_err(),
+        Error::NotFound
+    ));
+}
+
 #[test]
 fn a_chain_waits_link_by_link_and_only_its_head_is_ready() {
     let mut s = store();
@@ -58,7 +100,7 @@ fn a_chain_waits_link_by_link_and_only_its_head_is_ready() {
         (waiting(&s, a), waiting(&s, b), waiting(&s, c)),
         (false, true, true)
     );
-    assert_eq!(ids(&s.ready().unwrap()), vec![a]);
+    assert_eq!(ids(&ready_tasks(&s)), vec![a]);
 }
 
 /// Builds `n` tasks, each under its own parent, chained so task i waits on task i+1, then
@@ -188,7 +230,7 @@ fn removing_a_dependency_stops_the_wait_and_writes_an_event() {
 
     assert!(s.waits_on(b).unwrap().is_empty());
     assert!(!waiting(&s, b));
-    assert_eq!(ids(&s.ready().unwrap()), vec![a, b]);
+    assert_eq!(ids(&ready_tasks(&s)), vec![a, b]);
     assert_eq!(
         kinds(&s, b),
         vec![
@@ -273,7 +315,7 @@ fn ready_lists_unblocked_todo_tasks_in_tree_order() {
         .id;
     s.add_dependency(p2, p1, &Actor::Me).unwrap();
 
-    let ready = ids(&s.ready().unwrap());
+    let ready = ids(&ready_tasks(&s));
     assert_eq!(ready, vec![p, p1, q]);
     assert!(!ready.contains(&proposal), "proposals are not ready");
 }
@@ -292,7 +334,7 @@ fn a_waiting_task_becomes_ready_when_its_blocker_finishes() {
         s.add_dependency(c, a, &Actor::Me).unwrap();
         s.add_dependency(c, b, &Actor::Me).unwrap();
         assert!(waiting(&s, c));
-        assert_eq!(ids(&s.ready().unwrap()), vec![a, b]);
+        assert_eq!(ids(&ready_tasks(&s)), vec![a, b]);
 
         set_status(&mut s, a, finished);
         assert!(waiting(&s, c), "still waits on B");
@@ -301,7 +343,7 @@ fn a_waiting_task_becomes_ready_when_its_blocker_finishes() {
         set_status(&mut s, b, finished);
         assert!(!waiting(&s, c));
         assert!(s.waits_on(c).unwrap().is_empty());
-        assert_eq!(ids(&s.ready().unwrap()), vec![c], "{finished:?}");
+        assert_eq!(ids(&ready_tasks(&s)), vec![c], "{finished:?}");
     }
 }
 
@@ -311,7 +353,7 @@ fn ready_leaves_out_tasks_that_are_not_todo() {
     let a = top(&mut s, "A");
     let b = top(&mut s, "B");
     set_status(&mut s, a, Status::Doing);
-    assert_eq!(ids(&s.ready().unwrap()), vec![b]);
+    assert_eq!(ids(&ready_tasks(&s)), vec![b]);
 }
 
 #[test]
@@ -393,7 +435,42 @@ fn a_subtask_with_an_open_blocker_outside_waits_outside() {
 
     let order = s.run_order(p).unwrap();
     assert_eq!(wave_ids(&order), vec![vec![b]]);
-    assert_eq!(ids(&order.waiting_outside), vec![a, c]);
+    assert_eq!(
+        outside(&order),
+        vec![(a, vec![elsewhere]), (c, vec![elsewhere])]
+    );
+}
+
+/// Each `waiting_outside` entry with its blockers.
+fn outside(order: &RunOrder) -> Vec<(TaskId, Vec<TaskId>)> {
+    order
+        .waiting_outside
+        .iter()
+        .map(|w| (w.task.id, w.blockers.clone()))
+        .collect()
+}
+
+#[test]
+fn outside_blockers_are_named_directly_through_steps_and_through_siblings() {
+    let mut s = store();
+    let [x, y, z, done] = ["X", "Y", "Z", "Done"].map(|t| top(&mut s, t));
+    let p = top(&mut s, "Project");
+    let [a, b, c, d] = ["A", "B", "C", "D"].map(|t| under(&mut s, p, t));
+    let b1 = under(&mut s, b, "B1");
+    let b2 = under(&mut s, b, "B2");
+    // A waits on Z and X directly; B through its steps on Y and X; a finished blocker
+    // holds nothing. C waits on A and B, so on all three; D is free.
+    for (task, on) in [(a, z), (a, x), (b1, y), (b2, x), (b2, done), (c, a), (c, b)] {
+        s.add_dependency(task, on, &Actor::Me).unwrap();
+    }
+    set_status(&mut s, done, Status::Done);
+
+    let order = s.run_order(p).unwrap();
+    assert_eq!(wave_ids(&order), vec![vec![d]]);
+    assert_eq!(
+        outside(&order),
+        vec![(a, vec![x, z]), (b, vec![x, y]), (c, vec![x, y, z])]
+    );
 }
 
 #[test]
@@ -514,4 +591,74 @@ fn run_order_leaves_out_proposals_until_they_are_accepted() {
         .map(|w| w.iter().map(|t| t.id).collect())
         .collect();
     assert_eq!(waves, vec![vec![api.id, idea.id], vec![page.id]]);
+}
+
+// Rule 26: a ready task knows since when.
+
+fn since(s: &Store, id: TaskId) -> String {
+    s.ready()
+        .unwrap()
+        .into_iter()
+        .find(|r| r.task.id == id)
+        .unwrap()
+        .since
+}
+
+fn newest_at(s: &Store, id: TaskId) -> String {
+    s.history(id).unwrap().pop().unwrap().at
+}
+
+#[test]
+fn a_task_that_never_waited_is_ready_since_it_was_created() {
+    let mut s = store();
+    let a = top(&mut s, "A");
+    tick();
+    s.add_note(a, "later", &Actor::Me).unwrap();
+    assert_eq!(since(&s, a), s.history(a).unwrap()[0].at);
+}
+
+#[test]
+fn a_task_is_ready_since_its_last_blocker_finished() {
+    let mut s = store();
+    let [a, b, c] = ["A", "B", "C"].map(|t| top(&mut s, t));
+    s.add_dependency(c, a, &Actor::Me).unwrap();
+    s.add_dependency(c, b, &Actor::Me).unwrap();
+    set_status(&mut s, b, Status::Dropped);
+    assert!(!ids(&ready_tasks(&s)).contains(&c), "still waits on A");
+    tick();
+    set_status(&mut s, a, Status::Done);
+    assert_eq!(since(&s, c), newest_at(&s, a));
+
+    // Later events on the blockers or the task don't move it.
+    tick();
+    s.add_note(b, "after the fact", &Actor::Me).unwrap();
+    s.add_note(c, "noted", &Actor::Me).unwrap();
+    assert_eq!(since(&s, c), s.history(a).unwrap().pop().unwrap().at);
+}
+
+#[test]
+fn a_rejected_blocker_frees_its_waiter_at_the_rejection() {
+    let mut s = store();
+    let idea = s
+        .add_task(NewTask::new("Idea"), &Actor::Agent("t3/a1".into()))
+        .unwrap()
+        .id;
+    let c = top(&mut s, "C");
+    s.add_dependency(c, idea, &Actor::Me).unwrap();
+    tick();
+    s.set_status(idea, Status::Dropped, Some("no"), &Actor::Me)
+        .unwrap();
+    assert_eq!(since(&s, c), newest_at(&s, idea));
+}
+
+#[test]
+fn removing_the_last_open_blocker_makes_a_task_ready_since_then() {
+    let mut s = store();
+    let [a, b, c] = ["A", "B", "C"].map(|t| top(&mut s, t));
+    s.add_dependency(c, a, &Actor::Me).unwrap();
+    s.add_dependency(c, b, &Actor::Me).unwrap();
+    set_status(&mut s, a, Status::Done);
+    tick();
+    s.remove_dependency(c, b, &Actor::Me).unwrap();
+    assert_eq!(since(&s, c), newest_at(&s, c));
 }

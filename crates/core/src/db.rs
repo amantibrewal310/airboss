@@ -182,6 +182,8 @@ mod tests {
             "task_deps_waits_on_idx",
             "task_events",
             "task_events_task_idx",
+            "task_repos",
+            "task_repos_repo_idx",
             "tasks",
             "tasks_parent_position_idx",
             "tasks_plan_key_idx",
@@ -306,7 +308,9 @@ mod tests {
             c.execute_batch(
                 "INSERT INTO tasks (title, position, origin) VALUES ('Booking flow', 1, 'me');
                  INSERT INTO tasks (parent_id, title, position, origin, plan_key) VALUES (1, 'Phase 1', 1, 'plan', 'p1');
-                 INSERT INTO links (task_id, kind, ref, pr_state, linked_by) VALUES (2, 'pr', 'o/r#42', 'open', 'me');",
+                 INSERT INTO links (task_id, kind, ref, pr_state, linked_by) VALUES (2, 'pr', 'o/r#42', 'open', 'me');
+                 INSERT INTO repos (name, path) VALUES ('web', '/w/web');
+                 INSERT INTO task_repos (task_id, repo_id, linked_by) VALUES (2, 1, 'me');",
             )
             .unwrap();
             c
@@ -387,6 +391,14 @@ mod tests {
             );
         }
         #[test]
+        fn same_repo_twice_on_one_task() {
+            rejects("INSERT INTO task_repos (task_id, repo_id, linked_by) VALUES (2, 1, 'me')");
+        }
+        #[test]
+        fn repo_link_to_a_missing_repo() {
+            rejects("INSERT INTO task_repos (task_id, repo_id, linked_by) VALUES (1, 9, 'me')");
+        }
+        #[test]
         fn deleting_a_task_removes_its_subtree_links_and_events() {
             let c = db();
             c.execute_batch(
@@ -396,7 +408,8 @@ mod tests {
             .unwrap();
             let left: i64 = c
                 .query_row(
-                    "SELECT (SELECT count(*) FROM tasks) + (SELECT count(*) FROM links) + (SELECT count(*) FROM task_events)",
+                    "SELECT (SELECT count(*) FROM tasks) + (SELECT count(*) FROM links)
+                          + (SELECT count(*) FROM task_events) + (SELECT count(*) FROM task_repos)",
                     [],
                     |r| r.get(0),
                 )
