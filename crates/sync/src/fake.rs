@@ -221,3 +221,152 @@ impl crate::claude::ClaudeSource for FakeClaude {
             .collect())
     }
 }
+
+/// A [`T3Source`](crate::t3::T3Source) over a real [`T3Db`](crate::t3::T3Db) (usually on a
+/// [`T3Fixture`]), that can be told to fail and counts its reads.
+pub struct FakeT3 {
+    db: crate::t3::T3Db,
+    state: std::sync::Arc<std::sync::Mutex<FakeT3State>>,
+}
+
+#[derive(Default)]
+struct FakeT3State {
+    fail: std::collections::VecDeque<crate::t3::T3Error>,
+    reads: u32,
+    opens: u32,
+}
+
+/// Controls a [`FakeT3`] after it was handed to a worker.
+#[derive(Clone)]
+pub struct FakeT3Handle(std::sync::Arc<std::sync::Mutex<FakeT3State>>);
+
+impl FakeT3 {
+    pub fn new(t3_dir: &Path) -> FakeT3 {
+        FakeT3 {
+            db: crate::t3::T3Db::new(t3_dir),
+            state: Default::default(),
+        }
+    }
+
+    pub fn handle(&self) -> FakeT3Handle {
+        FakeT3Handle(self.state.clone())
+    }
+
+    fn take_failure(&self) -> Option<crate::t3::T3Error> {
+        lock(&self.state).fail.pop_front()
+    }
+}
+
+fn lock<T>(m: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+impl FakeT3Handle {
+    /// The next call (of any kind) fails with `e`.
+    pub fn fail_next(&self, e: crate::t3::T3Error) {
+        lock(&self.0).fail.push_back(e);
+    }
+
+    /// How many times `read` ran.
+    pub fn reads(&self) -> u32 {
+        lock(&self.0).reads
+    }
+
+    /// How many times `open` ran.
+    pub fn opens(&self) -> u32 {
+        lock(&self.0).opens
+    }
+}
+
+impl crate::t3::T3Source for FakeT3 {
+    fn open(&mut self) -> Result<(), crate::t3::T3Error> {
+        lock(&self.state).opens += 1;
+        match self.take_failure() {
+            Some(e) => Err(e),
+            None => self.db.open(),
+        }
+    }
+
+    fn data_version(&mut self) -> Result<i64, crate::t3::T3Error> {
+        match self.take_failure() {
+            Some(e) => Err(e),
+            None => self.db.data_version(),
+        }
+    }
+
+    fn read(&mut self, q: &crate::t3::T3Query) -> Result<crate::t3::T3Read, crate::t3::T3Error> {
+        lock(&self.state).reads += 1;
+        match self.take_failure() {
+            Some(e) => Err(e),
+            None => self.db.read(q),
+        }
+    }
+
+    fn find_thread(
+        &mut self,
+        project: &Path,
+        branch: &str,
+    ) -> Result<Option<String>, crate::t3::T3Error> {
+        match self.take_failure() {
+            Some(e) => Err(e),
+            None => self.db.find_thread(project, branch),
+        }
+    }
+
+    fn environment_id(&mut self) -> Result<Option<String>, crate::t3::T3Error> {
+        self.db.environment_id()
+    }
+}
+
+/// A watcher that records what it was asked to watch and fires only when a test says so.
+#[derive(Clone, Default)]
+pub struct FakeWatch(std::sync::Arc<std::sync::Mutex<FakeWatchState>>);
+
+#[derive(Default)]
+struct FakeWatchState {
+    calls: Vec<Vec<crate::WatchTarget>>,
+    tx: Option<std::sync::mpsc::Sender<crate::T3Msg>>,
+    fail: Option<String>,
+}
+
+impl FakeWatch {
+    pub fn new() -> FakeWatch {
+        FakeWatch::default()
+    }
+
+    /// Every `watch` call's targets, oldest first.
+    pub fn calls(&self) -> Vec<Vec<crate::WatchTarget>> {
+        lock(&self.0).calls.clone()
+    }
+
+    /// Sends `msg` the way the real watcher would.
+    pub fn fire(&self, msg: crate::T3Msg) {
+        if let Some(tx) = &lock(&self.0).tx {
+            let _ = tx.send(msg);
+        }
+    }
+
+    /// Makes every later `watch` call fail with `why`.
+    pub fn fail_with(&self, why: &str) {
+        lock(&self.0).fail = Some(why.to_string());
+    }
+}
+
+impl crate::WalWatch for FakeWatch {
+    fn watch(
+        &mut self,
+        targets: &[crate::WatchTarget],
+        tx: std::sync::mpsc::Sender<crate::T3Msg>,
+    ) -> Result<(), airboss_services::ServiceError> {
+        let mut s = lock(&self.0);
+        s.calls.push(targets.to_vec());
+        s.tx = Some(tx);
+        match &s.fail {
+            Some(why) => Err(airboss_services::ServiceError::new(
+                airboss_services::ErrorCode::Internal,
+                why.clone(),
+            )),
+            None => Ok(()),
+        }
+    }
+}

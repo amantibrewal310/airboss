@@ -10,8 +10,12 @@ use std::time::{Duration, SystemTime};
 
 use airboss_core::Migration;
 use airboss_services::time::{from_ts, to_ts};
-use airboss_services::{ErrorCode, ServiceError, SharedStore};
-use rusqlite::{Connection, params};
+use airboss_services::{
+    ErrorCode, Request, RequestKind, ServiceError, SharedStore, Source, ThreadKey, ThreadState,
+    ThreadView,
+};
+use rusqlite::{Connection, OptionalExtension, Row, params};
+use serde::{Deserialize, Serialize};
 
 use crate::health::{Health, HealthState};
 
@@ -131,6 +135,251 @@ impl SyncDb {
     }
 }
 
+/// A PR a T3 thread lists, waiting for GitHub to read it before it's linked.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct WaitingPr {
+    /// Canonical `owner/repo#n`.
+    #[serde(rename = "ref")]
+    pub pr: String,
+    pub url: Option<String>,
+    /// T3's `linkedAt`.
+    pub linked_at: String,
+}
+
+/// One `observed_threads` row: the view, plus what only `sync` keeps.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct StoredThread {
+    pub view: ThreadView,
+    pub noted_run_id: Option<String>,
+}
+
+pub(crate) fn source_text(source: Source) -> &'static str {
+    match source {
+        Source::T3 => "t3",
+        Source::Claude => "claude",
+    }
+}
+
+pub(crate) fn state_text(state: ThreadState) -> &'static str {
+    match state {
+        ThreadState::Running => "running",
+        ThreadState::NeedsMe => "needs_me",
+        ThreadState::Errored => "errored",
+        ThreadState::Idle => "idle",
+        ThreadState::Settled => "settled",
+        ThreadState::Gone => "gone",
+    }
+}
+
+fn parse_state(text: &str) -> Option<ThreadState> {
+    Some(match text {
+        "running" => ThreadState::Running,
+        "needs_me" => ThreadState::NeedsMe,
+        "errored" => ThreadState::Errored,
+        "idle" => ThreadState::Idle,
+        "settled" => ThreadState::Settled,
+        "gone" => ThreadState::Gone,
+        _ => return None,
+    })
+}
+
+const THREAD_COLUMNS: &str =
+    "source, ref, linked, state, title, project_path, branch, worktree_path,
+    parent_ref, child_count, run_id, error_text, request_id, request_kind, request_text,
+    request_at, last_activity_at, noted_run_id";
+
+fn thread_row(r: &Row<'_>) -> rusqlite::Result<Option<StoredThread>> {
+    let source = match r.get::<_, String>(0)?.as_str() {
+        "t3" => Source::T3,
+        "claude" => Source::Claude,
+        _ => return Ok(None),
+    };
+    let Some(state) = parse_state(&r.get::<_, String>(3)?) else {
+        return Ok(None);
+    };
+    let kind: Option<String> = r.get(13)?;
+    let request = match (r.get::<_, Option<String>>(12)?, kind.as_deref()) {
+        (Some(id), Some(kind)) => Some(Request {
+            id,
+            kind: if kind == "question" {
+                RequestKind::Question
+            } else {
+                RequestKind::Approval
+            },
+            text: r.get::<_, Option<String>>(14)?.unwrap_or_default(),
+            at: r.get::<_, Option<String>>(15)?.unwrap_or_default(),
+        }),
+        _ => None,
+    };
+    let children: i64 = r.get(9)?;
+    Ok(Some(StoredThread {
+        view: ThreadView {
+            key: ThreadKey {
+                source,
+                r#ref: r.get(1)?,
+            },
+            linked: r.get::<_, i64>(2)? == 1,
+            state,
+            title: r.get(4)?,
+            request,
+            error: r.get(11)?,
+            run_id: r.get(10)?,
+            project_path: r.get(5)?,
+            branch: r.get(6)?,
+            worktree_path: r.get(7)?,
+            parent_ref: r.get(8)?,
+            child_count: u32::try_from(children).unwrap_or(0),
+            last_activity_at: r.get(16)?,
+            stale: true,
+        },
+        noted_run_id: r.get(17)?,
+    }))
+}
+
+impl SyncDb {
+    /// Every `observed_threads` row, marked stale.
+    pub(crate) fn load_threads(&self) -> DbResult<Vec<StoredThread>> {
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT {THREAD_COLUMNS} FROM observed_threads ORDER BY source, ref"
+        ))?;
+        let rows = stmt.query_map([], thread_row)?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.extend(row?);
+        }
+        Ok(out)
+    }
+
+    /// Writes a thread's view. `pr_seen`, `pr_waiting` and `noted_run_id` are left alone:
+    /// each has its own call, so the two workers never overwrite each other.
+    pub(crate) fn save_thread(&self, v: &ThreadView, now: SystemTime) -> DbResult<()> {
+        let (rid, rkind, rtext, rat) = match &v.request {
+            Some(r) => (
+                Some(r.id.as_str()),
+                Some(match r.kind {
+                    RequestKind::Question => "question",
+                    RequestKind::Approval => "approval",
+                }),
+                Some(r.text.as_str()),
+                Some(r.at.as_str()),
+            ),
+            None => (None, None, None, None),
+        };
+        self.conn.execute(
+            "INSERT INTO observed_threads (source, ref, linked, state, title, project_path, branch,
+               worktree_path, parent_ref, child_count, run_id, error_text, request_id,
+               request_kind, request_text, request_at, last_activity_at, first_seen_at, changed_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?18)
+             ON CONFLICT (source, ref) DO UPDATE SET linked = ?3, state = ?4, title = ?5,
+               project_path = ?6, branch = ?7, worktree_path = ?8, parent_ref = ?9,
+               child_count = ?10, run_id = ?11, error_text = ?12, request_id = ?13,
+               request_kind = ?14, request_text = ?15, request_at = ?16, last_activity_at = ?17,
+               changed_at = ?18",
+            params![
+                source_text(v.key.source),
+                v.key.r#ref,
+                i64::from(v.linked),
+                state_text(v.state),
+                v.title,
+                v.project_path,
+                v.branch,
+                v.worktree_path,
+                v.parent_ref,
+                v.child_count,
+                v.run_id,
+                v.error,
+                rid,
+                rkind,
+                rtext,
+                rat,
+                v.last_activity_at,
+                to_ts(now)
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub(crate) fn delete_thread(&self, key: &ThreadKey) -> DbResult<()> {
+        self.conn.execute(
+            "DELETE FROM observed_threads WHERE source = ?1 AND ref = ?2",
+            params![source_text(key.source), key.r#ref],
+        )?;
+        Ok(())
+    }
+
+    /// Records that a note was written for this failed run.
+    pub(crate) fn set_noted_run(&self, key: &ThreadKey, run_id: &str) -> DbResult<()> {
+        self.conn.execute(
+            "UPDATE observed_threads SET noted_run_id = ?3 WHERE source = ?1 AND ref = ?2",
+            params![source_text(key.source), key.r#ref, run_id],
+        )?;
+        Ok(())
+    }
+
+    /// Adds a T3-listed PR to a thread's `pr_waiting`, unless it's already waiting or seen.
+    /// One statement, so it can't race the GitHub worker moving it to `pr_seen`. Returns
+    /// whether it was added.
+    pub(crate) fn add_waiting(&self, thread: &str, pr: &WaitingPr) -> DbResult<bool> {
+        let json = serde_json::to_string(pr)
+            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+        let n = self.conn.execute(
+            "UPDATE observed_threads SET pr_waiting = json_insert(pr_waiting, '$[#]', json(?3))
+             WHERE source = 't3' AND ref = ?1
+               AND NOT EXISTS (SELECT 1 FROM json_each(pr_seen) WHERE value = ?2)
+               AND NOT EXISTS (SELECT 1 FROM json_each(pr_waiting)
+                               WHERE json_extract(value, '$.ref') = ?2)",
+            params![thread, pr.pr, json],
+        )?;
+        Ok(n > 0)
+    }
+
+    /// Every PR waiting on a T3 thread: `(thread, pr)`.
+    pub(crate) fn waiting(&self) -> DbResult<Vec<(String, WaitingPr)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT o.ref, w.value FROM observed_threads AS o, json_each(o.pr_waiting) AS w
+             WHERE o.source = 't3' ORDER BY o.ref, w.key",
+        )?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (thread, json) = row?;
+            if let Ok(pr) = serde_json::from_str::<WaitingPr>(&json) {
+                out.push((thread, pr));
+            }
+        }
+        Ok(out)
+    }
+
+    /// Moves a PR from a thread's `pr_waiting` to its `pr_seen`, in one statement.
+    pub(crate) fn waiting_to_seen(&self, thread: &str, pr: &str) -> DbResult<()> {
+        self.conn.execute(
+            "UPDATE observed_threads SET
+               pr_waiting = (SELECT json_group_array(json(value)) FROM json_each(pr_waiting)
+                             WHERE json_extract(value, '$.ref') IS NOT ?2),
+               pr_seen = CASE WHEN EXISTS (SELECT 1 FROM json_each(pr_seen) WHERE value = ?2)
+                         THEN pr_seen ELSE json_insert(pr_seen, '$[#]', ?2) END
+             WHERE source = 't3' AND ref = ?1",
+            params![thread, pr],
+        )?;
+        Ok(())
+    }
+
+    /// A thread's `pr_seen`.
+    pub(crate) fn seen(&self, thread: &str) -> DbResult<Vec<String>> {
+        let json: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT pr_seen FROM observed_threads WHERE source = 't3' AND ref = ?1",
+                params![thread],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(json
+            .and_then(|j| serde_json::from_str(&j).ok())
+            .unwrap_or_default())
+    }
+}
+
 pub(crate) fn storage(message: String) -> ServiceError {
     ServiceError::new(ErrorCode::Storage, message)
 }
@@ -145,6 +394,78 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(MIGRATIONS[0].sql).unwrap();
         SyncDb { conn }
+    }
+
+    fn view(r: &str) -> ThreadView {
+        ThreadView {
+            key: ThreadKey {
+                source: Source::T3,
+                r#ref: r.into(),
+            },
+            linked: true,
+            state: ThreadState::NeedsMe,
+            title: Some("t".into()),
+            request: Some(Request {
+                id: "q".into(),
+                kind: RequestKind::Approval,
+                text: "Run a command".into(),
+                at: "2026-11-26T10:00:00.000Z".into(),
+            }),
+            error: None,
+            run_id: Some("r1".into()),
+            project_path: None,
+            branch: Some("b".into()),
+            worktree_path: None,
+            parent_ref: None,
+            child_count: 2,
+            last_activity_at: Some("2026-11-26T10:00:00.000Z".into()),
+            stale: true,
+        }
+    }
+
+    #[test]
+    fn threads_round_trip_and_keep_their_own_columns() {
+        let db = db();
+        let now = SystemTime::UNIX_EPOCH;
+        let v = view("a");
+        db.save_thread(&v, now).unwrap();
+        db.set_noted_run(&v.key, "r0").unwrap();
+        let mut v2 = v.clone();
+        v2.state = ThreadState::Idle;
+        v2.request = None;
+        db.save_thread(&v2, now).unwrap();
+        let rows = db.load_threads().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].view, v2);
+        assert_eq!(
+            rows[0].noted_run_id.as_deref(),
+            Some("r0"),
+            "kept by save_thread"
+        );
+        db.save_thread(&v, now).unwrap();
+        assert_eq!(db.load_threads().unwrap()[0].view, v);
+        db.delete_thread(&v.key).unwrap();
+        assert!(db.load_threads().unwrap().is_empty());
+    }
+
+    #[test]
+    fn waiting_prs_move_to_seen_once() {
+        let db = db();
+        db.save_thread(&view("t"), SystemTime::UNIX_EPOCH).unwrap();
+        let pr = WaitingPr {
+            pr: "a/b#1".into(),
+            url: Some("https://github.com/a/b/pull/1".into()),
+            linked_at: "2026-11-26T10:00:00.000Z".into(),
+        };
+        assert!(db.add_waiting("t", &pr).unwrap());
+        assert!(!db.add_waiting("t", &pr).unwrap(), "already waiting");
+        assert!(!db.add_waiting("missing", &pr).unwrap(), "no such thread");
+        assert_eq!(db.waiting().unwrap(), vec![("t".to_string(), pr.clone())]);
+        db.waiting_to_seen("t", "a/b#1").unwrap();
+        db.waiting_to_seen("t", "a/b#1").unwrap();
+        assert!(db.waiting().unwrap().is_empty());
+        assert_eq!(db.seen("t").unwrap(), vec!["a/b#1".to_string()]);
+        assert!(!db.add_waiting("t", &pr).unwrap(), "seen: never again");
     }
 
     #[test]
