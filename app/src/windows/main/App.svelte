@@ -13,6 +13,8 @@
   import PlansGrid from './PlansGrid.svelte';
   import Overlays from './Overlays.svelte';
   import Toasts from './Toasts.svelte';
+  import FirstRun from './FirstRun.svelte';
+  import DbError from './DbError.svelte';
 
   let { app }: { app: App } = $props();
   // svelte-ignore state_referenced_locally
@@ -32,6 +34,9 @@
 <svelte:window onkeydown={(e) => app.handleKey(e)} />
 <svelte:document onfocusin={() => app.setZone(zoneOf(document.activeElement, !!app.ui.overlay))} />
 
+{#if app.fatal}
+  <DbError error={app.fatal} />
+{:else}
 <div class="win">
   <Sidebar />
   <main class="main">
@@ -40,7 +45,9 @@
     {:else}
       <Header />
       <div class="body">
-        {#if app.viewKind === 'list'}
+        {#if app.firstRun && app.ui.view === 'all'}
+          <FirstRun />
+        {:else if app.viewKind === 'list'}
           <TaskList />
           {#if app.ui.panelOpen && app.ui.selected !== null}<TaskPanel />{/if}
         {:else if app.viewKind === 'needs'}
@@ -54,6 +61,7 @@
 </div>
 <Overlays />
 <Toasts />
+{/if}
 
 <style>
   .win {
