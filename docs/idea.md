@@ -83,6 +83,16 @@ Why it's different: to-do apps and trackers don't know agent threads exist. T3 k
 - **One thread across several repos:** T3 tracks branches and PRs per thread, and per repo.
 - **Team or shared use:** it's for me.
 
+## Later: a lifecycle through grimoire skills
+
+[grimoire](https://github.com/amantibrewal310/grimoire) holds my agent skills (plan-review, schema-review, setup-repo). Later, Airboss and grimoire work together, but stay **two separate repos** joined only by Airboss's MCP tools:
+
+- **Every task gets a lifecycle,** for example: shape the idea, plan-review, build, review, ship. A small bug fix skips straight to build. A new product goes through every stage.
+- **Each skill reports its own stage.** It sends its evidence to Airboss over MCP, for example "plan reviewed" with the plan file. A stage counts as done only with evidence.
+- **Start launches the next stage with the right skill.** Example: on a task that already has a settled plan, Start opens a thread that builds Phase 1.
+- **setup-repo adds the agent note** that tells agents to report to Airboss.
+- **The skills still work without Airboss.** If Airboss isn't running, they skip the reporting step. That keeps them usable by any agent through the skills CLI.
+
 ## Prior art to read
 
 - [sortie-ai/sortie](https://github.com/sortie-ai/sortie): "Turn tracker tickets into autonomous agent sessions."
