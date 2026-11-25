@@ -62,6 +62,10 @@ fn a_steady_stream_cant_postpone_the_recompute() {
     assert_eq!(w.recomputes(), start);
     w.handle(AttentionMsg::Sync, t + 200 * MS);
     assert_eq!(w.recomputes(), start + 1);
+    // A message exactly when the window closes recomputes at once.
+    w.handle(AttentionMsg::Sync, t + 300 * MS);
+    w.handle(AttentionMsg::Sync, t + 450 * MS);
+    assert_eq!(w.recomputes(), start + 2);
 }
 
 #[test]

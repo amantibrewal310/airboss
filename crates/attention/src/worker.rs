@@ -90,7 +90,7 @@ impl Shared {
             .items
             .iter()
             .zip(&published.tasks)
-            .filter(|(item, tasks)| item.task == task || tasks.contains(&task))
+            .filter(|(_, tasks)| tasks.contains(&task))
             .map(|(item, _)| item.clone())
             .collect()
     }
@@ -227,6 +227,8 @@ impl AttentionWorker {
         }
     }
 
+    /// When to wake next, as of `now`: a pending settle window, the next deadline, or the
+    /// 15-minute cap, whichever is first.
     fn step(&self, now: SystemTime) -> Step {
         let mut at = now + MAX_WAIT;
         if let Some(first) = self.dirty_at {
@@ -375,7 +377,11 @@ impl AttentionWorker {
 /// The worker thread: waits for a message or the next deadline, by the wall clock, and
 /// never longer than [`MAX_WAIT`]. A panic in `handle` is logged and the previous list stays.
 pub(crate) fn run(mut worker: AttentionWorker, rx: Receiver<AttentionMsg>, clock: Arc<dyn Clock>) {
-    let mut wake_at = clock.now() + MAX_WAIT;
+    // The first list's deadline counts too: a task may turn quiet minutes after launch.
+    let mut wake_at = match worker.step(clock.now()) {
+        Step::Wait(at) => at,
+        Step::Stop => return,
+    };
     loop {
         let wait = wake_at
             .duration_since(clock.now())

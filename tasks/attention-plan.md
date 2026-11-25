@@ -2,7 +2,7 @@
 
 Module `attention` from [CAPABILITIES.md](../CAPABILITIES.md). It builds what's in [SPEC-attention.md](../SPEC-attention.md) (draft 2, approved 26 Nov 2026), on `core` v3 and the `airboss-services` contract. The tasks and their checkpoints are in [attention-todo.md](attention-todo.md).
 
-State: **planned 26 Nov 2026**.
+State: **built 26 Nov 2026**. All 11 tasks and 3 checkpoints done; the review's findings are at the end of [attention-todo.md](attention-todo.md).
 
 ## Overview
 

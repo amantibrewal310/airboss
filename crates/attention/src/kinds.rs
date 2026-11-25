@@ -14,7 +14,7 @@ use crate::compute::{Ctx, Entry, ItemFor, count, is_open, stamp};
 /// Questions, approvals and failed runs, from linked threads.
 pub(crate) fn threads(ctx: &Ctx<'_>, out: &mut Vec<Entry>) {
     for (key, tasks) in &ctx.sync.thread_tasks {
-        let Some(thread) = ctx.sync.threads.get(key).filter(|t| t.linked) else {
+        let Some(thread) = ctx.sync.threads.get(key) else {
             continue;
         };
         if !matches!(thread.state, ThreadState::NeedsMe | ThreadState::Errored) {

@@ -238,14 +238,11 @@ fn rows_not_live_for_thirty_days_are_pruned() {
     fake.set_snapshot(Links::new().build());
     w.handle(AttentionMsg::Sync, at(3, 0));
     w.handle(AttentionMsg::Tick, at(3, 1));
-    // A daily pass just short of 30 days keeps it.
-    w.handle(
-        AttentionMsg::Tick,
-        at(32, 0) - std::time::Duration::from_millis(1),
-    );
+    // A daily pass a day short of 30 days keeps it.
+    w.handle(AttentionMsg::Tick, at(31, 0));
     assert!(on_disk.contains(&k).unwrap());
-    // The next daily pass, past 30 days, deletes it.
-    w.handle(AttentionMsg::Tick, at(33, 0));
+    // The next daily pass, exactly 30 days after it was last live, deletes it.
+    w.handle(AttentionMsg::Tick, at(32, 0));
     assert!(!on_disk.contains(&k).unwrap());
     let err = ask(&mut w, at(33, 1), |r| AttentionMsg::Restore(k.clone(), r)).unwrap_err();
     assert_eq!(err.code, ErrorCode::NotFound);

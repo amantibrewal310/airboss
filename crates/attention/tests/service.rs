@@ -265,3 +265,24 @@ fn attention_is_a_shared_attention_service() {
     let _: &dyn SyncService = &*sync;
     service.shutdown();
 }
+
+#[test]
+fn the_first_deadline_after_start_is_kept_without_woke() {
+    // The task's only activity is now; the clock says 5 days less a second later, so it
+    // turns quiet a second after start. Nothing else happens: the loop must wake for it.
+    let (store, ids) = store_with(1, None);
+    let sync = Arc::new(FakeSync::new());
+    let clock = Arc::new(FakeClock::at(
+        SystemTime::now() + DAY * 5 - Duration::from_secs(1),
+    ));
+    let att = begin(store, &sync, clock.clone());
+    assert_eq!(att.needs_me().count, 0);
+    let seen = att.changes().current();
+    clock.advance(Duration::from_secs(2));
+    assert!(
+        moved(&att.changes(), seen, Duration::from_secs(3)),
+        "the deadline found at start was missed"
+    );
+    assert_eq!(att.needs_me().items[0].task, ids[0]);
+    att.shutdown();
+}

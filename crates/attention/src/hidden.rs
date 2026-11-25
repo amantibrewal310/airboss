@@ -133,7 +133,7 @@ impl HiddenStore {
         run().map_err(|e| storage(&e.to_string()))
     }
 
-    /// Whether `key` has a row; for tests and the log.
+    /// Whether `key` has a row.
     pub fn contains(&self, key: &NeedsKey) -> Result<bool, ServiceError> {
         self.conn()?
             .query_row(
