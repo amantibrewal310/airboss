@@ -76,6 +76,7 @@
     min-width: 0;
   }
   .cnt {
+    font-variant-numeric: tabular-nums;
     color: var(--text-3);
     line-height: 16px;
   }
@@ -84,6 +85,7 @@
     align-self: stretch;
   }
   .meta {
+    font-variant-numeric: tabular-nums;
     font-size: var(--fs-meta);
     color: var(--text-3);
     white-space: nowrap;

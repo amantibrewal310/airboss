@@ -70,6 +70,7 @@
 <div
   bind:this={el}
   class="pop"
+  data-zone="overlay"
   style:left="{left}px"
   style:top="{top}px"
   style:width={width ? `${width}px` : undefined}

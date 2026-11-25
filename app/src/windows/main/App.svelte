@@ -3,6 +3,7 @@
   import { api } from '../../lib/api';
   import type { App } from '../../lib/state/app.svelte';
   import { provideApp } from '../../lib/state/context';
+  import { zoneOf } from '../../lib/logic/focus';
   import Sidebar from './Sidebar.svelte';
   import Header from './Header.svelte';
   import TaskList from './TaskList.svelte';
@@ -21,6 +22,9 @@
     return stop;
   });
 </script>
+
+<svelte:window onkeydown={(e) => app.handleKey(e)} />
+<svelte:document onfocusin={() => app.setZone(zoneOf(document.activeElement, !!app.ui.overlay))} />
 
 <div class="win">
   <Sidebar />

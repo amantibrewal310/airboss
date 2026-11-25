@@ -28,8 +28,6 @@ body {
   font: 400 var(--fs-body) / 1.45 var(--font);
   letter-spacing: var(--track-body);
   font-feature-settings: "cv11", "ss01";
-  /* The Tabular Figures Rule: ids, counts, percentages and times never jitter. */
-  font-variant-numeric: tabular-nums;
   color: var(--text);
   background: var(--bg);
   -webkit-font-smoothing: antialiased;

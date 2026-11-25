@@ -27,6 +27,10 @@ import type {
   UndoableWrite,
 } from '../types';
 import { now as clockNow } from '../logic/clock';
+import type { CommandId } from '../logic/commands';
+import { controlOwnsKey, zoneOf } from '../logic/focus';
+import { keyOf, Sequencer } from '../logic/keymap';
+import { resolve } from '../logic/commands';
 import { applyAccent, applyAppearance } from '../logic/theme';
 import { launchToast } from '../logic/launch';
 import { keepMapSelection, keepSelection, reveal as revealPlan, selectionAfterFold } from '../logic/selection';
@@ -147,7 +151,7 @@ export class App {
         if (this.needs.apply(c)) this.reconcileNeeds(before);
       }),
       on('connections:changed', (c) => this.conn.set(c.connections, c.availability)),
-      on('menu:action', ({ command }) => this.onMenu?.(command)),
+      on('menu:action', ({ command }) => this.runCommand(command as CommandId)),
       on('nav:open', (n) => this.navOpen(n)),
       on('toast', (t) => this.toastEvent(t)),
       on('appearance:changed', (a) => applyAccent(document.documentElement, a.accent)),
@@ -160,9 +164,6 @@ export class App {
     document.addEventListener('visibilitychange', tick);
     this.ready = true;
   }
-
-  /** Set by the keyboard layer: runs a command id from the native menu. */
-  onMenu: ((command: string) => void) | null = null;
 
   stop(): void {
     for (const u of this.unlisten) u();
@@ -1002,6 +1003,201 @@ export class App {
     } catch (e) {
       this.fail(e);
     }
+  }
+
+  // ================================================================== commands and keys
+
+  /** Plans grid columns, measured by the grid. */
+  planCols = 1;
+  private seq = new Sequencer(['g']);
+  private toastReturn: HTMLElement | null = null;
+
+  /** The one keydown listener on window: every shortcut the page owns. */
+  handleKey(e: KeyboardEvent): void {
+    if (e.defaultPrevented || e.isComposing) return;
+    const key0 = keyOf(e);
+    if (!key0) return;
+    const active = document.activeElement;
+    const zone = zoneOf(active, !!this.ui.overlay);
+    if (zone !== this.ui.zone && zone !== 'overlay') this.setZone(zone);
+    // A field: only ⌘K, ⌘N, ⌘, and F6 act; Esc leaves a field that doesn't handle it itself.
+    if (zone === 'field' && key0 === 'esc') {
+      (active as HTMLElement).blur();
+      e.preventDefault();
+      return;
+    }
+    const letters = zone === 'list' || zone === 'panel' || zone === 'sidebar';
+    let key = key0;
+    if (letters && /^[a-z]$/.test(key0)) {
+      key = this.seq.feed(key0);
+      if (!key) {
+        e.preventDefault();
+        return;
+      }
+    } else this.seq.reset();
+    if (zone === 'panel' && controlOwnsKey(active, key)) return;
+    const cmd = resolve(key, zone, this.viewKind, this.actionTask() !== null || this.ui.selected !== null);
+    if (!cmd) return;
+    e.preventDefault();
+    this.runCommand(cmd.id, zone);
+  }
+
+  runCommand(id: CommandId, zone: FocusZone = this.ui.zone): void {
+    const sel = this.ui.selected;
+    switch (id) {
+      case 'go_needs':
+      case 'open_needs':
+        return this.go('needs');
+      case 'go_plans':
+        return this.go('plans');
+      case 'go_ready':
+        return this.go('ready');
+      case 'go_all':
+        return this.go('all');
+      case 'go_progress':
+        return this.go('progress');
+      case 'layout_tree':
+        return this.setLayout('tree');
+      case 'layout_status':
+        return this.setLayout('status');
+      case 'jump':
+        return this.open({ kind: 'jump', mode: 'jump' });
+      case 'new_task':
+      case 'quick_add':
+        return this.openNew();
+      case 'settings':
+        return this.open({ kind: 'settings' });
+      case 'shortcuts':
+        return this.open({ kind: 'sheet' });
+      case 'undo':
+        return void this.undo();
+      case 'toasts':
+        return this.focusToasts();
+      case 'check_connections':
+        return void this.recheck();
+      case 'up':
+        return this.moveSelection(-1);
+      case 'down':
+        return this.moveSelection(1);
+      case 'first':
+        return this.moveSelection('first');
+      case 'last':
+        return this.moveSelection('last');
+      case 'page_up':
+        return this.moveSelection(-Math.max(1, Math.floor((this.focusTargets.list?.clientHeight ?? 380) / 38) - 1));
+      case 'page_down':
+        return this.moveSelection(Math.max(1, Math.floor((this.focusTargets.list?.clientHeight ?? 380) / 38) - 1));
+      case 'open_fold':
+        return this.arrowRight();
+      case 'close_fold':
+        return this.arrowLeft();
+      case 'rename':
+        if (sel !== null) this.ui.renaming = sel;
+        return;
+      case 'to_panel':
+        if (sel === null) return;
+        if (!this.ui.panelOpen) this.openPanel(sel);
+        return this.focus('panel');
+      case 'toggle_done':
+        return void this.toggleDone();
+      case 'status': {
+        const id2 = this.actionTask();
+        if (id2 === null) return;
+        return this.open({ kind: 'status', task: id2, at: this.anchor(id2) });
+      }
+      case 'link_repos': {
+        const id2 = this.actionTask();
+        if (id2 === null) return;
+        return this.open({ kind: 'repos', task: id2, at: this.anchor(id2, 'row') });
+      }
+      case 'do_it':
+        return void this.doIt();
+      case 'plan_it':
+        return void this.planIt();
+      case 'open_page':
+        return this.openPage();
+      case 'back':
+        return this.closePage();
+      case 'move_up':
+        return void this.reorder('up');
+      case 'move_down':
+        return void this.reorder('down');
+      case 'add_waits_on': {
+        const id2 = this.actionTask();
+        if (id2 !== null) this.open({ kind: 'jump', mode: 'waits_on', task: id2 });
+        return;
+      }
+      case 'move_under': {
+        const id2 = this.actionTask();
+        if (id2 !== null) this.open({ kind: 'jump', mode: 'move_under', task: id2 });
+        return;
+      }
+      case 'add_link': {
+        const id2 = this.actionTask();
+        if (id2 !== null) this.open({ kind: 'link', task: id2, at: this.anchor(id2, this.ui.panelOpen || this.ui.pageOpen ? 'do' : 'row') });
+        return;
+      }
+      case 'mark_blocked': {
+        const id2 = this.actionTask();
+        if (id2 !== null) void this.setStatus(id2, 'blocked');
+        return;
+      }
+      case 'open_latest':
+        return void this.openLatest(this.actionTask());
+      case 'drop': {
+        const id2 = this.actionTask();
+        if (id2 !== null) void this.setStatus(id2, 'dropped');
+        return;
+      }
+      case 'copy_number':
+        return void this.copyNumber(this.actionTask());
+      case 'escape':
+        if (zone === 'sidebar' || (zone === 'panel' && !this.ui.pageOpen)) return this.focus('list');
+        return this.escape();
+      case 'needs_up':
+        return this.moveNeed(-1);
+      case 'needs_down':
+        return this.moveNeed(1);
+      case 'needs_main':
+        return void this.mainAction();
+      case 'needs_dismiss':
+        return void this.dismiss();
+      case 'plans_left':
+        return this.movePlan(-1);
+      case 'plans_right':
+        return this.movePlan(1);
+      case 'plans_up':
+        return this.movePlan(-this.planCols);
+      case 'plans_down':
+        return this.movePlan(this.planCols);
+      case 'plans_open': {
+        const card = this.plans[this.ui.planIndex];
+        if (card) this.openPage(card.id);
+        return;
+      }
+    }
+  }
+
+  movePlan(delta: number): void {
+    if (!this.plans.length) return;
+    this.ui.planIndex = Math.max(0, Math.min(this.plans.length - 1, this.ui.planIndex + delta));
+    this.ui.keyboard = true;
+  }
+
+  /** F6: to the newest toast, and back. */
+  focusToasts(): void {
+    const toasts = document.querySelectorAll<HTMLElement>('[data-toast]');
+    const newest = toasts[toasts.length - 1];
+    if (newest && newest.contains(document.activeElement)) {
+      const back = this.toastReturn;
+      this.toastReturn = null;
+      if (back?.isConnected) back.focus();
+      else this.focus('list');
+      return;
+    }
+    if (!newest) return;
+    this.toastReturn = document.activeElement as HTMLElement | null;
+    (newest.querySelector<HTMLElement>('button') ?? newest).focus();
   }
 
   // ================================================================== focus context

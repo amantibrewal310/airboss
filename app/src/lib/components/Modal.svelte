@@ -31,7 +31,7 @@
   }
 </script>
 
-<div class="scrim" role="presentation" onpointerdown={(e) => e.target === e.currentTarget && onclose()}>
+<div class="scrim" role="presentation" data-zone="overlay" onpointerdown={(e) => e.target === e.currentTarget && onclose()}>
   <div
     bind:this={el}
     class="modal"

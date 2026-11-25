@@ -222,6 +222,7 @@
     box-shadow: 0 0 0 3px var(--bg-hover);
   }
   .id {
+    font-variant-numeric: tabular-nums;
     width: 34px;
     flex: none;
     color: var(--text-3);
@@ -250,6 +251,7 @@
     font-weight: 500;
   }
   .prog {
+    font-variant-numeric: tabular-nums;
     font-size: var(--fs-label);
     line-height: 14px;
     color: var(--text-3);
@@ -310,6 +312,7 @@
     flex: none;
   }
   .when {
+    font-variant-numeric: tabular-nums;
     width: 44px;
     text-align: right;
     color: var(--text-3);

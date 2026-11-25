@@ -37,7 +37,7 @@
   }
 </script>
 
-<aside class="side" aria-label="Sidebar" bind:this={app.focusTargets.sidebar} tabindex="-1">
+<aside class="side" data-zone="sidebar" aria-label="Sidebar" bind:this={app.focusTargets.sidebar} tabindex="-1">
   <div class="lights" data-tauri-drag-region>
     {#if !app.native}<i class="red"></i><i class="yellow"></i><i class="green"></i>{/if}
   </div>
@@ -214,6 +214,7 @@
     text-overflow: ellipsis;
   }
   .c {
+    font-variant-numeric: tabular-nums;
     font-size: var(--fs-meta);
     color: var(--text-3);
   }
@@ -221,6 +222,7 @@
     margin-right: -2px;
   }
   .badge {
+    font-variant-numeric: tabular-nums;
     min-width: 18px;
     height: 18px;
     border-radius: 9px;
