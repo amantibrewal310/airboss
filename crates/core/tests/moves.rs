@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use airboss_core::{Actor, Error, EventKind, NewTask, Status, Store, TaskId};
+use airboss_core::{Actor, Error, EventKind, NewTask, PlanTask, Status, Store, TaskId};
 
 fn store() -> Store {
     Store::open_in_memory().unwrap()
@@ -254,6 +254,36 @@ fn moves_without_such_a_dependency_still_work() {
     let free = add(&mut s, "Free", None);
     moved(&mut s, free, Some(b), 1);
     assert_eq!(s.task(free).unwrap().parent, Some(b));
+}
+
+// ---- Rule 20: plan keys stay unique under a parent ----
+
+#[test]
+fn moving_a_plan_task_next_to_one_with_the_same_key_is_already_exists() {
+    let mut s = store();
+    let p1 = add(&mut s, "P1", None);
+    let p2 = add(&mut s, "P2", None);
+    let k1 = s
+        .add_tasks(Some(p1), &[PlanTask::new("k", "K1")], &Actor::Plan)
+        .unwrap()
+        .id("k")
+        .unwrap();
+    s.add_tasks(Some(p2), &[PlanTask::new("k", "K2")], &Actor::Plan)
+        .unwrap();
+    s.add_tasks(None, &[PlanTask::new("k", "Top K")], &Actor::Plan)
+        .unwrap();
+    let before = snapshot(&s);
+
+    for target in [Some(p2), None] {
+        let err = s.move_task(k1, target, 1, &Actor::Me).unwrap_err();
+        assert!(matches!(err, Error::AlreadyExists), "{target:?}: {err:?}");
+    }
+    assert_eq!(snapshot(&s), before);
+
+    // Within its own group it still moves.
+    let other = add(&mut s, "Other", Some(p1));
+    moved(&mut s, other, Some(p1), 1);
+    assert_eq!(group(&s, Some(p1)), vec![other, k1]);
 }
 
 // ---- Rule 12: no moving under closed or proposed parents ----
