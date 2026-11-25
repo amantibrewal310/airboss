@@ -4,6 +4,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::events::{self, bad_text};
 use crate::model::{Actor, EventKind, Status, Task};
+use crate::permissions::valid_actor;
 use crate::sql::{SUBTREE_CTE, query_all};
 use crate::tx::Tx;
 use crate::{Error, Result, TaskId, fault, tasks};
@@ -71,6 +72,7 @@ fn check_status_change(
     note: Option<&str>,
 ) -> Result<()> {
     use Status::*;
+    valid_actor(actor)?;
     let open = matches!(task.status, Todo | Doing | InReview | Blocked);
     let from = |ok: bool| {
         if ok {
@@ -81,7 +83,6 @@ fn check_status_change(
     };
     let allowed_if = |ok: bool| if ok { Ok(()) } else { Err(Error::NotAllowed) };
     match (actor, to) {
-        (Actor::Agent(r), _) if r.trim().is_empty() => Err(Error::NotAllowed),
         (Actor::Me, Proposed) => Err(Error::NotAllowed),
         (Actor::Me, _) => Ok(()),
         (Actor::Agent(_), Doing | InReview | Blocked) => from(open),

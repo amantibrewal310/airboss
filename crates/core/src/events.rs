@@ -3,9 +3,10 @@
 use rusqlite::{Connection, Row, params};
 
 use crate::model::{Actor, Event, EventKind, Status};
+use crate::permissions::valid_actor;
 use crate::sql::query_all;
 use crate::tx::Tx;
-use crate::{Error, EventId, Result, TaskId};
+use crate::{EventId, Result, TaskId};
 
 impl crate::Store {
     /// Everything that happened to a task, oldest first.
@@ -25,9 +26,7 @@ pub(crate) fn record(
     actor: &Actor,
 ) -> Result<()> {
     // An actor that can't be read back would break this task's history for good.
-    if matches!(actor, Actor::Agent(r) if r.trim().is_empty()) {
-        return Err(Error::NotAllowed);
-    }
+    valid_actor(actor)?;
     tx.execute(
         "INSERT INTO task_events (task_id, kind, to_status, body, actor) VALUES (?1, ?2, ?3, ?4, ?5)",
         params![
