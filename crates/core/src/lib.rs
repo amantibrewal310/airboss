@@ -11,6 +11,7 @@ mod events;
 mod links;
 mod model;
 mod permissions;
+mod plans;
 mod positions;
 mod status;
 mod tasks;
@@ -28,6 +29,7 @@ pub use model::TaskEdit;
 pub use model::{
     Actor, Event, EventKind, NewTask, Origin, Repo, Status, Task, TaskNode, UnknownValue,
 };
+pub use model::{DepRef, PlanResult, PlanTask};
 pub use model::{Link, LinkKind, NewLink, PrState};
 
 macro_rules! id_type {
@@ -150,6 +152,7 @@ pub(crate) mod fault {
     pub(crate) const DEPS_CLEARED: &str = "deps::on_task_deleting after events";
     pub(crate) const SUBTREE_DROPPED: &str = "status::drop_subtree after events";
     pub(crate) const DELETE_RENUMBERED: &str = "delete::delete_task after renumber";
+    pub(crate) const PLAN_TASKS_WRITTEN: &str = "plans::add_tasks after tasks, before deps";
 
     pub(crate) fn arm(point: &'static str) {
         ARMED.with(|a| a.set(Some(point)));
@@ -179,6 +182,7 @@ pub(crate) mod fault {
     pub(crate) const DEPS_CLEARED: &str = "deps::on_task_deleting after events";
     pub(crate) const SUBTREE_DROPPED: &str = "status::drop_subtree after events";
     pub(crate) const DELETE_RENUMBERED: &str = "delete::delete_task after renumber";
+    pub(crate) const PLAN_TASKS_WRITTEN: &str = "plans::add_tasks after tasks, before deps";
 
     #[inline(always)]
     pub(crate) fn hit(_point: &str) -> crate::Result<()> {

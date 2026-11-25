@@ -472,3 +472,91 @@ pub struct RunOrder {
     /// Subtasks that wait, directly or through a sibling, on an open task outside the parent.
     pub waiting_outside: Vec<Task>,
 }
+
+/// What a plan step waits on: another step in the same plan, or a task that already exists.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DepRef {
+    /// The `key` of another step in the same plan.
+    Key(String),
+    /// A task that already exists, inside the plan's parent or anywhere else.
+    Task(TaskId),
+}
+
+/// One step of a plan for `add_tasks`, with its own steps under it (rule 19).
+///
+/// The `key` is the plan's own id for the step. Sending the plan again matches steps by
+/// key, not title, so a renamed step isn't duplicated (rule 20).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlanTask {
+    pub key: String,
+    pub title: String,
+    pub body: Option<String>,
+    pub repo: Option<RepoId>,
+    #[serde(default)]
+    pub depends_on: Vec<DepRef>,
+    #[serde(default)]
+    pub children: Vec<PlanTask>,
+}
+
+impl PlanTask {
+    /// A step with a key and a title, and nothing under it.
+    pub fn new(key: impl Into<String>, title: impl Into<String>) -> PlanTask {
+        PlanTask {
+            key: key.into(),
+            title: title.into(),
+            body: None,
+            repo: None,
+            depends_on: Vec::new(),
+            children: Vec::new(),
+        }
+    }
+
+    /// Adds notes.
+    pub fn with_body(mut self, body: impl Into<String>) -> PlanTask {
+        self.body = Some(body.into());
+        self
+    }
+
+    /// Ties the step to a repo.
+    pub fn in_repo(mut self, repo: RepoId) -> PlanTask {
+        self.repo = Some(repo);
+        self
+    }
+
+    /// Makes the step wait on another step of the same plan.
+    pub fn after(mut self, key: impl Into<String>) -> PlanTask {
+        self.depends_on.push(DepRef::Key(key.into()));
+        self
+    }
+
+    /// Makes the step wait on a task that already exists.
+    pub fn after_task(mut self, task: TaskId) -> PlanTask {
+        self.depends_on.push(DepRef::Task(task));
+        self
+    }
+
+    /// Adds a step under this one, after any already added.
+    pub fn child(mut self, child: PlanTask) -> PlanTask {
+        self.children.push(child);
+        self
+    }
+}
+
+/// What `add_tasks` did with each step, in plan order (depth-first).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlanResult {
+    /// Every step's key and the task it now is, so a caller can map keys to ids.
+    pub keys: Vec<(String, TaskId)>,
+    /// Tasks this call created.
+    pub created: Vec<TaskId>,
+    /// Steps whose key already existed under the same parent, left as they were.
+    pub existing: Vec<TaskId>,
+}
+
+impl PlanResult {
+    /// The task a step's key resolved to.
+    pub fn id(&self, key: &str) -> Option<TaskId> {
+        self.keys.iter().find(|(k, _)| k == key).map(|&(_, id)| id)
+    }
+}
