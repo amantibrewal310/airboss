@@ -12,6 +12,7 @@ import type {
   DoItPlace,
   DoItResult,
   FocusZone,
+  LinkDto,
   Mode,
   NavOpen,
   NeedsItem,
@@ -23,6 +24,7 @@ import type {
   Settings,
   Status,
   TaskId,
+  ThreadKey,
   ToastEvent,
   UndoableWrite,
 } from '../types';
@@ -693,6 +695,15 @@ export class App {
     } catch (e) {
       this.fail(e);
     }
+  }
+
+  openLink(l: LinkDto): void {
+    const p = l.thread ? api.openThread(l.thread.key) : api.openUrl({ link: l.id });
+    p.catch((e) => this.fail(e));
+  }
+
+  openThread(key: ThreadKey): void {
+    api.openThread(key).catch((e) => this.fail(e));
   }
 
   /** ⌘O: the latest thread or PR. */

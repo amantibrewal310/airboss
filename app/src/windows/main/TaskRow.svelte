@@ -319,8 +319,12 @@
     font-size: var(--fs-meta);
     flex: none;
   }
-  /* Narrow widths, in two steps (DESIGN "Narrow widths"). */
-  @container list (max-width: 820px) {
+  /*
+    Narrow widths, in two steps (DESIGN "Narrow widths"). The steps sit at 700px and 560px of
+    list width so the Paper screens (a 728px list beside the panel) keep their repo pills; see
+    PLAN-ui.md "Decisions".
+  */
+  @container list (max-width: 700px) {
     .rn {
       display: none;
     }
@@ -331,7 +335,7 @@
       width: 32px;
     }
   }
-  @container list (max-width: 680px) {
+  @container list (max-width: 560px) {
     .long {
       display: none;
     }

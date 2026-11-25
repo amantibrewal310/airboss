@@ -7,6 +7,8 @@
   import Sidebar from './Sidebar.svelte';
   import Header from './Header.svelte';
   import TaskList from './TaskList.svelte';
+  import TaskPanel from './TaskPanel.svelte';
+  import TaskPage from './TaskPage.svelte';
 
   let { app }: { app: App } = $props();
   // svelte-ignore state_referenced_locally
@@ -29,10 +31,17 @@
 <div class="win">
   <Sidebar />
   <main class="main">
-    <Header />
-    <div class="body">
-      <TaskList />
-    </div>
+    {#if app.viewKind === 'page'}
+      <TaskPage />
+    {:else}
+      <Header />
+      <div class="body">
+        {#if app.viewKind === 'list'}
+          <TaskList />
+          {#if app.ui.panelOpen && app.ui.selected !== null}<TaskPanel />{/if}
+        {/if}
+      </div>
+    {/if}
   </main>
 </div>
 
