@@ -210,7 +210,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
   - **Files:** `src/events.rs`, `src/lib.rs`, `tests/events.rs`
   - **Depends on:** T12, so that every write path exists
 
-- [ ] **T14. Performance checks** (S)
+- [x] **T14. Performance checks** (S)
   - **Description:** Add `tests/perf.rs` (`#[ignore]`, release mode, a file-backed database). It times 1,000 runs of each check in the spec and prints the 95th percentile next to the machine (model, chip and macOS version).
   - **Acceptance:** each target in the spec's table is met on your Mac. Any miss is fixed, or brought to you before the target is changed.
   - **Verify:** `cargo test -p airboss-core --release -- --ignored perf`, with the output pasted into the PR or commit.
