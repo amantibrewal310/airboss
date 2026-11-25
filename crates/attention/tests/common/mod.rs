@@ -322,3 +322,43 @@ pub fn empty_core() -> CoreSnapshot {
 /// Convenience status names.
 pub use Status::{Blocked, Doing, Done, Dropped, InReview, Proposed, Todo};
 pub use ThreadState::{Errored, Gone, Idle, NeedsMe, Running, Settled};
+
+/// A worker over `core` and a `FakeSync` holding `sync`, with an in-memory hidden table.
+pub fn worker(
+    core: CoreSnapshot,
+    sync: SyncSnapshot,
+    now: SystemTime,
+) -> (
+    airboss_attention::AttentionWorker,
+    Arc<airboss_services::fakes::FakeSync>,
+) {
+    let fake = Arc::new(airboss_services::fakes::FakeSync::new());
+    fake.set_snapshot(sync);
+    let w = airboss_attention::AttentionWorker::new(
+        AttentionConfig::default(),
+        Arc::new(core),
+        fake.clone(),
+        airboss_attention::HiddenStore::in_memory().unwrap(),
+        now,
+    );
+    (w, fake)
+}
+
+/// Sends a `Hide` or `Restore` built by `msg` and returns its answer.
+pub fn ask(
+    w: &mut airboss_attention::AttentionWorker,
+    now: SystemTime,
+    msg: impl FnOnce(airboss_attention::Reply) -> airboss_attention::AttentionMsg,
+) -> Result<(), airboss_services::ServiceError> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    w.handle(msg(tx), now);
+    rx.try_recv().unwrap()
+}
+
+/// A task in progress whose thread asks request `req`.
+pub fn asked(req: &str) -> (CoreSnapshot, SyncSnapshot) {
+    let core = Core::new().task(1, None, Doing, &ts(1, 0)).build();
+    let mut t = thread("a1", ThreadState::NeedsMe);
+    t.request = Some(request(req, RequestKind::Question, "Q?", &ts(1, 1)));
+    (core, Links::new().thread(t, &[1]).build())
+}

@@ -12,11 +12,15 @@ mod db;
 mod hidden;
 mod kinds;
 mod quiet;
+// The thread loop and the waiter are used by `start`, which comes next.
+#[allow(dead_code)]
+mod worker;
 
 use std::time::Duration;
 
 pub use compute::{Computed, Hidden, Inputs, compute};
 pub use hidden::{HiddenRow, HiddenStore};
+pub use worker::{AttentionMsg, AttentionWorker, MAX_WAIT, Reply, Step};
 
 /// Thresholds and limits. The defaults are the EM's (25 Nov 2026).
 #[derive(Debug, Clone, PartialEq, Eq)]
