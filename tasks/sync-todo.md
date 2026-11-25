@@ -106,7 +106,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
 
 ## Phase 5: Finish
 
-- [ ] **T11. Idle CPU and wake frequency** (S)
+- [x] **T11. Idle CPU and wake frequency** (S)
   - **Description:** `examples/idle.rs` (an example, not a test, so its CPU comes from `time -l` and its wake-ups from `top`, and no test runs `ps`) runs `Sync` with the real watcher on an idle fixture T3 database and an idle `FakeGh`, at the real 5-minute timer, and reports wake-ups per hour and CPU averaged over the run. Results recorded below.
   - **Acceptance:** 12 timer wake-ups an hour; CPU under 0.05%.
   - **Verify:** `cargo build --release -p airboss-sync --example idle --features fakes && /usr/bin/time -l target/release/examples/idle 3600`.
@@ -121,7 +121,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
 
 ### Checkpoint 4
 
-- [ ] Every spec success criterion that tests can check is checked; measurements recorded.
+- [x] Every spec success criterion that tests can check is checked; measurements recorded.
 
 ## Results
 
@@ -133,9 +133,9 @@ Measured 26 Nov 2026 on this Mac (macOS 27.2, Rust 1.100.0, release builds).
 | The same queries on the real 3 GB database, 50 recent threads, Q6 and Q8 included | | 2.3 ms median, 10.4 ms max (20 passes) |
 | Open and checks (Q0) on the real database | | 36 ms, once an hour |
 | One GitHub pass, 50 PRs, one account (FakeGh's JSON included) | 1 call, < 150 ms | 1 call, 0.84 ms median, 7.6 ms max |
-| Idle CPU (examples/idle, real kqueue and T3 queries, FakeGh) | < 0.05% | 0.02 s of CPU in the first 24 min = 0.0014% (the hour-long run was still going at hand-off) |
-| Idle wake-ups | 12 an hour (the GitHub timer) | by design 12 timer wake-ups an hour, each waking both worker threads (the T3 worker gets the forwarded tick), so 24 thread wake-ups; `top` IDLEW 0 after 24 min; the 8 s smoke run counted 2 (the first pass and its tick) |
-| Memory | < 10 MB added | 7.9 MB maximum RSS for the whole idle process, fixture included |
+| Idle CPU (examples/idle, 3,600 s, real kqueue and T3 queries, FakeGh) | < 0.05% | 0.04 s of CPU (0.01 user + 0.03 sys) in 3,600 s = 0.0011% |
+| Idle wake-ups | 12 an hour (the GitHub timer) | 12 GitHub passes, 24 worker-thread wake-ups in the hour (each timer pass also wakes the T3 worker with the forwarded tick); `top` IDLEW 2 over the hour |
+| Memory | < 10 MB added | 7.8 MB maximum RSS for the whole idle process, fixture included |
 
 The real-database test (`tests/real_t3.rs`, `mode=ro`) passed every column, value and key check and Q0-Q8: 28 projects, 50 threads (43 settled, 7 idle), 1 failed run with its message, Q7 found its thread. A read-only WAL connection still updates its read mark in `statev2.sqlite-shm`; that's SQLite's own mechanism and the reason `immutable=1` (which would skip the WAL) isn't used.
 
