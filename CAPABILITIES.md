@@ -7,8 +7,8 @@ The direction behind it is in [docs/idea.md](docs/idea.md).
 | Module id | What it does | Depends on |
 |---|---|---|
 | `core` | The task tree, which task waits on which, task history and links in SQLite. Enforces the rules: code is done only when its PR merges, and agents can finish only PR-less tasks; agents only propose subtasks; blocked needs a reason. | none |
-| `mcp` | The local MCP server agents use (`list_tasks`, `get_task`, `update_task`, `link`, `add_tasks`, `propose_tasks`). Needs a token, listens on 127.0.0.1 only. | `core` |
-| `app` | The Mac app: Dock icon; main window with the tree on the left and the selected task on the right; menu-bar icon with the "waiting on you" count; hotkey quick-add; launch at login. | `core` |
+| `mcp` | How agents and I talk to Airboss before (and alongside) the app. One `airboss` binary: `airboss mcp` is a per-thread MCP server over stdio (six tools: `list_tasks`, `get_task`, `update_task`, `link`, `propose_tasks`, `import_plan`), with identity taken from the thread's environment and no port or token. The other subcommands are a small CLI that acts as me. | `core` |
+| `app` | The Mac app: Dock icon; main window with the tree on the left and the selected task on the right; menu-bar icon with the "waiting on you" count; hotkey quick-add; launch at login. Watches the database file to pick up writes from `airboss mcp` and CLI processes. | `core` |
 | `launch` | The Do it and Plan it buttons. Writes the starting brief and runs `t3 thread start --worktree`, one thread per repo with a shared branch name. Links each thread to its task. The only module that calls the `t3` CLI. | `core`, `app` |
 | `sync` | Live state from outside. Watches T3's database file and reads it read-only, only when it changes. Checks open linked PRs through `gh` every 5 minutes. A merged PR moves its task to done. | `core` |
 | `attention` | The "needs me" screen at the top of the main window, and the menu-bar count: questions, approvals, PRs to review, failed runs, proposed subtasks, tasks whose blockers just finished ("ready to start"), and work quiet for 5+ days. | `sync`, `app` |
@@ -47,7 +47,7 @@ A module counts as done only after these are measured on a real Mac.
 | Module | Spec | State |
 |---|---|---|
 | `core` | [SPEC-core.md](SPEC-core.md) | **Built 25 Nov 2026** (`crates/core`, 218 tests, all performance targets met); plan in [tasks/plan.md](tasks/plan.md) |
-| `mcp` | not written yet | |
+| `mcp` | [SPEC-mcp.md](SPEC-mcp.md) | Draft 1, waiting for review |
 | `app` | not written yet | |
 | `launch` | not written yet | |
 | `sync` | not written yet | |

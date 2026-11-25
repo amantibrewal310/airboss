@@ -161,7 +161,7 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
 
 **No UNIQUE constraint on `(parent_id, position)`.** SQLite checks uniqueness row by row while renumbering, so a renumber would fail partway. It also treats null parents as all different, so the constraint couldn't protect top-level tasks anyway. Gap-free positions are enforced in code (rule 13) and tested.
 
-**Actors:** `me`, `agent:<thread ref>`, `sync:gh`, `sync:t3`, `plan` and `launch`. `core` trusts the actor it's given. Proving who the caller is belongs to `mcp`: the agent token can only act as `agent:…`, and acting as `plan` needs its own token. The `mcp` spec will define both.
+**Actors:** `me`, `agent:<thread ref>`, `sync:gh`, `sync:t3`, `plan` and `launch`. `core` trusts the actor it's given. Working out who the caller is belongs to `mcp` (see [SPEC-mcp.md](SPEC-mcp.md)): over MCP a caller is always `agent:…`, identified from its thread's environment, except `import_plan`, which acts as `plan`. Only the CLI and the app act as `me`.
 
 ## Rules
 
