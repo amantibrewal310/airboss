@@ -370,3 +370,390 @@ impl crate::WalWatch for FakeWatch {
         }
     }
 }
+
+/// A PR in [`FakeGh`]'s GitHub.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FakePr {
+    pub state: &'static str,
+    pub draft: bool,
+    pub review: Option<&'static str>,
+    pub rollup: Option<&'static str>,
+    pub author: String,
+    pub head: String,
+    pub title: String,
+    pub additions: u32,
+    pub deletions: u32,
+    pub updated_at: String,
+}
+
+impl FakePr {
+    /// An open PR by `author`.
+    pub fn open(author: &str) -> FakePr {
+        FakePr {
+            state: "OPEN",
+            draft: false,
+            review: None,
+            rollup: None,
+            author: author.into(),
+            head: "feat/x".into(),
+            title: "A change".into(),
+            additions: 10,
+            deletions: 2,
+            updated_at: "2026-11-26T11:00:00Z".into(),
+        }
+    }
+}
+
+/// How the next `gh` call for an account fails.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FakeFailure {
+    /// Exit 4: signed out.
+    SignedOut,
+    /// Exit 1 with no data, and this on stderr.
+    Exit(String),
+    /// Killed after the timeout.
+    Timeout,
+    /// GitHub's secondary rate limit.
+    Secondary,
+}
+
+/// One call [`FakeGh`] answered.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FakeGhCall {
+    /// "auth_status", "graphql" or "token".
+    pub kind: &'static str,
+    /// The account the call ran as.
+    pub account: Option<String>,
+    /// The PRs a GraphQL call asked for, in order.
+    pub prs: Vec<String>,
+    pub viewer: bool,
+    /// Whether a token was handed to the child.
+    pub token_set: bool,
+    /// The argv `gh` would have been run with.
+    pub argv: Vec<String>,
+}
+
+/// A GitHub world `gh` answers from: accounts, the repos each can see, PRs, budgets, and
+/// scripted failures. It answers by call kind and arguments (account, PRs), never by exact
+/// argv, and records every call. Clones share one world.
+#[derive(Clone, Default)]
+pub struct FakeGh(std::sync::Arc<std::sync::Mutex<FakeGhWorld>>);
+
+#[derive(Default)]
+struct FakeGhWorld {
+    missing: bool,
+    accounts: Vec<(String, bool, bool)>,
+    visible: std::collections::HashMap<String, std::collections::HashSet<String>>,
+    prs: std::collections::BTreeMap<String, FakePr>,
+    remaining: std::collections::HashMap<String, (u64, String)>,
+    failures: std::collections::HashMap<String, std::collections::VecDeque<FakeFailure>>,
+    calls: Vec<FakeGhCall>,
+}
+
+/// The token [`FakeGh`] hands out for `login`.
+pub fn fake_token(login: &str) -> String {
+    format!("gho_fake_secret_for_{login}")
+}
+
+impl FakeGh {
+    /// `gh` installed, no account signed in.
+    pub fn new() -> FakeGh {
+        FakeGh::default()
+    }
+
+    fn world(&self) -> std::sync::MutexGuard<'_, FakeGhWorld> {
+        lock(&self.0)
+    }
+
+    /// No `gh` binary at all.
+    pub fn missing(self) -> FakeGh {
+        self.world().missing = true;
+        self
+    }
+
+    /// A signed-in account; the first one added with `active` is the active one.
+    pub fn account(self, login: &str, active: bool) -> FakeGh {
+        self.world().accounts.push((login.into(), active, true));
+        self
+    }
+
+    /// An account whose `state` isn't `success`.
+    pub fn broken_account(self, login: &str) -> FakeGh {
+        self.world().accounts.push((login.into(), false, false));
+        self
+    }
+
+    /// Signs every account out (as if `gh auth logout` ran everywhere).
+    pub fn sign_out_all(&self) {
+        self.world().accounts.clear();
+    }
+
+    /// Lets `login` see `owner/repo`.
+    pub fn sees(self, login: &str, repo: &str) -> FakeGh {
+        self.world()
+            .visible
+            .entry(login.into())
+            .or_default()
+            .insert(repo.to_ascii_lowercase());
+        self
+    }
+
+    /// Puts a PR on GitHub, or replaces it.
+    pub fn pr(self, r: &str, pr: FakePr) -> FakeGh {
+        self.set_pr(r, pr);
+        self
+    }
+
+    pub fn set_pr(&self, r: &str, pr: FakePr) {
+        self.world().prs.insert(r.to_ascii_lowercase(), pr);
+    }
+
+    /// Changes a PR's state: "OPEN", "MERGED" or "CLOSED".
+    pub fn set_state(&self, r: &str, state: &'static str) {
+        if let Some(pr) = self.world().prs.get_mut(&r.to_ascii_lowercase()) {
+            pr.state = state;
+        }
+    }
+
+    /// What `rateLimit.remaining` says for `login`, and when it resets.
+    pub fn budget(&self, login: &str, remaining: u64, reset_at: &str) {
+        self.world()
+            .remaining
+            .insert(login.into(), (remaining, reset_at.into()));
+    }
+
+    /// The next call as `login` fails this way.
+    pub fn fail_next(&self, login: &str, f: FakeFailure) {
+        self.world()
+            .failures
+            .entry(login.into())
+            .or_default()
+            .push_back(f);
+    }
+
+    pub fn calls(&self) -> Vec<FakeGhCall> {
+        self.world().calls.clone()
+    }
+
+    /// The GraphQL calls only.
+    pub fn reads(&self) -> Vec<FakeGhCall> {
+        self.calls()
+            .into_iter()
+            .filter(|c| c.kind == "graphql")
+            .collect()
+    }
+
+    pub fn clear_calls(&self) {
+        self.world().calls.clear();
+    }
+}
+
+fn not_found() -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::NotFound, "no gh")
+}
+
+impl FakeGhWorld {
+    fn node(&self, r: &str, pr: &FakePr) -> serde_json::Value {
+        let (repo, n) = r.split_once('#').unwrap_or((r, "0"));
+        let n: u64 = n.parse().unwrap_or(0);
+        serde_json::json!({
+            "number": n, "url": format!("https://github.com/{repo}/pull/{n}"),
+            "title": pr.title, "state": pr.state, "isDraft": pr.draft,
+            "merged": pr.state == "MERGED",
+            "mergedAt": (pr.state == "MERGED").then_some("2026-11-26T11:30:00Z"),
+            "closedAt": null, "updatedAt": pr.updated_at, "reviewDecision": pr.review,
+            "additions": pr.additions, "deletions": pr.deletions, "headRefName": pr.head,
+            "repository": { "nameWithOwner": repo }, "author": { "login": pr.author },
+            "commits": { "nodes": pr.rollup.map(|s| vec![serde_json::json!({"commit": {"statusCheckRollup": {"state": s}}})]).unwrap_or_default() },
+        })
+    }
+
+    fn answer(&mut self, login: &str, prs: &[String], viewer: bool) -> crate::gh::CmdOutput {
+        if let Some(f) = self.failures.get_mut(login).and_then(|q| q.pop_front()) {
+            let fail = |status, stderr: &str| crate::gh::CmdOutput {
+                status,
+                stdout: String::new(),
+                stderr: stderr.into(),
+            };
+            return match f {
+                FakeFailure::SignedOut => fail(Some(4), "HTTP 401: Bad credentials"),
+                FakeFailure::Exit(e) => fail(Some(1), &e),
+                FakeFailure::Timeout => fail(None, ""),
+                FakeFailure::Secondary => fail(
+                    Some(1),
+                    "gh: You have exceeded a secondary rate limit. Please wait a few minutes.",
+                ),
+            };
+        }
+        let visible = self.visible.get(login).cloned().unwrap_or_default();
+        let mut data = serde_json::Map::new();
+        let (remaining, reset) = self
+            .remaining
+            .get(login)
+            .cloned()
+            .unwrap_or((4999, "2026-11-26T13:00:00Z".into()));
+        data.insert(
+            "rateLimit".into(),
+            serde_json::json!({"cost": 1, "remaining": remaining, "resetAt": reset}),
+        );
+        let mut errors = Vec::new();
+        for (i, r) in prs.iter().enumerate() {
+            let alias = format!("p{i}");
+            let repo = r.split('#').next().unwrap_or_default();
+            if !visible.contains(repo) {
+                data.insert(alias.clone(), serde_json::Value::Null);
+                errors.push(serde_json::json!({"type": "NOT_FOUND", "path": [alias],
+                    "message": format!("Could not resolve to a Repository with the name '{repo}'.")}));
+            } else if let Some(pr) = self.prs.get(r) {
+                data.insert(alias, serde_json::json!({"pullRequest": self.node(r, pr)}));
+            } else {
+                data.insert(alias.clone(), serde_json::json!({"pullRequest": null}));
+                errors.push(
+                    serde_json::json!({"type": "NOT_FOUND", "path": [alias, "pullRequest"],
+                    "message": "Could not resolve to a PullRequest."}),
+                );
+            }
+        }
+        if viewer {
+            let nodes: Vec<serde_json::Value> = self
+                .prs
+                .iter()
+                .filter(|(r, pr)| {
+                    pr.author == login
+                        && pr.state == "OPEN"
+                        && visible.contains(r.split('#').next().unwrap_or_default())
+                })
+                .map(|(r, pr)| self.node(r, pr))
+                .collect();
+            data.insert(
+                "viewer".into(),
+                serde_json::json!({"login": login, "pullRequests": {"nodes": nodes}}),
+            );
+        }
+        let mut body = serde_json::json!({ "data": data });
+        if !errors.is_empty() {
+            body["errors"] = serde_json::Value::Array(errors);
+        }
+        crate::gh::CmdOutput {
+            status: Some(if body.get("errors").is_some() { 1 } else { 0 }),
+            stdout: body.to_string(),
+            stderr: String::new(),
+        }
+    }
+}
+
+impl crate::gh::GhRunner for FakeGh {
+    fn run(
+        &mut self,
+        call: &crate::gh::GhCall,
+        token: Option<&crate::Secret>,
+        _timeout: std::time::Duration,
+    ) -> std::io::Result<crate::gh::CmdOutput> {
+        let mut w = self.world();
+        if w.missing {
+            return Err(not_found());
+        }
+        let argv = crate::gh::args(call);
+        match call {
+            crate::gh::GhCall::AuthStatus => {
+                w.calls.push(FakeGhCall {
+                    kind: "auth_status",
+                    account: None,
+                    prs: Vec::new(),
+                    viewer: false,
+                    token_set: token.is_some(),
+                    argv,
+                });
+                let entries: Vec<serde_json::Value> = w
+                    .accounts
+                    .iter()
+                    .map(|(login, active, ok)| {
+                        serde_json::json!({"state": if *ok { "success" } else { "error" },
+                            "active": active, "host": "github.com", "login": login,
+                            "tokenSource": "keyring", "gitProtocol": "ssh"})
+                    })
+                    .collect();
+                let hosts = if entries.is_empty() {
+                    serde_json::json!({})
+                } else {
+                    serde_json::json!({"github.com": entries})
+                };
+                Ok(crate::gh::CmdOutput {
+                    status: Some(0),
+                    stdout: serde_json::json!({ "hosts": hosts }).to_string(),
+                    stderr: String::new(),
+                })
+            }
+            crate::gh::GhCall::Graphql { query, vars } => {
+                let login = match token {
+                    Some(t) => t
+                        .expose()
+                        .strip_prefix("gho_fake_secret_for_")
+                        .unwrap_or("?")
+                        .to_string(),
+                    None => w
+                        .accounts
+                        .iter()
+                        .find(|a| a.1)
+                        .map(|a| a.0.clone())
+                        .unwrap_or_default(),
+                };
+                let get = |name: &str| {
+                    vars.iter().find(|(k, _)| k == name).map(|(_, v)| match v {
+                        crate::gh::GhVar::Str(s) => s.clone(),
+                        crate::gh::GhVar::Int(n) => n.to_string(),
+                    })
+                };
+                let mut prs = Vec::new();
+                for i in 0.. {
+                    let (Some(o), Some(r), Some(n)) = (
+                        get(&format!("o{i}")),
+                        get(&format!("r{i}")),
+                        get(&format!("n{i}")),
+                    ) else {
+                        break;
+                    };
+                    prs.push(format!("{o}/{r}#{n}"));
+                }
+                let viewer = query.contains("viewer {");
+                w.calls.push(FakeGhCall {
+                    kind: "graphql",
+                    account: Some(login.clone()),
+                    prs: prs.clone(),
+                    viewer,
+                    token_set: token.is_some(),
+                    argv,
+                });
+                let signed_in = w.accounts.iter().any(|a| a.0 == login);
+                if !signed_in {
+                    return Ok(crate::gh::CmdOutput {
+                        status: Some(4),
+                        stdout: String::new(),
+                        stderr: "HTTP 401: Bad credentials".into(),
+                    });
+                }
+                Ok(w.answer(&login, &prs, viewer))
+            }
+        }
+    }
+
+    fn token(&mut self, login: &str) -> std::io::Result<crate::Secret> {
+        let mut w = self.world();
+        if w.missing {
+            return Err(not_found());
+        }
+        w.calls.push(FakeGhCall {
+            kind: "token",
+            account: Some(login.into()),
+            prs: Vec::new(),
+            viewer: false,
+            token_set: false,
+            argv: crate::gh::token_args(login),
+        });
+        if w.accounts.iter().any(|a| a.0 == login) {
+            Ok(crate::Secret::new(fake_token(login)))
+        } else {
+            Ok(crate::Secret::new(""))
+        }
+    }
+}

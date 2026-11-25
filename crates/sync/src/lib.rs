@@ -8,6 +8,7 @@
 
 pub mod claude;
 mod db;
+pub mod gh;
 mod health;
 mod hub;
 mod secret;
