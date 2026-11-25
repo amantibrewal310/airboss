@@ -172,3 +172,40 @@ fn migrating_writes_no_events_and_tells_nobody() {
     assert!(rx.try_recv().is_err());
     assert_eq!(s.latest_event_id().unwrap(), airboss_core::EventId(0));
 }
+
+// Rule 23: writes from another connection show up in `data_version`.
+
+#[test]
+fn data_version_changes_when_another_handle_commits_and_not_for_its_own() {
+    use airboss_core::{Actor, NewTask};
+    let dir = TempDir::new();
+    let mut app = file_store(&dir);
+    let mut mcp = Store::open(&app.path().unwrap()).unwrap();
+
+    let start = app.data_version().unwrap();
+    app.add_task(NewTask::new("Mine"), &Actor::Me).unwrap();
+    assert_eq!(
+        app.data_version().unwrap(),
+        start,
+        "own commits don't count"
+    );
+
+    let mcp_before = mcp.data_version().unwrap();
+    mcp.add_task(NewTask::new("From mcp"), &Actor::Me).unwrap();
+    let seen = app.data_version().unwrap();
+    assert_ne!(seen, start, "the other handle's commit shows");
+    assert_eq!(mcp.data_version().unwrap(), mcp_before);
+
+    // Reading again with nothing new committed gives the same value.
+    assert_eq!(app.data_version().unwrap(), seen);
+    // A refused write commits nothing, so nothing changes.
+    assert!(mcp.add_task(NewTask::new(" "), &Actor::Me).is_err());
+    assert_eq!(app.data_version().unwrap(), seen);
+}
+
+#[test]
+fn data_version_works_in_memory() {
+    let s = store();
+    let v = s.data_version().unwrap();
+    assert_eq!(s.data_version().unwrap(), v);
+}

@@ -124,6 +124,16 @@ impl Store {
         rx
     }
 
+    /// SQLite's `PRAGMA data_version`. It changes when **another** connection, such as
+    /// `airboss mcp` in its own process, commits to the file, and never for this handle's own
+    /// commits, which `subscribe` reports instead (rule 23). Compare two readings to see
+    /// whether anything outside changed.
+    pub fn data_version(&self) -> Result<i64> {
+        Ok(self
+            .conn
+            .pragma_query_value(None, "data_version", |r| r.get(0))?)
+    }
+
     /// Every event after `cursor`, oldest first. Event ids only grow, so this is the
     /// reliable way to catch up after missing notifications.
     pub fn events_after(&self, cursor: EventId) -> Result<Vec<Event>> {
