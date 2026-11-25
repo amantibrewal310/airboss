@@ -1,6 +1,6 @@
 # Spec: core
 
-Module `core` from [CAPABILITIES.md](CAPABILITIES.md). State: **approved 25 Nov 2026** (draft 2); **built** the same day in `crates/core`. **v2** (what the app design needs) was decided the same evening; see [v2](#v2-25-nov-2026).
+Module `core` from [CAPABILITIES.md](CAPABILITIES.md). State: **approved 25 Nov 2026** (draft 2); **built** the same day in `crates/core`. **v2** (what the app design needs) was decided and built the same evening; see [v2](#v2-25-nov-2026).
 
 Draft 2 folds in a review by a reader who had not seen draft 1 (25 Nov 2026). The [changes from draft 1](#changes-from-draft-1) are listed at the end.
 
@@ -49,7 +49,7 @@ Every other module reads and writes tasks only through `core`: `mcp` for agents,
 ```
 cargo test -p airboss-core                              # unit and rule tests
 cargo test -p airboss-core --release -- --ignored perf  # performance checks
-cargo clippy -p airboss-core -- -D warnings
+cargo clippy -p airboss-core --all-targets -- -D warnings
 cargo fmt --check
 ```
 
@@ -459,15 +459,15 @@ fn check_status_change(actor: &Actor, task: &TaskFacts, to: Status, note: Option
 
 v2:
 
-- [ ] A task links to several repos; `Task.repos` and `tree()` list them by name; only `me` and `plan` change them, each change with its own event.
-- [ ] `set_branch` stores, changes and clears a branch for `me` and `launch` only, with one `edited` event per change.
-- [ ] Links keep an optional title.
-- [ ] `history_with_subtasks` returns a subtree's events newest first, up to the limit.
-- [ ] `dependencies` lists both directions, finished blockers included.
-- [ ] `waiting_outside` names each subtask's outside blockers.
-- [ ] Every `tree()` node carries its own last event time and actor, and its subtree's last event time, and `tree()` on 2,000 tasks still meets 10 ms.
-- [ ] `ready()` says since when each task has been ready.
-- [ ] Every new write path has an atomicity test.
+- [x] A task links to several repos; `Task.repos` and `tree()` list them by name; only `me` and `plan` change them, each change with its own event.
+- [x] `set_branch` stores, changes and clears a branch for `me` and `launch` only, with one `edited` event per change.
+- [x] Links keep an optional title.
+- [x] `history_with_subtasks` returns a subtree's events newest first, up to the limit.
+- [x] `dependencies` lists both directions, finished blockers included.
+- [x] `waiting_outside` names each subtask's outside blockers.
+- [x] Every `tree()` node carries its own last event time and actor, and its subtree's last event time, and `tree()` on 2,000 tasks still meets 10 ms: 4.3 ms at the 95th percentile on a Mac16,1 (Apple M4), macOS 27.2.1 (25 Nov 2026).
+- [x] `ready()` says since when each task has been ready.
+- [x] Every new write path has an atomicity test.
 
 ## Decisions (settled 25 Nov 2026)
 
