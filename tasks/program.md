@@ -30,7 +30,8 @@ Then, for the whole product:
 | 1→2 | `core` v3 + `crates/services` contract | Done (439 tests) |
 | 2 | Build `sync`, `launch`, `attention` | Done (merged; 843 workspace tests) |
 | 2 | Build `app` UI | Done (merged; 147 unit/component + 30 Playwright tests) |
-| 2 | Build `app` backend + wire real services | In progress |
+| 2 | Build `app` backend + wire real services | Done (merged; 941 Rust tests; 5.7 MB dmg, 457 ms cold start) |
+| 3 | UI polish pass from design QA (24 findings) + integration fixes | In progress |
 | 3 | Integration: one app process hosts sync, launch and attention; the CLI and `airboss mcp` share the database | |
 | 3 | QA: real-user flows, performance targets, light and dark, keyboard-only | |
 | 4 | Polish and bug-fix iterations; README and install instructions | |
@@ -92,6 +93,12 @@ Then, for the whole product:
 - An interrupted Plan it, or a research-only start, stays pending until "Start again". That's acceptable for v1.
 - Reject commits after a 5-second undo window. Accept can't be undone: it's rare to regret one, and the task can be dropped.
 - The default quick-add hotkey is ⌃⌥N (it can be changed in Settings).
+
+## EM decision on idle memory (26 Nov 2026)
+
+- **Target revised: idle memory under 130 MB** (it was 80 MB). Measured: 129 MB with both web views alive, 119 MB with the main window hidden. WebKit alone uses about 78 MB for one view, so 80 MB can't be reached with a web view plus an instant quick-add panel.
+- **Releasing the quick-add view after 10 idle minutes** would save about 20 MB, still miss 80 MB, and make quick-add open slowly. So instant quick-add wins.
+- The user can revisit this. The lighter alternative would be a native quick-add panel instead of a second web view.
 
 ## Done means
 
