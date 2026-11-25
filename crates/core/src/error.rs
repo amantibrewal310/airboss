@@ -3,6 +3,9 @@
 /// Why a `core` call was refused or failed.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    /// A task's title is empty or only spaces.
+    #[error("a task needs a title")]
+    EmptyTitle,
     /// The task, link or repo doesn't exist.
     #[error("not found")]
     NotFound,

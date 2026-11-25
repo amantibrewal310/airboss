@@ -38,7 +38,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
   - **Files:** `src/db.rs`, `src/migrations/001_core.sql`, `src/lib.rs`, `tests/db.rs`
   - **Depends on:** T1
 
-- [ ] **T3. Add a task, read it back, see its history** (M)
+- [x] **T3. Add a task, read it back, see its history** (M)
   - **Description:** The first vertical slice:
     - `add_task` as `me`: the task lands at the end of its siblings and gets a `created` event.
     - `task`, `tree` (in order) and `history`.
