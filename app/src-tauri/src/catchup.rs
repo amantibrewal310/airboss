@@ -281,23 +281,19 @@ impl AppState {
                 s.woke();
             }
         }
-        let mut done_core = false;
-        if causes.focus || causes.wake {
-            match self.check_data_version() {
-                Ok(_) => done_core = true,
-                Err(e) => log::warn!("catch-up on focus failed: {e}"),
-            }
+        if (causes.focus || causes.wake)
+            && let Err(e) = self.check_data_version()
+        {
+            log::warn!("catch-up on focus or wake failed: {e}");
         }
-        if causes.core {
-            match self.catch_up() {
-                Ok(_) => done_core = true,
-                Err(e) => log::warn!("catch-up failed: {e}"),
-            }
+        if causes.core
+            && let Err(e) = self.catch_up()
+        {
+            log::warn!("catch-up failed: {e}");
         }
-        if causes.service && !done_core {
-            self.catch_up_services();
-        } else if causes.service {
-            // A core catch-up that found nothing new doesn't rebuild; the services may have.
+        if causes.service {
+            // A core catch-up that found nothing new doesn't rebuild; the services may have
+            // changed on their own.
             self.catch_up_services();
         }
     }
@@ -371,11 +367,7 @@ fn worker(state: &AppState, rx: &Receiver<Trigger>) {
 
 /// Runs an app thread's loop in `catch_unwind`. After one panic it runs again (told it was
 /// restarted); after a second it stops, and the footer says live updates stopped.
-pub(crate) fn guarded(
-    state: &Arc<AppState>,
-    name: &'static str,
-    body: impl FnMut(bool) + Send + 'static,
-) {
+pub fn guarded(state: &Arc<AppState>, name: &'static str, body: impl FnMut(bool) + Send + 'static) {
     let weak = Arc::downgrade(state);
     let mut body = body;
     let spawned = std::thread::Builder::new()
