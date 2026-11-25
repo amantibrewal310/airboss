@@ -4,7 +4,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::events::{self, bad_text};
 use crate::model::{Actor, EventKind, Status, Task};
-use crate::sql::query_all;
+use crate::sql::{SUBTREE_CTE, query_all};
 use crate::tx::Tx;
 use crate::{Error, Result, TaskId, fault, tasks};
 
@@ -125,13 +125,11 @@ pub(crate) const DROPPED_WITH: &str = "dropped with #";
 fn drop_subtree(tx: &mut Tx<'_>, id: TaskId, actor: &Actor) -> Result<()> {
     let open = query_all(
         tx,
-        "WITH RECURSIVE sub(id) AS (
-             SELECT id FROM tasks WHERE parent_id = ?1
-             UNION ALL
-             SELECT t.id FROM tasks t JOIN sub ON t.parent_id = sub.id
-         )
-         SELECT t.id FROM tasks t JOIN sub ON t.id = sub.id
-         WHERE t.status NOT IN ('done', 'dropped') ORDER BY t.id",
+        &format!(
+            "{SUBTREE_CTE}
+             SELECT t.id FROM tasks t JOIN sub ON t.id = sub.id
+             WHERE t.id <> ?1 AND t.status NOT IN ('done', 'dropped') ORDER BY t.id"
+        ),
         params![id.0],
         |r| r.get(0).map(TaskId),
     )?;
