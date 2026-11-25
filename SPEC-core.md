@@ -72,6 +72,7 @@ crates/core/
   tests/rules.rs           One test per rule
   tests/tree.rs            Nesting, moving, ordering
   tests/deps.rs            Dependencies and run order
+  tests/history.rs         Subtree history and tree activity
   tests/perf.rs            #[ignore] performance checks
 ```
 

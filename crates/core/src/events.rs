@@ -4,7 +4,7 @@ use rusqlite::{Connection, Row, params};
 
 use crate::model::{Actor, Event, EventKind, Status};
 use crate::permissions::valid_actor;
-use crate::sql::query_all;
+use crate::sql::{SUBTREE_CTE, query_all};
 use crate::tx::Tx;
 use crate::{EventId, Result, TaskId};
 
@@ -12,6 +12,12 @@ impl crate::Store {
     /// Everything that happened to a task, oldest first.
     pub fn history(&self, id: TaskId) -> Result<Vec<Event>> {
         history(&self.conn, id)
+    }
+
+    /// Up to `limit` events from a task and everything under it, newest first: a parent's
+    /// activity feed (rule 28).
+    pub fn history_with_subtasks(&self, id: TaskId, limit: u32) -> Result<Vec<Event>> {
+        subtree_history(&self.conn, id, limit)
     }
 }
 
@@ -78,6 +84,22 @@ pub(crate) fn history(conn: &Connection, task: TaskId) -> Result<Vec<Event>> {
         conn,
         &format!("SELECT {EVENT_COLUMNS} FROM task_events WHERE task_id = ?1 ORDER BY id"),
         params![task.0],
+        from_row,
+    )
+}
+
+/// The newest `limit` events of `task`'s subtree, newest first.
+pub(crate) fn subtree_history(conn: &Connection, task: TaskId, limit: u32) -> Result<Vec<Event>> {
+    crate::tasks::ensure_exists(conn, task)?;
+    query_all(
+        conn,
+        &format!(
+            "{SUBTREE_CTE}
+             SELECT {EVENT_COLUMNS} FROM task_events
+             WHERE task_id IN (SELECT id FROM sub)
+             ORDER BY id DESC LIMIT ?2"
+        ),
+        params![task.0, limit],
         from_row,
     )
 }
