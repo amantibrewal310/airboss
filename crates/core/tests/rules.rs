@@ -444,6 +444,34 @@ fn a_rejected_proposal_is_gone_from_the_tree_but_still_in_history() {
 }
 
 #[test]
+fn an_accepted_proposal_that_i_later_drop_stays_in_the_tree() {
+    let mut s = store();
+    let p = s.add_task(NewTask::new("Good idea"), &agent()).unwrap();
+    s.set_status(p.id, Status::Todo, None, &Actor::Me).unwrap();
+    s.add_task(NewTask::new("Step").under(p.id), &Actor::Me)
+        .unwrap();
+    s.set_status(p.id, Status::Dropped, None, &Actor::Me)
+        .unwrap();
+
+    assert_eq!(titles(&s), vec!["Good idea", "Step"]);
+    assert!(s.proposed().unwrap().is_empty());
+}
+
+#[test]
+fn an_open_proposal_dropped_with_its_parent_stays_in_the_tree() {
+    let mut s = store();
+    let parent = s.add_task(NewTask::new("Parent"), &Actor::Me).unwrap();
+    s.add_task(NewTask::new("Idea").under(parent.id), &agent())
+        .unwrap();
+    s.set_status(parent.id, Status::Dropped, None, &Actor::Me)
+        .unwrap();
+
+    assert_eq!(titles(&s), vec!["Parent", "Idea"]);
+    assert!(s.proposed().unwrap().is_empty());
+    assert!(s.ready().unwrap().is_empty());
+}
+
+#[test]
 fn rejecting_needs_no_reason() {
     let mut s = store();
     let p = s.add_task(NewTask::new("Idea"), &agent()).unwrap();
