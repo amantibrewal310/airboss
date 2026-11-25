@@ -23,7 +23,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
   - **Files:** `Cargo.toml`, `rust-toolchain.toml`, `crates/core/Cargo.toml`, `crates/core/src/lib.rs`, `crates/core/src/error.rs`
   - **Depends on:** none
 
-- [ ] **T2. Open the database and run migrations** (M)
+- [x] **T2. Open the database and run migrations** (M)
   - **Description:**
     - `Store::open(path)` and `Store::open_in_memory()` apply the settings outside any transaction: WAL, `synchronous = NORMAL`, foreign keys on, `busy_timeout = 2000`.
     - They run any pending `core` migrations from `001_core.sql`, which holds the schema exactly as in the spec.
