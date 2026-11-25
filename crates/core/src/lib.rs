@@ -13,6 +13,7 @@ mod model;
 mod permissions;
 mod plans;
 mod positions;
+mod repos;
 mod sql;
 mod status;
 mod tasks;
@@ -133,6 +134,8 @@ pub(crate) mod fault {
     pub(crate) const TASK_INSERTED: &str = "tasks::add after insert";
     pub(crate) const TASK_EDITED: &str = "tasks::edit after update";
     pub(crate) const NOTE_RECORDED: &str = "tasks::add_note after event";
+    pub(crate) const REPO_LINKED: &str = "repos::link_repo after insert";
+    pub(crate) const REPO_UNLINKED: &str = "repos::unlink_repo after delete";
     pub(crate) const LINK_INSERTED: &str = "links::link after insert";
     pub(crate) const LINK_DELETED: &str = "links::unlink after delete";
     pub(crate) const PR_STATE_RECORDED: &str = "links::set_pr_state after one task";

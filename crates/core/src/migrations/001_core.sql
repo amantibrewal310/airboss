@@ -10,7 +10,6 @@ CREATE TABLE repos (
 CREATE TABLE tasks (
   id             INTEGER PRIMARY KEY,
   parent_id      INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
-  repo_id        INTEGER REFERENCES repos(id),
   title          TEXT NOT NULL CHECK (length(trim(title)) > 0),
   body           TEXT,
   status         TEXT NOT NULL DEFAULT 'todo'
@@ -27,10 +26,19 @@ CREATE TABLE tasks (
 CREATE INDEX tasks_parent_position_idx ON tasks(parent_id, position);
 CREATE UNIQUE INDEX tasks_plan_key_idx ON tasks(ifnull(parent_id, 0), plan_key) WHERE plan_key IS NOT NULL;
 
+CREATE TABLE task_repos (
+  task_id    INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  repo_id    INTEGER NOT NULL REFERENCES repos(id),
+  linked_by  TEXT NOT NULL,
+  linked_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  PRIMARY KEY (task_id, repo_id)
+);
+CREATE INDEX task_repos_repo_idx ON task_repos(repo_id);
+
 CREATE TABLE task_events (
   id         INTEGER PRIMARY KEY,
   task_id    INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-  kind       TEXT NOT NULL CHECK (kind IN ('created','edited','moved','status','note','linked','unlinked','link_state','waits_on_added','waits_on_removed','rejected')),
+  kind       TEXT NOT NULL CHECK (kind IN ('created','edited','moved','status','note','linked','unlinked','link_state','waits_on_added','waits_on_removed','rejected','repo_linked','repo_unlinked')),
   to_status  TEXT CHECK (to_status IN ('proposed','todo','doing','in_review','blocked','done','dropped')),
   body       TEXT,
   actor      TEXT NOT NULL,

@@ -174,7 +174,8 @@ impl Origin {
 pub struct Task {
     pub id: TaskId,
     pub parent: Option<TaskId>,
-    pub repo: Option<RepoId>,
+    /// The repos it's linked to, sorted by repo name. Only its own, not its subtasks'.
+    pub repos: Vec<RepoId>,
     pub title: String,
     pub body: Option<String>,
     pub status: Status,
@@ -190,7 +191,7 @@ pub struct Task {
 pub struct NewTask {
     pub title: String,
     pub parent: Option<TaskId>,
-    pub repo: Option<RepoId>,
+    pub repos: Vec<RepoId>,
     pub body: Option<String>,
 }
 
@@ -209,9 +210,11 @@ impl NewTask {
         self
     }
 
-    /// Ties the task to a repo.
+    /// Links the task to a repo. Call it again for more; a repo given twice is linked once.
     pub fn in_repo(mut self, repo: RepoId) -> NewTask {
-        self.repo = Some(repo);
+        if !self.repos.contains(&repo) {
+            self.repos.push(repo);
+        }
         self
     }
 
@@ -257,6 +260,10 @@ pub enum EventKind {
     WaitsOnRemoved,
     /// I turned down an agent's proposal. The task is `dropped` and hidden from the tree.
     Rejected,
+    /// A repo was linked to the task; the body names it.
+    RepoLinked,
+    /// A repo was unlinked from the task; the body names it.
+    RepoUnlinked,
 }
 
 impl EventKind {
@@ -273,6 +280,8 @@ impl EventKind {
             EventKind::WaitsOnAdded => "waits_on_added",
             EventKind::WaitsOnRemoved => "waits_on_removed",
             EventKind::Rejected => "rejected",
+            EventKind::RepoLinked => "repo_linked",
+            EventKind::RepoUnlinked => "repo_unlinked",
         }
     }
 
@@ -289,6 +298,8 @@ impl EventKind {
             "waits_on_added" => EventKind::WaitsOnAdded,
             "waits_on_removed" => EventKind::WaitsOnRemoved,
             "rejected" => EventKind::Rejected,
+            "repo_linked" => EventKind::RepoLinked,
+            "repo_unlinked" => EventKind::RepoUnlinked,
             _ => return None,
         })
     }
@@ -306,13 +317,12 @@ pub struct Event {
     pub at: String,
 }
 
-/// What `me` changes about a task. `None` leaves a field as it is; for body and repo,
-/// `Some(None)` clears it.
+/// What `me` changes about a task. `None` leaves a field as it is; for the body,
+/// `Some(None)` clears it. Repos change through `link_repo` and `unlink_repo`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskEdit {
     pub title: Option<String>,
     pub body: Option<Option<String>>,
-    pub repo: Option<Option<RepoId>>,
 }
 
 impl TaskEdit {
@@ -325,12 +335,6 @@ impl TaskEdit {
     /// Replaces the notes; `None` clears them.
     pub fn body(mut self, body: Option<&str>) -> TaskEdit {
         self.body = Some(body.map(str::to_string));
-        self
-    }
-
-    /// Points the task at a repo; `None` unties it.
-    pub fn repo(mut self, repo: Option<RepoId>) -> TaskEdit {
-        self.repo = Some(repo);
         self
     }
 }
@@ -499,7 +503,8 @@ pub struct PlanTask {
     pub key: String,
     pub title: String,
     pub body: Option<String>,
-    pub repo: Option<RepoId>,
+    #[serde(default)]
+    pub repos: Vec<RepoId>,
     #[serde(default)]
     pub depends_on: Vec<DepRef>,
     #[serde(default)]
@@ -513,7 +518,7 @@ impl PlanTask {
             key: key.into(),
             title: title.into(),
             body: None,
-            repo: None,
+            repos: Vec::new(),
             depends_on: Vec::new(),
             children: Vec::new(),
         }
@@ -525,9 +530,11 @@ impl PlanTask {
         self
     }
 
-    /// Ties the step to a repo.
+    /// Links the step to a repo. Call it again for more; a repo given twice is linked once.
     pub fn in_repo(mut self, repo: RepoId) -> PlanTask {
-        self.repo = Some(repo);
+        if !self.repos.contains(&repo) {
+            self.repos.push(repo);
+        }
         self
     }
 

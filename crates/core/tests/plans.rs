@@ -334,22 +334,49 @@ fn a_blank_title_or_missing_repo_writes_nothing() {
 }
 
 #[test]
-fn steps_keep_their_body_and_repo() {
+fn steps_keep_their_body_and_repos() {
     let mut s = store();
-    let repo = s
-        .add_repo("airboss", Path::new("/src/airboss"), None, &Actor::Me)
+    let web = s
+        .add_repo("web", Path::new("/src/web"), None, &Actor::Me)
+        .unwrap();
+    let api = s
+        .add_repo("api", Path::new("/src/api"), None, &Actor::Me)
         .unwrap();
     let plan = vec![
         PlanTask::new("a", "  A  ")
             .with_body("why")
-            .in_repo(repo.id),
+            .in_repo(web.id)
+            .in_repo(api.id),
     ];
     let r = s.add_tasks(None, &plan, &Actor::Me).unwrap();
     let a = s.task(r.id("a").unwrap()).unwrap();
     assert_eq!(
-        (a.title.as_str(), a.body.as_deref(), a.repo),
-        ("A", Some("why"), Some(repo.id))
+        (a.title.as_str(), a.body.as_deref(), a.repos),
+        ("A", Some("why"), vec![api.id, web.id])
     );
+    assert_eq!(s.history(a.id).unwrap().len(), 1, "one created event");
+}
+
+#[test]
+fn a_plan_sent_again_leaves_a_steps_repos_alone() {
+    let mut s = store();
+    let web = s
+        .add_repo("web", Path::new("/src/web"), None, &Actor::Me)
+        .unwrap();
+    let api = s
+        .add_repo("api", Path::new("/src/api"), None, &Actor::Me)
+        .unwrap();
+    let first = vec![PlanTask::new("a", "A").in_repo(web.id)];
+    let r = s.add_tasks(None, &first, &Actor::Plan).unwrap();
+    let a = r.id("a").unwrap();
+    let again = vec![PlanTask::new("a", "A").in_repo(api.id)];
+    s.add_tasks(None, &again, &Actor::Plan).unwrap();
+    assert_eq!(s.task(a).unwrap().repos, vec![web.id]);
+    assert_eq!(s.history(a).unwrap().len(), 1);
+
+    // `plan` links more with `link_repo`.
+    s.link_repo(a, api.id, &Actor::Plan).unwrap();
+    assert_eq!(s.task(a).unwrap().repos, vec![api.id, web.id]);
 }
 
 #[test]

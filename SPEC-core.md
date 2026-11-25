@@ -64,6 +64,7 @@ crates/core/
   src/db.rs                Opening, settings, migrations
   src/migrations/001_core.sql
   src/tasks.rs             Add, edit, move, delete, tree
+  src/repos.rs             Repos, and the repos each task links to
   src/status.rs            Status changes and who may make them
   src/deps.rs              Dependencies, loop check, run order
   src/links.rs             Links and PR state

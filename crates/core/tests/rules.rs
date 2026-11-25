@@ -178,47 +178,37 @@ fn every_status_reads_back_as_written() {
     }
 }
 
-// Rule 8, `edit_task`: only `me` edits title, notes and repo; one `edited` event.
+// Rule 8, `edit_task`: only `me` edits title and notes; one `edited` event.
 
 #[test]
-fn me_edits_title_body_and_repo_with_one_edited_event() {
+fn me_edits_title_and_body_with_one_edited_event() {
     let mut s = store();
-    let repo = s
-        .add_repo("web", Path::new("/w/web"), None, &Actor::Me)
-        .unwrap();
     let t = s.add_task(NewTask::new("Fix typo"), &Actor::Me).unwrap();
     let edit = TaskEdit::default()
         .title("  Fix the typo  ")
-        .body(Some("in the footer"))
-        .repo(Some(repo.id));
+        .body(Some("in the footer"));
     let edited = s.edit_task(t.id, edit, &Actor::Me).unwrap();
     assert_eq!(edited.title, "Fix the typo");
     assert_eq!(edited.body.as_deref(), Some("in the footer"));
-    assert_eq!(edited.repo, Some(repo.id));
     assert_eq!(s.task(t.id).unwrap(), edited);
 
     let history = s.history(t.id).unwrap();
     assert_eq!(history.len(), 2);
     assert_eq!(history[1].kind, EventKind::Edited);
+    assert_eq!(history[1].body.as_deref(), Some("title, body"));
     assert_eq!(history[1].actor, Actor::Me);
 }
 
 #[test]
-fn editing_can_clear_body_and_repo() {
+fn editing_can_clear_the_body() {
     let mut s = store();
-    let repo = s
-        .add_repo("web", Path::new("/w/web"), None, &Actor::Me)
-        .unwrap();
     let t = s
-        .add_task(
-            NewTask::new("x").with_body("notes").in_repo(repo.id),
-            &Actor::Me,
-        )
+        .add_task(NewTask::new("x").with_body("notes"), &Actor::Me)
         .unwrap();
     let edited = s
-        .edit_task(t.id, TaskEdit::default().body(None).repo(None), &Actor::Me)
+        .edit_task(t.id, TaskEdit::default().body(None), &Actor::Me)
         .unwrap();
-    assert_eq!((edited.body, edited.repo), (None, None));
+    assert_eq!(edited.body, None);
 }
 
 #[test]
@@ -243,15 +233,10 @@ fn editing_to_a_blank_title_is_rejected() {
 }
 
 #[test]
-fn editing_a_missing_task_or_to_a_missing_repo_is_not_found() {
+fn editing_a_missing_task_is_not_found() {
     let mut s = store();
     let err = s
         .edit_task(TaskId(9), TaskEdit::default().title("x"), &Actor::Me)
-        .unwrap_err();
-    assert!(matches!(err, Error::NotFound), "{err:?}");
-    let t = s.add_task(NewTask::new("x"), &Actor::Me).unwrap();
-    let err = s
-        .edit_task(t.id, TaskEdit::default().repo(Some(RepoId(4))), &Actor::Me)
         .unwrap_err();
     assert!(matches!(err, Error::NotFound), "{err:?}");
 }
@@ -524,4 +509,143 @@ fn an_agent_cannot_move_its_own_proposal_anywhere() {
     }
     assert_eq!(s.task(p.id).unwrap().status, Status::Proposed);
     assert_eq!(s.history(p.id).unwrap().len(), 1);
+}
+
+// Rule 24: a task links to any number of repos; only `me` and `plan` change them.
+
+fn three_repos(s: &mut Store) -> [RepoId; 3] {
+    ["web", "api", "ios"].map(|name| {
+        s.add_repo(name, Path::new(&format!("/w/{name}")), None, &Actor::Me)
+            .unwrap()
+            .id
+    })
+}
+
+#[test]
+fn a_task_links_to_several_repos_listed_by_name() {
+    let mut s = store();
+    let [web, api, ios] = three_repos(&mut s);
+    let t = s
+        .add_task(
+            NewTask::new("Booking")
+                .in_repo(web)
+                .in_repo(ios)
+                .in_repo(api),
+            &Actor::Me,
+        )
+        .unwrap();
+    assert_eq!(t.repos, vec![api, ios, web]);
+    assert_eq!(s.task(t.id).unwrap().repos, vec![api, ios, web]);
+    assert_eq!(s.tree().unwrap()[0].task.repos, vec![api, ios, web]);
+    assert_eq!(s.history(t.id).unwrap().len(), 1, "one created event");
+}
+
+#[test]
+fn the_same_repo_given_twice_is_linked_once() {
+    let mut s = store();
+    let [web, ..] = three_repos(&mut s);
+    let t = s
+        .add_task(NewTask::new("x").in_repo(web).in_repo(web), &Actor::Me)
+        .unwrap();
+    assert_eq!(t.repos, vec![web]);
+}
+
+#[test]
+fn link_repo_adds_a_repo_with_one_repo_linked_event() {
+    let mut s = store();
+    let [web, api, _] = three_repos(&mut s);
+    let t = s
+        .add_task(NewTask::new("x").in_repo(web), &Actor::Me)
+        .unwrap();
+    s.link_repo(t.id, api, &Actor::Me).unwrap();
+    assert_eq!(s.task(t.id).unwrap().repos, vec![api, web]);
+    let last = s.history(t.id).unwrap().pop().unwrap();
+    assert_eq!(last.kind, EventKind::RepoLinked);
+    assert_eq!(last.body.as_deref(), Some("api"));
+    assert_eq!(last.actor, Actor::Me);
+}
+
+#[test]
+fn linking_a_repo_twice_changes_nothing() {
+    let mut s = store();
+    let [web, ..] = three_repos(&mut s);
+    let t = s.add_task(NewTask::new("x"), &Actor::Me).unwrap();
+    s.link_repo(t.id, web, &Actor::Me).unwrap();
+    let rx = s.subscribe();
+    s.link_repo(t.id, web, &Actor::Me).unwrap();
+    assert_eq!(s.history(t.id).unwrap().len(), 2);
+    assert!(rx.try_recv().is_err());
+}
+
+#[test]
+fn unlink_repo_removes_it_with_one_repo_unlinked_event() {
+    let mut s = store();
+    let [web, api, _] = three_repos(&mut s);
+    let t = s
+        .add_task(NewTask::new("x").in_repo(web).in_repo(api), &Actor::Me)
+        .unwrap();
+    s.unlink_repo(t.id, web, &Actor::Plan).unwrap();
+    assert_eq!(s.task(t.id).unwrap().repos, vec![api]);
+    let last = s.history(t.id).unwrap().pop().unwrap();
+    assert_eq!(last.kind, EventKind::RepoUnlinked);
+    assert_eq!(last.body.as_deref(), Some("web"));
+    assert_eq!(last.actor, Actor::Plan);
+}
+
+#[test]
+fn unlinking_a_repo_that_is_not_linked_is_not_found() {
+    let mut s = store();
+    let [web, ..] = three_repos(&mut s);
+    let t = s.add_task(NewTask::new("x"), &Actor::Me).unwrap();
+    let err = s.unlink_repo(t.id, web, &Actor::Me).unwrap_err();
+    assert!(matches!(err, Error::NotFound), "{err:?}");
+    assert_eq!(s.history(t.id).unwrap().len(), 1);
+}
+
+#[test]
+fn linking_a_missing_task_or_repo_is_not_found() {
+    let mut s = store();
+    let [web, ..] = three_repos(&mut s);
+    let t = s.add_task(NewTask::new("x"), &Actor::Me).unwrap();
+    for (task, repo) in [(TaskId(99), web), (t.id, RepoId(99))] {
+        let err = s.link_repo(task, repo, &Actor::Me).unwrap_err();
+        assert!(matches!(err, Error::NotFound), "{err:?}");
+        let err = s.unlink_repo(task, repo, &Actor::Me).unwrap_err();
+        assert!(matches!(err, Error::NotFound), "{err:?}");
+    }
+}
+
+#[test]
+fn agents_sync_and_launch_cannot_change_repos() {
+    let mut s = store();
+    let [web, api, _] = three_repos(&mut s);
+    let t = s
+        .add_task(NewTask::new("x").in_repo(web), &Actor::Me)
+        .unwrap();
+    for actor in [agent(), Actor::SyncGh, Actor::SyncT3, Actor::Launch] {
+        let err = s.link_repo(t.id, api, &actor).unwrap_err();
+        assert!(matches!(err, Error::NotAllowed), "{actor}: {err:?}");
+        let err = s.unlink_repo(t.id, web, &actor).unwrap_err();
+        assert!(matches!(err, Error::NotAllowed), "{actor}: {err:?}");
+    }
+    assert_eq!(s.task(t.id).unwrap().repos, vec![web]);
+    assert_eq!(s.history(t.id).unwrap().len(), 1);
+}
+
+#[test]
+fn a_parent_in_the_tree_shows_only_its_own_repos() {
+    let mut s = store();
+    let [web, api, _] = three_repos(&mut s);
+    let p = s
+        .add_task(NewTask::new("Parent").in_repo(web), &Actor::Me)
+        .unwrap();
+    s.add_task(NewTask::new("Child").under(p.id).in_repo(api), &Actor::Me)
+        .unwrap();
+    let repos: Vec<_> = s
+        .tree()
+        .unwrap()
+        .into_iter()
+        .map(|n| n.task.repos)
+        .collect();
+    assert_eq!(repos, vec![vec![web], vec![api]]);
 }
