@@ -5,4 +5,4 @@ set -eu
 cd "$(dirname "$0")/../../.."
 cargo build -p airboss-mcp --release
 mkdir -p app/src-tauri/binaries
-cp target/release/airboss app/src-tauri/binaries/airboss-aarch64-apple-darwin
+install -m 755 target/release/airboss app/src-tauri/binaries/airboss-aarch64-apple-darwin
