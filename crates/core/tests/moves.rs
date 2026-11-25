@@ -204,6 +204,58 @@ fn a_task_cannot_move_into_its_own_subtree() {
     assert_eq!(s.history(a).unwrap().len(), 1);
 }
 
+// ---- Rule 15: a move can't make a task wait on its own ancestor or descendant ----
+
+#[test]
+fn moving_a_task_under_what_it_waits_on_is_rejected() {
+    let mut s = store();
+    let a = add(&mut s, "A", None);
+    let b = add(&mut s, "B", None);
+    s.add_dependency(a, b, &Actor::Me).unwrap();
+    let before = snapshot(&s);
+
+    let err = s.move_task(a, Some(b), 1, &Actor::Me).unwrap_err();
+    assert!(matches!(err, Error::InvalidTarget), "{err:?}");
+    assert_eq!(snapshot(&s), before);
+}
+
+#[test]
+fn moving_a_task_under_what_its_subtree_blocks_is_rejected() {
+    let mut s = store();
+    let c = add(&mut s, "C", None);
+    let d = add(&mut s, "D", Some(c));
+    let e = add(&mut s, "E", None);
+    let f = add(&mut s, "F", Some(e));
+    s.add_dependency(e, d, &Actor::Me).unwrap();
+    let before = snapshot(&s);
+
+    // Directly under E, and deeper, under E's child F.
+    for target in [e, f] {
+        let err = s.move_task(c, Some(target), 1, &Actor::Me).unwrap_err();
+        assert!(matches!(err, Error::InvalidTarget), "{err:?}");
+    }
+    assert_eq!(snapshot(&s), before);
+}
+
+#[test]
+fn moves_without_such_a_dependency_still_work() {
+    let mut s = store();
+    let a = add(&mut s, "A", None);
+    let b = add(&mut s, "B", None);
+    let c = add(&mut s, "C", None);
+    let d = add(&mut s, "D", Some(c));
+    s.add_dependency(a, b, &Actor::Me).unwrap();
+    s.add_dependency(d, b, &Actor::Me).unwrap();
+
+    // C's subtree waits on B, but B isn't C's new parent or one of its ancestors.
+    moved(&mut s, c, Some(a), 1);
+    assert_eq!(s.task(c).unwrap().parent, Some(a));
+    // A task with no dependencies moves under B freely.
+    let free = add(&mut s, "Free", None);
+    moved(&mut s, free, Some(b), 1);
+    assert_eq!(s.task(free).unwrap().parent, Some(b));
+}
+
 // ---- Rule 12: no moving under closed or proposed parents ----
 
 #[test]

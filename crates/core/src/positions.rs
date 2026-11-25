@@ -60,6 +60,37 @@ fn ensure_not_in_subtree(conn: &Connection, id: TaskId, target: TaskId) -> Resul
     if inside { Err(Error::Loop) } else { Ok(()) }
 }
 
+/// Rule 15 for a move: `Error::InvalidTarget` if any dependency joins `id`'s subtree and
+/// `target` or one of its ancestors, either way round. After the move they would be
+/// ancestor and descendant.
+fn ensure_no_ancestor_dependency(conn: &Connection, id: TaskId, target: TaskId) -> Result<()> {
+    let related: bool = conn.query_row(
+        "WITH RECURSIVE sub(id) AS (
+             SELECT ?1
+             UNION
+             SELECT t.id FROM tasks t JOIN sub ON t.parent_id = sub.id
+         ),
+         up(id) AS (
+             SELECT ?2
+             UNION
+             SELECT t.parent_id FROM tasks t JOIN up ON t.id = up.id
+             WHERE t.parent_id IS NOT NULL
+         )
+         SELECT EXISTS (
+             SELECT 1 FROM task_deps d
+             WHERE (d.task_id IN sub AND d.waits_on_id IN up)
+                OR (d.task_id IN up AND d.waits_on_id IN sub)
+         )",
+        params![id.0, target.0],
+        |r| r.get(0),
+    )?;
+    if related {
+        Err(Error::InvalidTarget)
+    } else {
+        Ok(())
+    }
+}
+
 fn move_in(
     tx: &mut Tx<'_>,
     id: TaskId,
@@ -73,6 +104,7 @@ fn move_in(
         crate::tasks::ensure_exists(tx, target)?;
         ensure_not_in_subtree(tx, id, target)?;
         ensure_open_parent(tx, target)?;
+        ensure_no_ancestor_dependency(tx, id, target)?;
     }
 
     // Park the task at the end of its new group, then close the gaps in both groups.
