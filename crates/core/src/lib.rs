@@ -18,6 +18,7 @@ use rusqlite::Connection;
 use crate::tx::Tx;
 
 pub use error::{Error, Result};
+pub use model::TaskEdit;
 pub use model::{
     Actor, Event, EventKind, NewTask, Origin, Repo, Status, Task, TaskNode, UnknownValue,
 };
@@ -130,6 +131,8 @@ pub(crate) mod fault {
     }
 
     pub(crate) const TASK_INSERTED: &str = "tasks::add after insert";
+    pub(crate) const TASK_EDITED: &str = "tasks::edit after update";
+    pub(crate) const NOTE_RECORDED: &str = "tasks::add_note after event";
 
     pub(crate) fn arm(point: &'static str) {
         ARMED.with(|a| a.set(Some(point)));
@@ -147,6 +150,8 @@ pub(crate) mod fault {
 #[cfg(not(test))]
 pub(crate) mod fault {
     pub(crate) const TASK_INSERTED: &str = "tasks::add after insert";
+    pub(crate) const TASK_EDITED: &str = "tasks::edit after update";
+    pub(crate) const NOTE_RECORDED: &str = "tasks::add_note after event";
 
     #[inline(always)]
     pub(crate) fn hit(_point: &str) -> crate::Result<()> {
