@@ -4,16 +4,16 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use airboss_core::{LinkId, TaskId};
+use airboss_core::{LinkKind, TaskId};
 use airboss_services::ThreadKey;
-use serde::{Deserialize, Serialize};
 use tauri_plugin_log::log;
-use ts_rs::TS;
 
 use crate::classify::{check_url, expand_home, file_url};
-use crate::dto::{InstalledCli, NavOpen, QuickAddReset, ThreadKeyDto, path_text};
+use crate::dto::{
+    CliStatus, CopyWhat, InstallCliResult, NavOpen, OpenTarget, QuickaddReset, path_text,
+};
 use crate::errors::{AppError, AppResult, Ctx, ErrorCode, MSG_HOTKEY_IN_USE, MSG_LINK_GONE};
-use crate::menu::{FocusContext, WindowName, Zone};
+use crate::menu::{FocusContext, WindowName};
 use crate::settings::{Settings, check_hotkey, hotkey_label};
 use crate::shell::UiEvent;
 use crate::state::{AppState, Caller, lock};
@@ -23,57 +23,40 @@ pub const AGENT_NOTE: &str = include_str!("../../resources/agent-note.md");
 /// The command "Copy setup command" copies.
 pub const SETUP_COMMAND: &str = "claude mcp add --scope user airboss -- ~/.local/bin/airboss mcp";
 
-/// What to copy.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum CopyWhat {
-    TaskNumber {
-        #[ts(type = "number")]
-        id: TaskId,
-    },
-    AgentNote,
-    SetupCommand,
-}
-
-/// A link to open, by its task and id.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct LinkRef {
-    #[ts(type = "number")]
-    pub task: TaskId,
-    #[ts(type = "number")]
-    pub id: LinkId,
-}
-
 /// Opens a thread in T3 Code through `sync.thread_url` (`t3code://threads/…`).
-pub fn open_thread(s: &AppState, _c: Caller, key: ThreadKeyDto) -> AppResult<()> {
-    let url = s
-        .services
-        .sync
-        .thread_url(&ThreadKey::from(&key))
-        .ok_or_else(|| {
-            AppError::new(
-                ErrorCode::NotFound,
-                "That thread can't be opened from here.",
-            )
-        })?;
+pub fn open_thread(s: &AppState, _c: Caller, key: ThreadKey) -> AppResult<()> {
+    let url = s.services.sync.thread_url(&key).ok_or_else(|| {
+        AppError::new(
+            ErrorCode::NotFound,
+            "That thread can't be opened from here.",
+        )
+    })?;
     open_checked(s, &url)
 }
 
 /// Opens a URL, or a link by its id; only `http`, `https`, `file` and `t3code`.
-pub fn open_url(
-    s: &AppState,
-    _c: Caller,
-    url: Option<String>,
-    link: Option<LinkRef>,
-) -> AppResult<()> {
-    let url = match (url, link) {
-        (Some(u), _) => u,
-        (None, Some(l)) => {
-            let links = s.core_as(Ctx::Task(l.task), |st| st.links(l.task))?;
-            let found = links
-                .into_iter()
-                .find(|x| x.id == l.id)
-                .ok_or_else(|| AppError::new(ErrorCode::NotFound, MSG_LINK_GONE))?;
+pub fn open_url(s: &AppState, _c: Caller, target: OpenTarget) -> AppResult<()> {
+    let url = match target {
+        OpenTarget::Url(u) => u,
+        OpenTarget::Link(id) => {
+            // A link is found by kind; there are six, each one small read.
+            let kinds = [
+                LinkKind::Pr,
+                LinkKind::T3Thread,
+                LinkKind::ClaudeSession,
+                LinkKind::Doc,
+                LinkKind::Slack,
+                LinkKind::GithubIssue,
+            ];
+            let mut found = None;
+            for kind in kinds {
+                let links = s.core_as(Ctx::Link, |st| st.links_of_kind(kind))?;
+                if let Some(l) = links.into_iter().find(|l| l.id == id) {
+                    found = Some(l);
+                    break;
+                }
+            }
+            let found = found.ok_or_else(|| AppError::new(ErrorCode::NotFound, MSG_LINK_GONE))?;
             match found.url {
                 Some(u) => u,
                 None if found.r#ref.starts_with('/') || found.r#ref.starts_with('~') => {
@@ -87,7 +70,6 @@ pub fn open_url(
                 }
             }
         }
-        (None, None) => return Err(AppError::new(ErrorCode::NotFound, "Nothing to open.")),
     };
     open_checked(s, &url)
 }
@@ -111,7 +93,7 @@ pub fn recheck_connections(s: &AppState, _c: Caller) -> AppResult<()> {
 /// Copies a task number, the agent note or the setup command.
 pub fn copy_text(s: &AppState, _c: Caller, what: CopyWhat) -> AppResult<()> {
     let text = match what {
-        CopyWhat::TaskNumber { id } => id.0.to_string(),
+        CopyWhat::TaskNumber(id) => id.0.to_string(),
         CopyWhat::AgentNote => AGENT_NOTE.to_string(),
         CopyWhat::SetupCommand => SETUP_COMMAND.to_string(),
     };
@@ -121,7 +103,7 @@ pub fn copy_text(s: &AppState, _c: Caller, what: CopyWhat) -> AppResult<()> {
 }
 
 /// Links `~/.local/bin/airboss` to the bundled CLI.
-pub fn install_cli(s: &AppState, _c: Caller) -> AppResult<InstalledCli> {
+pub fn install_cli(s: &AppState, _c: Caller) -> AppResult<InstallCliResult> {
     let sidecar = s.shell.sidecar().ok_or_else(|| {
         AppError::new(
             ErrorCode::NotFound,
@@ -144,7 +126,7 @@ pub fn install_cli(s: &AppState, _c: Caller) -> AppResult<InstalledCli> {
     }
     std::os::unix::fs::symlink(&sidecar, &link).map_err(fail)?;
     s.refresh_connections();
-    Ok(InstalledCli {
+    Ok(InstallCliResult {
         path: path_text(&link),
         on_path: on_login_path(&bin),
     })
@@ -232,20 +214,8 @@ pub fn set_folded(s: &AppState, _c: Caller, ids: Vec<TaskId>, folded: bool) -> A
 }
 
 /// The UI's focus zone, selection and view: the native menus follow it.
-pub fn set_focus_context(
-    s: &AppState,
-    _c: Caller,
-    window: WindowName,
-    zone: Zone,
-    selection: Option<TaskId>,
-    view: String,
-) -> AppResult<()> {
-    *lock(&s.focus) = FocusContext {
-        window,
-        zone,
-        selection,
-        view,
-    };
+pub fn set_focus_context(s: &AppState, _c: Caller, context: FocusContext) -> AppResult<()> {
+    *lock(&s.focus) = context;
     s.refresh_menus();
     Ok(())
 }
@@ -287,9 +257,9 @@ pub fn quickadd_shown(s: &AppState, _c: Caller) -> AppResult<()> {
 /// Esc or Create: hide quick add; the UI resets on `quickadd:reset`.
 pub fn quickadd_hide(s: &AppState, _c: Caller) -> AppResult<()> {
     s.shell.hide_quickadd();
-    s.shell.emit(UiEvent::QuickAddReset(QuickAddReset {
+    s.shell.emit(UiEvent::QuickAddReset(QuickaddReset {
         hotkey: hotkey_label(&s.settings().hotkey),
-        keep_text: false,
+        keep_text: Some(false),
     }));
     Ok(())
 }
@@ -319,6 +289,18 @@ pub fn show_main(
         needs_key,
     }));
     Ok(())
+}
+
+/// Where the CLI link lives, whether it's there, and whether its folder is on `PATH`.
+pub fn cli_status(s: &AppState) -> CliStatus {
+    let bin = s.config.home.join(".local/bin");
+    let link = bin.join("airboss");
+    CliStatus {
+        installed: std::fs::symlink_metadata(&link).is_ok(),
+        path: path_text(&link),
+        on_path: std::env::var_os("PATH")
+            .is_some_and(|p| std::env::split_paths(&p).any(|d| d == bin)),
+    }
 }
 
 impl AppState {

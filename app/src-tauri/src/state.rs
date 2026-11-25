@@ -12,7 +12,7 @@ use airboss_services::{Clock, SharedStore};
 use tauri_plugin_log::log;
 
 use crate::catchup::{CatchUp, Trigger};
-use crate::dto::{ConnectionDto, ConnectionsDto, RowDto};
+use crate::dto::{ConnectionsChanged, RowDto};
 use crate::errors::{AppError, AppResult, Ctx};
 use crate::menu::{FocusContext, MenuState, menu_state};
 use crate::services::Services;
@@ -290,7 +290,7 @@ impl AppState {
     }
 
     /// The connection rows and T3's availability, merged as the footer shows them.
-    pub(crate) fn connections(&self, vm: &ViewModel) -> ConnectionsDto {
+    pub(crate) fn connections(&self, vm: &ViewModel) -> ConnectionsChanged {
         let problems = lock(&self.problems).clone();
         let cli = self.config.home.join(".local/bin/airboss");
         let cli_installed = std::fs::symlink_metadata(&cli).is_ok();
@@ -328,7 +328,7 @@ impl AppState {
     }
 
     /// The rows `connections` would show, for tests.
-    pub fn connection_rows(&self) -> Vec<ConnectionDto> {
+    pub fn connection_rows(&self) -> Vec<airboss_services::Connection> {
         lock(&self.catchup).connections.connections.clone()
     }
 

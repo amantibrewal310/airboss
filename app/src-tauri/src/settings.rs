@@ -17,6 +17,7 @@ pub const DEFAULT_HOTKEY: &str = "Control+Alt+N";
 /// System, Dark or Light. System (the default) follows macOS.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
+#[ts(export_to = "types.ts")]
 pub enum Appearance {
     #[default]
     System,
@@ -27,16 +28,18 @@ pub enum Appearance {
 /// Everything Settings (⌘,) changes, plus the folded parents.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(default)]
+#[ts(export_to = "types.ts")]
 pub struct Settings {
     /// The quick-add hotkey as an accelerator, e.g. `"Control+Alt+N"`.
     pub hotkey: String,
     pub open_at_login: bool,
     pub appearance: Appearance,
     /// Parents folded in the tree; saved a second after the last change.
-    #[ts(type = "number[]")]
+    #[ts(as = "Vec<crate::dto::TaskIdTs>")]
     pub folded: Vec<TaskId>,
     /// Release the hidden quick-add panel after this many idle minutes (off by default; see
-    /// SPEC-app "Memory").
+    /// SPEC-app "Memory"). Not shown in the UI.
+    #[ts(skip)]
     pub quickadd_release_after_min: Option<u32>,
 }
 

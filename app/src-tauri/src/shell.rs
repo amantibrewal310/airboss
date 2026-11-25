@@ -13,8 +13,8 @@ use airboss_services::NeedsList;
 use serde::Serialize;
 
 use crate::dto::{
-    AppearanceDto, BackgroundError, ConnectionsDto, MenuAction, NavOpen, NeedsDto, Patch,
-    QuickAddReset, ToastDto,
+    AppearanceChanged, BackgroundError, ConnectionsChanged, MenuAction, NavOpen, Patch,
+    QuickaddReset, ToastEvent,
 };
 use crate::menu::MenuState;
 use crate::settings::Appearance;
@@ -23,13 +23,13 @@ use crate::settings::Appearance;
 #[derive(Debug, Clone, PartialEq)]
 pub enum UiEvent {
     TreePatch(Patch),
-    NeedsChanged(NeedsDto),
-    ConnectionsChanged(ConnectionsDto),
+    NeedsChanged(NeedsList),
+    ConnectionsChanged(ConnectionsChanged),
     MenuAction(MenuAction),
     NavOpen(NavOpen),
-    QuickAddReset(QuickAddReset),
-    Toast(ToastDto),
-    AppearanceChanged(AppearanceDto),
+    QuickAddReset(QuickaddReset),
+    Toast(ToastEvent),
+    AppearanceChanged(AppearanceChanged),
     ErrorBackground(BackgroundError),
 }
 

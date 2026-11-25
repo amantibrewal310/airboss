@@ -1,19 +1,17 @@
-//! Every type the UI sees, mirroring `core` and the services, with TypeScript types from ts-rs.
+//! Every type the UI sees, with its TypeScript type from ts-rs.
 //!
-//! `core` and `crates/services` don't depend on ts-rs, so each type the UI reads has a mirror
-//! here with a `From` conversion. Ids and `seq` are `number` in TypeScript (they stay far below
-//! 2^53). Field names are snake_case on both sides.
-
-use std::path::PathBuf;
+//! The shapes follow the UI's contract (`app/src/lib/api/contract.ts` and the types it
+//! imports). Values from `core` and `crates/services` are sent as they serialise themselves;
+//! since those crates don't depend on ts-rs, each has a TypeScript-only mirror below (the
+//! `…Ts` types, never built) that fields point at with `#[ts(as = "…")]`. Ids are `number`.
+//! Every type is exported into one file, `types.ts`.
 
 use airboss_core::{
-    Actor, Event, EventId, EventKind, Link, LinkId, LinkKind, Origin, PrState, Repo, RepoId,
-    Status, Task, TaskId,
+    EventId, EventKind, LinkId, LinkKind, Origin, PrState, Repo, RepoId, Status, Task, TaskId,
 };
 use airboss_services::{
-    Availability, Checks, Chip, Connection, LaunchReport, Mode, NeedsGroup, NeedsItem, NeedsKind,
-    NeedsList, PrView, Prepared, Request, RequestKind, Review, ServiceError, Source, StartedThread,
-    Target, ThreadKey, ThreadState, ThreadView,
+    Availability, Chip, Connection, LaunchReport, NeedsItem, NeedsList, PrView, Prepared, Request,
+    ThreadKey, ThreadState, ThreadView,
 };
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -24,12 +22,45 @@ use crate::settings::Settings;
 /// UTC text in `core`'s format, `"2026-11-25T17:19:07.841Z"`.
 pub type Timestamp = String;
 
-// ---------------------------------------------------------------------------- enums
+// ================================================================ TypeScript-only mirrors
+//
+// These are never constructed: they only give ts-rs the shape `core` and `crates/services`
+// already serialise. Keep them in step with those crates' serde attributes.
 
-/// A task's status (`core`'s, as stored).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum StatusDto {
+macro_rules! ts_alias {
+    ($($(#[$m:meta])* $rust:ident = $ts:literal : $inner:ty;)*) => {$(
+        $(#[$m])*
+        #[derive(TS)]
+        #[ts(rename = $ts, export_to = "types.ts")]
+        #[allow(dead_code)]
+        pub struct $rust($inner);
+    )*};
+}
+
+ts_alias! {
+    /// A task's id.
+    TaskIdTs = "TaskId": f64;
+    /// A repo's id.
+    RepoIdTs = "RepoId": f64;
+    /// A link's id.
+    LinkIdTs = "LinkId": f64;
+    /// An event's id.
+    EventIdTs = "EventId": f64;
+    /// UTC text in `core`'s format.
+    TimestampTs = "Timestamp": String;
+    /// "me", "agent:<thread ref>", "sync:gh", "sync:t3", "plan" or "launch".
+    ActorTs = "Actor": String;
+    /// e.g. "question:<request id>"; stable across restarts.
+    NeedsKeyTs = "NeedsKey": String;
+    /// "owner/repo#n", lowercase.
+    PrRefTs = "PrRef": String;
+}
+
+/// `core::Status`.
+#[derive(TS)]
+#[ts(rename = "Status", rename_all = "snake_case", export_to = "types.ts")]
+#[allow(dead_code)]
+pub enum StatusTs {
     Proposed,
     Todo,
     Doing,
@@ -39,111 +70,25 @@ pub enum StatusDto {
     Dropped,
 }
 
-impl From<Status> for StatusDto {
-    fn from(s: Status) -> StatusDto {
-        match s {
-            Status::Proposed => StatusDto::Proposed,
-            Status::Todo => StatusDto::Todo,
-            Status::Doing => StatusDto::Doing,
-            Status::InReview => StatusDto::InReview,
-            Status::Blocked => StatusDto::Blocked,
-            Status::Done => StatusDto::Done,
-            Status::Dropped => StatusDto::Dropped,
-        }
-    }
-}
-
-impl From<StatusDto> for Status {
-    fn from(s: StatusDto) -> Status {
-        match s {
-            StatusDto::Proposed => Status::Proposed,
-            StatusDto::Todo => Status::Todo,
-            StatusDto::Doing => Status::Doing,
-            StatusDto::InReview => Status::InReview,
-            StatusDto::Blocked => Status::Blocked,
-            StatusDto::Done => Status::Done,
-            StatusDto::Dropped => Status::Dropped,
-        }
-    }
-}
-
-impl StatusDto {
-    /// Neither done nor dropped.
-    pub fn is_open(self) -> bool {
-        !matches!(self, StatusDto::Done | StatusDto::Dropped)
-    }
-
-    /// The design's label, for undo entries and toasts.
-    pub fn label(self) -> &'static str {
-        match self {
-            StatusDto::Proposed => "Proposed",
-            StatusDto::Todo => "Todo",
-            StatusDto::Doing => "In progress",
-            StatusDto::InReview => "In review",
-            StatusDto::Blocked => "Blocked",
-            StatusDto::Done => "Done",
-            StatusDto::Dropped => "Dropped",
-        }
-    }
-}
-
-/// How a task came to exist.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum OriginDto {
+/// `core::Origin`.
+#[derive(TS)]
+#[ts(rename = "Origin", rename_all = "snake_case", export_to = "types.ts")]
+#[allow(dead_code)]
+pub enum OriginTs {
     Me,
     Agent,
     Plan,
 }
 
-impl From<Origin> for OriginDto {
-    fn from(o: Origin) -> OriginDto {
-        match o {
-            Origin::Me => OriginDto::Me,
-            Origin::Agent => OriginDto::Agent,
-            Origin::Plan => OriginDto::Plan,
-        }
-    }
-}
-
-/// Who made a change: the avatar's kind.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum ActorKind {
-    Me,
-    Agent,
-    SyncGh,
-    SyncT3,
-    Plan,
-    Launch,
-}
-
-impl From<&Actor> for ActorKind {
-    fn from(a: &Actor) -> ActorKind {
-        match a {
-            Actor::Me => ActorKind::Me,
-            Actor::Agent(_) => ActorKind::Agent,
-            Actor::SyncGh => ActorKind::SyncGh,
-            Actor::SyncT3 => ActorKind::SyncT3,
-            Actor::Plan => ActorKind::Plan,
-            Actor::Launch => ActorKind::Launch,
-        }
-    }
-}
-
-/// Who made a change, with the name the activity feed shows ("You", "Agent in slot-picker" …).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct ActorDto {
-    pub kind: ActorKind,
-    pub name: String,
-    /// An agent's thread ref, e.g. `"t3/97b5c8b5"`.
-    pub thread: Option<String>,
-}
-
-/// What kind of change an event records.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum EventKindDto {
+/// `core::EventKind`.
+#[derive(TS)]
+#[ts(
+    rename = "EventKind",
+    rename_all = "snake_case",
+    export_to = "types.ts"
+)]
+#[allow(dead_code)]
+pub enum EventKindTs {
     Created,
     Edited,
     Moved,
@@ -159,30 +104,11 @@ pub enum EventKindDto {
     RepoUnlinked,
 }
 
-impl From<EventKind> for EventKindDto {
-    fn from(k: EventKind) -> EventKindDto {
-        match k {
-            EventKind::Created => EventKindDto::Created,
-            EventKind::Edited => EventKindDto::Edited,
-            EventKind::Moved => EventKindDto::Moved,
-            EventKind::Status => EventKindDto::Status,
-            EventKind::Note => EventKindDto::Note,
-            EventKind::Linked => EventKindDto::Linked,
-            EventKind::Unlinked => EventKindDto::Unlinked,
-            EventKind::LinkState => EventKindDto::LinkState,
-            EventKind::WaitsOnAdded => EventKindDto::WaitsOnAdded,
-            EventKind::WaitsOnRemoved => EventKindDto::WaitsOnRemoved,
-            EventKind::Rejected => EventKindDto::Rejected,
-            EventKind::RepoLinked => EventKindDto::RepoLinked,
-            EventKind::RepoUnlinked => EventKindDto::RepoUnlinked,
-        }
-    }
-}
-
-/// What a link points at.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum LinkKindDto {
+/// `core::LinkKind`.
+#[derive(TS)]
+#[ts(rename = "LinkKind", rename_all = "snake_case", export_to = "types.ts")]
+#[allow(dead_code)]
+pub enum LinkKindTs {
     T3Thread,
     ClaudeSession,
     Pr,
@@ -191,141 +117,451 @@ pub enum LinkKindDto {
     GithubIssue,
 }
 
-impl From<LinkKind> for LinkKindDto {
-    fn from(k: LinkKind) -> LinkKindDto {
-        match k {
-            LinkKind::T3Thread => LinkKindDto::T3Thread,
-            LinkKind::ClaudeSession => LinkKindDto::ClaudeSession,
-            LinkKind::Pr => LinkKindDto::Pr,
-            LinkKind::Slack => LinkKindDto::Slack,
-            LinkKind::Doc => LinkKindDto::Doc,
-            LinkKind::GithubIssue => LinkKindDto::GithubIssue,
-        }
-    }
-}
-
-/// Where a PR stands.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum PrStateDto {
+/// `core::PrState`.
+#[derive(TS)]
+#[ts(rename = "PrState", rename_all = "snake_case", export_to = "types.ts")]
+#[allow(dead_code)]
+pub enum PrStateTs {
     Open,
     Merged,
     Closed,
 }
 
-impl From<PrState> for PrStateDto {
-    fn from(s: PrState) -> PrStateDto {
-        match s {
-            PrState::Open => PrStateDto::Open,
-            PrState::Merged => PrStateDto::Merged,
-            PrState::Closed => PrStateDto::Closed,
-        }
-    }
+/// `core::Task`.
+#[derive(TS)]
+#[ts(rename = "Task", export_to = "types.ts")]
+#[allow(dead_code)]
+pub struct TaskTs {
+    id: TaskIdTs,
+    parent: Option<TaskIdTs>,
+    repos: Vec<RepoIdTs>,
+    title: String,
+    body: Option<String>,
+    status: StatusTs,
+    blocked_reason: Option<String>,
+    position: u32,
+    origin: OriginTs,
+    plan_key: Option<String>,
+    branch: Option<String>,
+    created_at: TimestampTs,
 }
 
-/// A thread's live chip on a row.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum ChipDto {
+/// `core::Repo`.
+#[derive(TS)]
+#[ts(rename = "Repo", export_to = "types.ts")]
+#[allow(dead_code)]
+pub struct RepoTs {
+    id: RepoIdTs,
+    name: String,
+    path: String,
+    remote_url: Option<String>,
+}
+
+/// `core::Event`.
+#[derive(TS)]
+#[ts(rename = "Event", export_to = "types.ts")]
+#[allow(dead_code)]
+pub struct EventTs {
+    id: EventIdTs,
+    task: TaskIdTs,
+    kind: EventKindTs,
+    to_status: Option<StatusTs>,
+    body: Option<String>,
+    actor: ActorTs,
+    at: TimestampTs,
+}
+
+/// `core::Link`.
+#[derive(TS)]
+#[ts(rename = "Link", export_to = "types.ts")]
+#[allow(dead_code)]
+pub struct LinkTs {
+    id: LinkIdTs,
+    task: TaskIdTs,
+    kind: LinkKindTs,
+    r#ref: String,
+    url: Option<String>,
+    pr_state: Option<PrStateTs>,
+    title: Option<String>,
+    linked_by: ActorTs,
+    linked_at: TimestampTs,
+}
+
+/// `services::Connection`.
+#[derive(TS)]
+#[ts(rename = "Connection", export_to = "types.ts")]
+#[allow(dead_code)]
+pub struct ConnectionTs {
+    name: String,
+    ok: bool,
+    state: String,
+    detail: String,
+    fix: Option<String>,
+}
+
+/// `services::ErrorCode`: a service's error codes.
+#[derive(TS)]
+#[ts(
+    rename = "ErrorCode",
+    rename_all = "snake_case",
+    export_to = "types.ts"
+)]
+#[allow(dead_code)]
+pub enum ServiceErrorCodeTs {
+    T3Missing,
+    T3NotRunning,
+    T3Unreachable,
+    T3TooOld,
+    Timeout,
+    NotAProject,
+    RepoMissing,
+    NoBaseBranch,
+    BadBranch,
+    TaskClosed,
+    TaskProposed,
+    NeedsChoice,
+    Waiting,
+    AlreadyStarting,
+    BadAnswer,
+    T3Failed,
+    GhMissing,
+    SignedOut,
+    NoAccess,
+    PrNotFound,
+    BadPrRef,
+    RateLimited,
+    GhFailed,
+    T3Unavailable,
+    NotFound,
+    Core,
+    Storage,
+    Internal,
+    ShuttingDown,
+}
+
+/// `services::ServiceError`.
+#[derive(TS)]
+#[ts(rename = "ServiceError", export_to = "types.ts")]
+#[allow(dead_code)]
+pub struct ServiceErrorTs {
+    code: ServiceErrorCodeTs,
+    message: String,
+}
+
+/// `services::Source`.
+#[derive(TS)]
+#[ts(rename = "Source", rename_all = "snake_case", export_to = "types.ts")]
+#[allow(dead_code)]
+pub enum SourceTs {
+    T3,
+    Claude,
+}
+
+/// `services::ThreadKey`.
+#[derive(TS)]
+#[ts(rename = "ThreadKey", export_to = "types.ts")]
+#[allow(dead_code)]
+pub struct ThreadKeyTs {
+    source: SourceTs,
+    r#ref: String,
+}
+
+/// `services::ThreadState`.
+#[derive(TS)]
+#[ts(
+    rename = "ThreadState",
+    rename_all = "snake_case",
+    export_to = "types.ts"
+)]
+#[allow(dead_code)]
+pub enum ThreadStateTs {
+    Running,
+    NeedsMe,
+    Errored,
+    Idle,
+    Settled,
+    Gone,
+}
+
+/// `services::Chip`.
+#[derive(TS)]
+#[ts(rename = "Chip", rename_all = "snake_case", export_to = "types.ts")]
+#[allow(dead_code)]
+pub enum ChipTs {
     Working,
     WaitingOnYou,
     Stopped,
 }
 
-impl From<Chip> for ChipDto {
-    fn from(c: Chip) -> ChipDto {
-        match c {
-            Chip::Working => ChipDto::Working,
-            Chip::WaitingOnYou => ChipDto::WaitingOnYou,
-            Chip::Stopped => ChipDto::Stopped,
-        }
-    }
+/// `services::RequestKind`.
+#[derive(TS)]
+#[ts(
+    rename = "RequestKind",
+    rename_all = "snake_case",
+    export_to = "types.ts"
+)]
+#[allow(dead_code)]
+pub enum RequestKindTs {
+    Question,
+    Approval,
 }
 
-impl ChipDto {
-    /// Higher is stronger: Waiting on you, then Working, then Stopped.
-    pub fn strength(self) -> u8 {
-        match self {
-            ChipDto::WaitingOnYou => 3,
-            ChipDto::Working => 2,
-            ChipDto::Stopped => 1,
-        }
-    }
+/// `services::Request`.
+#[derive(TS)]
+#[ts(rename = "Request", export_to = "types.ts")]
+#[allow(dead_code)]
+pub struct RequestTs {
+    id: String,
+    kind: RequestKindTs,
+    text: String,
+    at: TimestampTs,
 }
 
-// ---------------------------------------------------------------------------- tasks and rows
-
-/// A registered repo, with its fixed colour (`repo-1` … `repo-4`).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct RepoDto {
-    #[ts(type = "number")]
-    pub id: RepoId,
-    pub name: String,
-    pub path: String,
-    pub remote_url: Option<String>,
-    /// 1–4: `repo-((id − 1) mod 4) + 1`. A repo keeps its colour for ever.
-    pub color: u8,
+/// `services::ThreadView`.
+#[derive(TS)]
+#[ts(rename = "ThreadView", export_to = "types.ts")]
+#[allow(dead_code)]
+pub struct ThreadViewTs {
+    key: ThreadKeyTs,
+    linked: bool,
+    state: ThreadStateTs,
+    title: Option<String>,
+    request: Option<RequestTs>,
+    error: Option<String>,
+    run_id: Option<String>,
+    project_path: Option<String>,
+    branch: Option<String>,
+    worktree_path: Option<String>,
+    parent_ref: Option<String>,
+    child_count: u32,
+    last_activity_at: Option<TimestampTs>,
+    stale: bool,
 }
 
-impl From<&Repo> for RepoDto {
-    fn from(r: &Repo) -> RepoDto {
-        RepoDto {
-            id: r.id,
-            name: r.name.clone(),
-            path: r.path.clone(),
-            remote_url: r.remote_url.clone(),
-            color: repo_color(r.id),
-        }
-    }
+/// `services::Review`.
+#[derive(TS)]
+#[ts(rename = "Review", rename_all = "snake_case", export_to = "types.ts")]
+#[allow(dead_code)]
+pub enum ReviewTs {
+    Approved,
+    ChangesRequested,
+    Required,
+    None,
 }
 
-/// The Owned Colour Rule: fixed by id, so a fifth repo shares repo-1's colour.
-pub fn repo_color(id: RepoId) -> u8 {
-    // rem_euclid keeps it in 0..4 even for a nonsense id.
-    ((id.0 - 1).rem_euclid(4) + 1) as u8
+/// `services::Checks`.
+#[derive(TS)]
+#[ts(rename = "Checks", rename_all = "snake_case", export_to = "types.ts")]
+#[allow(dead_code)]
+pub enum ChecksTs {
+    Passing,
+    Failing,
+    Pending,
+    None,
 }
 
-/// A task as `core` stores it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct TaskDto {
-    #[ts(type = "number")]
-    pub id: TaskId,
-    #[ts(type = "number | null")]
-    pub parent: Option<TaskId>,
-    #[ts(type = "number[]")]
-    pub repos: Vec<RepoId>,
-    pub title: String,
-    pub body: Option<String>,
-    pub status: StatusDto,
-    pub blocked_reason: Option<String>,
-    pub position: u32,
-    pub origin: OriginDto,
-    pub plan_key: Option<String>,
-    pub branch: Option<String>,
-    pub created_at: Timestamp,
+/// `services::PrProblem`.
+#[derive(TS)]
+#[ts(
+    rename = "PrProblem",
+    rename_all = "snake_case",
+    export_to = "types.ts"
+)]
+#[allow(dead_code)]
+pub enum PrProblemTs {
+    NotFound,
+    NoAccess,
+    Failed(String),
 }
 
-impl From<&Task> for TaskDto {
-    fn from(t: &Task) -> TaskDto {
-        TaskDto {
-            id: t.id,
-            parent: t.parent,
-            repos: t.repos.clone(),
-            title: t.title.clone(),
-            body: t.body.clone(),
-            status: t.status.into(),
-            blocked_reason: t.blocked_reason.clone(),
-            position: t.position,
-            origin: t.origin.into(),
-            plan_key: t.plan_key.clone(),
-            branch: t.branch.clone(),
-            created_at: t.created_at.clone(),
-        }
-    }
+/// `services::PrView`.
+#[derive(TS)]
+#[ts(rename = "PrView", export_to = "types.ts")]
+#[allow(dead_code)]
+pub struct PrViewTs {
+    r#ref: PrRefTs,
+    linked: bool,
+    url: Option<String>,
+    title: Option<String>,
+    state: Option<PrStateTs>,
+    draft: bool,
+    review: ReviewTs,
+    checks: ChecksTs,
+    additions: Option<u32>,
+    deletions: Option<u32>,
+    head_ref: Option<String>,
+    author: Option<String>,
+    updated_at: Option<TimestampTs>,
+    ready_since: Option<TimestampTs>,
+    problem: Option<PrProblemTs>,
+    stale: bool,
 }
+
+/// `services::T3Project`.
+#[derive(TS)]
+#[ts(rename = "T3Project", export_to = "types.ts")]
+#[allow(dead_code)]
+pub struct T3ProjectTs {
+    id: String,
+    name: String,
+    path: String,
+}
+
+/// `services::Availability`.
+#[derive(TS)]
+#[ts(
+    rename = "Availability",
+    rename_all = "snake_case",
+    export_to = "types.ts"
+)]
+#[allow(dead_code)]
+pub enum AvailabilityTs {
+    Unknown,
+    Ready { version: String },
+    Missing { reason: String },
+}
+
+/// `services::Mode`.
+#[derive(TS)]
+#[ts(rename = "Mode", rename_all = "snake_case", export_to = "types.ts")]
+#[allow(dead_code)]
+pub enum ModeTs {
+    DoIt,
+    PlanIt,
+}
+
+/// `services::StartedThread`.
+#[derive(TS)]
+#[ts(rename = "StartedThread", export_to = "types.ts")]
+#[allow(dead_code)]
+pub struct StartedThreadTs {
+    key: ThreadKeyTs,
+    mode: ModeTs,
+    repo: Option<RepoIdTs>,
+    title: String,
+    linked: bool,
+}
+
+/// `services::Prepared`.
+#[derive(TS)]
+#[ts(rename = "Prepared", export_to = "types.ts")]
+#[allow(dead_code)]
+pub struct PreparedTs {
+    repos: Vec<RepoTs>,
+    from_subtasks: bool,
+    needs_choice: bool,
+    choices: Vec<RepoTs>,
+    branch: Option<String>,
+    research_dir: String,
+    waiting_on: Vec<TaskIdTs>,
+    started: Vec<StartedThreadTs>,
+}
+
+/// `services::LaunchReport`.
+#[derive(TS)]
+#[ts(rename = "LaunchReport", export_to = "types.ts")]
+#[allow(dead_code)]
+pub struct LaunchReportTs {
+    started: Vec<StartedThreadTs>,
+    skipped: Vec<RepoIdTs>,
+    failed: Vec<(Option<RepoIdTs>, ServiceErrorTs)>,
+    branch: Option<String>,
+    moved_to_doing: bool,
+}
+
+/// `services::NeedsKind`.
+#[derive(TS)]
+#[ts(
+    rename = "NeedsKind",
+    rename_all = "snake_case",
+    export_to = "types.ts"
+)]
+#[allow(dead_code)]
+pub enum NeedsKindTs {
+    Question,
+    Approval,
+    Review,
+    FailedRun,
+    Proposed,
+    Ready,
+    FinishIt,
+    Quiet,
+}
+
+/// `services::NeedsGroup`, in display order.
+#[derive(TS)]
+#[ts(
+    rename = "NeedsGroup",
+    rename_all = "snake_case",
+    export_to = "types.ts"
+)]
+#[allow(dead_code)]
+pub enum NeedsGroupTs {
+    Questions,
+    Reviews,
+    FailedRuns,
+    Proposed,
+    Ready,
+    FinishIt,
+    Quiet,
+}
+
+/// `services::Target`.
+#[derive(TS)]
+#[ts(rename = "Target", rename_all = "snake_case", export_to = "types.ts")]
+#[allow(dead_code)]
+pub enum TargetTs {
+    Thread(ThreadKeyTs),
+    Pr { r#ref: PrRefTs, url: Option<String> },
+    Task(TaskIdTs),
+}
+
+/// `services::NeedsItem`.
+#[derive(TS)]
+#[ts(rename = "NeedsItem", export_to = "types.ts")]
+#[allow(dead_code)]
+pub struct NeedsItemTs {
+    key: NeedsKeyTs,
+    kind: NeedsKindTs,
+    group: NeedsGroupTs,
+    task: TaskIdTs,
+    task_title: String,
+    since: TimestampTs,
+    headline: String,
+    context: String,
+    target: TargetTs,
+    /// Proposed only: [task id, title].
+    proposed: Vec<(TaskIdTs, String)>,
+    stale: bool,
+}
+
+/// `services::NeedsList`.
+#[derive(TS)]
+#[ts(rename = "NeedsList", export_to = "types.ts")]
+#[allow(dead_code)]
+pub struct NeedsListTs {
+    items: Vec<NeedsItemTs>,
+    count: u32,
+    checked_at: Option<TimestampTs>,
+    version: f64,
+}
+
+/// `needs:changed`'s payload: the Needs me list.
+#[derive(TS)]
+#[ts(rename = "NeedsChanged", export_to = "types.ts")]
+#[allow(dead_code)]
+pub struct NeedsChangedTs {
+    version: f64,
+    items: Vec<NeedsItemTs>,
+    count: u32,
+    checked_at: Option<TimestampTs>,
+}
+
+// ================================================================ rows and patches
 
 /// Leaf subtasks at any depth: dropped ones left out, proposed ones counted as todo.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export_to = "types.ts")]
 pub struct Progress {
     pub done: u32,
     pub total: u32,
@@ -353,35 +589,66 @@ impl Progress {
     }
 }
 
+/// Neither done nor dropped.
+pub fn open(s: Status) -> bool {
+    !matches!(s, Status::Done | Status::Dropped)
+}
+
+/// The design's label for a status, for undo entries and toasts.
+pub fn status_label(s: Status) -> &'static str {
+    match s {
+        Status::Proposed => "Proposed",
+        Status::Todo => "Todo",
+        Status::Doing => "In progress",
+        Status::InReview => "In review",
+        Status::Blocked => "Blocked",
+        Status::Done => "Done",
+        Status::Dropped => "Dropped",
+    }
+}
+
+/// Higher is stronger: Waiting on you, then Working, then Stopped.
+pub fn chip_strength(c: Chip) -> u8 {
+    match c {
+        Chip::WaitingOnYou => 3,
+        Chip::Working => 2,
+        Chip::Stopped => 1,
+    }
+}
+
 /// One row of the task list: everything it draws, worked out in Rust.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export_to = "types.ts")]
 pub struct RowDto {
-    #[ts(type = "number")]
+    #[ts(as = "TaskIdTs")]
     pub id: TaskId,
-    #[ts(type = "number | null")]
+    #[ts(as = "Option<TaskIdTs>")]
     pub parent: Option<TaskId>,
     pub depth: u32,
     pub position: u32,
     pub title: String,
-    pub status: StatusDto,
-    pub origin: OriginDto,
+    #[ts(as = "StatusTs")]
+    pub status: Status,
+    #[ts(as = "OriginTs")]
+    pub origin: Origin,
     pub blocked_reason: Option<String>,
     /// Something it waits on is still open.
     pub waiting: bool,
     /// The open tasks it waits on (empty unless `waiting`).
-    #[ts(type = "number[]")]
+    #[ts(as = "Vec<TaskIdTs>")]
     pub waits_on: Vec<TaskId>,
     pub has_children: bool,
     /// Over leaf subtasks at any depth; `null` for a leaf.
     pub progress: Option<Progress>,
     /// Its own repos, or for a parent with none the union over its subtree.
-    #[ts(type = "number[]")]
+    #[ts(as = "Vec<RepoIdTs>")]
     pub repos: Vec<RepoId>,
     pub repos_from_subtasks: bool,
     /// Its branch, or the nearest ancestor's (display only).
     pub branch: Option<String>,
     /// In `core`'s ready list, and a leaf.
     pub ready: bool,
+    #[ts(as = "Option<TimestampTs>")]
     pub ready_since: Option<Timestamp>,
     /// `attention` lists it as Ready to start.
     pub ready_pill: bool,
@@ -392,29 +659,35 @@ pub struct RowDto {
     /// Any of those items may be out of date.
     pub needs_stale: bool,
     /// The strongest chip of its threads, only while it's open.
-    pub live: Option<ChipDto>,
+    #[ts(as = "Option<ChipTs>")]
+    pub live: Option<Chip>,
     /// Its newest event, or for a parent the newest anywhere in its subtree.
+    #[ts(as = "TimestampTs")]
     pub last_at: Timestamp,
-    pub last_actor: ActorKind,
+    /// Who made that event, as text ("me", "agent:t3/…").
+    #[ts(as = "ActorTs")]
+    pub last_actor: String,
 }
 
 /// What changed in the rows since the last patch. Apply it only if `seq` is greater than the
 /// last one applied: a write's returned patch and the same patch as an event apply once.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
+#[ts(export_to = "types.ts")]
 pub struct Patch {
-    #[ts(type = "number")]
+    #[ts(as = "f64")]
     pub seq: u64,
     /// Whole rows, new or changed.
     pub upserts: Vec<RowDto>,
-    #[ts(type = "number[]")]
+    #[ts(as = "Vec<TaskIdTs>")]
     pub removed: Vec<TaskId>,
     /// Every id in tree order, sent only when it changed.
-    #[ts(type = "number[] | null")]
+    #[ts(as = "Option<Vec<TaskIdTs>>")]
     pub order: Option<Vec<TaskId>>,
     /// Every repo, sent only when they changed.
-    pub repos: Option<Vec<RepoDto>>,
+    #[ts(as = "Option<Vec<RepoTs>>")]
+    pub repos: Option<Vec<Repo>>,
     /// New tasks, for the new-row highlight.
-    #[ts(type = "number[]")]
+    #[ts(as = "Vec<TaskIdTs>")]
     pub created: Vec<TaskId>,
 }
 
@@ -436,877 +709,282 @@ impl Patch {
     }
 }
 
-// ---------------------------------------------------------------------------- history and links
+// ================================================================ bootstrap and connections
 
-/// One event in the activity feed.
+/// Whether the `airboss` command-line tool is linked, for Settings and the Agents row.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct EventDto {
-    #[ts(type = "number")]
-    pub id: EventId,
-    #[ts(type = "number")]
-    pub task: TaskId,
-    pub kind: EventKindDto,
-    pub to_status: Option<StatusDto>,
-    pub body: Option<String>,
-    pub actor: ActorDto,
-    pub at: Timestamp,
+#[ts(export_to = "types.ts")]
+pub struct CliStatus {
+    pub installed: bool,
+    pub path: String,
+    pub on_path: bool,
 }
 
-impl EventDto {
-    /// The event, with its actor named for the feed.
-    pub fn new(e: &Event, actor: ActorDto) -> EventDto {
-        EventDto {
-            id: e.id,
-            task: e.task,
-            kind: e.kind.into(),
-            to_status: e.to_status.map(Into::into),
-            body: e.body.clone(),
-            actor,
-            at: e.at.clone(),
-        }
-    }
+/// Everything the main window draws first, read once before it shows.
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[ts(export_to = "types.ts")]
+pub struct Bootstrap {
+    #[ts(as = "f64")]
+    pub seq: u64,
+    /// In tree order.
+    pub rows: Vec<RowDto>,
+    #[ts(as = "Vec<TaskIdTs>")]
+    pub order: Vec<TaskId>,
+    #[ts(as = "Vec<RepoTs>")]
+    pub repos: Vec<Repo>,
+    #[ts(as = "NeedsListTs")]
+    pub needs: NeedsList,
+    #[ts(as = "Vec<ConnectionTs>")]
+    pub connections: Vec<Connection>,
+    #[ts(as = "AvailabilityTs")]
+    pub availability: Availability,
+    pub settings: Settings,
+    /// The system accent as `#rrggbb`, or `null` for Multicolor (keep indigo).
+    pub accent: Option<String>,
+    pub cli: CliStatus,
 }
 
-/// Where a thread runs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum SourceDto {
-    T3,
-    Claude,
+/// `connections:changed`'s payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export_to = "types.ts")]
+pub struct ConnectionsChanged {
+    #[ts(as = "Vec<ConnectionTs>")]
+    pub connections: Vec<Connection>,
+    #[ts(as = "AvailabilityTs")]
+    pub availability: Availability,
 }
 
-/// Names one thread; the UI sends it back to `open_thread`.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
-pub struct ThreadKeyDto {
-    pub source: SourceDto,
-    pub r#ref: String,
-}
-
-impl From<&ThreadKey> for ThreadKeyDto {
-    fn from(k: &ThreadKey) -> ThreadKeyDto {
-        ThreadKeyDto {
-            source: match k.source {
-                Source::T3 => SourceDto::T3,
-                Source::Claude => SourceDto::Claude,
-            },
-            r#ref: k.r#ref.clone(),
-        }
-    }
-}
-
-impl From<&ThreadKeyDto> for ThreadKey {
-    fn from(k: &ThreadKeyDto) -> ThreadKey {
-        ThreadKey {
-            source: match k.source {
-                SourceDto::T3 => Source::T3,
-                SourceDto::Claude => Source::Claude,
-            },
-            r#ref: k.r#ref.clone(),
-        }
-    }
-}
-
-/// Where a thread stands.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum ThreadStateDto {
-    Running,
-    NeedsMe,
-    Errored,
-    Idle,
-    Settled,
-    Gone,
-}
-
-impl From<ThreadState> for ThreadStateDto {
-    fn from(s: ThreadState) -> ThreadStateDto {
-        match s {
-            ThreadState::Running => ThreadStateDto::Running,
-            ThreadState::NeedsMe => ThreadStateDto::NeedsMe,
-            ThreadState::Errored => ThreadStateDto::Errored,
-            ThreadState::Idle => ThreadStateDto::Idle,
-            ThreadState::Settled => ThreadStateDto::Settled,
-            ThreadState::Gone => ThreadStateDto::Gone,
-        }
-    }
-}
-
-/// A question or approval an agent is waiting on.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct RequestDto {
-    pub kind: RequestKindDto,
-    pub text: String,
-    pub at: Timestamp,
-}
-
-/// What kind of answer a request wants.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum RequestKindDto {
-    Question,
-    Approval,
-}
-
-impl From<&Request> for RequestDto {
-    fn from(r: &Request) -> RequestDto {
-        RequestDto {
-            kind: match r.kind {
-                RequestKind::Question => RequestKindDto::Question,
-                RequestKind::Approval => RequestKindDto::Approval,
-            },
-            text: r.text.clone(),
-            at: r.at.clone(),
-        }
-    }
-}
+// ================================================================ task detail
 
 /// One thread linked to a task, as `sync` last saw it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export_to = "types.ts")]
 pub struct ThreadDto {
-    pub key: ThreadKeyDto,
-    pub state: ThreadStateDto,
-    /// Running, Waiting or Stopped; none for a gone thread.
-    pub chip: Option<ChipDto>,
+    #[ts(as = "ThreadKeyTs")]
+    pub key: ThreadKey,
+    #[ts(as = "ThreadStateTs")]
+    pub state: ThreadState,
+    #[ts(as = "Option<ChipTs>")]
+    pub chip: Option<Chip>,
     pub title: Option<String>,
-    pub request: Option<RequestDto>,
+    #[ts(as = "Option<RequestTs>")]
+    pub request: Option<Request>,
     pub error: Option<String>,
     pub project_path: Option<String>,
+    /// `t3code://threads/…`; `null` for a Claude Code session, which shows its folder.
+    pub url: Option<String>,
+    #[ts(as = "Option<TimestampTs>")]
     pub last_activity_at: Option<Timestamp>,
     pub stale: bool,
-    /// `t3code://threads/…`; `null` for a Claude Code session, so "Open ↗" doesn't show.
-    pub url: Option<String>,
 }
 
 impl ThreadDto {
     /// The thread, with the URL `sync.thread_url` gave for it.
     pub fn new(t: &ThreadView, url: Option<String>) -> ThreadDto {
         ThreadDto {
-            key: (&t.key).into(),
-            state: t.state.into(),
-            chip: t.state.chip().map(Into::into),
+            key: t.key.clone(),
+            state: t.state,
+            chip: t.state.chip(),
             title: t.title.clone(),
-            request: t.request.as_ref().map(Into::into),
+            request: t.request.clone(),
             error: t.error.clone(),
             project_path: t.project_path.clone(),
+            url,
             last_activity_at: t.last_activity_at.clone(),
             stale: t.stale,
-            url,
         }
     }
 }
 
-/// GitHub's review decision.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum ReviewDto {
-    Approved,
-    ChangesRequested,
-    Required,
-    None,
-}
-
-/// The latest commit's checks.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum ChecksDto {
-    Passing,
-    Failing,
-    Pending,
-    None,
-}
-
-/// One PR as GitHub last reported it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct PrDto {
-    pub r#ref: String,
-    pub url: Option<String>,
-    pub title: Option<String>,
-    pub state: Option<PrStateDto>,
-    pub draft: bool,
-    pub review: ReviewDto,
-    pub checks: ChecksDto,
-    pub additions: Option<u32>,
-    pub deletions: Option<u32>,
-    pub stale: bool,
-}
-
-impl From<&PrView> for PrDto {
-    fn from(p: &PrView) -> PrDto {
-        PrDto {
-            r#ref: p.r#ref.to_string(),
-            url: p.url.clone(),
-            title: p.title.clone(),
-            state: p.state.map(Into::into),
-            draft: p.draft,
-            review: match p.review {
-                Review::Approved => ReviewDto::Approved,
-                Review::ChangesRequested => ReviewDto::ChangesRequested,
-                Review::Required => ReviewDto::Required,
-                Review::None => ReviewDto::None,
-            },
-            checks: match p.checks {
-                Checks::Passing => ChecksDto::Passing,
-                Checks::Failing => ChecksDto::Failing,
-                Checks::Pending => ChecksDto::Pending,
-                Checks::None => ChecksDto::None,
-            },
-            additions: p.additions,
-            deletions: p.deletions,
-            stale: p.stale,
-        }
-    }
-}
-
-/// One link on a task, with what `sync` knows about its PR or thread.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+/// One link on a task (a `Link`), with what `sync` knows about its PR or thread.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export_to = "types.ts")]
 pub struct LinkDto {
-    #[ts(type = "number")]
+    #[ts(as = "LinkIdTs")]
     pub id: LinkId,
-    #[ts(type = "number")]
+    #[ts(as = "TaskIdTs")]
     pub task: TaskId,
-    pub kind: LinkKindDto,
+    #[ts(as = "LinkKindTs")]
+    pub kind: LinkKind,
     pub r#ref: String,
     pub url: Option<String>,
-    pub pr_state: Option<PrStateDto>,
+    #[ts(as = "Option<PrStateTs>")]
+    pub pr_state: Option<PrState>,
     pub title: Option<String>,
-    pub linked_by: ActorKind,
+    #[ts(as = "ActorTs")]
+    pub linked_by: String,
+    #[ts(as = "TimestampTs")]
     pub linked_at: Timestamp,
-    pub pr: Option<PrDto>,
+    #[ts(as = "Option<PrViewTs>")]
+    pub pr: Option<PrView>,
     pub thread: Option<ThreadDto>,
 }
 
-impl LinkDto {
-    /// The link, with its PR or thread view if `sync` has one.
-    pub fn new(l: &Link, pr: Option<PrDto>, thread: Option<ThreadDto>) -> LinkDto {
-        LinkDto {
-            id: l.id,
-            task: l.task,
-            kind: l.kind.into(),
-            r#ref: l.r#ref.clone(),
-            url: l.url.clone(),
-            pr_state: l.pr_state.map(Into::into),
-            title: l.title.clone(),
-            linked_by: (&l.linked_by).into(),
-            linked_at: l.linked_at.clone(),
-            pr,
-            thread,
-        }
-    }
+/// One event in the activity feed (an `Event`), with the agent's thread title when known
+/// ("Agent in slot-picker").
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export_to = "types.ts")]
+pub struct HistoryEntry {
+    #[ts(as = "EventIdTs")]
+    pub id: EventId,
+    #[ts(as = "TaskIdTs")]
+    pub task: TaskId,
+    #[ts(as = "EventKindTs")]
+    pub kind: EventKind,
+    #[ts(as = "Option<StatusTs>")]
+    pub to_status: Option<Status>,
+    pub body: Option<String>,
+    #[ts(as = "ActorTs")]
+    pub actor: String,
+    #[ts(as = "TimestampTs")]
+    pub at: Timestamp,
+    pub thread_title: Option<String>,
 }
 
 /// Another task in a Waits on or Blocks list, with its status icon.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export_to = "types.ts")]
 pub struct DepDto {
-    #[ts(type = "number")]
+    #[ts(as = "TaskIdTs")]
     pub id: TaskId,
     pub title: String,
-    pub status: StatusDto,
-}
-
-/// One step of the breadcrumb ("Booking flow › 144").
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct CrumbDto {
-    #[ts(type = "number")]
-    pub id: TaskId,
-    pub title: String,
-}
-
-// ---------------------------------------------------------------------------- needs me
-
-/// What a Needs me item is about.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum NeedsKindDto {
-    Question,
-    Approval,
-    Review,
-    FailedRun,
-    Proposed,
-    Ready,
-    FinishIt,
-    Quiet,
-}
-
-impl From<NeedsKind> for NeedsKindDto {
-    fn from(k: NeedsKind) -> NeedsKindDto {
-        match k {
-            NeedsKind::Question => NeedsKindDto::Question,
-            NeedsKind::Approval => NeedsKindDto::Approval,
-            NeedsKind::Review => NeedsKindDto::Review,
-            NeedsKind::FailedRun => NeedsKindDto::FailedRun,
-            NeedsKind::Proposed => NeedsKindDto::Proposed,
-            NeedsKind::Ready => NeedsKindDto::Ready,
-            NeedsKind::FinishIt => NeedsKindDto::FinishIt,
-            NeedsKind::Quiet => NeedsKindDto::Quiet,
-        }
-    }
-}
-
-/// The design's seven groups, in display order.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum NeedsGroupDto {
-    Questions,
-    Reviews,
-    FailedRuns,
-    Proposed,
-    Ready,
-    FinishIt,
-    Quiet,
-}
-
-impl From<NeedsGroup> for NeedsGroupDto {
-    fn from(g: NeedsGroup) -> NeedsGroupDto {
-        match g {
-            NeedsGroup::Questions => NeedsGroupDto::Questions,
-            NeedsGroup::Reviews => NeedsGroupDto::Reviews,
-            NeedsGroup::FailedRuns => NeedsGroupDto::FailedRuns,
-            NeedsGroup::Proposed => NeedsGroupDto::Proposed,
-            NeedsGroup::Ready => NeedsGroupDto::Ready,
-            NeedsGroup::FinishIt => NeedsGroupDto::FinishIt,
-            NeedsGroup::Quiet => NeedsGroupDto::Quiet,
-        }
-    }
-}
-
-/// What an item's main action opens.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum TargetDto {
-    Thread {
-        key: ThreadKeyDto,
-    },
-    Pr {
-        r#ref: String,
-        url: Option<String>,
-    },
-    Task {
-        #[ts(type = "number")]
-        id: TaskId,
-    },
-}
-
-impl From<&Target> for TargetDto {
-    fn from(t: &Target) -> TargetDto {
-        match t {
-            Target::Thread(k) => TargetDto::Thread { key: k.into() },
-            Target::Pr { r#ref, url } => TargetDto::Pr {
-                r#ref: r#ref.to_string(),
-                url: url.clone(),
-            },
-            Target::Task(id) => TargetDto::Task { id: *id },
-        }
-    }
-}
-
-/// One proposal on a Proposed item.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct ProposalDto {
-    #[ts(type = "number")]
-    pub id: TaskId,
-    pub title: String,
-}
-
-/// One thing waiting on me.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct NeedsItemDto {
-    /// Stable across restarts; the UI sends it back to dismiss, snooze and restore.
-    pub key: String,
-    pub kind: NeedsKindDto,
-    pub group: NeedsGroupDto,
-    #[ts(type = "number")]
-    pub task: TaskId,
-    pub task_title: String,
-    pub since: Timestamp,
-    pub headline: String,
-    pub context: String,
-    pub target: TargetDto,
-    pub proposed: Vec<ProposalDto>,
-    pub stale: bool,
-}
-
-impl From<&NeedsItem> for NeedsItemDto {
-    fn from(i: &NeedsItem) -> NeedsItemDto {
-        NeedsItemDto {
-            key: i.key.0.clone(),
-            kind: i.kind.into(),
-            group: i.group.into(),
-            task: i.task,
-            task_title: i.task_title.clone(),
-            since: i.since.clone(),
-            headline: i.headline.clone(),
-            context: i.context.clone(),
-            target: (&i.target).into(),
-            proposed: i
-                .proposed
-                .iter()
-                .map(|(id, title)| ProposalDto {
-                    id: *id,
-                    title: title.clone(),
-                })
-                .collect(),
-            stale: i.stale,
-        }
-    }
-}
-
-/// The Needs me list: `bootstrap`'s and `needs:changed`'s payload.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
-pub struct NeedsDto {
-    #[ts(type = "number")]
-    pub version: u64,
-    pub items: Vec<NeedsItemDto>,
-    pub count: u32,
-    pub checked_at: Option<Timestamp>,
-}
-
-impl From<&NeedsList> for NeedsDto {
-    fn from(l: &NeedsList) -> NeedsDto {
-        NeedsDto {
-            version: l.version,
-            items: l.items.iter().map(Into::into).collect(),
-            count: l.count,
-            checked_at: l.checked_at.clone(),
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------- connections
-
-/// One line of the connections popover. Rows with the same name are merged into one.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct ConnectionDto {
-    pub name: String,
-    pub ok: bool,
-    pub state: String,
-    pub detail: String,
-    pub fix: Option<String>,
-    /// For "Agents": when an agent last reported.
-    pub last_at: Option<Timestamp>,
-}
-
-impl From<&Connection> for ConnectionDto {
-    fn from(c: &Connection) -> ConnectionDto {
-        ConnectionDto {
-            name: c.name.clone(),
-            ok: c.ok,
-            state: c.state.clone(),
-            detail: c.detail.clone(),
-            fix: c.fix.clone(),
-            last_at: None,
-        }
-    }
-}
-
-/// Whether T3 Code can start threads.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(tag = "state", rename_all = "snake_case")]
-pub enum AvailabilityDto {
-    Unknown,
-    Ready { version: String },
-    Missing { reason: String },
-}
-
-impl From<&Availability> for AvailabilityDto {
-    fn from(a: &Availability) -> AvailabilityDto {
-        match a {
-            Availability::Unknown => AvailabilityDto::Unknown,
-            Availability::Ready { version } => AvailabilityDto::Ready {
-                version: version.clone(),
-            },
-            Availability::Missing { reason } => AvailabilityDto::Missing {
-                reason: reason.clone(),
-            },
-        }
-    }
-}
-
-/// `connections:changed`'s payload.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct ConnectionsDto {
-    pub connections: Vec<ConnectionDto>,
-    pub availability: AvailabilityDto,
-}
-
-// ---------------------------------------------------------------------------- launch
-
-/// Do it or Plan it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum ModeDto {
-    DoIt,
-    PlanIt,
-}
-
-impl From<Mode> for ModeDto {
-    fn from(m: Mode) -> ModeDto {
-        match m {
-            Mode::DoIt => ModeDto::DoIt,
-            Mode::PlanIt => ModeDto::PlanIt,
-        }
-    }
-}
-
-impl From<ModeDto> for Mode {
-    fn from(m: ModeDto) -> Mode {
-        match m {
-            ModeDto::DoIt => Mode::DoIt,
-            ModeDto::PlanIt => Mode::PlanIt,
-        }
-    }
-}
-
-/// One thread `launch` started.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct StartedThreadDto {
-    pub key: ThreadKeyDto,
-    pub mode: ModeDto,
-    #[ts(type = "number | null")]
-    pub repo: Option<RepoId>,
-    pub title: String,
-    pub linked: bool,
-}
-
-impl From<&StartedThread> for StartedThreadDto {
-    fn from(s: &StartedThread) -> StartedThreadDto {
-        StartedThreadDto {
-            key: (&s.key).into(),
-            mode: s.mode.into(),
-            repo: s.repo,
-            title: s.title.clone(),
-            linked: s.linked,
-        }
-    }
-}
-
-/// A service's error, as it came.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct ServiceErrorDto {
-    pub code: crate::errors::ErrorCode,
-    pub message: String,
-}
-
-impl From<&ServiceError> for ServiceErrorDto {
-    fn from(e: &ServiceError) -> ServiceErrorDto {
-        ServiceErrorDto {
-            code: e.code.into(),
-            message: e.message.clone(),
-        }
-    }
-}
-
-/// A place that failed to start: a repo, or `null` for the research folder.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct FailedPlaceDto {
-    #[ts(type = "number | null")]
-    pub repo: Option<RepoId>,
-    pub error: ServiceErrorDto,
-}
-
-/// What one Do it or Plan it did, place by place.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct LaunchReportDto {
-    pub started: Vec<StartedThreadDto>,
-    #[ts(type = "number[]")]
-    pub skipped: Vec<RepoId>,
-    pub failed: Vec<FailedPlaceDto>,
-    pub branch: Option<String>,
-    pub moved_to_doing: bool,
-}
-
-impl From<&LaunchReport> for LaunchReportDto {
-    fn from(r: &LaunchReport) -> LaunchReportDto {
-        LaunchReportDto {
-            started: r.started.iter().map(Into::into).collect(),
-            skipped: r.skipped.clone(),
-            failed: r
-                .failed
-                .iter()
-                .map(|(repo, error)| FailedPlaceDto {
-                    repo: *repo,
-                    error: error.into(),
-                })
-                .collect(),
-            branch: r.branch.clone(),
-            moved_to_doing: r.moved_to_doing,
-        }
-    }
-}
-
-/// What Do it would do, for the panel and the Start in menu.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct PreparedDto {
-    pub repos: Vec<RepoDto>,
-    pub from_subtasks: bool,
-    pub needs_choice: bool,
-    pub choices: Vec<RepoDto>,
-    /// The branch Do it would use (shown in text-3 until it's saved).
-    pub branch: Option<String>,
-    pub research_dir: String,
-    #[ts(type = "number[]")]
-    pub waiting_on: Vec<TaskId>,
-    pub started: Vec<StartedThreadDto>,
-}
-
-impl From<&Prepared> for PreparedDto {
-    fn from(p: &Prepared) -> PreparedDto {
-        PreparedDto {
-            repos: p.repos.iter().map(Into::into).collect(),
-            from_subtasks: p.from_subtasks,
-            needs_choice: p.needs_choice,
-            choices: p.choices.iter().map(Into::into).collect(),
-            branch: p.branch.clone(),
-            research_dir: path_text(&p.research_dir),
-            waiting_on: p.waiting_on.clone(),
-            started: p.started.iter().map(Into::into).collect(),
-        }
-    }
-}
-
-/// A path as text for the UI.
-pub fn path_text(p: &std::path::Path) -> String {
-    p.to_string_lossy().into_owned()
-}
-
-/// What a toast's button runs.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum ToastCommand {
-    /// `open_thread(key)`.
-    OpenThread { key: ThreadKeyDto },
-    /// The same `do_it` or `plan_it` again; `launch` skips what already started.
-    Retry {
-        #[ts(type = "number")]
-        task: TaskId,
-        mode: ModeDto,
-    },
-    /// `add_to_t3(repo)`, then the same request again.
-    AddToT3AndRetry {
-        #[ts(type = "number")]
-        repo: RepoId,
-        #[ts(type = "number")]
-        task: TaskId,
-        mode: ModeDto,
-    },
-    /// The same request with `again: true`.
-    StartAgain {
-        #[ts(type = "number")]
-        task: TaskId,
-        mode: ModeDto,
-    },
-    /// `reopen_and_start(task)`.
-    ReopenAndStart {
-        #[ts(type = "number")]
-        task: TaskId,
-    },
-    /// `undo(entry)`.
-    Undo {
-        #[ts(type = "number")]
-        entry: u64,
-    },
-}
-
-/// One button on a toast.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct ToastAction {
-    pub label: String,
-    pub command: ToastCommand,
-}
-
-/// A toast's tone: plain, or with the orange warning icon.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum ToastTone {
-    Info,
-    Warning,
-}
-
-/// A toast, built in Rust: Do it and Plan it results, and the `toast` event.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct ToastDto {
-    pub text: String,
-    pub tone: ToastTone,
-    pub actions: Vec<ToastAction>,
-    pub undo: Option<UndoInfo>,
-    /// The task it's about, so the UI can select it.
-    #[ts(type = "number | null")]
-    pub task: Option<TaskId>,
-}
-
-/// An undo entry the UI can name and undo from a toast.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct UndoInfo {
-    #[ts(type = "number")]
-    pub entry: u64,
-    /// e.g. "Mark done 144".
-    pub label: String,
-}
-
-// ---------------------------------------------------------------------------- reads
-
-/// The display waves of a parent's subtasks (done ones included), for the Waves list.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
-pub struct WavesDto {
-    /// Each wave's subtask ids, in sibling order.
-    #[ts(type = "number[][]")]
-    pub waves: Vec<Vec<TaskId>>,
-    /// Subtasks held by open tasks outside the parent, with those tasks.
-    pub outside: Vec<OutsideDto>,
-    /// Subtasks that wait on each other in a loop.
-    #[ts(type = "number[]")]
-    pub tangled: Vec<TaskId>,
-}
-
-/// A subtask waiting on open tasks outside its parent.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct OutsideDto {
-    #[ts(type = "number")]
-    pub task: TaskId,
-    #[ts(type = "number[]")]
-    pub blockers: Vec<TaskId>,
-}
-
-/// Everything the task panel and page show for one task.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct TaskDetail {
-    /// The request number this answers; the UI ignores a stale one.
-    pub req: u32,
-    pub task: TaskDto,
-    /// From the top-level task down to the parent.
-    pub ancestors: Vec<CrumbDto>,
-    pub links: Vec<LinkDto>,
-    pub threads: Vec<ThreadDto>,
-    pub prs: Vec<PrDto>,
-    /// Newest first, from the task and everything under it.
-    pub history: Vec<EventDto>,
-    /// The history was cut at the limit; "Show more" asks for 200.
-    pub history_more: bool,
-    pub waits_on: Vec<DepDto>,
-    pub blocks: Vec<DepDto>,
-    /// For a task with subtasks.
-    pub waves: Option<WavesDto>,
-    pub needs: Vec<NeedsItemDto>,
-    /// What Do it would do; `null` for proposed, done and dropped tasks.
-    pub prepared: Option<PreparedDto>,
-    /// Why `prepare` failed, e.g. `t3_missing`.
-    pub prepare_error: Option<AppError>,
-    /// My open PRs from this task's branch, to link with one click.
-    pub suggested_prs: Vec<PrDto>,
-}
-
-/// One station on the run-order map.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct RunNodeDto {
-    #[ts(type = "number")]
-    pub id: TaskId,
-    /// 0-based display wave.
-    pub wave: u32,
-    /// 0-based place within the wave.
-    pub index: u32,
+    #[ts(as = "StatusTs")]
+    pub status: Status,
+    pub waiting: bool,
 }
 
 /// A line from a blocker to the task waiting on it, lifted to the parent's subtasks.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct RunEdgeDto {
-    #[ts(type = "number")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export_to = "types.ts")]
+pub struct RunEdge {
+    /// The blocker.
+    #[ts(as = "TaskIdTs")]
     pub from: TaskId,
-    #[ts(type = "number")]
+    /// The task that waits.
+    #[ts(as = "TaskIdTs")]
     pub to: TaskId,
     /// Every blocker behind it is done or dropped: a solid line.
     pub done: bool,
 }
 
-/// The run-order map of a parent's direct subtasks.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+/// A subtask held by open tasks outside its parent.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export_to = "types.ts")]
+pub struct OutsideWait {
+    #[ts(as = "TaskIdTs")]
+    pub task: TaskId,
+    #[ts(as = "Vec<TaskIdTs>")]
+    pub blockers: Vec<TaskId>,
+}
+
+/// Display waves (done subtasks included), lifted edges, outside blockers and loops.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export_to = "types.ts")]
 pub struct RunMap {
-    pub req: u32,
-    #[ts(type = "number")]
-    pub parent: TaskId,
-    pub nodes: Vec<RunNodeDto>,
-    pub edges: Vec<RunEdgeDto>,
-    #[ts(type = "number[][]")]
+    /// The stations, in sibling order.
+    #[ts(as = "Vec<TaskIdTs>")]
+    pub nodes: Vec<TaskId>,
+    pub edges: Vec<RunEdge>,
+    #[ts(as = "Vec<Vec<TaskIdTs>>")]
     pub waves: Vec<Vec<TaskId>>,
-    pub outside: Vec<OutsideDto>,
-    #[ts(type = "number[]")]
+    pub outside: Vec<OutsideWait>,
+    #[ts(as = "Vec<TaskIdTs>")]
     pub tangled: Vec<TaskId>,
-    /// At most 40 subtasks and 8 waves; otherwise the page opens on Waves.
-    pub fits: bool,
 }
 
-/// One dot per wave on a plan card.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum WaveDot {
-    Done,
-    Current,
-    Todo,
+/// Everything the task panel and page show for one task.
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[ts(export_to = "types.ts")]
+pub struct TaskDetail {
+    /// The request number this answers; the UI ignores a stale one.
+    pub req: u32,
+    #[ts(as = "TaskTs")]
+    pub task: Task,
+    pub links: Vec<LinkDto>,
+    /// Newest first, from the task and everything under it.
+    pub history: Vec<HistoryEntry>,
+    /// The history was cut at the limit; "Show more" asks for 200.
+    pub history_more: bool,
+    pub waits_on: Vec<DepDto>,
+    pub blocks: Vec<DepDto>,
+    /// For a task with subtasks: its display waves.
+    pub waves: Option<RunMap>,
+    #[ts(as = "Vec<NeedsItemTs>")]
+    pub needs: Vec<NeedsItem>,
+    /// What Do it would do; `null` for proposed, done and dropped tasks (or when launch can't
+    /// say, e.g. T3 is missing).
+    #[ts(as = "Option<PreparedTs>")]
+    pub prepared: Option<Prepared>,
+    /// My open PRs from this task's branch, to link with one click.
+    #[ts(as = "Vec<PrViewTs>")]
+    pub suggested_prs: Vec<PrView>,
 }
 
-/// What a plan card says is next.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum NextUp {
-    /// Up to two ready subtasks.
-    Ready {
-        #[ts(type = "number[]")]
-        ids: Vec<TaskId>,
-    },
-    /// Every subtask is done: "Finish it?".
-    FinishIt,
-    /// "Nothing ready".
-    Nothing,
+// ================================================================ plans and quick add
+
+/// A ready subtask a plan card lists under Next up.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export_to = "types.ts")]
+pub struct NextUp {
+    #[ts(as = "TaskIdTs")]
+    pub id: TaskId,
+    pub title: String,
 }
 
 /// One card on Plans: an open top-level parent.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export_to = "types.ts")]
 pub struct PlanCard {
-    #[ts(type = "number")]
+    #[ts(as = "TaskIdTs")]
     pub id: TaskId,
     pub title: String,
-    pub status: StatusDto,
+    #[ts(as = "StatusTs")]
+    pub status: Status,
+    pub waiting: bool,
     pub progress: Progress,
-    pub percent: u32,
-    pub wave_count: u32,
+    /// How many display waves.
+    pub waves: u32,
     /// 0-based: the lowest wave with an open task; `null` when every wave is done.
     pub current_wave: Option<u32>,
-    pub wave_dots: Vec<WaveDot>,
-    pub next_up: NextUp,
+    /// Up to two ready subtasks.
+    pub next_up: Vec<NextUp>,
+    /// Every subtask is done: "Finish it?".
+    pub finish_it: bool,
     /// Subtasks with a working agent.
-    pub agents_working: u32,
+    pub working: u32,
     pub blocked: u32,
-    #[ts(type = "number[]")]
+    #[ts(as = "Vec<RepoIdTs>")]
     pub repos: Vec<RepoId>,
+    #[ts(as = "TimestampTs")]
     pub last_at: Timestamp,
 }
 
-/// `plans`' answer.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct PlansDto {
-    pub req: u32,
-    pub cards: Vec<PlanCard>,
-}
-
 /// An open task quick add can put a new task under.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export_to = "types.ts")]
 pub struct ParentOption {
-    #[ts(type = "number")]
+    #[ts(as = "TaskIdTs")]
     pub id: TaskId,
     pub title: String,
+    #[ts(as = "StatusTs")]
+    pub status: Status,
+    pub waiting: bool,
     pub depth: u32,
 }
 
 /// What quick add needs: the repos and the open tasks, in tree order.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct QuickAddData {
-    pub repos: Vec<RepoDto>,
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export_to = "types.ts")]
+pub struct QuickaddData {
+    #[ts(as = "Vec<RepoTs>")]
+    pub repos: Vec<Repo>,
     pub parents: Vec<ParentOption>,
-    /// The hotkey as the header shows it, e.g. "⌃⌥N".
-    pub hotkey: String,
 }
 
 /// One of T3's projects, for Add repos.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct T3ProjectDto {
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export_to = "types.ts")]
+pub struct T3ProjectRow {
     pub path: String,
     pub name: String,
     /// Has a `.git`; a folder that isn't is shown greyed.
@@ -1315,156 +993,274 @@ pub struct T3ProjectDto {
     pub added: bool,
 }
 
-/// Everything the main window draws first, read once before it shows.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct Bootstrap {
-    #[ts(type = "number")]
-    pub seq: u64,
-    /// In tree order.
-    pub rows: Vec<RowDto>,
-    #[ts(type = "number[]")]
-    pub order: Vec<TaskId>,
-    pub repos: Vec<RepoDto>,
-    pub needs: NeedsDto,
-    pub connections: Vec<ConnectionDto>,
-    pub availability: AvailabilityDto,
-    pub settings: Settings,
-    /// The system accent as `#rrggbb`, or `null` for Multicolor (keep indigo).
-    pub accent: Option<String>,
-    /// No tasks yet: All tasks shows the first-run screen.
-    pub first_run: bool,
-    /// The hotkey as shown, e.g. "⌃⌥N".
-    pub hotkey: String,
-    pub db_path: Option<String>,
-}
+// ================================================================ writes
 
-// ---------------------------------------------------------------------------- write results
+/// An undo entry, so a toast can undo exactly the action it reports.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export_to = "types.ts")]
+pub struct UndoEntry {
+    #[ts(as = "f64")]
+    pub id: u64,
+    /// e.g. "Mark done 144".
+    pub label: String,
+}
 
 /// A write that may be undone.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct Undoable {
-    pub patch: Patch,
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export_to = "types.ts")]
+pub struct UndoableWrite {
+    /// `null` for writes that touch no row yet (a deferred reject, a dismiss).
+    pub patch: Option<Patch>,
     /// `null` when the write changed nothing.
-    pub undo: Option<UndoInfo>,
-}
-
-/// What Do it or Plan it did. Returned once per press, so its size doesn't matter.
-#[allow(clippy::large_enum_variant)]
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum LaunchOutcome {
-    /// The task has no repo: ask where (the Start in menu).
-    NeedsChoice {
-        choices: Vec<RepoDto>,
-        research_dir: String,
-    },
-    /// `start` ran; the toast says what happened.
-    Started {
-        report: LaunchReportDto,
-        patch: Patch,
-        toast: ToastDto,
-    },
-}
-
-/// A Do it or Plan it that followed a create: what it did, or why it failed.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct LaunchAttempt {
-    pub outcome: Option<LaunchOutcome>,
-    pub error: Option<AppError>,
-}
-
-/// `create_task`'s answer.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct Created {
-    #[ts(type = "number")]
-    pub id: TaskId,
-    pub patch: Patch,
-    /// When `then` asked for Do it or Plan it.
-    pub launch: Option<LaunchAttempt>,
-    /// Links that couldn't be added, by title: "Created 153, but couldn't link <title>".
-    pub failed_links: Vec<String>,
-}
-
-/// A folder that couldn't be added as a repo, and why.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct FailedPath {
-    pub path: String,
-    pub message: String,
-}
-
-/// `add_repos`' answer.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct AddedRepos {
-    /// The repos just added.
-    pub repos: Vec<RepoDto>,
-    pub patch: Patch,
-    pub failed: Vec<FailedPath>,
+    pub undo: Option<UndoEntry>,
 }
 
 /// `undo`'s answer.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export_to = "types.ts")]
 pub struct UndoResult {
     pub patch: Option<Patch>,
     pub message: String,
 }
 
-/// `install_cli`'s answer.
+/// One link pasted into New task: the text and an optional title.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct InstalledCli {
+#[ts(export_to = "types.ts")]
+pub struct NewLinkText {
+    pub text: String,
+    pub title: Option<String>,
+}
+
+/// What `create_task` does after creating.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export_to = "types.ts")]
+pub enum Then {
+    #[default]
+    None,
+    DoIt,
+    PlanIt,
+}
+
+/// New task's fields.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export_to = "types.ts")]
+pub struct CreateTaskInput {
+    pub title: String,
+    pub body: Option<String>,
+    #[ts(as = "Option<TaskIdTs>")]
+    pub parent: Option<TaskId>,
+    #[ts(as = "Vec<RepoIdTs>")]
+    #[serde(default)]
+    pub repos: Vec<RepoId>,
+    #[serde(default)]
+    pub links: Vec<NewLinkText>,
+    #[serde(default)]
+    pub then: Then,
+}
+
+/// Where Do it starts, from the Start in menu.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export_to = "types.ts")]
+pub enum DoItPlace {
+    /// The task's own repos (or its subtasks'). The default.
+    Linked,
+    /// "Start in <repo>": link it as me, then start there.
+    Repo(#[ts(as = "RepoIdTs")] RepoId),
+    /// "No repo: research only".
+    NoRepo,
+}
+
+/// What Do it or Plan it did.
+#[allow(clippy::large_enum_variant)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export_to = "types.ts")]
+pub enum DoItResult {
+    /// The task has no repo: ask where (the Start in menu).
+    NeedsChoice {
+        #[ts(as = "Vec<RepoTs>")]
+        choices: Vec<Repo>,
+        research_dir: String,
+    },
+    /// `start` ran; the report says place by place what happened.
+    Started {
+        #[ts(as = "LaunchReportTs")]
+        report: LaunchReport,
+        patch: Patch,
+    },
+}
+
+/// A link that couldn't be added after the task existed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export_to = "types.ts")]
+pub struct LinkError {
+    pub text: String,
+    pub error: AppError,
+}
+
+/// `create_task`'s answer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export_to = "types.ts")]
+pub struct CreateTaskResult {
+    #[ts(as = "TaskIdTs")]
+    pub id: TaskId,
+    pub patch: Patch,
+    /// When `then` asked for Do it or Plan it and it ran; if it failed, a `toast` says why.
+    pub launch: Option<DoItResult>,
+    /// "Created 153, but couldn't link …".
+    pub link_errors: Vec<LinkError>,
+}
+
+/// `add_repos`' answer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export_to = "types.ts")]
+pub struct AddReposResult {
+    /// The repos just added.
+    #[ts(as = "Vec<RepoTs>")]
+    pub repos: Vec<Repo>,
+    pub patch: Patch,
+}
+
+/// `install_cli`'s answer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export_to = "types.ts")]
+pub struct InstallCliResult {
     pub path: String,
     /// `~/.local/bin` is on the login shell's `PATH`.
     pub on_path: bool,
 }
 
-// ---------------------------------------------------------------------------- events
-
-/// `menu:action`'s payload: a native menu item was chosen.
+/// What to copy.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export_to = "types.ts")]
+pub enum CopyWhat {
+    TaskNumber(#[ts(as = "TaskIdTs")] TaskId),
+    AgentNote,
+    SetupCommand,
+}
+
+/// What to open: a URL, or a link by its id.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export_to = "types.ts")]
+pub enum OpenTarget {
+    Url(String),
+    Link(#[ts(as = "LinkIdTs")] LinkId),
+}
+
+// ================================================================ events
+
+/// `menu:action`'s payload: a command id from `lib/logic/commands.ts`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export_to = "types.ts")]
 pub struct MenuAction {
     pub command: String,
 }
 
 /// `nav:open`'s payload.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
+#[ts(export_to = "types.ts")]
 pub struct NavOpen {
     pub view: Option<String>,
-    #[ts(type = "number | null")]
+    #[ts(as = "Option<TaskIdTs>")]
     pub task: Option<TaskId>,
+    #[ts(as = "Option<NeedsKeyTs>")]
     pub needs_key: Option<String>,
 }
 
 /// `quickadd:reset`'s payload: the panel hid; reset the form and refetch.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct QuickAddReset {
-    /// The hotkey as shown, e.g. "⌃⌥N".
+#[ts(export_to = "types.ts")]
+pub struct QuickaddReset {
+    /// The hotkey as the header shows it, e.g. "⌃⌥N".
     pub hotkey: String,
     /// Hidden by a click elsewhere: keep a non-empty title and notes.
-    pub keep_text: bool,
+    #[ts(optional)]
+    pub keep_text: Option<bool>,
+}
+
+/// What a toast's button calls: the `api` function for `command`, with `args` in order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(untagged)]
+pub enum ToastArgs {
+    /// `do_it(id, place, again)`.
+    DoIt {
+        id: TaskId,
+        place: Option<DoItPlace>,
+        again: bool,
+    },
+    /// `plan_it(id, again)`.
+    PlanIt { id: TaskId, again: bool },
+    /// `open_thread(key)`.
+    Thread { key: ThreadKey },
+    /// `add_to_t3(repo)`.
+    Repo { repo: RepoId },
+    /// `reopen_and_start(id)`.
+    Task { id: TaskId },
+}
+
+/// One button on a toast Rust sends.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export_to = "types.ts")]
+pub struct ToastEventAction {
+    pub label: String,
+    /// A command name, e.g. "do_it".
+    pub command: String,
+    #[ts(type = "Record<string, unknown>")]
+    pub args: ToastArgs,
+}
+
+/// A toast's tone: plain, or with the orange warning icon.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export_to = "types.ts")]
+pub enum ToastTone {
+    Info,
+    Warning,
+}
+
+/// `toast`'s payload: a toast the UI didn't ask for (a Do it from quick add that failed).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export_to = "types.ts")]
+pub struct ToastEvent {
+    pub text: String,
+    pub actions: Vec<ToastEventAction>,
+    pub undo: Option<UndoEntry>,
+    #[ts(optional)]
+    pub tone: Option<ToastTone>,
+    #[ts(optional, as = "Option<TaskIdTs>")]
+    pub task: Option<TaskId>,
 }
 
 /// The theme the windows follow.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
-pub enum ThemeDto {
+#[ts(export_to = "types.ts")]
+pub enum Theme {
     Dark,
     Light,
 }
 
 /// `appearance:changed`'s payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct AppearanceDto {
+#[ts(export_to = "types.ts")]
+pub struct AppearanceChanged {
     pub accent: Option<String>,
-    pub theme: ThemeDto,
+    pub theme: Theme,
 }
 
 /// `error:background`'s payload: the watcher or an app thread failed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export_to = "types.ts")]
 pub struct BackgroundError {
     pub source: String,
     pub message: String,
 }
 
-/// A research folder or a picked folder, as text.
-pub fn folder_text(p: Option<PathBuf>) -> Option<String> {
-    p.map(|p| path_text(&p))
+/// A path as text for the UI.
+pub fn path_text(p: &std::path::Path) -> String {
+    p.to_string_lossy().into_owned()
 }

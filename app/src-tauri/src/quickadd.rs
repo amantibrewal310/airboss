@@ -11,7 +11,7 @@ use tauri::{AppHandle, Manager, PhysicalPosition, Wry};
 use tauri_nspanel::{CollectionBehavior, ManagerExt, PanelLevel, WebviewWindowExt};
 use tauri_plugin_log::log;
 
-use crate::dto::QuickAddReset;
+use crate::dto::QuickaddReset;
 use crate::ipc::App;
 use crate::macos::QuickAddPanel;
 use crate::settings::hotkey_label;
@@ -114,7 +114,10 @@ pub fn hide_and_reset(app: &AppHandle<Wry>, keep_text: bool) {
         .unwrap_or_default();
     crate::native::emit(
         app,
-        UiEvent::QuickAddReset(QuickAddReset { hotkey, keep_text }),
+        UiEvent::QuickAddReset(QuickaddReset {
+            hotkey,
+            keep_text: Some(keep_text),
+        }),
     );
 }
 

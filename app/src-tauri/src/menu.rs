@@ -6,13 +6,14 @@
 
 use airboss_core::TaskId;
 use serde::{Deserialize, Serialize};
-use tauri::menu::{AboutMetadata, Menu, MenuItem, MenuItemKind, PredefinedMenuItem, Submenu};
+use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Runtime};
 use ts_rs::TS;
 
 /// Where keyboard focus is, as the UI reports it.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
+#[ts(rename = "FocusZone", export_to = "types.ts")]
 pub enum Zone {
     #[default]
     List,
@@ -26,6 +27,7 @@ pub enum Zone {
 /// Which window reports its focus.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
+#[ts(export_to = "types.ts")]
 pub enum WindowName {
     #[default]
     Main,
@@ -34,10 +36,11 @@ pub enum WindowName {
 
 /// `set_focus_context`'s argument.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export_to = "types.ts")]
 pub struct FocusContext {
     pub window: WindowName,
     pub zone: Zone,
-    #[ts(type = "number | null")]
+    #[ts(as = "Option<crate::dto::TaskIdTs>")]
     pub selection: Option<TaskId>,
     /// e.g. `"needs"`, `"all"`, `"repo:3"`.
     pub view: String,
@@ -123,6 +126,7 @@ pub const TASK_MENU: &[Option<Item>] = &[
         Some("CmdOrCtrl+O"),
         true,
     )),
+    Some(item("move_under", "Move Under…", None, true)),
     None,
     Some(item("move_up", "Move Up", Some("Alt+CmdOrCtrl+Up"), true)),
     Some(item(
@@ -132,12 +136,6 @@ pub const TASK_MENU: &[Option<Item>] = &[
         true,
     )),
     Some(item("open_page", "Open Page", Some("CmdOrCtrl+Down"), true)),
-    Some(item(
-        "close_page",
-        "Back to List",
-        Some("CmdOrCtrl+Up"),
-        false,
-    )),
     None,
     Some(item(
         "copy_number",
@@ -150,17 +148,22 @@ pub const TASK_MENU: &[Option<Item>] = &[
 
 /// The View menu: views (G then a letter), layouts, Jump and the shortcut sheet.
 pub const VIEW_MENU: &[Option<Item>] = &[
-    Some(item("view_needs", "Needs Me  G N", None, false)),
-    Some(item("view_ready", "Ready to Start  G R", None, false)),
-    Some(item("view_plans", "Plans  G L", None, false)),
-    Some(item("view_progress", "In Progress  G P", None, false)),
-    Some(item("view_all", "All Tasks  G A", None, false)),
+    Some(item("go_needs", "Needs Me  G N", None, false)),
+    Some(item("go_ready", "Ready to Start  G R", None, false)),
+    Some(item("go_plans", "Plans  G L", None, false)),
+    Some(item("go_progress", "In Progress  G P", None, false)),
+    Some(item("go_all", "All Tasks  G A", None, false)),
     None,
     Some(item("layout_tree", "As Tree", None, false)),
     Some(item("layout_status", "By Status", None, false)),
     None,
+    Some(item(
+        "back",
+        "Back to the List",
+        Some("CmdOrCtrl+Up"),
+        false,
+    )),
     Some(item("jump", "Jump to…", Some("CmdOrCtrl+K"), false)),
-    Some(item("shortcuts", "Keyboard Shortcuts  ?", None, false)),
 ];
 
 /// The menu item ids Rust handles itself rather than sending to the UI.
@@ -170,7 +173,8 @@ pub mod ids {
     pub const NEW_TASK: &str = "new_task";
     pub const QUICK_ADD: &str = "quick_add";
     pub const CLOSE_WINDOW: &str = "close_window";
-    pub const OPEN_AIRBOSS: &str = "open_airboss";
+    pub const OPEN_AIRBOSS: &str = "open_needs";
+    pub const SHORTCUTS: &str = "shortcuts";
     pub const UNDO: &str = "undo";
     pub const COPY_AGENT_NOTE: &str = "copy_agent_note";
     pub const COPY_SETUP: &str = "copy_setup_command";
@@ -303,7 +307,7 @@ pub fn build<R: Runtime>(
         &[
             &MenuItem::with_id(
                 app,
-                "shortcuts_help",
+                ids::SHORTCUTS,
                 "Keyboard Shortcuts  ?",
                 true,
                 None::<&str>,
@@ -363,10 +367,6 @@ impl<R: Runtime> MenuHandles<R> {
         }
     }
 }
-
-/// Every menu kind is used through these handles; keep the import list honest.
-#[allow(dead_code)]
-fn _kinds<R: Runtime>(_: MenuItemKind<R>) {}
 
 #[cfg(test)]
 mod tests {

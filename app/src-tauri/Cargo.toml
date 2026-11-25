@@ -17,8 +17,10 @@ path = "src/main.rs"
 
 [dependencies]
 airboss-core = { path = "../../crates/core" }
-# The real sync, launch and attention crates replace the fakes at integration (src/services.rs).
-airboss-services = { path = "../../crates/services", features = ["fakes"] }
+airboss-services = { path = "../../crates/services" }
+airboss-sync = { path = "../../crates/sync" }
+airboss-launch = { path = "../../crates/launch" }
+airboss-attention = { path = "../../crates/attention" }
 tauri = { version = "=2.12.7", features = ["tray-icon", "macos-private-api", "image-png"] }
 tauri-plugin-global-shortcut = "=2.4.1"
 tauri-plugin-autostart = "=2.7.0"
@@ -36,9 +38,11 @@ objc2-app-kit = "=0.3.2"
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.154"
 thiserror = "=2.0.21"
-ts-rs = { version = "=12.0.1", features = ["serde-json-impl"] }
+ts-rs = "=12.0.1"
 
 [dev-dependencies]
+# Tests and the fixtures recorder run on the services' fakes.
+airboss-services = { path = "../../crates/services", features = ["fakes"] }
 tauri = { version = "=2.12.7", features = ["tray-icon", "macos-private-api", "image-png", "test"] }
 
 [build-dependencies]

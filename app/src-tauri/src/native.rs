@@ -19,7 +19,9 @@ use tauri_plugin_log::log;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::catchup::Trigger;
-use crate::dto::{AppearanceDto, MenuAction, NavOpen, ThemeDto, ToastDto, ToastTone};
+use crate::dto::{
+    AppearanceChanged, CopyWhat, MenuAction, NavOpen, Theme as ThemeDto, ToastEvent, ToastTone,
+};
 use crate::errors::{AppError, AppResult, ErrorCode};
 use crate::ipc::App;
 use crate::menu::{self, MenuHandles, MenuState, ids};
@@ -230,7 +232,7 @@ impl Shell for Arc<TauriShell> {
             me.set_backgrounds(effective);
             emit(
                 &app,
-                UiEvent::AppearanceChanged(AppearanceDto {
+                UiEvent::AppearanceChanged(AppearanceChanged {
                     accent: lock(&me.accent).clone(),
                     theme: effective,
                 }),
@@ -307,7 +309,7 @@ fn open_state(db: &Path, shell: Arc<TauriShell>, config: AppConfig) -> AppResult
             .with_detail(format!("{}: {e}", db.display()))
     })?;
     let store = share(store);
-    let services = Services::start(&store);
+    let services = Services::start(&store, &crate::services::home());
     let state = AppState::new(
         store,
         services,
@@ -408,7 +410,7 @@ pub fn setup(
                 .unwrap_or_default();
             emit(
                 &color_app,
-                UiEvent::AppearanceChanged(AppearanceDto {
+                UiEvent::AppearanceChanged(AppearanceChanged {
                     accent,
                     theme: effective_theme(&color_app, appearance),
                 }),
@@ -483,7 +485,7 @@ pub fn on_window_event(window: &Window<Wry>, event: &WindowEvent) {
                 }
                 emit(
                     app,
-                    UiEvent::AppearanceChanged(AppearanceDto {
+                    UiEvent::AppearanceChanged(AppearanceChanged {
                         accent: macos::accent_hex(),
                         theme: t,
                     }),
@@ -500,11 +502,11 @@ pub fn on_window_event(window: &Window<Wry>, event: &WindowEvent) {
 fn toast(app: &AppHandle<Wry>, text: &str, tone: ToastTone) {
     emit(
         app,
-        UiEvent::Toast(ToastDto {
+        UiEvent::Toast(ToastEvent {
             text: text.to_string(),
-            tone,
             actions: Vec::new(),
             undo: None,
+            tone: Some(tone),
             task: None,
         }),
     );
@@ -543,7 +545,7 @@ pub fn on_menu_event(app: &AppHandle<Wry>, event: MenuEvent) {
         return;
     }
     match id.as_str() {
-        tray::OPEN_ID | ids::OPEN_AIRBOSS => {
+        tray::OPEN_ID => {
             show_main_window(app);
             emit(
                 app,
@@ -581,18 +583,10 @@ pub fn on_menu_event(app: &AppHandle<Wry>, event: MenuEvent) {
             crate::commands::app::install_cli(s, Caller::Other).map(|_| ())
         }),
         ids::COPY_AGENT_NOTE => menu_command(app, "Copied the agent note.", |s| {
-            crate::commands::app::copy_text(
-                s,
-                Caller::Other,
-                crate::commands::app::CopyWhat::AgentNote,
-            )
+            crate::commands::app::copy_text(s, Caller::Other, CopyWhat::AgentNote)
         }),
         ids::COPY_SETUP => menu_command(app, "Copied the setup command.", |s| {
-            crate::commands::app::copy_text(
-                s,
-                Caller::Other,
-                crate::commands::app::CopyWhat::SetupCommand,
-            )
+            crate::commands::app::copy_text(s, Caller::Other, CopyWhat::SetupCommand)
         }),
         _ => {
             show_main_window(app);

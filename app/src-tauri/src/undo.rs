@@ -11,7 +11,7 @@ use airboss_core::{Actor, EventId, Status, TaskId};
 use airboss_services::NeedsKey;
 use tauri_plugin_log::log;
 
-use crate::dto::UndoInfo;
+use crate::dto::UndoEntry;
 use crate::state::{AppState, lock};
 
 /// How deep the stack goes; the oldest entry drops off.
@@ -67,7 +67,7 @@ impl UndoStack {
         inverse: Vec<Inverse>,
         tasks: Vec<TaskId>,
         after: EventId,
-    ) -> UndoInfo {
+    ) -> UndoEntry {
         self.next += 1;
         let id = self.next;
         if self.entries.len() == DEPTH {
@@ -80,7 +80,7 @@ impl UndoStack {
             tasks,
             after,
         });
-        UndoInfo { entry: id, label }
+        UndoEntry { id, label }
     }
 
     /// Takes the entry `id`, or the newest with `None`.

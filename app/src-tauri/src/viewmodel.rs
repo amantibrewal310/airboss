@@ -11,9 +11,9 @@ use std::time::{Duration, SystemTime};
 use airboss_core::{CoreSnapshot, EventId, Repo, RepoId, Status, TaskId, TaskNode};
 use airboss_services::{NeedsKind, NeedsList, SyncSnapshot, time};
 
-use crate::dto::{
-    ActorKind, ChipDto, NextUp, Patch, PlanCard, Progress, RepoDto, RowDto, StatusDto, WaveDot,
-};
+use airboss_services::Chip;
+
+use crate::dto::{NextUp, Patch, PlanCard, Progress, RowDto, chip_strength};
 use crate::runmap;
 
 /// The tree's shape, indexed once per snapshot.
@@ -70,7 +70,6 @@ pub struct ViewModel {
     pub rows: HashMap<TaskId, RowDto>,
     /// Ids in tree order.
     pub order: Vec<TaskId>,
-    pub repo_dtos: Vec<RepoDto>,
 }
 
 impl ViewModel {
@@ -85,7 +84,6 @@ impl ViewModel {
         let index = TreeIndex::new(&snapshot.tree);
         let rows = build_rows(&snapshot, &index, &repos, &sync, &needs, now);
         let order = snapshot.tree.iter().map(|n| n.task.id).collect();
-        let repo_dtos = repos.iter().map(RepoDto::from).collect();
         ViewModel {
             rows: rows.into_iter().map(|r| (r.id, r)).collect(),
             snapshot,
@@ -94,7 +92,6 @@ impl ViewModel {
             sync,
             needs,
             order,
-            repo_dtos,
         }
     }
 
@@ -155,7 +152,7 @@ pub fn diff(old: &ViewModel, new: &ViewModel) -> Option<Patch> {
         upserts,
         removed,
         order: (old.order != new.order).then(|| new.order.clone()),
-        repos: (old.repo_dtos != new.repo_dtos).then(|| new.repo_dtos.clone()),
+        repos: (old.repos != new.repos).then(|| new.repos.clone()),
         created,
     };
     (!patch.is_empty()).then_some(patch)
@@ -262,15 +259,14 @@ fn build_rows(
     }
 
     // The strongest live chip per task, from one pass over the linked threads.
-    let mut live: HashMap<TaskId, ChipDto> = HashMap::new();
+    let mut live: HashMap<TaskId, Chip> = HashMap::new();
     for (key, tasks) in &sync.thread_tasks {
         let Some(chip) = sync.threads.get(key).and_then(|t| t.state.chip()) else {
             continue;
         };
-        let chip = ChipDto::from(chip);
         for task in tasks {
             let e = live.entry(*task).or_insert(chip);
-            if chip.strength() > e.strength() {
+            if chip_strength(chip) > chip_strength(*e) {
                 *e = chip;
             }
         }
@@ -317,8 +313,8 @@ fn build_rows(
                 depth: node.depth,
                 position: task.position,
                 title: task.title.clone(),
-                status: task.status.into(),
-                origin: task.origin.into(),
+                status: task.status,
+                origin: task.origin,
                 blocked_reason: task.blocked_reason.clone(),
                 waiting: node.waiting,
                 waits_on: if node.waiting {
@@ -351,7 +347,7 @@ fn build_rows(
                 } else {
                     node.last_event_at.clone()
                 },
-                last_actor: (&node.last_actor).into(),
+                last_actor: node.last_actor.to_string(),
             }
         })
         .collect()
@@ -366,66 +362,49 @@ pub fn plan_cards(vm: &ViewModel) -> Vec<PlanCard> {
             row.has_children
                 && !matches!(
                     row.status,
-                    StatusDto::Done | StatusDto::Dropped | StatusDto::Proposed
+                    Status::Done | Status::Dropped | Status::Proposed
                 )
         })
         .map(|row| plan_card(vm, row))
         .collect()
 }
 
+fn count(n: usize) -> u32 {
+    u32::try_from(n).unwrap_or(u32::MAX)
+}
+
 fn plan_card(vm: &ViewModel, row: &RowDto) -> PlanCard {
     let progress = row.progress.unwrap_or_default();
     let waves = runmap::display_waves(vm, row.id);
-    let open = |id: &TaskId| vm.rows.get(id).is_some_and(|r| r.status.is_open());
-    let current = waves.waves.iter().position(|w| w.iter().any(open));
-    let wave_dots = waves
-        .waves
-        .iter()
-        .enumerate()
-        .map(|(i, w)| {
-            if Some(i) == current {
-                WaveDot::Current
-            } else if w.iter().any(open) {
-                WaveDot::Todo
-            } else {
-                WaveDot::Done
-            }
-        })
-        .collect();
+    let is_open = |id: &TaskId| vm.rows.get(id).is_some_and(|r| is_open(r.status));
+    let current = waves.waves.iter().position(|w| w.iter().any(is_open));
     let subtree = vm.index.subtree(row.id);
     let under = || subtree.iter().skip(1).filter_map(|id| vm.rows.get(id));
-    let ready: Vec<TaskId> = under().filter(|r| r.ready).map(|r| r.id).take(2).collect();
-    let next_up = if progress.total > 0 && progress.done == progress.total {
-        NextUp::FinishIt
-    } else if !ready.is_empty() {
-        NextUp::Ready { ids: ready }
-    } else {
-        NextUp::Nothing
-    };
+    let finish_it = progress.total > 0 && progress.done == progress.total;
     PlanCard {
         id: row.id,
         title: row.title.clone(),
         status: row.status,
+        waiting: row.waiting,
         progress,
-        percent: progress.percent(),
-        wave_count: u32::try_from(waves.waves.len()).unwrap_or(u32::MAX),
-        current_wave: current.and_then(|c| u32::try_from(c).ok()),
-        wave_dots,
-        next_up,
-        agents_working: u32::try_from(under().filter(|r| r.live == Some(ChipDto::Working)).count())
-            .unwrap_or(u32::MAX),
+        waves: count(waves.waves.len()),
+        current_wave: current.map(count),
+        next_up: if finish_it {
+            Vec::new()
+        } else {
+            under()
+                .filter(|r| r.ready)
+                .take(2)
+                .map(|r| NextUp {
+                    id: r.id,
+                    title: r.title.clone(),
+                })
+                .collect()
+        },
+        finish_it,
+        working: count(under().filter(|r| r.live == Some(Chip::Working)).count()),
         blocked: progress.blocked,
         repos: row.repos.clone(),
         last_at: row.last_at.clone(),
     }
-}
-
-/// When an agent last reported anything: the newest own event by an agent on any task.
-pub fn last_agent_report(vm: &ViewModel) -> Option<String> {
-    vm.snapshot
-        .tree
-        .iter()
-        .filter(|n| ActorKind::from(&n.last_actor) == ActorKind::Agent)
-        .map(|n| n.last_event_at.clone())
-        .max()
 }

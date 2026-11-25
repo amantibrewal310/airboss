@@ -16,6 +16,7 @@ use ts_rs::TS;
 /// passes through with its own code and message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
+#[ts(rename = "AppErrorCode", export_to = "types.ts")]
 pub enum ErrorCode {
     // The app's and core's own.
     EmptyTitle,
@@ -102,6 +103,7 @@ impl From<airboss_services::ErrorCode> for ErrorCode {
 
 /// Why a command failed: a code the UI may branch on, and one sentence to show.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export_to = "types.ts")]
 pub struct AppError {
     pub code: ErrorCode,
     /// One sentence for the user.

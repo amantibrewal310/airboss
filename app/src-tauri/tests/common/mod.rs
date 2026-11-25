@@ -196,6 +196,11 @@ impl TestApp {
 
     /// Any store, e.g. a temporary file.
     pub fn with_store(store: Store) -> TestApp {
+        TestApp::with_home(store, temp_dir("home"))
+    }
+
+    /// Any store, and a chosen home folder.
+    pub fn with_home(store: Store, home: PathBuf) -> TestApp {
         let store = share(store);
         let violations = Arc::new(AtomicUsize::new(0));
         let sync = Arc::new(FakeSync::new());
@@ -225,7 +230,6 @@ impl TestApp {
         };
         let shell = Arc::new(RecordingShell::new());
         let clock = Arc::new(FakeClock::at(time::from_ts(NOW).unwrap()));
-        let home = temp_dir("home");
         let mut config = AppConfig::new(Default::default(), None);
         config.home = home.clone();
         config.reject_delay = Duration::from_millis(150);

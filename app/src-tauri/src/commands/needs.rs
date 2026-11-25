@@ -3,7 +3,7 @@
 
 use airboss_services::NeedsKey;
 
-use crate::dto::UndoInfo;
+use crate::dto::{UndoEntry, UndoableWrite};
 use crate::errors::{AppError, AppResult};
 use crate::state::{AppState, Caller};
 use crate::undo::Inverse;
@@ -26,18 +26,26 @@ fn label(verb: &str, task: Option<airboss_core::TaskId>) -> String {
     }
 }
 
+/// A Needs me write touches no row yet: `attention` recomputes, and a patch follows.
+fn hidden(undo: UndoEntry) -> UndoableWrite {
+    UndoableWrite {
+        patch: None,
+        undo: Some(undo),
+    }
+}
+
 /// Hides this occurrence for good (Dismiss, and Keep open on Finish it?).
-pub fn needs_dismiss(s: &AppState, _c: Caller, key: String) -> AppResult<UndoInfo> {
+pub fn needs_dismiss(s: &AppState, _c: Caller, key: String) -> AppResult<UndoableWrite> {
     let key = NeedsKey(key);
     let task = item_task(s, &key);
     s.services.attention.dismiss(&key).map_err(AppError::from)?;
     let after = s.latest_event();
-    Ok(s.push_undo(
+    Ok(hidden(s.push_undo(
         label("Dismiss", task),
         vec![Inverse::Restore(key)],
         Vec::new(),
         after,
-    ))
+    )))
 }
 
 /// Hides it until `until`, or `attention`'s default 3 days with none.
@@ -46,7 +54,7 @@ pub fn needs_snooze(
     _c: Caller,
     key: String,
     until: Option<String>,
-) -> AppResult<UndoInfo> {
+) -> AppResult<UndoableWrite> {
     let key = NeedsKey(key);
     let task = item_task(s, &key);
     s.services
@@ -54,12 +62,12 @@ pub fn needs_snooze(
         .snooze(&key, until)
         .map_err(AppError::from)?;
     let after = s.latest_event();
-    Ok(s.push_undo(
+    Ok(hidden(s.push_undo(
         label("Snooze", task),
         vec![Inverse::Restore(key)],
         Vec::new(),
         after,
-    ))
+    )))
 }
 
 /// Undoes a dismiss or snooze.

@@ -10,7 +10,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use airboss_core::{RunOrder, TaskId};
 
-use crate::dto::{OutsideDto, RunEdgeDto, RunMap, RunNodeDto, StatusDto, WavesDto};
+use airboss_core::Status;
+
+use crate::dto::{OutsideWait, RunEdge, RunMap};
 use crate::viewmodel::{ViewModel, is_open};
 
 /// Above this many subtasks the page opens on Waves instead of the map.
@@ -18,45 +20,15 @@ pub const MAP_MAX_NODES: usize = 40;
 /// Above this many waves the page opens on Waves instead of the map.
 pub const MAP_MAX_WAVES: usize = 8;
 
-/// A parent's subtasks in display waves.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct DisplayWaves {
-    /// The stations, in sibling order.
-    pub nodes: Vec<TaskId>,
-    pub waves: Vec<Vec<TaskId>>,
-    /// Lifted edges, blocker → waiting task.
-    pub edges: Vec<RunEdgeDto>,
-    /// Stations held by open tasks outside the parent, directly or through their subtree.
-    pub outside: Vec<OutsideDto>,
-    /// Stations Kahn layering can't place: they wait on each other in a loop.
-    pub tangled: Vec<TaskId>,
-}
-
-impl DisplayWaves {
-    /// For the panel's Waves list.
-    pub fn to_dto(&self) -> WavesDto {
-        WavesDto {
-            waves: self.waves.clone(),
-            outside: self.outside.clone(),
-            tangled: self.tangled.clone(),
-        }
-    }
-}
-
 /// Works out the display waves of `parent`'s direct subtasks from the view model alone.
-pub fn display_waves(vm: &ViewModel, parent: TaskId) -> DisplayWaves {
+pub fn display_waves(vm: &ViewModel, parent: TaskId) -> RunMap {
     let status = |id: &TaskId| vm.rows.get(id).map(|r| r.status);
     let nodes: Vec<TaskId> = vm
         .index
         .children_of(parent)
         .iter()
         .copied()
-        .filter(|id| {
-            !matches!(
-                status(id),
-                Some(StatusDto::Dropped | StatusDto::Proposed) | None
-            )
-        })
+        .filter(|id| !matches!(status(id), Some(Status::Dropped | Status::Proposed) | None))
         .collect();
     let rank: HashMap<TaskId, usize> = nodes.iter().enumerate().map(|(i, &id)| (id, i)).collect();
 
@@ -150,9 +122,9 @@ pub fn display_waves(vm: &ViewModel, parent: TaskId) -> DisplayWaves {
         .map(|i| nodes[i])
         .collect();
 
-    let mut edges: Vec<RunEdgeDto> = lifted
+    let mut edges: Vec<RunEdge> = lifted
         .iter()
-        .map(|(&(w, b), &done)| RunEdgeDto {
+        .map(|(&(w, b), &done)| RunEdge {
             from: nodes[b],
             to: nodes[w],
             done,
@@ -160,12 +132,12 @@ pub fn display_waves(vm: &ViewModel, parent: TaskId) -> DisplayWaves {
         .collect();
     edges.sort_by_key(|e| (rank[&e.from], rank[&e.to]));
 
-    DisplayWaves {
+    RunMap {
         waves,
         edges,
         outside: outside
             .into_iter()
-            .map(|(i, blockers)| OutsideDto {
+            .map(|(i, blockers)| OutsideWait {
                 task: nodes[i],
                 blockers: blockers.into_iter().collect(),
             })
@@ -177,40 +149,19 @@ pub fn display_waves(vm: &ViewModel, parent: TaskId) -> DisplayWaves {
 
 /// The run-order map, with outside blockers from `core`'s `run_order` (rule 18), which also
 /// counts a blocker reached through a sibling.
-pub fn run_map(vm: &ViewModel, parent: TaskId, order: &RunOrder, req: u32) -> RunMap {
-    let dw = display_waves(vm, parent);
-    let stations: HashSet<TaskId> = dw.nodes.iter().copied().collect();
-    let nodes = dw
-        .waves
-        .iter()
-        .enumerate()
-        .flat_map(|(w, wave)| {
-            wave.iter().enumerate().map(move |(i, &id)| RunNodeDto {
-                id,
-                wave: u32::try_from(w).unwrap_or(u32::MAX),
-                index: u32::try_from(i).unwrap_or(u32::MAX),
-            })
-        })
-        .collect();
-    let outside = order
+pub fn run_map(vm: &ViewModel, parent: TaskId, order: &RunOrder) -> RunMap {
+    let mut map = display_waves(vm, parent);
+    let stations: HashSet<TaskId> = map.nodes.iter().copied().collect();
+    map.outside = order
         .waiting_outside
         .iter()
         .filter(|o| stations.contains(&o.task.id))
-        .map(|o| OutsideDto {
+        .map(|o| OutsideWait {
             task: o.task.id,
             blockers: o.blockers.clone(),
         })
         .collect();
-    RunMap {
-        req,
-        parent,
-        fits: map_fits(dw.nodes.len(), dw.waves.len()),
-        nodes,
-        edges: dw.edges,
-        waves: dw.waves,
-        outside,
-        tangled: dw.tangled,
-    }
+    map
 }
 
 /// Whether the map is drawn, or the page falls back to the Waves list.

@@ -15,6 +15,7 @@ pub mod menu;
 pub mod native;
 pub mod quickadd;
 pub mod runmap;
+pub mod seed;
 pub mod services;
 pub mod settings;
 pub mod shell;

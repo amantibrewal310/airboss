@@ -7,7 +7,7 @@ use airboss_services::PrRef;
 use tauri_plugin_log::log;
 
 use crate::classify::classify;
-use crate::dto::{AddedRepos, FailedPath, Patch, RepoDto, path_text};
+use crate::dto::{AddReposResult, Patch, path_text};
 use crate::errors::{AppError, AppResult, Ctx};
 use crate::state::{AppState, Caller};
 
@@ -31,10 +31,12 @@ pub fn origin_remote(folder: &Path) -> Option<String> {
     None
 }
 
-/// Adds each folder as a repo: its name from the folder, its remote from `.git/config`.
-pub fn add_repos(s: &AppState, _c: Caller, paths: Vec<String>) -> AppResult<AddedRepos> {
+/// Adds each folder as a repo: its name from the folder, its remote from `.git/config`. A
+/// folder that can't be added fails the call after the others are added (their patch is sent
+/// as an event too).
+pub fn add_repos(s: &AppState, _c: Caller, paths: Vec<String>) -> AppResult<AddReposResult> {
     let mut added: Vec<Repo> = Vec::new();
-    let mut failed = Vec::new();
+    let mut failed: Option<AppError> = None;
     for p in paths {
         let path = PathBuf::from(&p);
         let name = path
@@ -47,19 +49,20 @@ pub fn add_repos(s: &AppState, _c: Caller, paths: Vec<String>) -> AppResult<Adde
             st.add_repo(&name, &path, remote.as_deref(), &Actor::Me)
         }) {
             Ok(r) => added.push(r),
-            Err(e) => failed.push(FailedPath {
-                path: p,
-                message: e.message,
-            }),
+            Err(e) => {
+                failed.get_or_insert(e.with_detail(p));
+            }
         }
     }
     // `add_repo` writes no event; catch-up compares `repos()` too.
     let patch = s.after_write()?;
-    Ok(AddedRepos {
-        repos: added.iter().map(RepoDto::from).collect(),
-        patch,
-        failed,
-    })
+    match failed {
+        Some(e) => Err(e),
+        None => Ok(AddReposResult {
+            repos: added,
+            patch,
+        }),
+    }
 }
 
 /// "Add another folder…": the folder picker; `None` when cancelled.

@@ -8,7 +8,6 @@ use std::time::Duration;
 
 use airboss_app::Caller;
 use airboss_app::commands::{needs, tasks};
-use airboss_app::dto::StatusDto;
 use airboss_app::errors::ErrorCode;
 use airboss_core::{Actor, NewTask, Status, TaskId};
 use airboss_services::{AttentionService, NeedsKind};
@@ -29,11 +28,11 @@ fn undo_reverts_a_status_change_and_a_blocked_reason_comes_back() {
         &app.state,
         M,
         t,
-        StatusDto::Blocked,
+        Status::Blocked,
         Some("waiting on keys".into()),
     )
     .unwrap();
-    tasks::set_status(&app.state, M, t, StatusDto::Done, None).unwrap();
+    tasks::set_status(&app.state, M, t, Status::Done, None).unwrap();
     let r = tasks::undo(&app.state, M, None).unwrap();
     assert_eq!(r.message, format!("Undid “Mark done {}”", t.0));
     assert!(r.patch.is_some());
@@ -78,7 +77,7 @@ fn undoing_a_drop_restores_the_subtrees_previous_statuses() {
         s.set_status(c, Status::Done, None, &Actor::Me).unwrap();
     });
     app.sync_vm();
-    let r = tasks::set_status(&app.state, M, p, StatusDto::Dropped, None).unwrap();
+    let r = tasks::set_status(&app.state, M, p, Status::Dropped, None).unwrap();
     assert_eq!(r.undo.unwrap().label, format!("Drop {}", p.0));
     assert_eq!(status(&app, a), Status::Dropped);
     assert_eq!(status(&app, c), Status::Done, "done stays done");
@@ -98,7 +97,7 @@ fn undo_is_refused_after_someone_else_changes_the_task() {
     let app = TestApp::new();
     let t = app.add("T", None);
     app.sync_vm();
-    tasks::set_status(&app.state, M, t, StatusDto::Doing, None).unwrap();
+    tasks::set_status(&app.state, M, t, Status::Doing, None).unwrap();
     app.core(|s| {
         s.set_status(t, Status::InReview, None, &Actor::Agent("t3/x".into()))
             .unwrap()
@@ -123,7 +122,7 @@ fn my_own_later_change_doesnt_refuse_an_undo() {
     let app = TestApp::new();
     let t = app.add("T", None);
     app.sync_vm();
-    tasks::set_status(&app.state, M, t, StatusDto::Doing, None).unwrap();
+    tasks::set_status(&app.state, M, t, Status::Doing, None).unwrap();
     tasks::rename_task(&app.state, M, t, "Renamed".into()).unwrap();
     tasks::undo(&app.state, M, None).unwrap();
     assert_eq!(status(&app, t), Status::Todo);
@@ -138,11 +137,14 @@ fn dismiss_and_snooze_undo_through_restore() {
         needs_item("b", NeedsKind::Quiet, t, common::NOW),
     ]);
     app.state.catch_up_services();
-    let first = needs::needs_dismiss(&app.state, M, "a".into()).unwrap();
+    let first = needs::needs_dismiss(&app.state, M, "a".into())
+        .unwrap()
+        .undo
+        .unwrap();
     needs::needs_snooze(&app.state, M, "b".into(), None).unwrap();
     assert_eq!(app.attention.needs_me().count, 0);
     // A toast's Undo undoes its own entry, not the newest.
-    tasks::undo(&app.state, M, Some(first.entry)).unwrap();
+    tasks::undo(&app.state, M, Some(first.id)).unwrap();
     assert_eq!(app.attention.needs_me().items[0].key.0, "a");
     tasks::undo(&app.state, M, None).unwrap();
     assert_eq!(app.attention.needs_me().count, 2);
@@ -168,7 +170,10 @@ fn a_reject_is_written_after_the_delay_unless_undone() {
     app.sync_vm();
     app.state.start_background();
 
-    let undo = tasks::reject_proposals(&app.state, M, vec![x], Some("not now".into())).unwrap();
+    let undo = tasks::reject_proposals(&app.state, M, vec![x], Some("not now".into()))
+        .unwrap()
+        .undo
+        .unwrap();
     assert_eq!(undo.label, format!("Reject {}", x.0));
     assert_eq!(status(&app, x), Status::Proposed, "nothing written yet");
     tasks::undo(&app.state, M, None).unwrap();
@@ -219,9 +224,9 @@ fn the_stack_is_twenty_deep() {
     for i in 0..21 {
         tasks::rename_task(&app.state, M, t, format!("T{i}")).unwrap();
         let to = if i % 2 == 0 {
-            StatusDto::Doing
+            Status::Doing
         } else {
-            StatusDto::Todo
+            Status::Todo
         };
         tasks::set_status(&app.state, M, t, to, None).unwrap();
     }
@@ -242,7 +247,7 @@ fn the_task_menu_shows_the_newest_undo() {
     let app = TestApp::new();
     let t = app.add("T", None);
     app.sync_vm();
-    tasks::set_status(&app.state, M, t, StatusDto::Done, None).unwrap();
+    tasks::set_status(&app.state, M, t, Status::Done, None).unwrap();
     let last = app
         .shell
         .calls()

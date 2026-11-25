@@ -4,67 +4,47 @@
 use std::collections::HashSet;
 use std::path::Path;
 
-use airboss_core::{Actor, LinkKind, PrState, Status, TaskId};
+use airboss_core::{LinkKind, PrState, Status, TaskId};
 use airboss_services::{Mode, PrRef, Refresh, Source, SyncSnapshot, ThreadKey};
 
+use crate::commands::app::cli_status;
 use crate::dto::{
-    ActorDto, ActorKind, Bootstrap, CrumbDto, DepDto, EventDto, LinkDto, NeedsDto, NeedsItemDto,
-    ParentOption, PlansDto, PrDto, PreparedDto, QuickAddData, RepoDto, RunMap, T3ProjectDto,
-    TaskDetail, TaskDto, ThreadDto, path_text,
+    Bootstrap, DepDto, HistoryEntry, LinkDto, ParentOption, PlanCard, QuickaddData, RunMap,
+    T3ProjectRow, TaskDetail, ThreadDto, open, path_text,
 };
-use crate::errors::{AppError, AppResult, Ctx};
+use crate::errors::{AppResult, Ctx};
 use crate::runmap;
-use crate::settings::hotkey_label;
 use crate::state::{AppState, Caller, lock};
 use crate::viewmodel::{self, ViewModel};
 
 /// Everything the main window draws first.
 pub fn bootstrap(s: &AppState, _c: Caller) -> AppResult<Bootstrap> {
-    let cu = lock(&s.catchup);
     let settings = s.settings();
+    let accent = s.shell.accent();
+    let cli = cli_status(s);
+    let cu = lock(&s.catchup);
     Ok(Bootstrap {
         seq: cu.seq,
         rows: cu.vm.rows_in_order(),
         order: cu.vm.order.clone(),
-        repos: cu.vm.repo_dtos.clone(),
-        needs: NeedsDto::from(&*cu.vm.needs),
+        repos: cu.vm.repos.clone(),
+        needs: (*cu.vm.needs).clone(),
         connections: cu.connections.connections.clone(),
         availability: cu.connections.availability.clone(),
-        first_run: cu.vm.order.is_empty(),
-        hotkey: hotkey_label(&settings.hotkey),
         settings,
-        accent: s.shell.accent(),
-        db_path: s
-            .core(|st| Ok(st.path()))
-            .ok()
-            .flatten()
-            .map(|p| path_text(&p)),
+        accent,
+        cli,
     })
 }
 
-/// Names an actor for the activity feed: "You", "Agent in slot-picker", "GitHub" …
-pub fn actor_dto(actor: &Actor, sync: &SyncSnapshot) -> ActorDto {
-    let kind = ActorKind::from(actor);
-    let (name, thread) = match actor {
-        Actor::Me => ("You".to_string(), None),
-        Actor::Agent(r) => {
-            let title = thread_key_of_agent(r)
-                .and_then(|k| sync.threads.get(&k))
-                .and_then(|t| t.title.clone());
-            (
-                match title {
-                    Some(t) => format!("Agent in {t}"),
-                    None => "Agent".to_string(),
-                },
-                Some(r.clone()),
-            )
-        }
-        Actor::SyncGh => ("GitHub".to_string(), None),
-        Actor::SyncT3 => ("T3".to_string(), None),
-        Actor::Plan => ("Plan".to_string(), None),
-        Actor::Launch => ("Launch".to_string(), None),
-    };
-    ActorDto { kind, name, thread }
+/// The title of the thread an agent actor (`agent:t3/97b5c8b5`) speaks for, if `sync` knows it.
+pub fn thread_title(actor: &airboss_core::Actor, sync: &SyncSnapshot) -> Option<String> {
+    match actor {
+        airboss_core::Actor::Agent(r) => thread_key_of_agent(r)
+            .and_then(|k| sync.threads.get(&k))
+            .and_then(|t| t.title.clone()),
+        _ => None,
+    }
 }
 
 /// `agent:t3/97b5c8b5` names thread `97b5c8b5` in T3; `claude/<id>` a Claude Code session.
@@ -86,6 +66,7 @@ fn dep(vm: &ViewModel, id: TaskId) -> Option<DepDto> {
         id,
         title: r.title.clone(),
         status: r.status,
+        waiting: r.waiting,
     })
 }
 
@@ -106,18 +87,7 @@ pub fn task_detail(
     history.truncate(limit as usize);
 
     let sync = s.services.sync.snapshot();
-    let (ancestors, waits_on, blocks, waves, inherited_branch) = s.vm(|vm| {
-        let mut ancestors = Vec::new();
-        let mut at = task.parent;
-        while let Some(p) = at {
-            let Some(row) = vm.rows.get(&p) else { break };
-            ancestors.push(CrumbDto {
-                id: p,
-                title: row.title.clone(),
-            });
-            at = row.parent;
-        }
-        ancestors.reverse();
+    let (waits_on, blocks, waves, inherited_branch) = s.vm(|vm| {
         let waits_on: Vec<DepDto> = vm
             .snapshot
             .edges
@@ -132,10 +102,9 @@ pub fn task_detail(
             .filter(|(_, b)| *b == id)
             .filter_map(|&(w, _)| dep(vm, w))
             .collect();
-        let waves =
-            (!vm.index.children_of(id).is_empty()).then(|| runmap::display_waves(vm, id).to_dto());
+        let waves = (!vm.index.children_of(id).is_empty()).then(|| runmap::display_waves(vm, id));
         let branch = vm.rows.get(&id).and_then(|r| r.branch.clone());
-        (ancestors, waits_on, blocks, waves, branch)
+        (waits_on, blocks, waves, branch)
     });
 
     let thread_view = |source: Source, r: &str| {
@@ -149,48 +118,49 @@ pub fn task_detail(
     };
     let link_dtos = links
         .iter()
-        .map(|l| {
-            let pr = (l.kind == LinkKind::Pr)
+        .map(|l| LinkDto {
+            id: l.id,
+            task: l.task,
+            kind: l.kind,
+            r#ref: l.r#ref.clone(),
+            url: l.url.clone(),
+            pr_state: l.pr_state,
+            title: l.title.clone(),
+            linked_by: l.linked_by.to_string(),
+            linked_at: l.linked_at.clone(),
+            pr: (l.kind == LinkKind::Pr)
                 .then(|| PrRef::parse(&l.r#ref))
                 .flatten()
-                .and_then(|r| sync.prs.get(&r))
-                .map(PrDto::from);
-            let thread = match l.kind {
+                .and_then(|r| sync.prs.get(&r).cloned()),
+            thread: match l.kind {
                 LinkKind::T3Thread => thread_view(Source::T3, &l.r#ref),
                 LinkKind::ClaudeSession => thread_view(Source::Claude, &l.r#ref),
                 _ => None,
-            };
-            LinkDto::new(l, pr, thread)
+            },
         })
         .collect();
-    let threads = sync
-        .threads_for(id)
-        .into_iter()
-        .map(|t| ThreadDto::new(t, s.services.sync.thread_url(&t.key)))
-        .collect();
-    let prs = sync.prs_for(id).into_iter().map(PrDto::from).collect();
     let history = history
         .iter()
-        .map(|e| EventDto::new(e, actor_dto(&e.actor, &sync)))
+        .map(|e| HistoryEntry {
+            id: e.id,
+            task: e.task,
+            kind: e.kind,
+            to_status: e.to_status,
+            body: e.body.clone(),
+            actor: e.actor.to_string(),
+            at: e.at.clone(),
+            thread_title: thread_title(&e.actor, &sync),
+        })
         .collect();
-    let needs = s
-        .services
-        .attention
-        .for_task(id)
-        .iter()
-        .map(NeedsItemDto::from)
-        .collect();
-
-    let (prepared, prepare_error) = if matches!(
+    let needs = s.services.attention.for_task(id);
+    let prepared = if matches!(
         task.status,
         Status::Proposed | Status::Done | Status::Dropped
     ) {
-        (None, None)
+        None
     } else {
-        match s.services.launch.prepare(id, Mode::DoIt) {
-            Ok(p) => (Some(PreparedDto::from(&p)), None),
-            Err(e) => (None, Some(AppError::from(e))),
-        }
+        // T3 missing and the like show through the connections and availability, not here.
+        s.services.launch.prepare(id, Mode::DoIt).ok()
     };
     if links
         .iter()
@@ -204,21 +174,13 @@ pub fn task_detail(
         .or_else(|| prepared.as_ref().and_then(|p| p.branch.clone()))
         .or(inherited_branch);
     let suggested_prs = branch
-        .map(|b| {
-            sync.suggested_prs(&b)
-                .into_iter()
-                .map(PrDto::from)
-                .collect()
-        })
+        .map(|b| sync.suggested_prs(&b).into_iter().cloned().collect())
         .unwrap_or_default();
 
     Ok(TaskDetail {
         req,
-        task: TaskDto::from(&task),
-        ancestors,
+        task,
         links: link_dtos,
-        threads,
-        prs,
         history,
         history_more,
         waits_on,
@@ -226,61 +188,53 @@ pub fn task_detail(
         waves,
         needs,
         prepared,
-        prepare_error,
         suggested_prs,
     })
 }
 
-/// The run-order map of a parent's subtasks.
-pub fn run_map(s: &AppState, _c: Caller, id: TaskId, req: u32) -> AppResult<RunMap> {
+/// The run-order map of a parent's subtasks. `req` is the UI's request number; the map
+/// itself doesn't carry it.
+pub fn run_map(s: &AppState, _c: Caller, id: TaskId, _req: u32) -> AppResult<RunMap> {
     let order = s.core_as(Ctx::Task(id), |st| st.run_order(id))?;
-    Ok(s.vm(|vm| runmap::run_map(vm, id, &order, req)))
+    Ok(s.vm(|vm| runmap::run_map(vm, id, &order)))
 }
 
 /// One card per open top-level parent.
-pub fn plans(s: &AppState, _c: Caller, req: u32) -> AppResult<PlansDto> {
-    Ok(PlansDto {
-        req,
-        cards: s.vm(viewmodel::plan_cards),
-    })
+pub fn plans(s: &AppState, _c: Caller, _req: u32) -> AppResult<Vec<PlanCard>> {
+    Ok(s.vm(viewmodel::plan_cards))
 }
 
 /// Quick add's repos and open parents, from the view model (no I/O).
-pub fn quickadd_data(s: &AppState, _c: Caller) -> AppResult<QuickAddData> {
-    let hotkey = hotkey_label(&s.settings().hotkey);
-    Ok(s.vm(|vm| QuickAddData {
-        repos: vm.repo_dtos.clone(),
+pub fn quickadd_data(s: &AppState, _c: Caller) -> AppResult<QuickaddData> {
+    Ok(s.vm(|vm| QuickaddData {
+        repos: vm.repos.clone(),
         parents: vm
             .rows_in_order()
             .into_iter()
-            .filter(|r| r.status.is_open() && r.status != crate::dto::StatusDto::Proposed)
+            .filter(|r| open(r.status) && r.status != Status::Proposed)
             .map(|r| ParentOption {
                 id: r.id,
                 title: r.title,
+                status: r.status,
+                waiting: r.waiting,
                 depth: r.depth,
             })
             .collect(),
-        hotkey,
     }))
 }
 
 /// T3's projects for Add repos, each with whether it's a git repo and already added.
-pub fn t3_projects(s: &AppState, _c: Caller) -> AppResult<Vec<T3ProjectDto>> {
+pub fn t3_projects(s: &AppState, _c: Caller) -> AppResult<Vec<T3ProjectRow>> {
     let sync = s.services.sync.snapshot();
     let added: HashSet<String> = s.vm(|vm| vm.repos.iter().map(|r| r.path.clone()).collect());
     Ok(sync
         .projects
         .iter()
-        .map(|p| T3ProjectDto {
+        .map(|p| T3ProjectRow {
             path: path_text(&p.path),
             name: p.name.clone(),
             is_git: Path::new(&p.path).join(".git").exists(),
             added: added.contains(&path_text(&p.path)),
         })
         .collect())
-}
-
-/// Every repo, for the UI after it adds some.
-pub fn repo_dtos(s: &AppState) -> Vec<RepoDto> {
-    s.vm(|vm| vm.repo_dtos.clone())
 }

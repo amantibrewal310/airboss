@@ -8,18 +8,18 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{Arc, Mutex};
 
-use airboss_core::{LinkId, RepoId, TaskId};
+use airboss_core::{LinkId, RepoId, Status, TaskId};
+use airboss_services::ThreadKey;
 
-use crate::commands::app::{self, CopyWhat, LinkRef};
-use crate::commands::launch::{self, PlaceArg};
-use crate::commands::tasks::{self, Direction, NewLinkArg, Then};
-use crate::commands::{detail, needs, repos};
+use crate::commands::tasks::{self, Direction};
+use crate::commands::{app, detail, launch, needs, repos};
 use crate::dto::{
-    AddedRepos, Bootstrap, Created, InstalledCli, LaunchOutcome, Patch, PlansDto, QuickAddData,
-    RunMap, StatusDto, T3ProjectDto, TaskDetail, ThreadKeyDto, UndoInfo, UndoResult, Undoable,
+    AddReposResult, Bootstrap, CopyWhat, CreateTaskInput, CreateTaskResult, DoItPlace, DoItResult,
+    InstallCliResult, OpenTarget, Patch, PlanCard, QuickaddData, RunMap, T3ProjectRow, TaskDetail,
+    UndoResult, UndoableWrite,
 };
 use crate::errors::{AppError, AppResult, ErrorCode};
-use crate::menu::{WindowName, Zone};
+use crate::menu::{FocusContext, WindowName};
 use crate::settings::Settings;
 use crate::state::{AppState, Caller, lock};
 
@@ -110,15 +110,16 @@ macro_rules! commands {
             [$($(#[$m:meta])* $arg:ident: $ty:ty),* $(,)?] -> $ret:ty;
     )*) => {
         $(
-            #[doc = concat!("The arguments of `", stringify!($name), "`.")]
-            #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, ts_rs::TS)]
+            #[doc = concat!("The arguments of `", stringify!($name), "`, as `invoke` sends them.")]
+            #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+            #[serde(rename_all = "camelCase")]
             pub struct $Args {
                 $( $(#[$m])* pub $arg: $ty, )*
             }
 
             #[doc = concat!("`", stringify!($name), "`, run off the main thread.")]
             #[allow(clippy::too_many_arguments)]
-            #[tauri::command(rename_all = "snake_case")]
+            #[tauri::command]
             pub async fn $name<R: tauri::Runtime>(
                 window: tauri::Window<R>,
                 app: tauri::State<'_, App>,
@@ -155,102 +156,66 @@ macro_rules! commands {
                 other => Err(AppError::internal(format!("unknown command {other}"))),
             }
         }
-
-        /// Exports every arguments type to TypeScript.
-        pub fn export_args(cfg: &ts_rs::Config) -> Result<(), ts_rs::ExportError> {
-            $( <$Args as ts_rs::TS>::export_all(cfg)?; )*
-            Ok(())
-        }
     };
 }
 
 commands! {
     bootstrap(BootstrapArgs) => detail::bootstrap, [] -> Bootstrap;
     task_detail(TaskDetailArgs) => detail::task_detail,
-        [#[ts(type = "number")] id: TaskId, req: u32, history_limit: u32] -> TaskDetail;
-    run_map(RunMapArgs) => detail::run_map, [#[ts(type = "number")] id: TaskId, req: u32] -> RunMap;
-    plans(PlansArgs) => detail::plans, [req: u32] -> PlansDto;
-    quickadd_data(QuickAddDataArgs) => detail::quickadd_data, [] -> QuickAddData;
-    t3_projects(T3ProjectsArgs) => detail::t3_projects, [] -> Vec<T3ProjectDto>;
-    create_task(CreateTaskArgs) => tasks::create_task, [
-        title: String,
-        body: Option<String>,
-        #[ts(type = "number | null")] parent: Option<TaskId>,
-        #[ts(type = "number[]")] repos: Vec<RepoId>,
-        links: Vec<NewLinkArg>,
-        then: Option<Then>,
-    ] -> Created;
-    rename_task(RenameTaskArgs) => tasks::rename_task,
-        [#[ts(type = "number")] id: TaskId, title: String] -> Patch;
-    edit_notes(EditNotesArgs) => tasks::edit_notes,
-        [#[ts(type = "number")] id: TaskId, body: Option<String>] -> Patch;
+        [id: TaskId, req: u32, history_limit: u32] -> TaskDetail;
+    run_map(RunMapArgs) => detail::run_map, [id: TaskId, req: u32] -> RunMap;
+    plans(PlansArgs) => detail::plans, [req: u32] -> Vec<PlanCard>;
+    quickadd_data(QuickaddDataArgs) => detail::quickadd_data, [] -> QuickaddData;
+    t3_projects(T3ProjectsArgs) => detail::t3_projects, [] -> Vec<T3ProjectRow>;
+    create_task(CreateTaskArgs) => tasks::create_task, [task: CreateTaskInput] -> CreateTaskResult;
+    rename_task(RenameTaskArgs) => tasks::rename_task, [id: TaskId, title: String] -> Patch;
+    edit_notes(EditNotesArgs) => tasks::edit_notes, [id: TaskId, body: Option<String>] -> Patch;
     set_status(SetStatusArgs) => tasks::set_status,
-        [#[ts(type = "number")] id: TaskId, status: StatusDto, note: Option<String>] -> Undoable;
-    toggle_done(ToggleDoneArgs) => tasks::toggle_done, [#[ts(type = "number")] id: TaskId] -> Undoable;
-    accept_proposals(AcceptProposalsArgs) => tasks::accept_proposals,
-        [#[ts(type = "number[]")] ids: Vec<TaskId>] -> Patch;
+        [id: TaskId, status: Status, note: Option<String>] -> UndoableWrite;
+    toggle_done(ToggleDoneArgs) => tasks::toggle_done, [id: TaskId] -> UndoableWrite;
+    accept_proposals(AcceptProposalsArgs) => tasks::accept_proposals, [ids: Vec<TaskId>] -> Patch;
     reject_proposals(RejectProposalsArgs) => tasks::reject_proposals,
-        [#[ts(type = "number[]")] ids: Vec<TaskId>, reason: Option<String>] -> UndoInfo;
-    move_task(MoveTaskArgs) => tasks::move_task, [
-        #[ts(type = "number")] id: TaskId,
-        #[ts(type = "number | null")] parent: Option<TaskId>,
-        position: Option<u32>,
-    ] -> Undoable;
-    reorder(ReorderArgs) => tasks::reorder,
-        [#[ts(type = "number")] id: TaskId, direction: Direction] -> Undoable;
-    link_repo(LinkRepoArgs) => tasks::link_repo,
-        [#[ts(type = "number")] id: TaskId, #[ts(type = "number")] repo: RepoId] -> Patch;
-    unlink_repo(UnlinkRepoArgs) => tasks::unlink_repo,
-        [#[ts(type = "number")] id: TaskId, #[ts(type = "number")] repo: RepoId] -> Patch;
-    add_repos(AddReposArgs) => repos::add_repos, [paths: Vec<String>] -> AddedRepos;
+        [ids: Vec<TaskId>, reason: Option<String>] -> UndoableWrite;
+    move_task(MoveTaskArgs) => tasks::move_task,
+        [id: TaskId, parent: Option<TaskId>, position: Option<u32>] -> UndoableWrite;
+    reorder(ReorderArgs) => tasks::reorder, [id: TaskId, direction: Direction] -> UndoableWrite;
+    link_repo(LinkRepoArgs) => tasks::link_repo, [id: TaskId, repo: RepoId] -> Patch;
+    unlink_repo(UnlinkRepoArgs) => tasks::unlink_repo, [id: TaskId, repo: RepoId] -> Patch;
+    add_repos(AddReposArgs) => repos::add_repos, [paths: Vec<String>] -> AddReposResult;
     pick_folder(PickFolderArgs) => repos::pick_folder, [] -> Option<String>;
-    set_branch(SetBranchArgs) => tasks::set_branch,
-        [#[ts(type = "number")] id: TaskId, branch: Option<String>] -> Patch;
-    add_dependency(AddDependencyArgs) => tasks::add_dependency,
-        [#[ts(type = "number")] id: TaskId, #[ts(type = "number")] waits_on: TaskId] -> Patch;
+    set_branch(SetBranchArgs) => tasks::set_branch, [id: TaskId, branch: Option<String>] -> Patch;
+    add_dependency(AddDependencyArgs) => tasks::add_dependency, [id: TaskId, waits_on: TaskId] -> Patch;
     remove_dependency(RemoveDependencyArgs) => tasks::remove_dependency,
-        [#[ts(type = "number")] id: TaskId, #[ts(type = "number")] waits_on: TaskId] -> Patch;
+        [id: TaskId, waits_on: TaskId] -> Patch;
     add_link(AddLinkArgs) => repos::add_link,
-        [#[ts(type = "number")] id: TaskId, text: String, title: Option<String>] -> Patch;
-    remove_link(RemoveLinkArgs) => repos::remove_link, [#[ts(type = "number")] link: LinkId] -> Patch;
-    add_note(AddNoteArgs) => tasks::add_note,
-        [#[ts(type = "number")] id: TaskId, text: String] -> Patch;
+        [id: TaskId, text: String, title: Option<String>] -> Patch;
+    remove_link(RemoveLinkArgs) => repos::remove_link, [link: LinkId] -> Patch;
+    add_note(AddNoteArgs) => tasks::add_note, [id: TaskId, text: String] -> Patch;
     do_it(DoItArgs) => launch::do_it,
-        [#[ts(type = "number")] id: TaskId, place: Option<PlaceArg>, again: Option<bool>] -> LaunchOutcome;
-    plan_it(PlanItArgs) => launch::plan_it,
-        [#[ts(type = "number")] id: TaskId, again: Option<bool>] -> LaunchOutcome;
-    add_to_t3(AddToT3Args) => launch::add_to_t3, [#[ts(type = "number")] repo: RepoId] -> ();
-    reopen_and_start(ReopenAndStartArgs) => launch::reopen_and_start,
-        [#[ts(type = "number")] id: TaskId] -> LaunchOutcome;
-    open_thread(OpenThreadArgs) => app::open_thread, [key: ThreadKeyDto] -> ();
-    open_url(OpenUrlArgs) => app::open_url, [url: Option<String>, link: Option<LinkRef>] -> ();
-    needs_dismiss(NeedsDismissArgs) => needs::needs_dismiss, [key: String] -> UndoInfo;
+        [id: TaskId, place: Option<DoItPlace>, again: Option<bool>] -> DoItResult;
+    plan_it(PlanItArgs) => launch::plan_it, [id: TaskId, again: Option<bool>] -> DoItResult;
+    add_to_t3(AddToT3Args) => launch::add_to_t3, [repo: RepoId] -> ();
+    reopen_and_start(ReopenAndStartArgs) => launch::reopen_and_start, [id: TaskId] -> DoItResult;
+    open_thread(OpenThreadArgs) => app::open_thread, [key: ThreadKey] -> ();
+    open_url(OpenUrlArgs) => app::open_url, [target: OpenTarget] -> ();
+    needs_dismiss(NeedsDismissArgs) => needs::needs_dismiss, [key: String] -> UndoableWrite;
     needs_snooze(NeedsSnoozeArgs) => needs::needs_snooze,
-        [key: String, until: Option<String>] -> UndoInfo;
+        [key: String, until: Option<String>] -> UndoableWrite;
     needs_restore(NeedsRestoreArgs) => needs::needs_restore, [key: String] -> ();
-    undo(UndoArgs) => tasks::undo, [#[ts(type = "number | null")] entry: Option<u64>] -> UndoResult;
+    undo(UndoArgs) => tasks::undo, [entry: Option<u64>] -> UndoResult;
     recheck_connections(RecheckConnectionsArgs) => app::recheck_connections, [] -> ();
     copy_text(CopyTextArgs) => app::copy_text, [what: CopyWhat] -> ();
-    install_cli(InstallCliArgs) => app::install_cli, [] -> InstalledCli;
+    install_cli(InstallCliArgs) => app::install_cli, [] -> InstallCliResult;
     get_settings(GetSettingsArgs) => app::get_settings, [] -> Settings;
     set_settings(SetSettingsArgs) => app::set_settings, [settings: Settings] -> Settings;
-    set_folded(SetFoldedArgs) => app::set_folded,
-        [#[ts(type = "number[]")] ids: Vec<TaskId>, folded: bool] -> ();
-    set_focus_context(SetFocusContextArgs) => app::set_focus_context, [
-        window: WindowName,
-        zone: Zone,
-        #[ts(type = "number | null")] selection: Option<TaskId>,
-        view: String,
-    ] -> ();
+    set_folded(SetFoldedArgs) => app::set_folded, [ids: Vec<TaskId>, folded: bool] -> ();
+    set_focus_context(SetFocusContextArgs) => app::set_focus_context, [context: FocusContext] -> ();
     ui_ready(UiReadyArgs) => app::ui_ready, [window: WindowName] -> ();
     quickadd_shown(QuickaddShownArgs) => app::quickadd_shown, [] -> ();
     quickadd_hide(QuickaddHideArgs) => app::quickadd_hide, [] -> ();
     quickadd_resize(QuickaddResizeArgs) => app::quickadd_resize, [height: f64] -> ();
-    show_main(ShowMainArgs) => app::show_main, [
-        view: Option<String>,
-        #[ts(type = "number | null")] task: Option<TaskId>,
-        needs_key: Option<String>,
-    ] -> ();
+    show_main(ShowMainArgs) => app::show_main,
+        [view: Option<String>, task: Option<TaskId>, needs_key: Option<String>] -> ();
 }
 
 include!("command_names.rs");

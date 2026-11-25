@@ -16,7 +16,7 @@ use airboss_core::{EventId, Repo};
 use airboss_services::{SharedStore, StoreChange};
 use tauri_plugin_log::log;
 
-use crate::dto::{ConnectionsDto, NeedsDto, Patch};
+use crate::dto::{ConnectionsChanged, Patch};
 use crate::errors::{AppError, AppResult};
 use crate::services::Services;
 use crate::shell::UiEvent;
@@ -52,7 +52,7 @@ pub(crate) struct CatchUp {
     pub seq: u64,
     pub data_version: Option<i64>,
     pub needs_version: u64,
-    pub connections: ConnectionsDto,
+    pub connections: ConnectionsChanged,
 }
 
 fn core_read<T>(
@@ -87,9 +87,9 @@ impl CatchUp {
             seq: 1,
             data_version: Some(data_version),
             needs_version: needs.version,
-            connections: ConnectionsDto {
+            connections: ConnectionsChanged {
                 connections: Vec::new(),
-                availability: crate::dto::AvailabilityDto::Unknown,
+                availability: airboss_services::Availability::Unknown,
             },
         })
     }
@@ -189,8 +189,7 @@ impl AppState {
         if needs.version != cu.needs_version {
             cu.needs_version = needs.version;
             self.shell.update_tray(&needs);
-            self.shell
-                .emit(UiEvent::NeedsChanged(NeedsDto::from(&*needs)));
+            self.shell.emit(UiEvent::NeedsChanged((*needs).clone()));
         }
         let connections = self.connections(&cu.vm);
         if connections != cu.connections {

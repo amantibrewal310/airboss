@@ -6,38 +6,20 @@ use std::time::Instant;
 
 use airboss_core::{Actor, EventId, NewTask, Status, TaskEdit, TaskId};
 use serde::{Deserialize, Serialize};
-use ts_rs::TS;
 
 use crate::classify::classify;
 use crate::commands::launch;
 use crate::dto::{
-    Created, LaunchAttempt, NavOpen, Patch, StatusDto, ToastDto, ToastTone, UndoInfo, UndoResult,
-    Undoable,
+    CreateTaskInput, CreateTaskResult, LinkError, NavOpen, Patch, Then, ToastEvent, ToastTone,
+    UndoEntry, UndoResult, UndoableWrite, open, status_label,
 };
 use crate::errors::{AppError, AppResult, Ctx, ErrorCode, MSG_DEP_FAMILY};
 use crate::shell::UiEvent;
 use crate::state::{AppState, Caller, lock};
 use crate::undo::Inverse;
 
-/// What `create_task` does after creating.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum Then {
-    #[default]
-    None,
-    DoIt,
-    PlanIt,
-}
-
-/// One link pasted into New task: the text and an optional title.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct NewLinkArg {
-    pub text: String,
-    pub title: Option<String>,
-}
-
 /// Up or down among its siblings.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Direction {
     Up,
@@ -57,14 +39,14 @@ impl AppState {
         inverse: Vec<Inverse>,
         tasks: Vec<TaskId>,
         after: EventId,
-    ) -> UndoInfo {
+    ) -> UndoEntry {
         let info = lock(&self.undo).push(label, inverse, tasks, after);
         self.refresh_menus();
         info
     }
 
     /// When quick add asked for something that went wrong, the main window shows it.
-    pub(crate) fn surface(&self, caller: Caller, task: TaskId, toast: ToastDto) {
+    pub(crate) fn surface(&self, caller: Caller, task: TaskId, toast: ToastEvent) {
         if caller == Caller::QuickAdd {
             self.shell.show_main();
             self.shell.emit(UiEvent::NavOpen(NavOpen {
@@ -78,18 +60,17 @@ impl AppState {
 }
 
 /// `create_task`: the task with its repos in one change, then each link, then Do it or Plan
-/// it if asked. A link or launch that fails after the task exists leaves the task.
-#[allow(clippy::too_many_arguments)]
-pub fn create_task(
-    s: &AppState,
-    c: Caller,
-    title: String,
-    body: Option<String>,
-    parent: Option<TaskId>,
-    repos: Vec<airboss_core::RepoId>,
-    links: Vec<NewLinkArg>,
-    then: Option<Then>,
-) -> AppResult<Created> {
+/// it if asked. A link or launch that fails after the task exists leaves the task; a failed
+/// launch is reported with a `toast` (and, from quick add, the main window shows).
+pub fn create_task(s: &AppState, c: Caller, task: CreateTaskInput) -> AppResult<CreateTaskResult> {
+    let CreateTaskInput {
+        title,
+        body,
+        parent,
+        repos,
+        links,
+        then,
+    } = task;
     let new = NewTask {
         title,
         parent,
@@ -97,56 +78,71 @@ pub fn create_task(
         body: body.filter(|b| !b.trim().is_empty()),
     };
     let ctx = Ctx::Move(parent.unwrap_or(TaskId(0)));
-    let task = s
+    let created = s
         .core(|st| st.add_task(new, &Actor::Me))
         .map_err(|e| match (e, parent) {
             (airboss_core::Error::NotFound, Some(p)) => AppError::task_gone(p),
             (e, _) => AppError::core(e, ctx),
         })?;
-    let id = task.id;
-    let mut failed_links = Vec::new();
-    for l in &links {
+    let id = created.id;
+    let mut link_errors = Vec::new();
+    for l in links {
         let added = classify(&l.text, l.title.as_deref(), &s.config.home)
             .and_then(|nl| s.core_as(Ctx::Link, |st| st.link(id, nl, &Actor::Me)));
-        if added.is_err() {
-            failed_links.push(l.title.clone().unwrap_or_else(|| l.text.clone()));
+        if let Err(error) = added {
+            link_errors.push(LinkError {
+                text: l.title.unwrap_or(l.text),
+                error,
+            });
         }
     }
     let patch = s.after_write()?;
-    if let Some(first) = failed_links.first() {
+    if let Some(first) = link_errors.first() {
         s.surface(
             c,
             id,
-            ToastDto {
-                text: format!("Created {}, but couldn't link {first}", id.0),
-                tone: ToastTone::Warning,
-                actions: Vec::new(),
-                undo: None,
-                task: Some(id),
-            },
+            warning(
+                format!("Created {}, but couldn't link {}", id.0, first.text),
+                id,
+            ),
         );
     }
-    let launch = match then.unwrap_or_default() {
+    let launch = match then {
         Then::None => None,
         Then::DoIt => Some(launch::do_it(s, c, id, None, None)),
         Then::PlanIt => Some(launch::plan_it(s, c, id, None)),
-    }
-    .map(|r| match r {
-        Ok(outcome) => LaunchAttempt {
-            outcome: Some(outcome),
-            error: None,
-        },
-        Err(e) => LaunchAttempt {
-            outcome: None,
-            error: Some(e),
-        },
-    });
-    Ok(Created {
+    };
+    let launch = match launch {
+        Some(Ok(outcome)) => Some(outcome),
+        Some(Err(e)) => {
+            // The task exists; say why it didn't start, wherever the user is.
+            if c != Caller::QuickAdd && e.code != ErrorCode::AlreadyStarting {
+                s.shell.emit(UiEvent::Toast(warning(
+                    format!("Couldn't start {}: {}", id.0, e.message),
+                    id,
+                )));
+            }
+            None
+        }
+        None => None,
+    };
+    Ok(CreateTaskResult {
         id,
         patch,
         launch,
-        failed_links,
+        link_errors,
     })
+}
+
+/// A warning toast about a task.
+pub(crate) fn warning(text: String, task: TaskId) -> ToastEvent {
+    ToastEvent {
+        text,
+        actions: Vec::new(),
+        undo: None,
+        tone: Some(ToastTone::Warning),
+        task: Some(task),
+    }
 }
 
 /// Renames a task.
@@ -167,21 +163,21 @@ pub fn edit_notes(s: &AppState, _c: Caller, id: TaskId, body: Option<String>) ->
 }
 
 /// The undo label for a status change: "Mark done 144", "Drop 144", "Reopen 144" …
-fn status_label(id: TaskId, from: StatusDto, to: StatusDto) -> String {
+fn undo_label(id: TaskId, from: Status, to: Status) -> String {
     match to {
-        StatusDto::Done => format!("Mark done {}", id.0),
-        StatusDto::Dropped => format!("Drop {}", id.0),
-        _ if !from.is_open() => format!("Reopen {}", id.0),
-        StatusDto::Blocked => format!("Mark blocked {}", id.0),
-        to => format!("Set {} to {}", id.0, to.label()),
+        Status::Done => format!("Mark done {}", id.0),
+        Status::Dropped => format!("Drop {}", id.0),
+        _ if !open(from) => format!("Reopen {}", id.0),
+        Status::Blocked => format!("Mark blocked {}", id.0),
+        to => format!("Set {} to {}", id.0, status_label(to)),
     }
 }
 
 /// The status to undo back to: proposed can't be set by me, so it comes back as todo.
-fn undo_status(s: StatusDto) -> Status {
+fn undo_status(s: Status) -> Status {
     match s {
-        StatusDto::Proposed => Status::Todo,
-        other => other.into(),
+        Status::Proposed => Status::Todo,
+        other => other,
     }
 }
 
@@ -191,19 +187,19 @@ pub fn set_status(
     s: &AppState,
     _c: Caller,
     id: TaskId,
-    status: StatusDto,
+    status: Status,
     note: Option<String>,
-) -> AppResult<Undoable> {
+) -> AppResult<UndoableWrite> {
     // Previous statuses come from the view model before the change.
-    let before: Vec<(TaskId, StatusDto, Option<String>)> = s.vm(|vm| {
-        let ids = if status == StatusDto::Dropped {
+    let before: Vec<(TaskId, Status, Option<String>)> = s.vm(|vm| {
+        let ids = if status == Status::Dropped {
             vm.index.subtree(id)
         } else {
             vec![id]
         };
         ids.into_iter()
             .filter_map(|t| vm.rows.get(&t))
-            .filter(|r| r.id == id || r.status.is_open())
+            .filter(|r| r.id == id || open(r.status))
             .map(|r| (r.id, r.status, r.blocked_reason.clone()))
             .collect()
     });
@@ -213,19 +209,22 @@ pub fn set_status(
     let after = s.latest_event();
     let note = note.filter(|n| !n.trim().is_empty());
     s.core_as(Ctx::Task(id), |st| {
-        st.set_status(id, status.into(), note.as_deref(), &Actor::Me)
+        st.set_status(id, status, note.as_deref(), &Actor::Me)
     })?;
     let patch = s.after_write()?;
-    if from == status && status != StatusDto::Dropped {
-        return Ok(Undoable { patch, undo: None });
+    if from == status && status != Status::Dropped {
+        return Ok(UndoableWrite {
+            patch: Some(patch),
+            undo: None,
+        });
     }
     let inverse = before
         .iter()
-        .filter(|(_, prev, _)| *prev != StatusDto::Dropped)
+        .filter(|(_, prev, _)| *prev != Status::Dropped)
         .map(|(t, prev, reason)| Inverse::SetStatus {
             id: *t,
             status: undo_status(*prev),
-            note: if *prev == StatusDto::Blocked {
+            note: if *prev == Status::Blocked {
                 reason.clone()
             } else {
                 None
@@ -233,46 +232,39 @@ pub fn set_status(
         })
         .collect();
     let tasks = before.iter().map(|(t, _, _)| *t).collect();
-    let undo = s.push_undo(status_label(id, from, status), inverse, tasks, after);
-    Ok(Undoable {
-        patch,
+    let undo = s.push_undo(undo_label(id, from, status), inverse, tasks, after);
+    Ok(UndoableWrite {
+        patch: Some(patch),
         undo: Some(undo),
     })
 }
 
 /// Space: done, or back to what it was before done when reopening.
-pub fn toggle_done(s: &AppState, c: Caller, id: TaskId) -> AppResult<Undoable> {
+pub fn toggle_done(s: &AppState, c: Caller, id: TaskId) -> AppResult<UndoableWrite> {
     let row = s.row(id).ok_or_else(|| AppError::task_gone(id))?;
-    if row.status != StatusDto::Done {
-        return set_status(s, c, id, StatusDto::Done, None);
+    if row.status != Status::Done {
+        return set_status(s, c, id, Status::Done, None);
     }
     // The status before the latest move to done, from history.
     let history = s.core_as(Ctx::Task(id), |st| st.history(id))?;
-    let done_at = history
+    let previous = history
         .iter()
-        .rposition(|e| e.to_status == Some(Status::Done));
-    let previous = done_at
+        .rposition(|e| e.to_status == Some(Status::Done))
         .and_then(|i| {
-            history[..i]
-                .iter()
-                .rev()
-                .find(|e| e.to_status.is_some_and(|s| s != Status::Done))
-                .map(|e| (e.to_status, e.body.clone()))
-        })
-        .and_then(|(st, body)| st.map(|st| (st, body)));
-    let (to, note) = match previous {
-        Some((Status::Blocked, reason)) => (StatusDto::Blocked, reason),
-        Some((Status::Doing, _)) => (StatusDto::Doing, None),
-        Some((Status::InReview, _)) => (StatusDto::InReview, None),
-        _ => (StatusDto::Todo, None),
-    };
-    let note = if to == StatusDto::Blocked && note.is_none() {
+            history[..i].iter().rev().find_map(|e| {
+                e.to_status
+                    .filter(|st| *st != Status::Done)
+                    .map(|st| (st, e.body.clone()))
+            })
+        });
+    match previous {
         // A blocked status needs its reason; without one, reopen as todo.
-        return set_status(s, c, id, StatusDto::Todo, None);
-    } else {
-        note
-    };
-    set_status(s, c, id, to, note)
+        Some((Status::Blocked, Some(reason))) => {
+            set_status(s, c, id, Status::Blocked, Some(reason))
+        }
+        Some((st @ (Status::Doing | Status::InReview), _)) => set_status(s, c, id, st, None),
+        _ => set_status(s, c, id, Status::Todo, None),
+    }
 }
 
 /// Accepts proposals: each to todo. Not undoable (`core` can't make a proposal again).
@@ -298,7 +290,7 @@ pub fn reject_proposals(
     _c: Caller,
     ids: Vec<TaskId>,
     reason: Option<String>,
-) -> AppResult<UndoInfo> {
+) -> AppResult<UndoableWrite> {
     if ids.is_empty() {
         return Err(AppError::new(ErrorCode::NotFound, "Nothing to reject."));
     }
@@ -312,7 +304,11 @@ pub fn reject_proposals(
         many => format!("Reject {} proposals", many.len()),
     };
     let after = s.latest_event();
-    Ok(s.push_undo(label, vec![Inverse::CancelReject(reject)], ids, after))
+    let undo = s.push_undo(label, vec![Inverse::CancelReject(reject)], ids, after);
+    Ok(UndoableWrite {
+        patch: None,
+        undo: Some(undo),
+    })
 }
 
 /// Moves a task under `parent` (top level with none) at `position` (last with none).
@@ -322,7 +318,7 @@ pub fn move_task(
     id: TaskId,
     parent: Option<TaskId>,
     position: Option<u32>,
-) -> AppResult<Undoable> {
+) -> AppResult<UndoableWrite> {
     let row = s.row(id).ok_or_else(|| AppError::task_gone(id))?;
     let after = s.latest_event();
     let position = position.unwrap_or(u32::MAX);
@@ -333,7 +329,10 @@ pub fn move_task(
         .row(id)
         .is_some_and(|r| r.parent != row.parent || r.position != row.position);
     if !moved {
-        return Ok(Undoable { patch, undo: None });
+        return Ok(UndoableWrite {
+            patch: Some(patch),
+            undo: None,
+        });
     }
     let undo = s.push_undo(
         format!("Move {}", id.0),
@@ -345,8 +344,8 @@ pub fn move_task(
         vec![id],
         after,
     );
-    Ok(Undoable {
-        patch,
+    Ok(UndoableWrite {
+        patch: Some(patch),
         undo: Some(undo),
     })
 }
@@ -363,7 +362,7 @@ fn move_error(
         airboss_core::Error::InvalidTarget => {
             let parent_open = parent
                 .and_then(|p| s.row(p))
-                .is_some_and(|r| r.status.is_open() && r.status != StatusDto::Proposed);
+                .is_some_and(|r| open(r.status) && r.status != Status::Proposed);
             if parent_open {
                 AppError::new(
                     ErrorCode::InvalidTarget,
@@ -386,7 +385,12 @@ fn move_error(
 }
 
 /// ⌥⌘↑ / ⌥⌘↓: one place among its siblings; at either end nothing happens.
-pub fn reorder(s: &AppState, c: Caller, id: TaskId, direction: Direction) -> AppResult<Undoable> {
+pub fn reorder(
+    s: &AppState,
+    c: Caller,
+    id: TaskId,
+    direction: Direction,
+) -> AppResult<UndoableWrite> {
     let (row, siblings) = s.vm(|vm| {
         let row = vm.rows.get(&id).cloned();
         let n = row
@@ -400,8 +404,8 @@ pub fn reorder(s: &AppState, c: Caller, id: TaskId, direction: Direction) -> App
         Direction::Up if row.position > 1 => row.position - 1,
         Direction::Down if (row.position as usize) < siblings => row.position + 1,
         _ => {
-            return Ok(Undoable {
-                patch: Patch::empty(s.seq()),
+            return Ok(UndoableWrite {
+                patch: None,
                 undo: None,
             });
         }

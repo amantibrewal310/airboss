@@ -9,12 +9,12 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
-use airboss_app::dto::{ChipDto, NextUp, Progress, StatusDto, WaveDot};
+use airboss_app::dto::Progress;
 use airboss_app::runmap::{display_waves, map_fits, run_map};
 use airboss_app::viewmodel::{ViewModel, diff, plan_cards};
 use airboss_core::{Actor, NewTask, Status, Store, TaskEdit, TaskId};
 use airboss_services::{
-    NeedsKind, NeedsList, Source, SyncSnapshot, ThreadKey, ThreadState, ThreadView,
+    Chip, NeedsKind, NeedsList, Source, SyncSnapshot, ThreadKey, ThreadState, ThreadView,
 };
 use common::{TestApp, needs_item};
 
@@ -114,11 +114,7 @@ fn a_parent_shows_its_subtasks_repo_union_flagged_and_children_inherit_its_branc
     assert!(v.rows[&lone].repos.is_empty() && !v.rows[&lone].repos_from_subtasks);
     assert_eq!(v.rows[&b].branch.as_deref(), Some("task-1-parent"));
     assert_eq!(v.rows[&lone].branch, None);
-    assert_eq!(v.repo_dtos[0].name, "api");
-    assert_eq!(
-        v.repo_dtos.iter().map(|r| r.color).collect::<Vec<_>>(),
-        vec![2, 1]
-    );
+    assert_eq!(v.repos[0].name, "api");
 }
 
 fn thread(id: &str, state: ThreadState) -> ThreadView {
@@ -171,8 +167,8 @@ fn the_live_chip_is_the_strongest_of_the_tasks_threads_while_it_is_open() {
         ("d1", ThreadState::Running, d),
     ]);
     let v = vm_with(&s, sync, NeedsList::default());
-    assert_eq!(v.rows[&a].live, Some(ChipDto::WaitingOnYou));
-    assert_eq!(v.rows[&b].live, Some(ChipDto::Working));
+    assert_eq!(v.rows[&a].live, Some(Chip::WaitingOnYou));
+    assert_eq!(v.rows[&b].live, Some(Chip::Working));
     assert_eq!(v.rows[&c].live, None, "a gone thread has no chip");
     assert_eq!(v.rows[&d].live, None, "only while the task is open");
 }
@@ -356,21 +352,25 @@ fn plan_cards_show_progress_waves_and_whats_next() {
     assert_eq!(cards.len(), 1, "only open top-level parents");
     let card = &cards[0];
     assert_eq!(
-        (card.progress.done, card.progress.total, card.percent),
+        (
+            card.progress.done,
+            card.progress.total,
+            card.progress.percent()
+        ),
         (1, 3, 33)
     );
-    assert_eq!(card.wave_count, 3);
+    assert_eq!(card.waves, 3);
     assert_eq!(card.current_wave, Some(1));
     assert_eq!(
-        card.wave_dots,
-        vec![WaveDot::Done, WaveDot::Current, WaveDot::Todo]
+        card.next_up.iter().map(|n| n.id).collect::<Vec<_>>(),
+        vec![b]
     );
-    assert_eq!(card.next_up, NextUp::Ready { ids: vec![b] });
+    assert!(!card.finish_it);
 
     status(&mut s, b, Status::Done);
     status(&mut s, c, Status::Done);
     let cards = plan_cards(&vm(&s));
-    assert_eq!(cards[0].next_up, NextUp::FinishIt);
+    assert!(cards[0].finish_it && cards[0].next_up.is_empty());
     assert_eq!(cards[0].current_wave, None);
 }
 
@@ -433,11 +433,10 @@ fn the_refunds_example_has_waves_of_3_2_1_and_2_with_one_outside_blocker() {
     assert!(!edge("202", "205") && !edge("204", "205") && !edge("205", "207"));
 
     let order = s.run_order(p).unwrap();
-    let map = run_map(&v, p, &order, 7);
-    assert_eq!(map.req, 7);
+    let map = run_map(&v, p, &order);
     assert_eq!(map.nodes.len(), 8);
     assert_eq!(map.outside.len(), 1);
-    assert!(map.fits);
+    assert!(map_fits(map.nodes.len(), map.waves.len()));
 }
 
 #[test]
@@ -504,7 +503,8 @@ fn the_map_falls_back_above_40_subtasks_or_8_waves() {
     }
     let v = vm(&s);
     let order = s.run_order(p).unwrap();
-    assert!(!run_map(&v, p, &order, 0).fits);
+    let map = run_map(&v, p, &order);
+    assert!(!map_fits(map.nodes.len(), map.waves.len()));
 }
 
 #[test]
@@ -513,7 +513,7 @@ fn rows_follow_status_for_the_ui() {
     let a = add(&mut s, "A", None);
     status(&mut s, a, Status::Blocked);
     let v = vm(&s);
-    assert_eq!(v.rows[&a].status, StatusDto::Blocked);
+    assert_eq!(v.rows[&a].status, Status::Blocked);
     assert_eq!(v.rows[&a].blocked_reason.as_deref(), Some("stuck"));
     let _ = SystemTime::now();
 }
