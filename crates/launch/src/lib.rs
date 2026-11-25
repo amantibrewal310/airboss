@@ -8,9 +8,6 @@
 //! The app calls [`start`] once, then uses the returned [`Launch`] through
 //! `airboss_services::LaunchService`.
 
-// The start loop and the worker use the rest; removed once they land.
-#![allow(dead_code)]
-
 pub mod branch;
 pub mod brief;
 mod core_access;
@@ -28,8 +25,8 @@ mod worker;
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
-use std::sync::mpsc::{self, Sender};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -168,6 +165,38 @@ pub struct Launch {
     worker: Mutex<Option<worker::Running>>,
 }
 
+/// The longest `shutdown` waits for the worker.
+const SHUTDOWN_WAIT: Duration = Duration::from_secs(1);
+
+/// Starts launch for the app: [`open`], plus the worker thread, which checks T3 and settles
+/// any pending rows left by the last run straight away.
+///
+/// `cfg` is usually `LaunchConfig::defaults(home)`; `core` wraps the app's `SharedStore`;
+/// `tools` is `LaunchTools::real(&cfg)`.
+pub fn start(
+    cfg: LaunchConfig,
+    core: CoreAccess,
+    sync: Arc<dyn SyncService>,
+    tools: LaunchTools,
+) -> Result<Arc<Launch>, ServiceError> {
+    let (launch, worker) = open(cfg, core, sync, tools)?;
+    let (done_tx, done) = mpsc::channel();
+    let join = std::thread::Builder::new()
+        .name("airboss-launch".into())
+        .spawn(move || {
+            worker.run();
+            let _ = done_tx.send(());
+        })
+        .map_err(|e| {
+            ServiceError::new(
+                ErrorCode::Internal,
+                format!("Couldn't start launch's worker: {e}."),
+            )
+        })?;
+    *lock(&launch.worker) = Some(worker::Running { done, join });
+    Ok(launch)
+}
+
 /// Exactly what `start` would send for `req`, for golden tests and a preview. Places that
 /// already started are left out; a place that would fail makes the whole call fail.
 pub fn briefs(launch: &Launch, req: &StartRequest) -> Result<Vec<Brief>, ServiceError> {
@@ -266,10 +295,26 @@ impl Service for Launch {
     }
 
     fn shutdown(&self) {
-        self.inner
-            .shut
-            .store(true, std::sync::atomic::Ordering::SeqCst);
+        self.inner.shut.store(true, Ordering::SeqCst);
         self.inner.queue(LaunchMsg::Shutdown);
+        let Some(running) = lock(&self.worker).take() else {
+            return;
+        };
+        // The worker finishes what it's doing first; wait at most a second for it.
+        match running.done.recv_timeout(SHUTDOWN_WAIT) {
+            Ok(()) | Err(RecvTimeoutError::Disconnected) => {
+                if running.join.join().is_err() {
+                    log("the worker thread ended with a panic");
+                }
+            }
+            Err(RecvTimeoutError::Timeout) => log("the worker didn't stop within a second"),
+        }
+    }
+}
+
+impl Drop for Launch {
+    fn drop(&mut self) {
+        self.shutdown();
     }
 }
 
@@ -286,10 +331,7 @@ impl LaunchService for Launch {
         start::start(&self.inner, req)
     }
 
-    fn add_to_t3(&self, _repo: RepoId) -> Result<(), ServiceError> {
-        Err(ServiceError::new(
-            ErrorCode::Internal,
-            "Add to T3 isn't built yet.",
-        ))
+    fn add_to_t3(&self, repo: RepoId) -> Result<(), ServiceError> {
+        start::add_to_t3(&self.inner, repo)
     }
 }

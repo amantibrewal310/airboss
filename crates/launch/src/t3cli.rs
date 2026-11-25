@@ -95,11 +95,18 @@ pub fn folder_argv(title: &str, folder: &str) -> Vec<String> {
         .to_vec()
 }
 
-/// "Add to T3": `project add --title <name> <path>`, flags first as its usage shows.
+/// "Add to T3": `project add --title <name> <path>`, flags first as its usage shows. A name
+/// that could be read as a flag loses its leading `-`; with nothing left, T3 picks the title.
 pub fn project_add_argv(name: &str, path: &str) -> Vec<String> {
-    ["project", "add", "--title", name, path]
-        .map(String::from)
-        .to_vec()
+    let title = one_line(name);
+    let title = title.trim().trim_start_matches('-');
+    let mut argv = vec!["project".to_string(), "add".to_string()];
+    if !title.is_empty() {
+        argv.push("--title".to_string());
+        argv.push(title.to_string());
+    }
+    argv.push(path.to_string());
+    argv
 }
 
 /// `--version`.
@@ -538,6 +545,14 @@ mod tests {
         assert_eq!(
             project_add_argv("web", "/src/web"),
             ["project", "add", "--title", "web", "/src/web"]
+        );
+        assert_eq!(
+            project_add_argv("--force", "/src/web"),
+            ["project", "add", "--title", "force", "/src/web"]
+        );
+        assert_eq!(
+            project_add_argv("--", "/src/web"),
+            ["project", "add", "/src/web"]
         );
     }
 }

@@ -473,3 +473,29 @@ fn run(
 pub(crate) fn thread_link(thread: &str, title: &str) -> NewLink {
     NewLink::new(LinkKind::T3Thread, thread).with_title(title)
 }
+
+/// `LaunchService::add_to_t3`: `<t3> project add --title <name> <path>`, only ever from the
+/// "Add to T3 and retry" button.
+pub(crate) fn add_to_t3(inner: &Inner, repo: RepoId) -> Result<(), ServiceError> {
+    if inner.shut.load(Ordering::SeqCst) {
+        return Err(errors::shutting_down());
+    }
+    let repos = inner
+        .core
+        .read(|s| s.repos())
+        .map_err(|e| errors::core(&e))?;
+    let repo = repos
+        .into_iter()
+        .find(|r| r.id == repo)
+        .ok_or_else(errors::repo_not_found)?;
+    let path = PathBuf::from(&repo.path);
+    if !path.is_absolute() {
+        return Err(errors::not_a_full_path(&repo.name, &path));
+    }
+    if !path.is_dir() {
+        return Err(errors::repo_missing(&repo.name, &path));
+    }
+    let argv = t3cli::project_add_argv(&repo.name, &repo.path);
+    let result = lock(&inner.t3).run(&argv, None, inner.cfg.timeout);
+    t3cli::read_other(result, &repo.name, inner.cfg.timeout).map(|_| ())
+}

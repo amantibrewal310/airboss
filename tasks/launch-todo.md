@@ -97,7 +97,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
   - **Files:** `src/settle.rs`, `src/worker.rs`, `tests/worker.rs`, `tests/idempotency.rs`
   - **Depends on:** T9
 
-- [ ] **T11. The service** (S)
+- [x] **T11. The service** (S)
   - **Description:** `start(…)` with the worker thread; `Service` and `LaunchService` for `Launch`: availability, connections, recheck, woke, shutdown within 1 s, `add_to_t3`.
   - **Acceptance:** availability `Missing` without T3 (no file, exit 127) and `Ready` with its version; the connection rows; `changes()` bumps; `add_to_t3` runs `project add`; `shutdown` returns within 1 s and `start` then says `ShuttingDown`; a panic in `handle` leaves the worker running.
   - **Verify:** `tests/service.rs`.

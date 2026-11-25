@@ -32,15 +32,6 @@ pub(crate) enum State {
 }
 
 impl State {
-    fn as_str(self) -> &'static str {
-        match self {
-            State::Pending => "pending",
-            State::Started => "started",
-            State::Failed => "failed",
-            State::Lost => "lost",
-        }
-    }
-
     fn parse(text: &str) -> Option<State> {
         Some(match text {
             "pending" => State::Pending,
