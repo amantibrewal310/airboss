@@ -101,6 +101,7 @@
   class:kb={selected && keyboard}
   class:done={row.status === 'done'}
   class:fresh
+  class:waiting-you={row.live === 'waiting_on_you' && row.needs}
   style:--d={depth}
   data-row={row.id}
   {role}
@@ -353,11 +354,12 @@
     .pc {
       display: none;
     }
-    .row :global(.live .lt) {
+    /* Chips take their short labels (Running, Waiting, Stopped) before they lose them. */
+    .row :global(.live .full) {
       display: none;
     }
-    .row :global(.live) {
-      padding: 0 6px;
+    .row :global(.live .brief) {
+      display: inline;
     }
   }
   /* Beside the panel in a small window: the title keeps its room; the actor and quieter pills go. */
@@ -365,6 +367,16 @@
     .row :global(.av),
     .pill.ok,
     .pill.quiet {
+      display: none;
+    }
+    .row :global(.live .lt) {
+      display: none;
+    }
+    .row :global(.live) {
+      padding: 0 6px;
+    }
+    /* A bare red chip dot already says "waiting on you"; a second red dot beside it is noise. */
+    .waiting-you .dot {
       display: none;
     }
     .when {

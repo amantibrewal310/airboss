@@ -77,8 +77,15 @@ describe('TaskRow', () => {
     expect(visible(narrow.querySelector('.short'))).toBe(true);
     const parent = (await show(142, 520)).el;
     expect(visible(parent.querySelector('.pc'))).toBe(false);
+    // Chips shorten first ("Waiting"), then lose their label at 460px or less.
     const live = (await show(144, 520)).el;
-    expect(visible(live.querySelector('.live .lt'))).toBe(false);
+    expect(visible(live.querySelector('.live .full'))).toBe(false);
+    expect(live.querySelector('.live .brief')!.textContent).toBe('Waiting');
+    expect(visible(live.querySelector('.live .brief'))).toBe(true);
+    expect(visible(live.querySelector('.dot'))).toBe(true);
+    const tight = (await show(144, 440)).el;
+    expect(visible(tight.querySelector('.live .lt'))).toBe(false);
+    expect(visible(tight.querySelector('.dot'))).toBe(false);
     expect(live.querySelector('.live')!.getAttribute('title')).toBe('Waiting on you');
     expect(name(live)).toContain('waiting on you');
   });
