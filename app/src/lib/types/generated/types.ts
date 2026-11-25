@@ -66,7 +66,11 @@ export type Bootstrap = { seq: number,
 /**
  * In tree order.
  */
-rows: Array<RowDto>, order: Array<TaskId>, repos: Array<Repo>, needs: NeedsList, connections: Array<Connection>, availability: Availability, settings: Settings, 
+rows: Array<RowDto>, order: Array<TaskId>, repos: Array<Repo>, needs: NeedsList, connections: Array<Connection>, availability: Availability, 
+/**
+ * When an agent last reported (the newest `agent:*` event), for the Agents row.
+ */
+agent_report: Timestamp | null, settings: Settings, 
 /**
  * The system accent as `#rrggbb`, or `null` for Multicolor (keep indigo).
  */
@@ -95,7 +99,16 @@ export type Connection = { name: string, ok: boolean, state: string, detail: str
 /**
  * `connections:changed`'s payload.
  */
-export type ConnectionsChanged = { connections: Array<Connection>, availability: Availability, };
+export type ConnectionsChanged = { connections: Array<Connection>, availability: Availability, 
+/**
+ * When an agent last reported (the newest `agent:*` event), for "Last report 3m ago".
+ */
+agent_report: Timestamp | null, 
+/**
+ * The command-line tool, which the Agents row needs; `on_path` arrives once the shell
+ * check is done.
+ */
+cli: CliStatus, };
 
 /**
  * What to copy.

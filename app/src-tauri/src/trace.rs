@@ -283,6 +283,12 @@ mod tests {
                 fix: None,
             }],
             availability: Availability::Unknown,
+            agent_report: None,
+            cli: crate::dto::CliStatus {
+                installed: true,
+                path: "/Users/x/.local/bin/airboss".into(),
+                on_path: true,
+            },
         };
         assert_eq!(
             describe(&UiEvent::ConnectionsChanged(c)),

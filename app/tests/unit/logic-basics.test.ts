@@ -88,6 +88,18 @@ describe('connections', () => {
     expect(merged).toHaveLength(1);
     expect(merged[0]).toMatchObject({ name: 'T3 Code', ok: false, state: 'Not found' });
   });
+  it('says when an agent last reported on a Ready Agents row, or that none has', () => {
+    const now = Date.parse('2026-11-25T10:44:00.000Z');
+    const ready = c('Agents', true, 'Ready');
+    const at = (ts: string | null) => mergeConnections([ready], 'unknown', { agentReport: ts, now })[0]!.detail;
+    expect(at('2026-11-25T10:41:00.000Z')).toBe('Last report 3m ago');
+    expect(at('2026-11-25T10:43:40.000Z')).toBe('Last report just now');
+    expect(at('2026-11-23T09:00:00.000Z')).toBe('Last report 2d ago');
+    expect(at(null)).toBe('No agent has reported yet.');
+    // A row that isn't Ready keeps its own words.
+    const broken = mergeConnections([c('Agents', false, 'Link broken')], 'unknown', { agentReport: '2026-11-25T10:41:00.000Z', now });
+    expect(broken[0]!.detail).toBe('Agents detail');
+  });
   it('names the first problem, or counts them', () => {
     expect(footerText([c('GitHub', true, 'Signed in')], null)).toEqual({ ok: true, text: 'All connected' });
     expect(footerText([c('T3 Code', false, 'Not found')], null)).toEqual({ ok: false, text: 'T3 Code not found' });

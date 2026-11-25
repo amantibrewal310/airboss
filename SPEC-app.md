@@ -414,7 +414,7 @@ Every screen keeps DESIGN.md's layout, sizes and motion. This section adds data,
   |---|---|
   | T3 Code | `launch.availability()` and the T3 connection from `sync`. OK only if both are OK; otherwise the first one that's off. |
   | GitHub | `sync`'s GitHub connection |
-  | Agents | the app: whether the CLI is installed, and the time of the newest `agent:*` event |
+  | Agents | the app: whether the CLI works, and the time of the newest `agent:*` event. "Ready" needs `~/.local/bin/airboss` to lead, through the link, to a non-empty executable file; a dangling link (an Airboss.app that moved) is "Link broken". Ready's line reads "Last report 3m ago", or "No agent has reported yet." The time is tracked from catch-up's events, starting from the newest agent event found at start (the last 256 events, then 4,096, then all), and sent as `agent_report` with `connections:changed` |
   | Claude Code | `sync`'s Claude connection, shown only when it's broken |
 
 - The search and pencil icons at the top open Jump and New task.
@@ -644,6 +644,7 @@ A modal in the main window, built from the design's components:
 - **Open at login:** a switch.
 - **Appearance:** System (the default), Dark or Light.
 - **Command-line tool:** Install, with its path, and whether `~/.local/bin` is on `PATH`.
+  - "On `PATH`" means the user's own shell's `PATH`: `$SHELL -ilc` (interactive and login, so `~/.zprofile` **and** `~/.zshrc` count, as in Terminal), reading the `PATH` after a marker, with a 3 s deadline, after which the shell is killed; it's always reaped (`login_path.rs`). It runs in the background at start and after Install, and the answer reaches the UI as `cli` in `connections:changed`. The app's own `PATH` is launchd's and never has `~/.local/bin`.
 - **Agent setup:** "Copy agent note", and "Copy setup command" (`claude mcp add --scope user airboss -- ~/.local/bin/airboss mcp`).
 
 ### First run, Add repos, T3 missing, nothing needs you
@@ -996,7 +997,7 @@ Writes return `Patch` (shown as → P). All `core` calls act as `me`, with one l
 |---|---|---|
 | `tree:patch` | `Patch` | `catch_up()` produced a change from `core` or a service |
 | `needs:changed` | `{version, items, count, checked_at}` | `attention`'s `Changes` bumped |
-| `connections:changed` | `{connections, availability}` | a service's connections or `availability()` changed |
+| `connections:changed` | `{connections, availability, agent_report, cli}` | a service's connections or `availability()` changed, an agent reported, or the CLI's state changed |
 | `menu:action` | `{command}` | a native menu item was chosen |
 | `nav:open` | `{view?, task?, needs_key?}` | the menu-bar menu, the Dock, a second launch, or a failed Do it from quick add |
 | `quickadd:reset` | `{hotkey}` | the panel was hidden; the UI resets and refetches |

@@ -68,6 +68,9 @@ pub struct AppConfig {
     pub start_hidden: bool,
     /// When `main` started, for the cold-start log.
     pub started: Instant,
+    /// The user's shell, run as `-ilc` to see whether `~/.local/bin` is on their `PATH`.
+    /// `None` skips the check (tests, which mustn't read the developer's startup files).
+    pub shell: Option<PathBuf>,
 }
 
 impl AppConfig {
@@ -84,6 +87,7 @@ impl AppConfig {
             fold_save_delay: Duration::from_secs(1),
             start_hidden: false,
             started: Instant::now(),
+            shell: Some(crate::login_path::user_shell()),
         }
     }
 }
@@ -122,6 +126,8 @@ pub struct AppState {
     pub(crate) watch: Mutex<Option<Watch>>,
     /// Whether the database broke while the app runs (R2).
     pub(crate) db: Mutex<DbHealth>,
+    /// Whether `~/.local/bin` is on the user's shell `PATH`, once checked.
+    pub(crate) login_path: Mutex<Option<bool>>,
     pub(crate) config: AppConfig,
     pub(crate) stopping: AtomicBool,
     pub(crate) main_shown: AtomicBool,
@@ -159,6 +165,7 @@ impl AppState {
             timing: Mutex::new(Timing::default()),
             watch: Mutex::new(None),
             db: Mutex::new(db),
+            login_path: Mutex::new(None),
             main_shown: AtomicBool::new(false),
             stopping: AtomicBool::new(false),
             fold_saver: Mutex::new(None),
@@ -168,7 +175,7 @@ impl AppState {
         });
         {
             let mut cu = lock(&state.catchup);
-            cu.connections = state.connections(&cu.vm);
+            cu.connections = state.connections(&cu.vm, cu.agent_report.as_deref());
             crate::catchup::log_connections(&cu.connections);
         }
         Ok(state)
@@ -317,17 +324,31 @@ impl AppState {
     }
 
     /// The connection rows and T3's availability, merged as the footer shows them.
-    pub(crate) fn connections(&self, vm: &ViewModel) -> ConnectionsChanged {
+    pub(crate) fn connections(
+        &self,
+        vm: &ViewModel,
+        agent_report: Option<&str>,
+    ) -> ConnectionsChanged {
         let problems = lock(&self.problems).clone();
-        let cli = self.config.home.join(".local/bin/airboss");
-        let cli_installed = std::fs::symlink_metadata(&cli).is_ok();
-        crate::connections::merged(&self.services, vm, &problems, cli_installed)
+        let cli = crate::commands::app::cli_status(self);
+        crate::connections::merged(&self.services, vm, &problems, cli, agent_report)
+    }
+
+    /// Runs the user's shell to see whether `~/.local/bin` is on its `PATH` (up to 3 s), and
+    /// remembers the answer for Settings.
+    pub(crate) fn check_login_path(&self) -> bool {
+        let Some(shell) = &self.config.shell else {
+            return false;
+        };
+        let on = crate::login_path::on_login_path(shell, &self.config.home.join(".local/bin"));
+        *lock(&self.login_path) = Some(on);
+        on
     }
 
     /// Re-reads the connections and sends them if they changed.
-    pub(crate) fn refresh_connections(&self) {
+    pub fn refresh_connections(&self) {
         let mut cu = lock(&self.catchup);
-        let fresh = self.connections(&cu.vm);
+        let fresh = self.connections(&cu.vm, cu.agent_report.as_deref());
         if fresh != cu.connections {
             cu.connections = fresh.clone();
             drop(cu);

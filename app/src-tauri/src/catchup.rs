@@ -52,6 +52,8 @@ pub(crate) struct CatchUp {
     pub data_version: Option<i64>,
     pub needs_version: u64,
     pub connections: ConnectionsChanged,
+    /// When an agent last reported: the newest `agent:*` event's time.
+    pub agent_report: Option<String>,
 }
 
 fn core_read<T>(
@@ -72,6 +74,7 @@ impl CatchUp {
         let snapshot = Arc::new(core_read(store, |s| s.snapshot())?);
         let repos = core_read(store, |s| s.repos())?;
         let data_version = core_read(store, |s| s.data_version())?;
+        let agent_report = newest_agent_report(store, snapshot.latest_event_id)?;
         let needs = services.attention.needs_me();
         let vm = ViewModel::build(
             snapshot.clone(),
@@ -89,9 +92,36 @@ impl CatchUp {
             connections: ConnectionsChanged {
                 connections: Vec::new(),
                 availability: airboss_services::Availability::Unknown,
+                agent_report: None,
+                cli: crate::dto::CliStatus {
+                    installed: false,
+                    path: String::new(),
+                    on_path: false,
+                },
             },
+            agent_report,
         })
     }
+}
+
+/// The time of the newest `agent:*` event, looking back through the newest 256 events, then
+/// 4,096, then all of them, so a start-up normally reads a few hundred.
+fn newest_agent_report(store: &SharedStore, latest: EventId) -> AppResult<Option<String>> {
+    for window in [256, 4096, i64::MAX] {
+        let from = EventId(latest.0.saturating_sub(window).max(0));
+        let events = core_read(store, |s| s.events_after(from))?;
+        if let Some(e) = events.iter().rev().find(|e| is_agent(&e.actor)) {
+            return Ok(Some(e.at.clone()));
+        }
+        if from.0 == 0 {
+            break;
+        }
+    }
+    Ok(None)
+}
+
+fn is_agent(actor: &airboss_core::Actor) -> bool {
+    matches!(actor, airboss_core::Actor::Agent(_))
 }
 
 impl AppState {
@@ -115,6 +145,9 @@ impl AppState {
             );
         }
         cu.cursor = cu.cursor.max(snapshot.latest_event_id);
+        if let Some(e) = events.iter().rev().find(|e| is_agent(&e.actor)) {
+            cu.agent_report = Some(e.at.clone());
+        }
         // The store lock is free here: each `core` call above dropped it.
         let change = StoreChange {
             events,
@@ -194,7 +227,7 @@ impl AppState {
             self.shell.update_tray(&needs);
             self.shell.emit(UiEvent::NeedsChanged((*needs).clone()));
         }
-        let connections = self.connections(&cu.vm);
+        let connections = self.connections(&cu.vm, cu.agent_report.as_deref());
         if connections != cu.connections {
             cu.connections = connections.clone();
             log_connections(&connections);
@@ -285,6 +318,15 @@ impl AppState {
 
         let me = self.clone();
         guarded(self, "rejects", move |_| crate::undo::reject_timer(&me));
+
+        // The user's shell can take a moment to start, so the PATH check runs off the start-up
+        // path, and Settings hears the answer with the connections.
+        if self.config.shell.is_some() {
+            self.spawn("login-path", |s| {
+                s.check_login_path();
+                s.refresh_connections();
+            });
+        }
     }
 
     /// Handles a batch of triggers.

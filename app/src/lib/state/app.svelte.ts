@@ -144,7 +144,7 @@ export class App {
       const b = await api.bootstrap();
       this.tasks.load(b);
       this.needs.load(b.needs);
-      this.conn.set(b.connections, b.availability);
+      this.conn.set(b.connections, b.availability, b.agent_report);
       this.settings = b.settings;
       this.cli = b.cli;
       this.conn.cliInstalled = b.cli.installed;
@@ -173,7 +173,11 @@ export class App {
         const before = this.needs.visible.map((n) => n.key);
         if (this.needs.apply(c)) this.reconcileNeeds(before);
       }),
-      on('connections:changed', (c) => this.conn.set(c.connections, c.availability)),
+      on('connections:changed', (c) => {
+        this.conn.set(c.connections, c.availability, c.agent_report);
+        this.cli = c.cli;
+        this.conn.cliInstalled = c.cli.installed;
+      }),
       on('menu:action', ({ command }) => this.runCommand(command as CommandId)),
       on('nav:open', (n) => this.navOpen(n)),
       on('toast', (t) => this.toastEvent(t)),
@@ -181,7 +185,7 @@ export class App {
       on('error:background', (e) => (this.conn.background = e.message)),
       on('db:unavailable', (e) => this.lost(e)),
     ]);
-    const tick = () => (this.now = clockNow());
+    const tick = () => (this.now = this.conn.now = clockNow());
     setInterval(() => {
       if (document.visibilityState === 'visible') tick();
     }, 60_000);

@@ -1,8 +1,6 @@
 //! App commands: the opener, the clipboard, the CLI, settings, focus, and the windows.
 
-use std::path::Path;
-use std::process::{Command, Stdio};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use airboss_core::{LinkKind, TaskId};
 use airboss_services::ThreadKey;
@@ -147,41 +145,12 @@ pub fn install_cli(s: &AppState, _c: Caller) -> AppResult<InstallCliResult> {
         Err(_) => {}
     }
     std::os::unix::fs::symlink(&sidecar, &link).map_err(fail)?;
+    let on_path = s.check_login_path();
     s.refresh_connections();
     Ok(InstallCliResult {
         path: path_text(&link),
-        on_path: on_login_path(&bin),
+        on_path,
     })
-}
-
-/// Whether `dir` is on the login shell's `PATH` (the app's own `PATH` is launchd's).
-fn on_login_path(dir: &Path) -> bool {
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
-    let child = Command::new(shell)
-        .args(["-lc", "printf %s \"$PATH\""])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn();
-    let Ok(mut child) = child else { return false };
-    // A login shell's startup files shouldn't take long; don't wait forever on one that does.
-    let deadline = Instant::now() + Duration::from_secs(3);
-    loop {
-        match child.try_wait() {
-            Ok(Some(_)) => break,
-            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(20)),
-            _ => {
-                let _ = child.kill();
-                return false;
-            }
-        }
-    }
-    let mut out = String::new();
-    if let Some(mut stdout) = child.stdout.take() {
-        use std::io::Read;
-        let _ = stdout.read_to_string(&mut out);
-    }
-    out.split(':').any(|p| Path::new(p) == dir)
 }
 
 /// The settings now.
@@ -314,15 +283,19 @@ pub fn show_main(
     Ok(())
 }
 
-/// Where the CLI link lives, whether it's there, and whether its folder is on `PATH`.
+/// Where the CLI link lives, whether it works, and whether its folder is on the user's
+/// `PATH`: their shell's, once `check_login_path` has run, else the app's own (launchd's).
 pub fn cli_status(s: &AppState) -> CliStatus {
     let bin = s.config.home.join(".local/bin");
     let link = bin.join("airboss");
+    let on_path = (*lock(&s.login_path)).unwrap_or_else(|| {
+        std::env::var_os("PATH").is_some_and(|p| std::env::split_paths(&p).any(|d| d == bin))
+    });
     CliStatus {
-        installed: std::fs::symlink_metadata(&link).is_ok(),
+        // Through the link: a dangling one, or one to a file that can't run, isn't installed.
+        installed: crate::connections::cli_at(&link) == crate::connections::Cli::Ready,
         path: path_text(&link),
-        on_path: std::env::var_os("PATH")
-            .is_some_and(|p| std::env::split_paths(&p).any(|d| d == bin)),
+        on_path,
     }
 }
 

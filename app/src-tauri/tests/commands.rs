@@ -1103,6 +1103,10 @@ fn recheck_copy_and_install_cli() {
     );
     let sidecar = temp_dir("bundle").join("airboss");
     std::fs::write(&sidecar, b"#!/bin/sh\n").unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&sidecar, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
     app.shell.set_sidecar(Some(sidecar.clone()));
     let out = appcmd::install_cli(&app.state, M).unwrap();
     let link = app.home.join(".local/bin/airboss");
@@ -1121,6 +1125,135 @@ fn recheck_copy_and_install_cli() {
     assert_eq!(
         err_code(appcmd::install_cli(&app.state, M)).0,
         ErrorCode::AlreadyExists
+    );
+}
+
+fn agents(app: &TestApp) -> Connection {
+    app.state.refresh_connections();
+    app.state
+        .connection_rows()
+        .into_iter()
+        .find(|c| c.name == "Agents")
+        .unwrap()
+}
+
+/// Audit should-fix 9: a dangling link (or one to a file that can't run) isn't Ready, and
+/// Ready says when an agent last reported, or that none has.
+#[test]
+fn agents_are_ready_only_with_a_working_cli_and_say_when_one_last_reported() {
+    use std::os::unix::fs::{PermissionsExt, symlink};
+    let app = TestApp::new();
+    let bin = app.home.join(".local/bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let link = bin.join("airboss");
+    symlink(app.home.join("Old.app/Contents/MacOS/airboss"), &link).unwrap();
+    let a = agents(&app);
+    assert_eq!((a.ok, a.state.as_str()), (false, "Link broken"), "{a:?}");
+    assert!(!detail::bootstrap(&app.state, M).unwrap().cli.installed);
+
+    let cli = temp_dir("cli").join("airboss");
+    std::fs::write(&cli, b"").unwrap();
+    std::fs::remove_file(&link).unwrap();
+    symlink(&cli, &link).unwrap();
+    assert!(
+        !agents(&app).ok,
+        "an empty, non-executable file isn't a CLI"
+    );
+
+    std::fs::write(&cli, b"#!/bin/sh\n").unwrap();
+    std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let a = agents(&app);
+    assert_eq!((a.ok, a.state.as_str()), (true, "Ready"), "{a:?}");
+    assert_eq!(a.detail, "No agent has reported yet.");
+    let b = detail::bootstrap(&app.state, M).unwrap();
+    assert!(b.cli.installed);
+    assert_eq!(b.agent_report, None);
+
+    // An agent reports: the time arrives with connections:changed.
+    let t = app.add("T", None);
+    app.core(|s| {
+        s.add_note(t, "started", &Actor::Agent("t3/thread-1".into()))
+            .unwrap()
+    });
+    app.sync_vm();
+    let at = app.core(|s| s.history(t).unwrap().last().unwrap().at.clone());
+    assert_eq!(
+        detail::bootstrap(&app.state, M).unwrap().agent_report,
+        Some(at.clone())
+    );
+    assert!(app.shell.events().iter().any(|e| matches!(
+        e,
+        UiEvent::ConnectionsChanged(c) if c.agent_report.as_deref() == Some(at.as_str())
+    )));
+    // My own later writes don't count as a report.
+    tasks::rename_task(&app.state, M, t, "Renamed".into()).unwrap();
+    assert_eq!(
+        detail::bootstrap(&app.state, M).unwrap().agent_report,
+        Some(at)
+    );
+}
+
+/// Settings' "~/.local/bin isn't on your PATH yet" follows the user's interactive login
+/// shell (so `~/.zshrc` counts), checked in the background at start and after an install, and
+/// sent with the connections.
+#[test]
+fn the_path_check_reads_zshrc_and_reaches_the_ui() {
+    use std::os::unix::fs::PermissionsExt;
+    let mut app = TestApp::new();
+    let zdot = temp_dir("zdot");
+    let bin = app.home.join(".local/bin");
+    std::fs::write(
+        zdot.join(".zshrc"),
+        format!("export PATH=\"$PATH:{}\"\n", bin.display()),
+    )
+    .unwrap();
+    // A shell that reads the throwaway ZDOTDIR, never the user's own startup files.
+    let shell = temp_dir("shell").join("zsh");
+    std::fs::write(
+        &shell,
+        format!(
+            "#!/bin/sh\nZDOTDIR='{}' exec /bin/zsh \"$@\"\n",
+            zdot.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&shell, std::fs::Permissions::from_mode(0o755)).unwrap();
+    app = app.with_shell(shell);
+    assert!(!detail::bootstrap(&app.state, M).unwrap().cli.on_path);
+    app.state.start_background();
+    let sent = app.shell.wait_for(
+        Duration::from_secs(10),
+        |e| matches!(e, UiEvent::ConnectionsChanged(c) if c.cli.on_path),
+    );
+    assert!(sent.is_some(), "{:?}", app.shell.events());
+    assert!(detail::bootstrap(&app.state, M).unwrap().cli.on_path);
+}
+
+/// The newest agent report is found at start, behind later events of mine.
+#[test]
+fn the_last_agent_report_is_found_at_start() {
+    let mut store = airboss_core::Store::open_in_memory().unwrap();
+    let t = store
+        .add_task(airboss_core::NewTask::new("T"), &Actor::Me)
+        .unwrap()
+        .id;
+    store
+        .add_note(t, "working", &Actor::Agent("t3/x".into()))
+        .unwrap();
+    let at = store.history(t).unwrap().last().unwrap().at.clone();
+    for i in 0..300 {
+        store
+            .edit_task(
+                t,
+                airboss_core::TaskEdit::default().title(format!("T{i}")),
+                &Actor::Me,
+            )
+            .unwrap();
+    }
+    let app = TestApp::with_store(store);
+    assert_eq!(
+        detail::bootstrap(&app.state, M).unwrap().agent_report,
+        Some(at)
     );
 }
 

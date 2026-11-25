@@ -1,4 +1,5 @@
-import type { Availability, Connection } from '../types';
+import type { Availability, Connection, Timestamp } from '../types';
+import { relative } from './time';
 
 const ORDER = ['T3 Code', 'GitHub', 'Agents', 'Claude Code'];
 
@@ -15,7 +16,11 @@ export function t3MissingReason(a: Availability): string | null {
  * first that isn't (EM decision, 26 Nov). T3 Code is also off when `launch` says it's missing.
  * Claude Code shows only when it's broken.
  */
-export function mergeConnections(rows: Connection[], availability: Availability, app: { cliInstalled?: boolean } = {}): Connection[] {
+export function mergeConnections(
+  rows: Connection[],
+  availability: Availability,
+  app: { cliInstalled?: boolean; agentReport?: Timestamp | null; now?: number } = {},
+): Connection[] {
   const byName = new Map<string, Connection>();
   for (const r of rows) {
     const prev = byName.get(r.name);
@@ -27,6 +32,12 @@ export function mergeConnections(rows: Connection[], availability: Availability,
   const agents = byName.get('Agents');
   if (app.cliInstalled === false && agents?.ok) {
     byName.set('Agents', { ...agents, ok: false, state: 'Not set up', fix: 'Install the command-line tool, then copy the agent note into each repo.' });
+  }
+  // A Ready Agents row says when an agent last reported (SPEC-app: the CLI is installed, and
+  // the time of the last report), or that none has: Ready alone doesn't mean one is set up.
+  const ready = byName.get('Agents');
+  if (ready?.ok && 'agentReport' in app) {
+    byName.set('Agents', { ...ready, detail: lastReport(app.agentReport ?? null, app.now ?? Date.now()) });
   }
   const missing = t3MissingReason(availability);
   const t3 = byName.get('T3 Code');
@@ -51,4 +62,12 @@ export function footerText(merged: Connection[], background: string | null): { o
   if (!off.length) return { ok: true, text: 'All connected' };
   if (off.length === 1) return { ok: false, text: `${off[0]!.name} ${off[0]!.state.toLowerCase()}` };
   return { ok: false, text: `${off.length} connections need setup` };
+}
+
+/** "Last report 3m ago", "Last report just now", "Last report on 4 Nov", or none yet. */
+export function lastReport(at: Timestamp | null, now: number): string {
+  if (!at) return 'No agent has reported yet.';
+  const r = relative(at, now);
+  if (r === 'now') return 'Last report just now';
+  return /^\d+[mhdw]$/.test(r) ? `Last report ${r} ago` : `Last report on ${r}`;
 }

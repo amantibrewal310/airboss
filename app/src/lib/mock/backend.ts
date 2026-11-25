@@ -204,6 +204,13 @@ export class MockBackend implements Transport {
     return { items, count: items.length, checked_at: ts(this.seedNow), version: this.needsVersion.value };
   }
 
+  /** The newest agent event's time, as Rust's catch-up tracks it. */
+  private agentReport(): string | null {
+    let at: string | null = null;
+    for (const e of this.s.events) if (e.actor.startsWith('agent:') && (at === null || e.at > at)) at = e.at;
+    return at;
+  }
+
   private pushUndo(label: string, tasks: TaskId[], inverse: () => void): UndoRecord {
     const rec: UndoRecord = { id: this.nextUndo++, label, tasks, inverse };
     this.undoStack.push(rec);
@@ -331,6 +338,7 @@ export class MockBackend implements Transport {
         needs: this.needsList(),
         connections: this.s.connections,
         availability: this.s.availability,
+        agent_report: this.agentReport(),
         settings: this.s.settings,
         accent: null,
         cli: this.s.cli,
@@ -684,7 +692,7 @@ export class MockBackend implements Transport {
     },
 
     recheck_connections: () => {
-      setTimeout(() => this.emit('connections:changed', { connections: this.s.connections, availability: this.s.availability }), 400);
+      setTimeout(() => this.emit('connections:changed', { connections: this.s.connections, availability: this.s.availability, agent_report: this.agentReport(), cli: this.s.cli }), 400);
       return null;
     },
 
@@ -705,7 +713,7 @@ export class MockBackend implements Transport {
       this.s.connections = this.s.connections.map((c) =>
         c.name === 'Agents' ? { ...c, ok: true, state: 'Ready', fix: null } : c,
       );
-      this.emit('connections:changed', { connections: this.s.connections, availability: this.s.availability });
+      this.emit('connections:changed', { connections: this.s.connections, availability: this.s.availability, agent_report: this.agentReport(), cli: this.s.cli });
       return { path: this.s.cli.path, on_path: this.s.cli.on_path };
     },
 
