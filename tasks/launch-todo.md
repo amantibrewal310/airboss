@@ -56,7 +56,7 @@ Sizes: XS = 1 file, S = 1–2 files, M = 3–5 files.
 
 ## Phase 2: Starting threads
 
-- [ ] **T6. CoreAccess and the fakes** (M)
+- [x] **T6. CoreAccess and the fakes** (M)
   - **Description:** `core_access.rs` with `fail_next`; `git.rs` (real `git` calls and the cached default branch); `fake.rs` with `FakeT3Cli` and `FakeGit`; `LaunchConfig`, `LaunchTools`, `open`.
   - **Acceptance:** `fail_next` fails exactly the next such write, once, with the chosen error; the fakes record calls and answer from scripts.
   - **Verify:** unit tests in `src/core_access.rs`; `tests/common/mod.rs` builds a `Launch` on an in-memory store.

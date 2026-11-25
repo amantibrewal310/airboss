@@ -6,12 +6,21 @@ rust-version.workspace = true
 repository.workspace = true
 description = "Do it and Plan it for Airboss: starts T3 threads for tasks, once each."
 
+[features]
+# FakeT3Cli and FakeGit, for this crate's tests and the app's.
+fakes = ["airboss-services/fakes"]
+
 [dependencies]
 airboss-core = { path = "../core" }
 airboss-services = { path = "../services" }
 rusqlite = { version = "0.43.0", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+
+[dev-dependencies]
+# The crate's own tests use its fakes and the services' fakes.
+airboss-launch = { path = ".", features = ["fakes"] }
+airboss-services = { path = "../services", features = ["fakes"] }
 
 [lints]
 workspace = true
