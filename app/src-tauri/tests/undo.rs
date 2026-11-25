@@ -458,3 +458,95 @@ fn reorder_moves_past_hidden_siblings_and_only_a_real_move_is_undoable() {
         "Nothing to undo."
     );
 }
+
+/// Holds SQLite's write lock on `db` from another connection for `hold`, as a long write by
+/// `airboss mcp` would. Returns once the lock is taken.
+fn hold_write_lock(db: &std::path::Path, hold: Duration) -> std::thread::JoinHandle<()> {
+    let (taken, ready) = std::sync::mpsc::channel();
+    let db = db.to_path_buf();
+    let h = std::thread::spawn(move || {
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        conn.execute_batch("BEGIN IMMEDIATE").unwrap();
+        taken.send(()).unwrap();
+        std::thread::sleep(hold);
+        conn.execute_batch("COMMIT").unwrap();
+    });
+    ready.recv().unwrap();
+    h
+}
+
+fn on_file(name: &str) -> (TestApp, std::path::PathBuf) {
+    let dir = common::temp_dir(name);
+    let db = dir.join("airboss.db");
+    (
+        TestApp::with_store(airboss_core::Store::open(&db).unwrap()),
+        db,
+    )
+}
+
+/// Audit should-fix 4: a reject the database was too busy to take is retried.
+#[test]
+fn a_reject_is_retried_while_the_database_is_busy() {
+    let (app, db) = on_file("reject-busy");
+    let p = app.add("P", None);
+    let x = proposal(&app, p, "x");
+    app.sync_vm();
+    tasks::reject_proposals(&app.state, M, vec![x], None).unwrap();
+    // Longer than one attempt's 2 s busy timeout, shorter than two.
+    let holder = hold_write_lock(&db, Duration::from_millis(2300));
+    app.state.shutdown(Duration::from_secs(1));
+    holder.join().unwrap();
+    assert_eq!(
+        status(&app, x),
+        Status::Dropped,
+        "the second attempt landed"
+    );
+    assert!(
+        !app.shell
+            .events()
+            .iter()
+            .any(|e| matches!(e, airboss_app::UiEvent::Toast(_))),
+        "no toast when it worked"
+    );
+}
+
+/// …and one that still fails says so, with Retry, instead of the proposal quietly coming back.
+#[test]
+fn a_reject_that_still_fails_shows_a_toast_with_retry() {
+    let (app, db) = on_file("reject-fails");
+    let p = app.add("P", None);
+    let x = proposal(&app, p, "x");
+    app.sync_vm();
+    tasks::reject_proposals(&app.state, M, vec![x], Some("not now".into())).unwrap();
+    let holder = hold_write_lock(&db, Duration::from_millis(4600));
+    app.state.write_rejects_now();
+    holder.join().unwrap();
+    assert_eq!(status(&app, x), Status::Proposed, "nothing was written");
+    let toast = app
+        .shell
+        .events()
+        .into_iter()
+        .find_map(|e| match e {
+            airboss_app::UiEvent::Toast(t) => Some(t),
+            _ => None,
+        })
+        .expect("a toast");
+    assert_eq!(
+        toast.text,
+        format!("Couldn't reject {}: the database stayed busy.", x.0)
+    );
+    assert_eq!(toast.tone, Some(airboss_app::dto::ToastTone::Warning));
+    let retry = &toast.actions[0];
+    assert_eq!(
+        (retry.label.as_str(), retry.command.as_str()),
+        ("Retry", "reject_proposals")
+    );
+    assert_eq!(
+        serde_json::to_value(&retry.args).unwrap(),
+        serde_json::json!({ "ids": [x.0], "reason": "not now" })
+    );
+    // Retry is the same reject again; this time the database is free.
+    tasks::reject_proposals(&app.state, M, vec![x], Some("not now".into())).unwrap();
+    app.state.shutdown(Duration::from_secs(1));
+    assert_eq!(status(&app, x), Status::Dropped);
+}

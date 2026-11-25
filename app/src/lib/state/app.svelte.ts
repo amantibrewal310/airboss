@@ -600,6 +600,8 @@ export class App {
         ...t.actions.map((a) => ({
           label: a.label,
           run: () => {
+            // Retry on a reject that couldn't be written: the same reject, with its undo window.
+            if (a.command === 'reject_proposals') return void this.rejectAgain(a.args.ids as TaskId[]);
             const fn = fns[camel(a.command)];
             if (!fn) return console.error(`toast action: no api function for ${a.command}`);
             fn(...Object.values(a.args)).catch((e: unknown) => this.fail(e));
@@ -1116,6 +1118,22 @@ export class App {
       this.applyWrite(await api.acceptProposals([id]));
       this.toast(`Accepted ${id}`);
     } catch (e) {
+      this.fail(e);
+    }
+  }
+
+  /** Retry on a reject Rust couldn't write: hide the rows again and reject them with Undo. */
+  async rejectAgain(ids: TaskId[]): Promise<void> {
+    if (ids.length === 1) return this.rejectOne(ids[0]!);
+    const item = this.needs.visible.find((n) => n.kind === 'proposed' && ids.every((id) => n.proposed.some(([p]) => p === id)));
+    if (item) return this.rejectProposals(item, ids);
+    this.tasks.hide(ids, true);
+    const deadline = Date.now() + App.rejectDelayMs;
+    try {
+      const w = await api.rejectProposals(ids, null);
+      this.undoToast(`Rejected ${ids.length} subtasks`, w, { rows: ids }, undefined, deadline);
+    } catch (e) {
+      this.tasks.hide(ids, false);
       this.fail(e);
     }
   }

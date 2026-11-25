@@ -7,11 +7,13 @@ use std::collections::{HashSet, VecDeque};
 use std::sync::{Condvar, Mutex};
 use std::time::Instant;
 
-use airboss_core::{Actor, EventId, Status, TaskId};
+use airboss_core::{Actor, EventId, Status, Store, TaskId};
 use airboss_services::NeedsKey;
 use tauri_plugin_log::log;
 
-use crate::dto::UndoEntry;
+use crate::dto::{ToastArgs, ToastEvent, ToastEventAction, ToastTone, UndoEntry};
+use crate::errors::{AppError, Ctx};
+use crate::shell::UiEvent;
 use crate::state::{AppState, lock};
 
 /// How deep the stack goes; the oldest entry drops off.
@@ -181,37 +183,125 @@ impl Rejects {
     }
 }
 
+/// Rejects `id` if it's still a proposal: `Ok(true)` when written, `Ok(false)` when it was
+/// accepted or changed since it was queued (from the CLI, say), which leaves it alone.
+///
+/// The check and the write must not be split by another write, or an `airboss accept` that
+/// lands between them would be dropped as a plain drop. `core` has no conditional reject yet,
+/// so this adapter runs both under the one store lock it's called with: that serialises them
+/// against every write in this process. When `core` grows a `reject` that checks inside its
+/// own transaction, this becomes that one call.
+pub(crate) fn reject_if_proposed(
+    store: &mut Store,
+    id: TaskId,
+    reason: Option<&str>,
+) -> airboss_core::Result<bool> {
+    if store.task(id)?.status != Status::Proposed {
+        return Ok(false);
+    }
+    store.set_status(id, Status::Dropped, reason, &Actor::Me)?;
+    Ok(true)
+}
+
+/// SQLite's busy or locked, by its own wording: the app depends on `core`, not rusqlite.
+fn is_busy(e: &airboss_core::Error) -> bool {
+    let text = e.to_string();
+    matches!(e, airboss_core::Error::Db(_))
+        && (text.contains("database is locked")
+            || text.contains("database is busy")
+            || text.contains("database table is locked"))
+}
+
+/// "153", "153 and 154", "153, 154 and 155".
+fn ids_text(ids: &[TaskId]) -> String {
+    let all: Vec<String> = ids.iter().map(|t| t.0.to_string()).collect();
+    match all.split_last() {
+        Some((last, [])) => last.clone(),
+        Some((last, rest)) => format!("{} and {last}", rest.join(", ")),
+        None => String::new(),
+    }
+}
+
+/// "Couldn't reject 153: the database stayed busy.", with Retry (the same reject again).
+fn reject_failed(ids: Vec<TaskId>, reason: Option<String>, why: &str) -> ToastEvent {
+    ToastEvent {
+        text: format!("Couldn't reject {}: {why}", ids_text(&ids)),
+        task: ids.first().copied(),
+        actions: vec![ToastEventAction {
+            label: "Retry".into(),
+            command: "reject_proposals".into(),
+            args: ToastArgs::Reject { ids, reason },
+        }],
+        undo: None,
+        tone: Some(ToastTone::Warning),
+    }
+}
+
 impl AppState {
-    /// Writes rejects now: those due, or every one with `all` (at quit).
+    /// Writes every pending reject now, as quitting does.
+    pub fn write_rejects_now(&self) {
+        self.write_rejects(true);
+    }
+
+    /// Writes rejects now: those due, or every one with `all` (at quit). A busy database is
+    /// retried (`reject_retry`); a reject that still can't be written says so in a toast with
+    /// Retry, instead of the proposal quietly coming back.
     pub(crate) fn write_rejects(&self, all: bool) {
         let due = self.rejects.take_due((!all).then(Instant::now));
         if due.is_empty() {
             return;
         }
         for r in &due {
+            let mut failed = Vec::new();
+            let mut why = None;
             for id in &r.ids {
-                // Accepted (or changed) since the reject was queued: leave it.
-                match self.core(|s| s.task(*id)) {
-                    Ok(t) if t.status == Status::Proposed => {}
-                    Ok(_) | Err(airboss_core::Error::NotFound) => continue,
-                    Err(e) => {
-                        log::warn!("couldn't check {} before rejecting it: {e}", id.0);
-                        continue;
-                    }
-                }
-                let reason = r.reason.as_deref();
-                if let Err(e) =
-                    self.core(|s| s.set_status(*id, Status::Dropped, reason, &Actor::Me))
-                {
+                if let Err(e) = self.reject_with_retry(*id, r.reason.as_deref()) {
                     log::warn!("couldn't write the reject of {}: {e}", id.0);
+                    // A broken database shows its own full-window state instead.
+                    if !e.is_storage_failure() {
+                        failed.push(*id);
+                        why.get_or_insert_with(|| {
+                            if is_busy(&e) {
+                                "the database stayed busy.".to_string()
+                            } else {
+                                AppError::core(e, Ctx::Task(*id)).message
+                            }
+                        });
+                    }
                 }
             }
             lock(&self.undo).forget_reject(r.id);
+            if let Some(why) = why {
+                self.shell.emit(UiEvent::Toast(reject_failed(
+                    failed,
+                    r.reason.clone(),
+                    &why,
+                )));
+            }
         }
         if let Err(e) = self.catch_up() {
             log::warn!("catch-up after rejects failed: {e}");
         }
         self.refresh_menus();
+    }
+
+    /// One reject, tried again after each of `reject_retry`'s waits while SQLite is busy. A
+    /// task deleted since is done with.
+    fn reject_with_retry(&self, id: TaskId, reason: Option<&str>) -> airboss_core::Result<()> {
+        let mut waits = self.config.reject_retry.iter();
+        loop {
+            match self.core(|st| reject_if_proposed(st, id, reason)) {
+                Ok(_) | Err(airboss_core::Error::NotFound) => return Ok(()),
+                Err(e) if is_busy(&e) => match waits.next() {
+                    Some(wait) => {
+                        log::info!("the database is busy; retrying the reject of {}", id.0);
+                        std::thread::sleep(*wait);
+                    }
+                    None => return Err(e),
+                },
+                Err(e) => return Err(e),
+            }
+        }
     }
 }
 

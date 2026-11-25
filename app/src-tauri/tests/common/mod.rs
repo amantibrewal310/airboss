@@ -233,6 +233,7 @@ impl TestApp {
         let mut config = AppConfig::new(Default::default(), None);
         config.home = home.clone();
         config.reject_delay = Duration::from_millis(150);
+        config.reject_retry = vec![Duration::from_millis(50)];
         config.fold_save_delay = Duration::from_millis(30);
         let state = AppState::new(
             store.clone(),

@@ -353,6 +353,8 @@ The stores are classes in `lib/state/*.svelte.ts`, one exported instance each, w
   | Move or reorder | `move_task` back to the previous parent and position. Reorder moves past siblings the tree hides (rejected proposals, dropped tasks) to the visible neighbour's position, and an end move changes nothing and pushes no entry |
   | Reject, Reject all | **deferred:** the reject is written 5 s later (or at quit). Until then the item and rows are hidden locally, and undo cancels it. `core` can't turn a task back into a proposal, so this is the only honest undo. |
 
+- **Writing a deferred reject** (`undo.rs`, final audit should-fix 4): the "still a proposal?" check and the write run together (`reject_if_proposed`, under one store lock), so a proposal accepted in the meantime is left alone. `core` has no conditional reject yet, so this serialises against every write in this process but not against `airboss accept` in another; when `core` gains one, the adapter becomes that single call. A busy database is retried after 250 ms and again after 1 s (each attempt waits out the 2 s busy timeout). A reject that still fails shows a warning toast, "Couldn't reject 153: the database stayed busy.", with **Retry**, which rejects again with a fresh 5 s undo window. The proposal shows again meanwhile, so nothing is lost silently.
+
   Accept, create, rename, notes, links, dependencies, repos, Do it and Plan it aren't undoable in v1. Text fields keep their own undo.
 - **Refused undo:** if `events_after(entry.last_event)` shows that someone else changed one of the entry's tasks, the undo is refused with "144 changed since; nothing was undone", and the entry is dropped.
   - `entry.last_event` is the **catch-up cursor** the view model was built at, read with it under one lock (`AppState::vm_at`), not the newest event id. The inverse comes from the view model, so an agent's write the app hasn't caught up with yet (it sets in_review, I press Space within the 150 ms debounce) counts as "changed since", and ⌘Z is refused instead of overwriting it.
@@ -790,6 +792,7 @@ Tests come first, as in `core`.
   - reorder past a rejected proposal and a dropped sibling, with no entry for an end move
   - a refused undo after an agent's change
   - a deferred reject cancelled, written after 5 s, and written at shutdown
+  - a reject retried while another connection holds the write lock, and one that still fails toasting with Retry
   - depth 20
 - **IPC test** (`tests/ipc.rs`): `tauri::test::mock_builder` with the real handlers. One read and one write go through `invoke`, proving serialisation and the capability files.
 - **Fixtures** (`tests/fixtures.rs`):

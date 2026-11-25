@@ -1200,6 +1200,11 @@ pub enum ToastArgs {
     Repo { repo: RepoId },
     /// `reopen_and_start(id)`.
     Task { id: TaskId },
+    /// `reject_proposals(ids, reason)`: Retry on a reject that couldn't be written.
+    Reject {
+        ids: Vec<TaskId>,
+        reason: Option<String>,
+    },
 }
 
 /// One button on a toast Rust sends.

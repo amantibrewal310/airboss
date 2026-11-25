@@ -59,6 +59,9 @@ pub struct AppConfig {
     pub home: PathBuf,
     /// How long a reject waits before it's written (5 s).
     pub reject_delay: Duration,
+    /// The waits between attempts at a reject the database was too busy to take; each
+    /// attempt itself waits out `core`'s 2 s busy timeout first.
+    pub reject_retry: Vec<Duration>,
     /// How long folds wait before they're saved (1 s).
     pub fold_save_delay: Duration,
     /// Started by autostart with `--hidden`: don't show the main window.
@@ -77,6 +80,7 @@ impl AppConfig {
                 .map(PathBuf::from)
                 .unwrap_or_else(|| PathBuf::from("/")),
             reject_delay: Duration::from_secs(5),
+            reject_retry: vec![Duration::from_millis(250), Duration::from_secs(1)],
             fold_save_delay: Duration::from_secs(1),
             start_hidden: false,
             started: Instant::now(),

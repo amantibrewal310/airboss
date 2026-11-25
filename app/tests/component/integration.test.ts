@@ -37,6 +37,30 @@ describe('Rust-sent toasts', () => {
   });
 });
 
+describe('a reject Rust couldn’t write', () => {
+  it('offers Retry, which rejects again with its own undo window and hides the row meanwhile', async () => {
+    const { app, backend } = await startApp('design');
+    const item = app.needs.visible.find((n) => n.kind === 'proposed')!;
+    const [id] = item.proposed[0]!;
+    const t: ToastEvent = {
+      text: `Couldn't reject ${id}: the database stayed busy.`,
+      tone: 'warning',
+      task: id,
+      undo: null,
+      actions: [{ label: 'Retry', command: 'reject_proposals', args: { ids: [id], reason: null } }],
+    };
+    (backend as unknown as { emit: (e: string, p: unknown) => void }).emit('toast', t);
+    await wait(10);
+    const toast = app.toasts.list.at(-1)!;
+    expect(toast.tone).toBe('warn');
+    toast.actions[0]!.run();
+    await wait(30);
+    expect(backend.calls.filter((c) => c.command === 'reject_proposals')).toHaveLength(1);
+    expect(app.tasks.hidden.has(id)).toBe(true);
+    expect(app.toasts.list.at(-1)!.actions.map((a) => a.label)).toEqual(['Undo']);
+  });
+});
+
 describe('quickadd:reset', () => {
   it('keeps the typed title and notes when keep_text is set, and clears them otherwise', async () => {
     const { render } = await import('vitest-browser-svelte');
