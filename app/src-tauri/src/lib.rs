@@ -10,6 +10,7 @@ pub mod connections;
 pub mod dto;
 pub mod errors;
 pub mod ipc;
+pub mod logs;
 pub mod macos;
 pub mod menu;
 pub mod native;

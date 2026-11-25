@@ -20,6 +20,8 @@ fn main() {
             path: logs,
             file_name: Some("app".into()),
         }))
+        .max_file_size(airboss_app::logs::MAX_FILE_BYTES)
+        .rotation_strategy(airboss_app::logs::rotation())
         .level(LevelFilter::Info);
     if cfg!(debug_assertions) {
         log = log.target(Target::new(TargetKind::Stdout));
