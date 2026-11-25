@@ -114,7 +114,9 @@ pub(crate) fn tree(conn: &Connection) -> Result<Vec<TaskNode>> {
              SELECT c.id, w.depth + 1, w.path || '.' || printf('%010d', c.position)
              FROM tasks c JOIN walk w ON c.parent_id = w.id
          )
-         SELECT {TASK_COLUMNS}, w.depth FROM walk w JOIN tasks t ON t.id = w.id ORDER BY w.path"
+         SELECT {TASK_COLUMNS}, w.depth FROM walk w JOIN tasks t ON t.id = w.id
+         WHERE NOT (t.origin = 'agent' AND t.status = 'dropped')
+         ORDER BY w.path"
     );
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map([], |row| {

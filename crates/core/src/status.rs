@@ -119,6 +119,15 @@ impl crate::Store {
     ) -> Result<Task> {
         self.write(|tx| set_status(tx, id, to, note, actor))
     }
+
+    /// Agents' proposals waiting for me to accept (`todo`) or reject (`dropped`), in tree order.
+    pub fn proposed(&self) -> Result<Vec<Task>> {
+        Ok(tasks::tree(&self.conn)?
+            .into_iter()
+            .map(|n| n.task)
+            .filter(|t| t.status == Status::Proposed)
+            .collect())
+    }
 }
 
 #[cfg(test)]
