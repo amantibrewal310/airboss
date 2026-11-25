@@ -80,7 +80,8 @@ pub(crate) fn add(tx: &mut Tx<'_>, new: NewTask, actor: &Actor) -> Result<Task> 
     };
     let title = clean_title(&new.title)?;
     if let Some(parent) = new.parent {
-        ensure_exists(tx, parent)?;
+        // Rule 12: not under a proposed, done or dropped parent.
+        crate::positions::ensure_open_parent(tx, parent)?;
     }
     if let Some(repo) = new.repo {
         ensure_repo_exists(tx, repo)?;
