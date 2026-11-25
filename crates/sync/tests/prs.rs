@@ -1087,6 +1087,41 @@ fn after_a_six_hour_sleep_woke_runs_the_overdue_pass_at_once() {
 }
 
 #[test]
+fn with_the_clock_set_back_an_hour_a_merge_is_still_seen_within_one_interval() {
+    let core = Core::new();
+    let t = task_with_pr(&core, "acme/web#1");
+    let gh = me_only().pr("acme/web#1", FakePr::open("me"));
+    let mut rig = Rig::new(core, gh.clone());
+    rig.first_pass();
+    gh.set_state("acme/web#1", "MERGED");
+    let back = at(60) - Duration::from_secs(3600);
+    let step = rig.send(GhMsg::Tick, back);
+    assert_eq!(step.next_wake, back + Duration::from_secs(FIVE_MIN));
+    rig.send(GhMsg::Tick, back + Duration::from_secs(FIVE_MIN));
+    assert_eq!(rig.core.status(t), Status::Done);
+}
+
+#[test]
+fn with_the_clock_set_back_a_refresh_is_not_held_by_one_from_the_future() {
+    let core = Core::new();
+    let t = task_with_pr(&core, "acme/web#1");
+    let gh = me_only().pr("acme/web#1", FakePr::open("me"));
+    let mut rig = Rig::new(core, gh.clone());
+    rig.first_pass();
+    rig.send(GhMsg::Refresh(Refresh::Prs), at(100));
+    gh.set_state("acme/web#1", "MERGED");
+    let back = at(100) - Duration::from_secs(3600);
+    let step = rig.send(GhMsg::Refresh(Refresh::Prs), back);
+    assert!(
+        step.next_wake <= back + Duration::from_secs(60),
+        "at most the refresh gap: {:?}",
+        step.next_wake.duration_since(back)
+    );
+    rig.send(GhMsg::Tick, step.next_wake);
+    assert_eq!(rig.core.status(t), Status::Done);
+}
+
+#[test]
 fn no_wait_is_longer_than_fifteen_minutes() {
     let core = Core::new();
     let mut rig = Rig::build(core, me_only(), None, |c| {

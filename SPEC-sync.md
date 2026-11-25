@@ -170,7 +170,7 @@ Rows are written only when something changed. On start the snapshot is loaded fr
 ### Workers and time
 
 - Each worker thread loops: `step = worker.handle(msg, clock.now())`, then waits on its channel with `recv_timeout(min(step.next_wake − now, 15 min))`; a timeout sends `Tick`. `handle` asserts `next_wake > now` (an overdue deadline is acted on inside `handle`, not by waiting zero).
-- Deadlines are `SystemTime`: the next GitHub pass (5 min after the last ended), per-account backoff and rate-limit ends, the end of the T3 gap, the next untracked read. After a sleep the Mac's wall clock has moved, so the first `Tick` or `woke()` finds them overdue and acts.
+- Deadlines are `SystemTime`: the next GitHub pass (5 min after the last ended), per-account backoff and rate-limit ends, the end of the T3 gap, the next untracked read. After a sleep the Mac's wall clock has moved, so the first `Tick` or `woke()` finds them overdue and acts. When the clock is set back, the GitHub worker pulls its next pass to at most one interval from now, and forgets refresh and tick times in the future, so however far back the clock goes, a merge is seen within two intervals: the wait already under way, then one more.
 - A panic inside `handle` is caught (`catch_unwind`), logged, and turns the source's health to `Broken`; the thread keeps running.
 
 ### GitHub PRs

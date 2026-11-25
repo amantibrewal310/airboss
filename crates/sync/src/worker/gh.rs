@@ -137,6 +137,7 @@ impl GhWorker {
     }
 
     pub fn handle(&mut self, msg: GhMsg, now: SystemTime) -> Step {
+        self.follow_clock(now);
         let before = self.env.hub.snapshot();
         match msg {
             GhMsg::Store(s) => self.follow(s, now),
@@ -185,6 +186,21 @@ impl GhWorker {
         }
         let changed = !Arc::ptr_eq(&before, &self.env.hub.snapshot());
         self.step(changed, now)
+    }
+
+    /// The wall clock can be set back. Then nothing scheduled may wait longer than the pass
+    /// interval from `now`, and nothing remembered as last done may be in the future, or a
+    /// merge would wait until the clock caught up again.
+    fn follow_clock(&mut self, now: SystemTime) {
+        let latest = now + self.env.cfg.pr_every;
+        self.timer_at = self.timer_at.min(latest);
+        self.soon_at = self.soon_at.map(|s| s.min(latest));
+        for last in [&mut self.last_refresh, &mut self.last_tick] {
+            *last = last.map(|t| t.min(now));
+        }
+        for last in self.task_refresh.values_mut() {
+            *last = (*last).min(now);
+        }
     }
 
     fn soon(&mut self, at: SystemTime) {
