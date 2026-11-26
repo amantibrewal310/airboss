@@ -621,7 +621,7 @@ export type Status = "proposed" | "todo" | "doing" | "in_review" | "blocked" | "
 export type T3Project = { id: string, name: string, path: string, };
 
 /**
- * One of T3's projects, for Add repos.
+ * One of T3's projects, or a folder Herdr knows (`herdr_folders`), for Add repos.
  */
 export type T3ProjectRow = { path: string, name: string, 
 /**

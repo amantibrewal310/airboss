@@ -1,5 +1,5 @@
-//! The read commands: `bootstrap`, `task_detail`, `run_map`, `plans`, `quickadd_data` and
-//! `t3_projects`.
+//! The read commands: `bootstrap`, `task_detail`, `run_map`, `plans`, `quickadd_data`,
+//! `t3_projects` and `herdr_folders`.
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -242,6 +242,28 @@ pub fn t3_projects(s: &AppState, _c: Caller) -> AppResult<Vec<T3ProjectRow>> {
             name: p.name.clone(),
             is_git: Path::new(&p.path).join(".git").exists(),
             added: added.contains(&path_text(&p.path)),
+        })
+        .collect())
+}
+
+/// Herdr's space folders, then its recent ones, for first run without T3 Code, with the same
+/// rules as T3's projects. Nothing when Herdr can't be asked (not installed, window closed).
+pub fn herdr_folders(s: &AppState, _c: Caller) -> AppResult<Vec<T3ProjectRow>> {
+    let folders = match s.shell.herdr_folders().folders() {
+        Ok(f) => f,
+        Err(e) => {
+            tauri_plugin_log::log::info!("no folders from Herdr: {e}");
+            return Ok(Vec::new());
+        }
+    };
+    let added: HashSet<String> = s.vm(|vm| vm.repos.iter().map(|r| r.path.clone()).collect());
+    Ok(folders
+        .into_iter()
+        .map(|f| T3ProjectRow {
+            path: path_text(&f.path),
+            name: f.name,
+            is_git: f.path.join(".git").exists(),
+            added: added.contains(&path_text(&f.path)),
         })
         .collect())
 }

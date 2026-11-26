@@ -1053,7 +1053,7 @@ pub struct QuickaddData {
     pub parents: Vec<ParentOption>,
 }
 
-/// One of T3's projects, for Add repos.
+/// One of T3's projects, or a folder Herdr knows (`herdr_folders`), for Add repos.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[ts(export_to = "types.ts")]
 pub struct T3ProjectRow {

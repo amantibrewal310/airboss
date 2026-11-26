@@ -268,6 +268,12 @@ impl Shell for Arc<TauriShell> {
         crate::herdr::show_terminal(&crate::services::home(), terminal)
     }
 
+    fn herdr_folders(&self) -> Arc<dyn crate::herdr::HerdrFolders> {
+        Arc::new(crate::herdr::RealHerdrFolders {
+            home: crate::services::home(),
+        })
+    }
+
     fn copy_text(&self, text: &str) -> Result<(), String> {
         self.app
             .clipboard()

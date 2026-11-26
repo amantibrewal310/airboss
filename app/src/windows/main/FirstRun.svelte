@@ -16,8 +16,9 @@
    */
   const app = useApp();
   const showRepos = untrack(() => !app.tasks.repos.length);
-  const rows = $derived(app.conn.merged.filter((c) => ['Agents', 'T3 Code', 'GitHub'].includes(c.name)));
-  const order = (c: Connection) => ['Agents', 'T3 Code', 'GitHub'].indexOf(c.name);
+  const SHOWN = ['Agents', 'T3 Code', 'Herdr', 'GitHub'];
+  const rows = $derived(app.conn.merged.filter((c) => SHOWN.includes(c.name)));
+  const order = (c: Connection) => SHOWN.indexOf(c.name);
 
   const agentsLabel = $derived(
     { install: 'Install command-line tool', connect: app.conn.connecting ? 'Connecting…' : 'Connect Claude Code', note: 'Copy agent note' }[app.conn.agentsStep],

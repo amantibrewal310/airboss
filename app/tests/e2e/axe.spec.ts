@@ -26,6 +26,7 @@ const SCREENS: Screen[] = [
   ['welcome', '/?fixture=welcome'],
   ['nothing', '/?fixture=nothing'],
   ['t3missing', '/?fixture=t3missing&view=all&select=144'],
+  ['herdr-first-run', '/?fixture=herdr'],
   ['herdr-thread', '/?fixture=full&view=all&select=179'],
   ['dberror', '/?fixture=dberror'],
 ];

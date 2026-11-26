@@ -8,6 +8,7 @@ pub const COMMAND_NAMES: &[&str] = &[
     "plans",
     "quickadd_data",
     "t3_projects",
+    "herdr_folders",
     "create_task",
     "rename_task",
     "edit_notes",

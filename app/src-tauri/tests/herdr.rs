@@ -1,14 +1,17 @@
 //! Herdr from the app's side (SPEC-herdr "app"): the launcher "Start agents in" picks, the
-//! Herdr connection row, and Open thread on a Herdr terminal.
+//! Herdr connection row, Open thread on a Herdr terminal, and first run's folders from Herdr.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;
 
+use std::path::PathBuf;
+
 use airboss_app::commands::app as appcmd;
 use airboss_app::commands::{detail, launch};
 use airboss_app::dto::{LauncherKind, OpenTarget, ToastTone};
 use airboss_app::errors::ErrorCode;
+use airboss_app::herdr::Folder;
 use airboss_app::settings::{Settings, StartAgentsIn};
 use airboss_app::{Caller, UiEvent};
 use airboss_core::{Actor, LinkKind, NewLink};
@@ -325,6 +328,47 @@ fn herdr_ready_and_no_t3_hides_the_t3_row_unless_t3_is_chosen() {
         .cloned()
         .unwrap();
     assert!(!t3.ok);
+}
+
+#[test]
+fn first_run_lists_herdr_folders_with_the_same_rules_as_t3_projects() {
+    let app = TestApp::new();
+    // No Herdr: nothing, and no error.
+    assert!(detail::herdr_folders(&app.state, M).unwrap().is_empty());
+    let dir = temp_dir("herdr-folders");
+    let git = dir.join("booking-web");
+    std::fs::create_dir_all(git.join(".git")).unwrap();
+    let plain = dir.join("notes");
+    std::fs::create_dir_all(&plain).unwrap();
+    let other = dir.join("api");
+    std::fs::create_dir_all(other.join(".git")).unwrap();
+    app.core(|s| s.add_repo("booking-web", &git, None, &Actor::Me).unwrap());
+    app.sync_vm();
+    let folder = |name: &str, path: &PathBuf| Folder {
+        name: name.into(),
+        path: path.clone(),
+    };
+    app.shell.herdr_folders_fake().answer(Ok(vec![
+        folder("booking", &git),
+        folder("notes", &plain),
+        folder("api", &other),
+    ]));
+    let list = detail::herdr_folders(&app.state, M).unwrap();
+    let got: Vec<(&str, bool, bool)> = list
+        .iter()
+        .map(|r| (r.name.as_str(), r.is_git, r.added))
+        .collect();
+    assert_eq!(
+        got,
+        vec![
+            ("booking", true, true),
+            ("notes", false, false),
+            ("api", true, false)
+        ]
+    );
+    // It's a command the window may call.
+    let v = app.call("herdr_folders", serde_json::json!({})).unwrap();
+    assert_eq!(v.as_array().unwrap().len(), 3);
 }
 
 #[test]

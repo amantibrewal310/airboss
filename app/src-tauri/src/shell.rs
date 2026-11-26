@@ -18,6 +18,7 @@ use crate::dto::{
 };
 use crate::errors::AppError;
 use crate::handlers::{AppCheck, FakeAppCheck};
+use crate::herdr::{FakeHerdrFolders, HerdrFolders};
 use crate::menu::MenuState;
 use crate::notify::{Notifications, RecordingNotifications};
 use crate::settings::Appearance;
@@ -102,6 +103,8 @@ pub trait Shell: Send + Sync {
     /// Open thread on a Herdr terminal: `herdr-app do agent.focus '{"terminal":…}'`, then
     /// `open -b dev.herdr.app`. An app constant, not a stored link, so no allowlist.
     fn show_herdr_terminal(&self, terminal: &str) -> Result<(), String>;
+    /// The folders Herdr knows, for first run.
+    fn herdr_folders(&self) -> Arc<dyn HerdrFolders>;
     /// Puts text on the clipboard.
     fn copy_text(&self, text: &str) -> Result<(), String>;
     /// The folder picker; `None` when cancelled.
@@ -147,6 +150,7 @@ pub struct RecordingShell {
     notifications: Arc<RecordingNotifications>,
     app_check: Arc<FakeAppCheck>,
     herdr_fails: Mutex<bool>,
+    herdr_folders: Arc<FakeHerdrFolders>,
 }
 
 impl RecordingShell {
@@ -222,6 +226,11 @@ impl RecordingShell {
         *lock(&self.herdr_fails) = fail;
     }
 
+    /// The Herdr folders fake: no Herdr until a test says otherwise.
+    pub fn herdr_folders_fake(&self) -> Arc<FakeHerdrFolders> {
+        self.herdr_folders.clone()
+    }
+
     /// What `accent` answers.
     pub fn set_accent(&self, accent: Option<String>) {
         *lock(&self.accent) = accent;
@@ -274,6 +283,9 @@ impl Shell for RecordingShell {
         } else {
             Ok(())
         }
+    }
+    fn herdr_folders(&self) -> Arc<dyn HerdrFolders> {
+        self.herdr_folders.clone()
     }
     fn copy_text(&self, text: &str) -> Result<(), String> {
         self.call(format!("copy_text({text})"));

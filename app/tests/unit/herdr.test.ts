@@ -3,6 +3,8 @@ import { parseLinkBody, phrase } from '../../src/lib/logic/activity';
 import { launcherMissingText, mergeConnections } from '../../src/lib/logic/connections';
 import { threadSummary } from '../../src/lib/logic/copy';
 import { linkLabel } from '../../src/lib/logic/links';
+import { MockBackend } from '../../src/lib/mock/backend';
+import { loadFixture } from '../../src/lib/mock/fixtures';
 import type { Connection, HistoryEntry, ThreadDto } from '../../src/lib/types';
 
 /** SPEC-herdr "app": how Herdr terminals and the launcher read. */
@@ -61,5 +63,23 @@ describe('connections with Herdr', () => {
   it('names the launcher when it is missing', () => {
     expect(launcherMissingText('herdr')).toBe('Do it and Plan it need Herdr. Install it, then choose Check again.');
     expect(launcherMissingText('t3')).toBe('Do it and Plan it need T3 Code. Install it, then choose Check again.');
+  });
+});
+
+describe('the mock picks the launcher as Rust does', () => {
+  it('starts in Herdr when T3 Code is missing and Herdr is ready, with a herdr_terminal link', async () => {
+    const m = new MockBackend(loadFixture('herdr'), { delays: { launch: 0, attention: 0, reject: 0, lookup: 0 } });
+    const boot = await m.invoke('bootstrap', {});
+    expect(boot.launcher).toBe('herdr');
+    expect(boot.connections.map((r) => r.name)).not.toContain('T3 Code');
+    const { id } = await m.invoke('create_task', { task: { title: 'Try Herdr', body: null, parent: null, repos: [], links: [], then: 'none' } });
+    const res = await m.invoke('do_it', { id, place: 'no_repo', again: false });
+    if (!('started' in res)) throw new Error('expected a start');
+    const started = res.started.report.started[0]!;
+    expect(started.key.source).toBe('herdr');
+    expect(m.s.links.find((l) => l.ref === started.key.ref)!.kind).toBe('herdr_terminal');
+    // The user picks T3 Code: that's the launcher, and its missing error comes back.
+    await m.invoke('set_settings', { settings: { ...m.s.settings, start_agents_in: 't3' } });
+    await expect(m.invoke('do_it', { id, place: 'no_repo', again: true })).rejects.toMatchObject({ code: 't3_missing' });
   });
 });

@@ -1,14 +1,68 @@
 import { describe, expect, it } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import Harness from './Harness.svelte';
+import FirstRun from '../../src/windows/main/FirstRun.svelte';
 import Overlays from '../../src/windows/main/Overlays.svelte';
 import TaskPanel from '../../src/windows/main/TaskPanel.svelte';
 import { startApp, wait } from './setup';
 
 /** SPEC-herdr "app": Herdr as the second place agents start, from the window's side. */
 
+const checkboxes = () => [...document.querySelectorAll<HTMLElement>('[role="checkbox"]')];
+const connRow = (name: string) => [...document.querySelectorAll<HTMLElement>('.c')].find((c) => c.textContent!.includes(`${name} ·`));
 const radio = (group: string, label: string) =>
   [...document.querySelectorAll<HTMLButtonElement>(`[role="radiogroup"][aria-label="${group}"] [role="radio"]`)].find((b) => b.textContent === label)!;
+
+describe('First run without T3 Code', () => {
+  it("lists Herdr's folders under From Herdr, with the same rules as T3 projects", async () => {
+    const { app, backend } = await startApp('herdr');
+    await render(Harness, { app, component: FirstRun });
+    await wait(40);
+    expect(backend.calls.some((c) => c.command === 'herdr_folders')).toBe(true);
+    expect(backend.calls.some((c) => c.command === 't3_projects')).toBe(false);
+    const heading = [...document.querySelectorAll('h3')].find((h) => h.textContent === 'From Herdr')!;
+    expect(heading).toBeTruthy();
+    const list = document.querySelector('[role="group"]')!;
+    expect(list.getAttribute('aria-labelledby')).toBe(heading.id);
+    const rows = checkboxes();
+    expect(rows.map((r) => r.getAttribute('aria-label'))).toEqual(['booking-web', 'Notes', 'scratch', 'personal-site']);
+    // Folders that aren't git repos are greyed with the reason.
+    const notes = rows[1]!;
+    expect(notes.getAttribute('aria-disabled')).toBe('true');
+    expect(notes.textContent).toContain('Not a git repository');
+    // Tick one, add it: it shows as Added.
+    rows[0]!.click();
+    await wait(20);
+    const add = [...document.querySelectorAll('button')].find((b) => b.textContent!.trim().startsWith('Add 1 repo'))!;
+    add.click();
+    await wait(60);
+    expect(app.tasks.repos.map((r) => r.name)).toEqual(['booking-web']);
+    const added = checkboxes().find((r) => r.getAttribute('aria-label') === 'booking-web')!;
+    expect(added.textContent).toContain('Added');
+    expect(added.getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('shows Herdr as Ready and no T3 Code row, and starts agents in Herdr', async () => {
+    const { app } = await startApp('herdr');
+    await render(Harness, { app, component: FirstRun });
+    await wait(30);
+    expect(connRow('Herdr')!.textContent).toContain('Herdr · Ready');
+    expect(connRow('Herdr')!.textContent).toContain('0.1.18');
+    expect(connRow('T3 Code')).toBeUndefined();
+    expect(app.conn.launcher).toBe('herdr');
+    expect(app.conn.launchReady).toBe(true);
+    expect(app.conn.footer.text).toBe('All connected');
+  });
+
+  it('keeps T3 projects when T3 Code is there', async () => {
+    const { app, backend } = await startApp('welcome');
+    await render(Harness, { app, component: FirstRun });
+    await wait(40);
+    expect(backend.calls.some((c) => c.command === 't3_projects')).toBe(true);
+    expect(backend.calls.some((c) => c.command === 'herdr_folders')).toBe(false);
+    expect([...document.querySelectorAll('h3')].some((h) => h.textContent === 'From Herdr')).toBe(false);
+  });
+});
 
 describe('Settings › Agent setup › Start agents in', () => {
   it('saves the choice, and Do it then names Herdr when it is missing', async () => {

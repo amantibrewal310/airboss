@@ -452,6 +452,16 @@ export class MockBackend implements Transport {
         added: this.s.repos.some((r) => r.path === p.path),
       })),
 
+    herdr_folders: () => {
+      if (!isReady(this.herdr())) return [];
+      return (this.s.herdrFolders ?? []).map((f) => ({
+          path: f.folder,
+          name: f.name,
+          is_git: this.s.gitFolders.includes(f.folder),
+          added: this.s.repos.some((r) => r.path === f.folder),
+        }));
+    },
+
     create_task: async ({ task: input }) => {
       const title = input.title.trim();
       if (!title) throw fail('empty_title', 'A task needs a title.');

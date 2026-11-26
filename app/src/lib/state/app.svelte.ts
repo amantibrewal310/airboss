@@ -1287,6 +1287,16 @@ export class App {
     }
   }
 
+  /** Herdr's space and recent folders, for first run without T3 Code. */
+  async herdrFolders(): Promise<T3ProjectRow[]> {
+    try {
+      return await api.herdrFolders();
+    } catch (e) {
+      this.fail(e);
+      return [];
+    }
+  }
+
   async pickFolder(): Promise<string | null> {
     try {
       return await api.pickFolder();

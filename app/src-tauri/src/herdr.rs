@@ -1,10 +1,13 @@
-//! Herdr, from the app's side: showing a terminal (Open thread). Starting and following agents
-//! there are `launch`'s and `sync`'s. Only `herdr-app do agent.focus` runs here, argv only,
-//! never through a shell.
+//! Herdr, from the app's side: showing a terminal (Open thread) and reading the folders Herdr
+//! knows (first run). Starting and following agents there are `launch`'s and `sync`'s. Only
+//! `herdr-app ls` and `herdr-app do agent.focus` run here, argv only, never through a shell.
 
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
+
+use serde::Deserialize;
 
 /// Herdr.app's bundle id, for `open -b`.
 pub const BUNDLE_ID: &str = "dev.herdr.app";
@@ -80,6 +83,99 @@ pub fn show_terminal(home: &Path, terminal: &str) -> Result<(), String> {
     }
 }
 
+/// One folder Herdr knows: a space's, or one it opened recently.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Folder {
+    pub name: String,
+    pub path: PathBuf,
+}
+
+#[derive(Deserialize)]
+struct Ls {
+    #[serde(default)]
+    spaces: Vec<Named>,
+    #[serde(default)]
+    recent: Vec<Named>,
+}
+
+#[derive(Deserialize)]
+struct Named {
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    folder: Option<String>,
+}
+
+/// The folders in `herdr-app ls`'s JSON: each space's, then the recent ones, each once, by the
+/// first name it had. `~` is the home folder; a folder that isn't absolute is left out.
+pub fn folders_of(json: &str, home: &Path) -> Result<Vec<Folder>, String> {
+    let ls: Ls = serde_json::from_str(json).map_err(|e| format!("herdr-app ls: {e}"))?;
+    let mut out: Vec<Folder> = Vec::new();
+    for n in ls.spaces.into_iter().chain(ls.recent) {
+        let Some(folder) = n.folder.filter(|f| !f.is_empty()) else {
+            continue;
+        };
+        let path = crate::classify::expand_home(&folder, home);
+        if !path.is_absolute() || out.iter().any(|f| f.path == path) {
+            continue;
+        }
+        let name = if n.name.trim().is_empty() {
+            path.file_name()
+                .map(|f| f.to_string_lossy().into_owned())
+                .unwrap_or_else(|| folder.clone())
+        } else {
+            n.name
+        };
+        out.push(Folder { name, path });
+    }
+    Ok(out)
+}
+
+/// The folders Herdr knows, for first run's Repos step.
+pub trait HerdrFolders: Send + Sync {
+    /// Its spaces' folders, then its recent ones; `Err` when Herdr can't be asked.
+    fn folders(&self) -> Result<Vec<Folder>, String>;
+}
+
+/// Asks `herdr-app ls`.
+pub struct RealHerdrFolders {
+    pub home: PathBuf,
+}
+
+impl HerdrFolders for RealHerdrFolders {
+    fn folders(&self) -> Result<Vec<Folder>, String> {
+        let text = run(&self.home, &["ls".into()])?;
+        folders_of(&text, &self.home)
+    }
+}
+
+/// Answers what a test set: no Herdr at first.
+#[derive(Debug)]
+pub struct FakeHerdrFolders(Mutex<Result<Vec<Folder>, String>>);
+
+impl Default for FakeHerdrFolders {
+    fn default() -> FakeHerdrFolders {
+        FakeHerdrFolders(Mutex::new(Err("herdr-app isn't installed".into())))
+    }
+}
+
+impl FakeHerdrFolders {
+    /// What `folders` answers from now on.
+    pub fn answer(&self, folders: Result<Vec<Folder>, String>) {
+        *lock(&self.0) = folders;
+    }
+}
+
+impl HerdrFolders for FakeHerdrFolders {
+    fn folders(&self) -> Result<Vec<Folder>, String> {
+        lock(&self.0).clone()
+    }
+}
+
+fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
@@ -122,5 +218,33 @@ mod tests {
         std::fs::set_permissions(&local, std::fs::Permissions::from_mode(0o755)).unwrap();
         assert_eq!(find_herdr_app(&home, Some(&path)), Some(local));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn ls_gives_space_folders_then_recent_ones_each_once() {
+        let json = r#"{"spaces":[
+            {"id":"sp1","name":"booking","folder":"/w/booking","tabs":[{"id":"t1","name":"x","terminals":["t4p"]}]},
+            {"id":"sp2","name":"Home","folder":"~/notes","tabs":[]},
+            {"id":"sp3","name":"No folder","folder":null,"tabs":[]}
+        ],"recent":[
+            {"name":"booking again","folder":"/w/booking"},
+            {"name":"","folder":"/w/api"},
+            {"name":"relative","folder":"w/rel"}
+        ]}"#;
+        let got = folders_of(json, Path::new("/Users/me")).unwrap();
+        let pairs: Vec<(&str, &Path)> = got
+            .iter()
+            .map(|f| (f.name.as_str(), f.path.as_path()))
+            .collect();
+        assert_eq!(
+            pairs,
+            vec![
+                ("booking", Path::new("/w/booking")),
+                ("Home", Path::new("/Users/me/notes")),
+                ("api", Path::new("/w/api")),
+            ]
+        );
+        assert_eq!(folders_of("{}", Path::new("/")).unwrap(), vec![]);
+        assert!(folders_of("not json", Path::new("/")).is_err());
     }
 }

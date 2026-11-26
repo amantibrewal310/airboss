@@ -1,6 +1,6 @@
 /*
   The browser's stand-in for Rust (`vite --mode mock`). `?fixture=` picks the data:
-  design | full (default) | perf | empty | welcome | t3missing | nothing | dberror, or
+  design | full (default) | perf | empty | welcome | t3missing | herdr | nothing | dberror, or
   `recorded`: Rust's own answers (fixtures/recorded.json) through the strict replay transport.
 */
 

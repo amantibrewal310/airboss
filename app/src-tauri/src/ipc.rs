@@ -179,6 +179,7 @@ commands! {
     plans(PlansArgs) => detail::plans, [req: u32] -> Vec<PlanCard>;
     quickadd_data(QuickaddDataArgs) => detail::quickadd_data, [] -> QuickaddData;
     t3_projects(T3ProjectsArgs) => detail::t3_projects, [] -> Vec<T3ProjectRow>;
+    herdr_folders(HerdrFoldersArgs) => detail::herdr_folders, [] -> Vec<T3ProjectRow>;
     create_task(CreateTaskArgs) => tasks::create_task, [task: CreateTaskInput] -> CreateTaskResult;
     rename_task(RenameTaskArgs) => tasks::rename_task, [id: TaskId, title: String] -> Patch;
     edit_notes(EditNotesArgs) => tasks::edit_notes, [id: TaskId, body: Option<String>] -> Patch;
