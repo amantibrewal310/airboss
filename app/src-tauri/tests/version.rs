@@ -67,3 +67,63 @@ fn the_changelog_has_this_version() {
     );
     assert!(log.contains(&format!("[{VERSION}]: https://github.com/")));
 }
+
+// ------------------------------------------------------------------ updates (SPEC-updates)
+
+/// Where installed apps read `updates/latest.json`: the repo's `main` branch on GitHub's raw
+/// host, because `releases/latest` skips pre-releases.
+fn manifest_url() -> String {
+    let repo = env!("CARGO_PKG_REPOSITORY").trim_end_matches('/');
+    let path = repo
+        .strip_prefix("https://github.com/")
+        .expect("the repository is on GitHub");
+    format!("https://raw.githubusercontent.com/{path}/main/updates/latest.json")
+}
+
+#[test]
+fn the_updater_reads_the_manifest_on_main_with_a_minisign_key() {
+    let conf = json("tauri.conf.json");
+    let updater = &conf["plugins"]["updater"];
+    assert_eq!(updater["endpoints"], serde_json::json!([manifest_url()]));
+    // base64 of "untrusted comment: minisign public key:", the start of every key file that
+    // `tauri signer generate` writes.
+    let key = updater["pubkey"].as_str().unwrap();
+    assert!(
+        key.starts_with("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6"),
+        "pubkey should be the .key.pub file's contents"
+    );
+    assert!(
+        updater.get("dangerousInsecureTransportProtocol").is_none(),
+        "only a QA build may allow plain HTTP"
+    );
+}
+
+#[test]
+fn only_the_release_build_makes_the_signed_update() {
+    assert!(json("tauri.conf.json")["bundle"]["createUpdaterArtifacts"].is_null());
+    assert_eq!(
+        json("tauri.bundle.conf.json")["bundle"]["createUpdaterArtifacts"],
+        true
+    );
+}
+
+#[test]
+fn the_published_manifest_names_its_own_release() {
+    // Absent until the first release with updates; after that, what `update-manifest.mjs`
+    // writes.
+    let Ok(text) = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../updates/latest.json"),
+    ) else {
+        return;
+    };
+    let m: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let version = m["version"].as_str().unwrap();
+    let repo = env!("CARGO_PKG_REPOSITORY").trim_end_matches('/');
+    let platform = &m["platforms"]["darwin-aarch64"];
+    assert_eq!(
+        platform["url"],
+        format!("{repo}/releases/download/v{version}/Airboss_{version}_aarch64.app.tar.gz")
+    );
+    assert!(!platform["signature"].as_str().unwrap().is_empty());
+    assert!(m["pub_date"].as_str().is_some());
+}
