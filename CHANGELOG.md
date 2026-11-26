@@ -4,6 +4,8 @@ What changed in each release of Airboss. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+## [0.1.0-alpha.5] - 2026-11-26
+
 ### Added
 
 - **Search in Add repos.** With more than seven folders, a search field at the top filters them by name or path as you type. It opens with the cursor in it; ↓ goes into the list, ticks are kept while you search, and Esc clears it.
@@ -59,7 +61,8 @@ What changed in each release of Airboss. The format follows [Keep a Changelog](h
 - A one-line installer that checks the .dmg's SHA-256 and signature.
 - Help › Report a Problem…, and an alpha feedback form.
 
-[Unreleased]: https://github.com/amantibrewal310/airboss/compare/v0.1.0-alpha.4...HEAD
+[Unreleased]: https://github.com/amantibrewal310/airboss/compare/v0.1.0-alpha.5...HEAD
+[0.1.0-alpha.5]: https://github.com/amantibrewal310/airboss/compare/v0.1.0-alpha.4...v0.1.0-alpha.5
 [0.1.0-alpha.4]: https://github.com/amantibrewal310/airboss/compare/v0.1.0-alpha.3...v0.1.0-alpha.4
 [0.1.0-alpha.3]: https://github.com/amantibrewal310/airboss/compare/v0.1.0-alpha.2...v0.1.0-alpha.3
 [0.1.0-alpha.2]: https://github.com/amantibrewal310/airboss/compare/v0.1.0-alpha.1...v0.1.0-alpha.2

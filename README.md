@@ -82,7 +82,7 @@ The design is in [DESIGN.md](DESIGN.md) and [docs/design](docs/design/README.md)
 
 ## Status
 
-Alpha: 0.1.0-alpha.4 ([what changed](CHANGELOG.md)). Every module is built, tested and merged: the task store, the MCP server and CLI, the Mac app, Do it and Plan it, sync with GitHub and T3 Code, and Needs me. Every Rust crate is tested (`cargo test --workspace`), and the interface has unit, component and end-to-end tests. The native parts (menus, the hotkey, notifications, the menu bar) were also checked by hand on a real Mac.
+Alpha: 0.1.0-alpha.5 ([what changed](CHANGELOG.md)). Every module is built, tested and merged: the task store, the MCP server and CLI, the Mac app, Do it and Plan it, sync with GitHub and T3 Code, and Needs me. Every Rust crate is tested (`cargo test --workspace`), and the interface has unit, component and end-to-end tests. The native parts (menus, the hotkey, notifications, the menu bar) were also checked by hand on a real Mac.
 
 Known gaps:
 

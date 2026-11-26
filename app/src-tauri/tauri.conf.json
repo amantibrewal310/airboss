@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Airboss",
   "mainBinaryName": "airboss-app",
-  "version": "0.1.0-alpha.4",
+  "version": "0.1.0-alpha.5",
   "identifier": "io.github.amantibrewal310.airboss",
   "build": {
     "devUrl": "http://localhost:5173",
@@ -89,7 +89,7 @@
     ],
     "macOS": {
       "minimumSystemVersion": "13.0",
-      "bundleVersion": "4",
+      "bundleVersion": "5",
       "signingIdentity": "-"
     }
   }
