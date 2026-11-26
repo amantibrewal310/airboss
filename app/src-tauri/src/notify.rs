@@ -90,9 +90,15 @@ impl Memory {
     /// brings T3's open questions), so an item notifies then only if it began waiting after
     /// the start (`since`). Launch is over with the first list built after sync read every
     /// source (`checked_at`), or [`SETTLE`] after the start; from then on every new key counts.
+    ///
+    /// The time is checked before the list is judged: this runs only when the list changes,
+    /// so its first change may come long after [`SETTLE`] (an Agent stopped item appears ten
+    /// minutes after its thread stopped), and that list isn't launch. The list built with
+    /// `checked_at` during launch still is: it holds what sync found already waiting.
     pub fn decide(&mut self, list: &NeedsList, at: Moment) -> Vec<Notice> {
+        self.settled |= at.now >= self.started + SETTLE;
         let launching = !self.settled;
-        self.settled |= list.checked_at.is_some() || at.now >= self.started + SETTLE;
+        self.settled |= list.checked_at.is_some();
         let mut out = Vec::new();
         for i in &list.items {
             // A stale item (its source is down) may not be real; it's judged once it's fresh.
@@ -345,6 +351,22 @@ mod tests {
             away(70),
         );
         assert_eq!(keys(&n), ["f"]);
+    }
+
+    /// QA #23: the list changes for the first time ten minutes after the start, when a thread
+    /// that stopped before the start becomes "Agent stopped". Its `since` predates the start,
+    /// but launch was long over: it notifies.
+    #[test]
+    fn the_first_change_after_the_settle_time_is_not_launch() {
+        for checked in [false, true] {
+            let mut m = Memory::new(start());
+            // What was waiting at launch (`AppState::new`): nothing.
+            assert!(m.decide(&list(vec![], false), away(0)).is_empty());
+            let mut stopped = item("stopped:1", NeedsKind::AgentStopped, 1);
+            stopped.since = airboss_services::time::to_ts(start() - Duration::from_secs(90));
+            let n = m.decide(&list(vec![stopped], checked), away(600));
+            assert_eq!(keys(&n), ["stopped:1"], "checked_at set: {checked}");
+        }
     }
 
     #[test]
