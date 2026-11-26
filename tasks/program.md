@@ -40,7 +40,9 @@ Then, for the whole product:
 | 6 | Last fixes: repo ids never reused, conditional reject, notifications via UNUserNotificationCenter, output-read window | Done |
 | 6 | Final verification from a clean build | Done: 1,085 Rust + 199 Vitest + 140 Playwright tests; .dmg 5.85 MiB |
 | 7 | Independent security check of the link opener, then hardening (signature-verified handler apps) | Done: 1,094 Rust + 200 Vitest + 140 Playwright tests |
-| 7 | Manual checklist by a person (`app/QA.md`) | Waiting for the user |
+| 8 | Hands-on QA: `app/QA.md` driven on screen by the EM (keystrokes, screenshots, AX tree), real Do it, Plan it and agent questions | Done: 24 findings (`tasks/hands-on-qa.md`) |
+| 8 | Fixes by five engineers (Claude sessions, notifications and tray, agent connection and first run, main-window a11y and text, quick add and toasts), merged and re-checked on screen | Done: 1,115 Rust + 227 Vitest + 154 Playwright tests |
+| 8 | What a person still has to do (`app/QA.md` intro): sleep and wake, Shortcuts hotkey clash, notification click while quit, macOS-denied notifications, VoiceOver speech | Waiting for the user |
 | 3 | Integration: one app process hosts sync, launch and attention; the CLI and `airboss mcp` share the database | |
 | 3 | QA: real-user flows, performance targets, light and dark, keyboard-only | |
 | 4 | Polish and bug-fix iterations; README and install instructions | Done |
@@ -135,6 +137,15 @@ Then, for the whole product:
   - **Uninstall steps** in the docs.
   - Plan it needing the user's `plan-review` skill, and Slack needing Composio, are documented as requirements.
 - **Open-source hygiene:** integration-QA ids and account names get placeholders. The redundant `refs/original` were removed. The local-only refs (`refs/t3/*`, `backup/pre-attribution-rewrite`) stay, but never `git push --all` or `--mirror`.
+
+## EM decisions on hands-on QA (26 Nov 2026)
+
+- **Agents "Ready" means an agent tool really has the `airboss` MCP server** (`~/.claude.json` `mcpServers.airboss`, or `~/.codex/config.toml` `[mcp_servers.airboss]`, read only). First run and Settings offer **Connect Claude Code**, which runs `claude mcp add --scope user airboss -- <abs path> mcp` only on the user's click. Codex gets a copyable snippet.
+- **Claude session files:** `waiting` means waiting on the user (NeedsMe). A file still being written (missing fields, under 10 s old) is skipped, not "broken".
+- **Error toasts with a fix stay** until used or closed. Other toasts keep their timing.
+- **Task ids standing alone in sentences are written `#1`,** as the CLI writes them. Rows keep the bare number.
+- **Kept as they are:** single-key shortcuts written in the Task menu's item names (native key equivalents would steal typing), and "checked hh:mm" in Needs me.
+- **Deferred to v1.1:** "Planning…" cards in Plans (needs a field saying a Plan it thread is running).
 
 ## Done means
 
