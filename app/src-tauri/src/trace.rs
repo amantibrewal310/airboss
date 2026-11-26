@@ -289,6 +289,7 @@ mod tests {
                 path: "/Users/x/.local/bin/airboss".into(),
                 on_path: true,
             },
+            agents: Default::default(),
         };
         assert_eq!(
             describe(&UiEvent::ConnectionsChanged(c)),

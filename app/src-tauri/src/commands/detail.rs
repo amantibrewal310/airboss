@@ -35,6 +35,7 @@ pub fn bootstrap(s: &AppState, _c: Caller) -> AppResult<Bootstrap> {
         settings,
         accent,
         cli,
+        agents: cu.connections.agents,
     })
 }
 

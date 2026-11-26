@@ -3,6 +3,10 @@
     "bootstrap": {
       "accent": null,
       "agent_report": "2026-11-22T10:44:00.000Z",
+      "agents": {
+        "claude": false,
+        "codex": false
+      },
       "availability": {
         "ready": {
           "version": "0.0.24"

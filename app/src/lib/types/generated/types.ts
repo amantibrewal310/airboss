@@ -17,6 +17,20 @@ export type AddReposResult = {
 repos: Array<Repo>, patch: Patch, };
 
 /**
+ * Which agent tools have the `airboss` MCP server, read from their own config files
+ * (`~/.claude.json`, `~/.codex/config.toml`), read-only. Agents are Ready only with one.
+ */
+export type AgentTools = { 
+/**
+ * `~/.claude.json` has `airboss` in its top-level `mcpServers`.
+ */
+claude: boolean, 
+/**
+ * `~/.codex/config.toml` has `[mcp_servers.airboss]`.
+ */
+codex: boolean, };
+
+/**
  * Why a command failed: a code the UI may branch on, and one sentence to show.
  */
 export type AppError = { code: AppErrorCode, 
@@ -74,7 +88,7 @@ agent_report: Timestamp | null, settings: Settings,
 /**
  * The system accent as `#rrggbb`, or `null` for Multicolor (keep indigo).
  */
-accent: string | null, cli: CliStatus, };
+accent: string | null, cli: CliStatus, agents: AgentTools, };
 
 /**
  * `services::Checks`.
@@ -108,12 +122,16 @@ agent_report: Timestamp | null,
  * The command-line tool, which the Agents row needs; `on_path` arrives once the shell
  * check is done.
  */
-cli: CliStatus, };
+cli: CliStatus, 
+/**
+ * Which agent tools can reach Airboss, for the Agents row and Settings › Agent setup.
+ */
+agents: AgentTools, };
 
 /**
  * What to copy.
  */
-export type CopyWhat = { "task_number": TaskId } | "agent_note" | "setup_command" | { "link": string };
+export type CopyWhat = { "task_number": TaskId } | "agent_note" | "setup_command" | "codex_setup" | { "link": string };
 
 /**
  * New task's fields.

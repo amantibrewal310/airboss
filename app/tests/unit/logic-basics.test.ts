@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { applyPatch, type RowsState } from '../../src/lib/logic/patch';
 import { clockTime, feedTime, relative, relativeLong } from '../../src/lib/logic/time';
-import { footerText, mergeConnections } from '../../src/lib/logic/connections';
+import { agentsStep, footerText, mergeConnections } from '../../src/lib/logic/connections';
 import type { Connection, RowDto } from '../../src/lib/types';
 
 const row = (id: number, extra: Partial<RowDto> = {}): RowDto => ({
@@ -99,6 +99,27 @@ describe('connections', () => {
     // A row that isn't Ready keeps its own words.
     const broken = mergeConnections([c('Agents', false, 'Link broken')], 'unknown', { agentReport: '2026-11-25T10:41:00.000Z', now });
     expect(broken[0]!.detail).toBe('Agents detail');
+  });
+  it('is Not connected with the CLI but no agent tool that has the server (#9)', () => {
+    const now = Date.parse('2026-11-25T10:44:00.000Z');
+    const ready = c('Agents', true, 'Ready');
+    const none = { claude: false, codex: false };
+    const off = mergeConnections([ready], 'unknown', { cliInstalled: true, agents: none, agentReport: null, now })[0]!;
+    expect(off).toMatchObject({ ok: false, state: 'Not connected', detail: "Agents can't report to Airboss yet." });
+    expect(footerText([off], null)).toEqual({ ok: false, text: 'Agents not connected' });
+    // Without the CLI, that comes first.
+    expect(mergeConnections([ready], 'unknown', { cliInstalled: false, agents: none })[0]!.state).toBe('Not set up');
+    // Either tool is enough, and Ready keeps its last-report line.
+    for (const agents of [{ claude: true, codex: false }, { claude: false, codex: true }]) {
+      const on = mergeConnections([ready], 'unknown', { cliInstalled: true, agents, agentReport: '2026-11-25T10:41:00.000Z', now })[0]!;
+      expect(on).toMatchObject({ ok: true, state: 'Ready', detail: 'Last report 3m ago' });
+    }
+  });
+  it('picks first run’s one Agents step', () => {
+    expect(agentsStep(false, { claude: true, codex: true })).toBe('install');
+    expect(agentsStep(true, { claude: false, codex: false })).toBe('connect');
+    expect(agentsStep(true, { claude: false, codex: true })).toBe('note');
+    expect(agentsStep(true, { claude: true, codex: false })).toBe('note');
   });
   it('names the first problem, or counts them', () => {
     expect(footerText([c('GitHub', true, 'Signed in')], null)).toEqual({ ok: true, text: 'All connected' });

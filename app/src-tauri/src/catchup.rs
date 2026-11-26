@@ -98,6 +98,7 @@ impl CatchUp {
                     path: String::new(),
                     on_path: false,
                 },
+                agents: Default::default(),
             },
             agent_report,
         })

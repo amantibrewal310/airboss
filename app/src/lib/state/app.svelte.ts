@@ -149,6 +149,7 @@ export class App {
       this.settings = b.settings;
       this.cli = b.cli;
       this.conn.cliInstalled = b.cli.installed;
+      this.conn.agents = b.agents;
       this.ui.folded = new Set(b.settings.folded);
       applyAccent(document.documentElement, b.accent);
       this.applyAppearance();
@@ -178,6 +179,7 @@ export class App {
         this.conn.set(c.connections, c.availability, c.agent_report);
         this.cli = c.cli;
         this.conn.cliInstalled = c.cli.installed;
+        this.conn.agents = c.agents;
       }),
       on('menu:action', ({ command }) => this.runCommand(command as CommandId)),
       on('nav:open', (n) => this.navOpen(n)),
@@ -1240,6 +1242,22 @@ export class App {
     }
   }
 
+  /** Connect Claude Code (#9): Rust runs `claude mcp add`, and the connections follow. */
+  async connectClaude(): Promise<boolean> {
+    if (this.conn.connecting) return false;
+    this.conn.connecting = true;
+    try {
+      await api.connectClaude();
+      this.toast('Connected Claude Code');
+      return true;
+    } catch (e) {
+      this.toast(asAppError(e).message, 'warn', [{ label: 'Copy setup command', run: () => void this.copy('setup_command') }]);
+      return false;
+    } finally {
+      this.conn.connecting = false;
+    }
+  }
+
   async t3Projects(): Promise<T3ProjectRow[]> {
     try {
       return await api.t3Projects();
@@ -1334,10 +1352,10 @@ export class App {
     await this.saveSettings({ ...this.settings, open_at_login: on });
   }
 
-  async copy(what: 'agent_note' | 'setup_command'): Promise<void> {
+  async copy(what: 'agent_note' | 'setup_command' | 'codex_setup'): Promise<void> {
     try {
       await api.copyText(what);
-      this.toast(what === 'agent_note' ? 'Copied the agent note' : 'Copied the setup command');
+      this.toast(what === 'agent_note' ? 'Copied the agent note' : what === 'codex_setup' ? 'Copied the Codex setup. Paste it into ~/.codex/config.toml.' : 'Copied the setup command');
     } catch (e) {
       this.fail(e);
     }

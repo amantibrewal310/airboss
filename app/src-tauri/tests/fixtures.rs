@@ -89,7 +89,7 @@ fn typescript_types() {
         T3ProjectTs, AvailabilityTs, ModeTs, StartedThreadTs, PreparedTs, LaunchReportTs,
         NeedsKindTs, NeedsGroupTs, TargetTs, NeedsItemTs, NeedsListTs, NeedsChangedTs,
         // the app's own
-        Progress, RowDto, Patch, CliStatus, Bootstrap, ConnectionsChanged, ThreadDto, LinkDto,
+        Progress, RowDto, Patch, CliStatus, AgentTools, Bootstrap, ConnectionsChanged, ThreadDto, LinkDto,
         HistoryEntry, DepDto, RunEdge, OutsideWait, RunMap, TaskDetail, NextUp, PlanCard,
         ParentOption, QuickaddData, T3ProjectRow, UndoEntry, UndoableWrite, UndoResult,
         NewLinkText, Then, CreateTaskInput, DoItPlace, DoItResult, LinkError, CreateTaskResult,

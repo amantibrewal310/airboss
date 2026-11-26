@@ -222,6 +222,7 @@ commands! {
     recheck_connections(RecheckConnectionsArgs) => app::recheck_connections, [] -> ();
     copy_text(CopyTextArgs) => app::copy_text, [what: CopyWhat] -> ();
     install_cli(InstallCliArgs) => app::install_cli, [] -> InstallCliResult;
+    connect_claude(ConnectClaudeArgs) => app::connect_claude, [] -> ();
     get_settings(GetSettingsArgs) => app::get_settings, [] -> Settings;
     set_settings(SetSettingsArgs) => app::set_settings, [settings: Settings] -> Settings;
     notification_permission(NotificationPermissionArgs) => app::notification_permission,

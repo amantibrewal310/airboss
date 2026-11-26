@@ -50,6 +50,7 @@
     "allow-recheck-connections",
     "allow-copy-text",
     "allow-install-cli",
+    "allow-connect-claude",
     "allow-get-settings",
     "allow-set-settings",
     "allow-notification-permission",

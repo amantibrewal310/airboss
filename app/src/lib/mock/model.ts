@@ -6,6 +6,7 @@
 
 import type {
   Actor,
+  AgentTools,
   Availability,
   CliStatus,
   Connection,
@@ -52,6 +53,10 @@ export interface MockSeed {
   availability: Availability;
   settings: Settings;
   cli: CliStatus;
+  /** Which agent tools have the airboss MCP server (Rust reads their config files). */
+  agents: AgentTools;
+  /** `connect_claude` fails with this message, as when `claude` isn't found. */
+  connectClaudeError?: string;
   t3Projects: T3Project[];
   /** Repo folders that exist and are git repositories (for `t3_projects`). */
   gitFolders: string[];

@@ -720,6 +720,17 @@ pub struct CliStatus {
     pub on_path: bool,
 }
 
+/// Which agent tools have the `airboss` MCP server, read from their own config files
+/// (`~/.claude.json`, `~/.codex/config.toml`), read-only. Agents are Ready only with one.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export_to = "types.ts")]
+pub struct AgentTools {
+    /// `~/.claude.json` has `airboss` in its top-level `mcpServers`.
+    pub claude: bool,
+    /// `~/.codex/config.toml` has `[mcp_servers.airboss]`.
+    pub codex: bool,
+}
+
 /// Everything the main window draws first, read once before it shows.
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
 #[ts(export_to = "types.ts")]
@@ -745,6 +756,7 @@ pub struct Bootstrap {
     /// The system accent as `#rrggbb`, or `null` for Multicolor (keep indigo).
     pub accent: Option<String>,
     pub cli: CliStatus,
+    pub agents: AgentTools,
 }
 
 /// `connections:changed`'s payload.
@@ -761,6 +773,8 @@ pub struct ConnectionsChanged {
     /// The command-line tool, which the Agents row needs; `on_path` arrives once the shell
     /// check is done.
     pub cli: CliStatus,
+    /// Which agent tools can reach Airboss, for the Agents row and Settings › Agent setup.
+    pub agents: AgentTools,
 }
 
 // ================================================================ task detail
@@ -1158,6 +1172,8 @@ pub enum CopyWhat {
     TaskNumber(#[ts(as = "TaskIdTs")] TaskId),
     AgentNote,
     SetupCommand,
+    /// The `[mcp_servers.airboss]` table for `~/.codex/config.toml`.
+    CodexSetup,
     /// A link Airboss wouldn't open ("Copy link" on the refusal).
     Link(String),
 }

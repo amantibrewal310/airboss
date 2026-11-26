@@ -16,8 +16,21 @@
   const rows = $derived(app.conn.merged.filter((c) => ['Agents', 'T3 Code', 'GitHub'].includes(c.name)));
   const order = (c: Connection) => ['Agents', 'T3 Code', 'GitHub'].indexOf(c.name);
 
+  const agentsLabel = $derived(
+    { install: 'Install command-line tool', connect: app.conn.connecting ? 'Connecting…' : 'Connect Claude Code', note: 'Copy agent note' }[app.conn.agentsStep],
+  );
+
+  function agentsAction() {
+    const step = app.conn.agentsStep;
+    if (step === 'install') void app.installCli();
+    else if (step === 'connect') void app.connectClaude();
+    else void app.copy('agent_note');
+  }
+
   function detail(c: Connection): string {
     if (c.ok) return c.detail;
+    // Connect Claude Code is right here; the fix points elsewhere.
+    if (c.name === 'Agents' && app.conn.agentsStep === 'connect') return c.detail;
     return c.fix ?? c.detail;
   }
 </script>
@@ -67,11 +80,8 @@
               <span>{#each detail(c).split('`') as part, i (i)}{#if i % 2}<code>{part}</code>{:else}{part}{/if}{/each}</span>
             </div>
             {#if c.name === 'Agents'}
-              {#if app.cli.installed}
-                <Button onclick={() => app.copy('agent_note')}>Copy agent note</Button>
-              {:else}
-                <Button onclick={() => app.installCli()}>Install command-line tool</Button>
-              {/if}
+              <!-- One button whose step changes, so focus stays on it from Install to Connect to Copy. -->
+              <Button aria-disabled={app.conn.connecting ? 'true' : undefined} onclick={agentsAction}>{agentsLabel}</Button>
             {:else}
               <Button onclick={() => app.recheck()}>Check again</Button>
             {/if}
