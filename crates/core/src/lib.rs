@@ -36,7 +36,7 @@ pub use model::TaskEdit;
 pub use model::{
     Actor, Event, EventKind, NewTask, Origin, Repo, Status, Task, TaskNode, UnknownValue,
 };
-pub use model::{CoreSnapshot, Dependencies, OutsideWait, ReadyTask, RunOrder};
+pub use model::{CoreSnapshot, Dependencies, OutsideWait, ReadyTask, RejectOutcome, RunOrder};
 pub use model::{DepRef, PlanResult, PlanTask};
 pub use model::{Link, LinkKind, NewLink, PrState};
 
@@ -170,6 +170,7 @@ pub(crate) mod fault {
     pub(crate) const LINK_DELETED: &str = "links::unlink after delete";
     pub(crate) const PR_STATE_RECORDED: &str = "links::set_pr_state after one task";
     pub(crate) const STATUS_UPDATED: &str = "status::apply after update";
+    pub(crate) const PROPOSALS_REJECTED: &str = "status::reject_proposals after one task";
     pub(crate) const MOVE_RENUMBERED: &str = "positions::move_task after renumber";
     pub(crate) const DEP_ADDED: &str = "deps::add after event";
     pub(crate) const DEP_REMOVED: &str = "deps::remove after event";

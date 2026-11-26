@@ -1,10 +1,12 @@
 //! Status changes and who may make them: SPEC-core rule 6, plus rule 1's blocked reason.
 
+use std::collections::HashSet;
+
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::events::{self, bad_text};
-use crate::model::{Actor, EventKind, Status, Task};
-use crate::permissions::valid_actor;
+use crate::model::{Actor, EventKind, RejectOutcome, Status, Task};
+use crate::permissions::{Call, allowed, valid_actor};
 use crate::sql::{SUBTREE_CTE, query_all};
 use crate::tx::Tx;
 use crate::{Error, Result, TaskId, fault, tasks};
@@ -20,6 +22,22 @@ impl crate::Store {
         actor: &Actor,
     ) -> Result<Task> {
         self.write(|tx| set_status(tx, id, to, note, actor))
+    }
+
+    /// Rejects proposals: for each id still `proposed`, move it to `dropped` with a `rejected`
+    /// event (rule 6's reject). Checks and writes in one IMMEDIATE transaction, so a
+    /// concurrent accept from another process can't be overwritten. `me` only (rule 8).
+    ///
+    /// Each id is looked at once, in the order given. One no longer `proposed` is skipped with
+    /// its status, untouched; one that no longer exists is in neither list. A blank reason is
+    /// no reason. Rejecting nothing writes nothing.
+    pub fn reject_proposals(
+        &mut self,
+        ids: &[TaskId],
+        reason: Option<&str>,
+        actor: &Actor,
+    ) -> Result<RejectOutcome> {
+        self.write(|tx| reject_proposals(tx, ids, reason, actor))
     }
 
     /// Agents' proposals waiting for me to accept (`todo`) or reject (`dropped`), in tree order.
@@ -154,6 +172,47 @@ pub(crate) fn set_status(
     tasks::get(tx, id)
 }
 
+fn reject_proposals(
+    tx: &mut Tx<'_>,
+    ids: &[TaskId],
+    reason: Option<&str>,
+    actor: &Actor,
+) -> Result<RejectOutcome> {
+    allowed(Call::RejectProposals, actor)?;
+    let reason = reason.filter(|r| !r.trim().is_empty());
+    let mut out = RejectOutcome::default();
+    let mut seen = HashSet::new();
+    for &id in ids {
+        if !seen.insert(id) {
+            continue;
+        }
+        // Read inside the write lock: what another process committed before it is seen here,
+        // and nothing can commit after it until this change does.
+        let status: Option<String> = tx
+            .query_row(
+                "SELECT status FROM tasks WHERE id = ?1",
+                params![id.0],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let Some(status) = status else {
+            continue;
+        };
+        let status: Status = status.parse().map_err(|_| bad_text(0, &status))?;
+        if status != Status::Proposed {
+            out.skipped.push((id, status));
+            continue;
+        }
+        reject(tx, id, reason, actor)?;
+        // A proposal can't have subtasks (rule 12); this keeps the batch identical to
+        // set_status's reject all the same.
+        drop_subtree(tx, id, actor)?;
+        fault::hit(fault::PROPOSALS_REJECTED)?;
+        out.rejected.push(id);
+    }
+    Ok(out)
+}
+
 /// How rule 9's events start, so `tree()` can tell a task dropped with its parent from a
 /// proposal I rejected.
 const DROPPED_WITH: &str = "dropped with #";
@@ -183,6 +242,27 @@ mod tests {
 
     use super::*;
     use crate::{NewLink, NewTask, Store, fault};
+
+    #[test]
+    fn a_reject_that_fails_partway_rejects_nothing_and_tells_nobody() {
+        let mut store = Store::open_in_memory().unwrap();
+        let agent = Actor::Agent("t3/a1".into());
+        let p1 = store.add_task(NewTask::new("one"), &agent).unwrap().id;
+        let p2 = store.add_task(NewTask::new("two"), &agent).unwrap().id;
+        let before = (snapshot(&store, p1), snapshot(&store, p2));
+        let committed = store.last_committed.clone();
+        let rx = store.subscribe();
+
+        // Fails after the first task's update and event are written.
+        fault::arm(fault::PROPOSALS_REJECTED);
+        assert!(store.reject_proposals(&[p1, p2], None, &Actor::Me).is_err());
+        assert_eq!((snapshot(&store, p1), snapshot(&store, p2)), before);
+        assert_eq!(store.last_committed, committed);
+        assert!(rx.try_recv().is_err());
+
+        let out = store.reject_proposals(&[p1, p2], None, &Actor::Me).unwrap();
+        assert_eq!(out.rejected, vec![p1, p2]);
+    }
 
     fn snapshot(store: &Store, id: TaskId) -> (Task, i64, i64) {
         let n = |sql: &str| store.conn.query_row(sql, [], |r| r.get(0)).unwrap();
