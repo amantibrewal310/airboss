@@ -4,6 +4,11 @@ import { expect, test } from '@playwright/test';
  * SPEC-app "Performance": 2,000 rows at 60 fps. Scrolls the whole list of the perf fixture
  * (2,000 tasks, every parent open) in 3 s and records each animation frame's interval.
  * Pass: 95th percentile under 16.7 ms (plus vsync jitter) and no frame over 50 ms.
+ *
+ * WebKit's frames aren't always on the same clock: often about 100 per second, but locked to
+ * exactly 60 on battery, where timestamps in whole milliseconds read 16.7 ms as 16, 17 or 18.
+ * So the median frame must be a 60 Hz one or faster, and the 95th percentile may also sit
+ * within 15% of it: a frame missed at 60 Hz still fails, at 33 ms.
  */
 test('2,000 rows scroll at 60 fps', async ({ page, browserName }, info) => {
   await page.goto('/?fixture=perf&view=all');
@@ -50,6 +55,7 @@ test('2,000 rows scroll at 60 fps', async ({ page, browserName }, info) => {
   info.annotations.push({ type: 'frames', description: line });
   expect(result.reachedBottom).toBe(true);
   expect(result.maxDomRows).toBeLessThan(60);
-  expect(result.p95).toBeLessThan(17.5);
+  expect(result.p50).toBeLessThan(17.5);
+  expect(result.p95).toBeLessThan(Math.max(17.5, result.p50 * 1.15));
   expect(result.max).toBeLessThan(50);
 });
