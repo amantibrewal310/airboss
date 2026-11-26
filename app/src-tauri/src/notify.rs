@@ -7,6 +7,9 @@
 //! never while the main window is focused (the item is in front of me already) or with the
 //! setting off. An item that arrives then is still remembered, so it doesn't notify later.
 //!
+//! **Withdrawing** ([`Memory::gone`]): when an item that may have a notification in
+//! Notification Center leaves Needs me (answered, dismissed, done), that notification goes.
+//!
 //! **Delivery** goes through [`Notifications`], so the decisions are tested with
 //! [`RecordingNotifications`] and the app posts through `UNUserNotificationCenter` (`macos.rs`).
 
@@ -66,10 +69,12 @@ pub struct Moment {
     pub now: SystemTime,
 }
 
-/// What the decisions remember: every key seen, and whether launch is over.
+/// What the decisions remember: every key seen, the keys that may have a notification in
+/// Notification Center, and whether launch is over.
 #[derive(Debug)]
 pub struct Memory {
     seen: HashSet<NeedsKey>,
+    delivered: HashSet<NeedsKey>,
     started: SystemTime,
     settled: bool,
 }
@@ -79,6 +84,7 @@ impl Memory {
     pub fn new(started: SystemTime) -> Memory {
         Memory {
             seen: HashSet::new(),
+            delivered: HashSet::new(),
             started,
             settled: false,
         }
@@ -90,9 +96,15 @@ impl Memory {
     /// brings T3's open questions), so an item notifies then only if it began waiting after
     /// the start (`since`). Launch is over with the first list built after sync read every
     /// source (`checked_at`), or [`SETTLE`] after the start; from then on every new key counts.
+    ///
+    /// The time is checked before the list is judged: this runs only when the list changes,
+    /// so its first change may come long after [`SETTLE`] (an Agent stopped item appears ten
+    /// minutes after its thread stopped), and that list isn't launch. The list built with
+    /// `checked_at` during launch still is: it holds what sync found already waiting.
     pub fn decide(&mut self, list: &NeedsList, at: Moment) -> Vec<Notice> {
+        self.settled |= at.now >= self.started + SETTLE;
         let launching = !self.settled;
-        self.settled |= list.checked_at.is_some() || at.now >= self.started + SETTLE;
+        self.settled |= list.checked_at.is_some();
         let mut out = Vec::new();
         for i in &list.items {
             // A stale item (its source is down) may not be real; it's judged once it's fresh.
@@ -101,12 +113,36 @@ impl Memory {
             }
             self.seen.insert(i.key.clone());
             let new = !launching || self.began_after_start(i);
-            if new && notifies(i.kind) && at.enabled && !at.focused {
+            if !notifies(i.kind) {
+                continue;
+            }
+            if new && at.enabled && !at.focused {
                 out.push(Notice::of(i));
+                self.delivered.insert(i.key.clone());
+            } else if !new {
+                // Waiting since before the start: an earlier run may have posted it.
+                self.delivered.insert(i.key.clone());
             }
         }
         // Grouped by task: a task's notifications go out together, in list order.
         out.sort_by_key(|n| n.task);
+        out
+    }
+
+    /// The keys whose notifications to withdraw: those that may be in Notification Center
+    /// and whose items are no longer in `list`. Each is returned once.
+    pub fn gone(&mut self, list: &NeedsList) -> Vec<NeedsKey> {
+        let present: HashSet<&NeedsKey> = list.items.iter().map(|i| &i.key).collect();
+        let mut out: Vec<NeedsKey> = self
+            .delivered
+            .iter()
+            .filter(|k| !present.contains(k))
+            .cloned()
+            .collect();
+        for k in &out {
+            self.delivered.remove(k);
+        }
+        out.sort_by(|a, b| a.0.cmp(&b.0));
         out
     }
 }
@@ -133,8 +169,12 @@ pub enum Permission {
 
 /// The native side of notifications.
 pub trait Notifications: Send + Sync {
-    /// Posts one notification; clicking it opens the main window on its item.
+    /// Posts one notification; clicking it opens the main window on its item. Its
+    /// identifier is its key, so the same key always names the same notification.
     fn post(&self, notice: &Notice) -> Result<(), String>;
+    /// Removes the notifications for these keys from Notification Center (nothing for a key
+    /// that has none).
+    fn withdraw(&self, keys: &[NeedsKey]) -> Result<(), String>;
     /// What macOS allows now (a short wait for its answer).
     fn permission(&self) -> Permission;
     /// Asks macOS once (it shows its own prompt); later calls answer from the setting.
@@ -147,6 +187,7 @@ pub trait Notifications: Send + Sync {
 #[derive(Debug)]
 pub struct RecordingNotifications {
     posted: Mutex<Vec<Notice>>,
+    withdrawn: Mutex<Vec<NeedsKey>>,
     permission: Mutex<Permission>,
     requests: Mutex<u32>,
 }
@@ -155,6 +196,7 @@ impl Default for RecordingNotifications {
     fn default() -> RecordingNotifications {
         RecordingNotifications {
             posted: Mutex::new(Vec::new()),
+            withdrawn: Mutex::new(Vec::new()),
             permission: Mutex::new(Permission::Granted),
             requests: Mutex::new(0),
         }
@@ -171,6 +213,11 @@ impl RecordingNotifications {
         lock(&self.posted).clone()
     }
 
+    /// Every key withdrawn so far, in order.
+    pub fn withdrawn(&self) -> Vec<NeedsKey> {
+        lock(&self.withdrawn).clone()
+    }
+
     /// What `permission` answers.
     pub fn set_permission(&self, p: Permission) {
         *lock(&self.permission) = p;
@@ -185,6 +232,10 @@ impl RecordingNotifications {
 impl Notifications for RecordingNotifications {
     fn post(&self, notice: &Notice) -> Result<(), String> {
         lock(&self.posted).push(notice.clone());
+        Ok(())
+    }
+    fn withdraw(&self, keys: &[NeedsKey]) -> Result<(), String> {
+        lock(&self.withdrawn).extend_from_slice(keys);
         Ok(())
     }
     fn permission(&self) -> Permission {
@@ -347,6 +398,22 @@ mod tests {
         assert_eq!(keys(&n), ["f"]);
     }
 
+    /// QA #23: the list changes for the first time ten minutes after the start, when a thread
+    /// that stopped before the start becomes "Agent stopped". Its `since` predates the start,
+    /// but launch was long over: it notifies.
+    #[test]
+    fn the_first_change_after_the_settle_time_is_not_launch() {
+        for checked in [false, true] {
+            let mut m = Memory::new(start());
+            // What was waiting at launch (`AppState::new`): nothing.
+            assert!(m.decide(&list(vec![], false), away(0)).is_empty());
+            let mut stopped = item("stopped:1", NeedsKind::AgentStopped, 1);
+            stopped.since = airboss_services::time::to_ts(start() - Duration::from_secs(90));
+            let n = m.decide(&list(vec![stopped], checked), away(600));
+            assert_eq!(keys(&n), ["stopped:1"], "checked_at set: {checked}");
+        }
+    }
+
     #[test]
     fn a_key_never_notifies_twice_even_after_it_leaves_and_comes_back() {
         let mut m = settled();
@@ -390,6 +457,58 @@ mod tests {
             true,
         );
         assert_eq!(keys(&m.decide(&both, away(9))), ["q3"]);
+    }
+
+    fn gone(n: Vec<NeedsKey>) -> Vec<String> {
+        n.into_iter().map(|k| k.0).collect()
+    }
+
+    #[test]
+    fn a_posted_notification_is_withdrawn_once_when_its_item_leaves() {
+        let mut m = settled();
+        let q = item("q", NeedsKind::Question, 1);
+        let mut s = item("s", NeedsKind::Approval, 2);
+        let p = item("p", NeedsKind::Proposed, 3);
+        let both = list(vec![q.clone(), s.clone(), p.clone()], true);
+        assert_eq!(keys(&m.decide(&both, away(5))), ["q", "s"]);
+        assert!(m.gone(&both).is_empty());
+        // `s` goes stale (its source is down): still listed, so its notification stays.
+        s.stale = true;
+        let answered = list(vec![s.clone()], true);
+        m.decide(&answered, away(6));
+        assert_eq!(gone(m.gone(&answered)), ["q"]);
+        assert!(m.gone(&answered).is_empty(), "only once");
+        let none = list(vec![], true);
+        m.decide(&none, away(7));
+        assert_eq!(gone(m.gone(&none)), ["s"]);
+        assert!(m.gone(&none).is_empty());
+    }
+
+    #[test]
+    fn nothing_is_withdrawn_for_an_item_that_was_never_posted() {
+        let mut m = settled();
+        let focused = Moment {
+            focused: true,
+            ..away(5)
+        };
+        let one = list(vec![item("q", NeedsKind::Question, 1)], true);
+        assert!(m.decide(&one, focused).is_empty());
+        let none = list(vec![], true);
+        m.decide(&none, away(6));
+        assert!(m.gone(&none).is_empty());
+    }
+
+    #[test]
+    fn an_item_waiting_since_before_the_start_is_withdrawn_when_it_leaves() {
+        // An earlier run may have posted it; it's still in Notification Center.
+        let mut m = Memory::new(start());
+        let mut old = item("q", NeedsKind::Question, 1);
+        old.since = airboss_services::time::to_ts(start() - Duration::from_secs(300));
+        let launch = list(vec![old], true);
+        assert!(m.decide(&launch, away(1)).is_empty());
+        let none = list(vec![], true);
+        m.decide(&none, away(9));
+        assert_eq!(gone(m.gone(&none)), ["q"]);
     }
 
     #[test]

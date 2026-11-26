@@ -127,3 +127,35 @@ fn turning_notifications_on_asks_macos_when_it_hasnt_been_asked() {
     assert_eq!(fake.requests(), 1);
     appcmd::open_notification_settings(&app.state, M).unwrap();
 }
+
+#[test]
+fn an_answered_question_takes_its_notification_away() {
+    let app = launched();
+    let fake = app.shell.notifications_fake();
+    let q = needs_item(
+        "question:r1",
+        NeedsKind::Question,
+        airboss_core::TaskId(1),
+        NOW,
+    );
+    let p = needs_item(
+        "proposed:2",
+        NeedsKind::Proposed,
+        airboss_core::TaskId(2),
+        NOW,
+    );
+    app.attention.set_items(vec![q, p.clone()]);
+    app.state.catch_up_services();
+    assert_eq!(posted(&app).len(), 1);
+    assert!(fake.withdrawn().is_empty());
+    // Answered in T3: the question leaves Needs me, the proposal stays.
+    app.attention.set_items(vec![p]);
+    app.state.catch_up_services();
+    let withdrawn: Vec<String> = fake.withdrawn().into_iter().map(|k| k.0).collect();
+    assert_eq!(withdrawn, ["question:r1"]);
+    // Withdrawn with the identifier it was posted with.
+    assert_eq!(fake.posted()[0].key.0, "question:r1");
+    app.attention.set_items(vec![]);
+    app.state.catch_up_services();
+    assert_eq!(fake.withdrawn().len(), 1, "a proposal never had one");
+}

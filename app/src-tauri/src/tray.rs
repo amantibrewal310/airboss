@@ -35,7 +35,8 @@ pub struct TrayItem {
 pub struct TrayModel {
     /// The count, or nothing at 0.
     pub title: Option<String>,
-    /// Also its accessible name: "Airboss, 8 waiting on you".
+    /// Also its accessibility label, which VoiceOver reads instead of the bare count:
+    /// "Airboss, 8 waiting on you".
     pub tooltip: String,
     /// "Needs me 8", or "Nothing needs you".
     pub header: String,
@@ -144,7 +145,14 @@ fn kind_icon(kind: NeedsKind) -> Image<'static> {
     }
 }
 
-/// The native menu for a model.
+/// The native menu for a model. `hotkey` is the quick-add hotkey as an accelerator
+/// (`"Control+Alt+N"`, from Settings), shown as Quick Add's key equivalent ("⌃⌥N"). It has to
+/// be the accelerator: tauri drops one that doesn't parse, such as the label "⌃⌥N".
+///
+/// The key equivalent doesn't register anything: muda only sets the menu item's
+/// `keyEquivalent`, which AppKit consults while this menu is open. The global hotkey is a
+/// Carbon hot key, which macOS takes before any menu sees the keystroke, so the two never
+/// both fire.
 pub fn menu<R: Runtime>(app: &AppHandle<R>, m: &TrayModel, hotkey: &str) -> tauri::Result<Menu<R>> {
     let menu = Menu::new(app)?;
     menu.append(&MenuItem::with_id(
@@ -196,14 +204,29 @@ pub fn create<R: Runtime>(
     m: &TrayModel,
     hotkey: &str,
 ) -> tauri::Result<TrayIcon<R>> {
-    TrayIconBuilder::with_id(TRAY_ID)
+    let tray = TrayIconBuilder::with_id(TRAY_ID)
         .icon(icon())
         .icon_as_template(true)
         .title(m.title.as_deref().unwrap_or(""))
         .tooltip(&m.tooltip)
         .menu(&menu(app, m, hotkey)?)
         .show_menu_on_left_click(true)
-        .build(app)
+        .build(app)?;
+    set_label(&tray, &m.tooltip)?;
+    Ok(tray)
+}
+
+/// Sets the status item button's accessibility label, so VoiceOver says "Airboss, 8 waiting
+/// on you" rather than the title "8". tauri has no setter for it; the `tray-icon` item
+/// underneath hands out its `NSStatusItem` (tauri is pinned to an exact version, as
+/// `with_inner_tray_icon` asks).
+fn set_label<R: Runtime>(tray: &TrayIcon<R>, label: &str) -> tauri::Result<()> {
+    let label = label.to_string();
+    tray.with_inner_tray_icon(move |inner| {
+        if let Some(item) = inner.ns_status_item() {
+            crate::macos::set_status_item_label(&item, &label);
+        }
+    })
 }
 
 /// Updates the title, tooltip and menu.
@@ -215,6 +238,7 @@ pub fn update<R: Runtime>(
 ) -> tauri::Result<()> {
     tray.set_title(Some(m.title.as_deref().unwrap_or("")))?;
     tray.set_tooltip(Some(&m.tooltip))?;
+    set_label(tray, &m.tooltip)?;
     tray.set_menu(Some(menu(app, m, hotkey)?))?;
     Ok(())
 }

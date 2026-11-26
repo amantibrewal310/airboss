@@ -411,18 +411,28 @@ impl AppState {
         }
     }
 
-    /// Posts a notification for each new Needs me item that calls for one (`notify.rs`).
+    /// Posts a notification for each new Needs me item that calls for one, and withdraws
+    /// those whose items left the list (`notify.rs`).
     pub(crate) fn notify_new(&self, needs: &airboss_services::NeedsList) {
         let at = crate::notify::Moment {
             enabled: self.settings().notifications,
             focused: self.main_focused.load(Ordering::SeqCst),
             now: self.now(),
         };
-        let notices = lock(&self.notify).decide(needs, at);
+        let (notices, gone) = {
+            let mut memory = lock(&self.notify);
+            (memory.decide(needs, at), memory.gone(needs))
+        };
+        let n = self.shell.notifications();
+        if !gone.is_empty() {
+            match n.withdraw(&gone) {
+                Ok(()) => log::info!("withdrew {} notification(s)", gone.len()),
+                Err(e) => log::warn!("couldn't withdraw notifications: {e}"),
+            }
+        }
         if notices.is_empty() {
             return;
         }
-        let n = self.shell.notifications();
         for notice in &notices {
             if let Err(e) = n.post(notice) {
                 log::warn!("couldn't post a notification for {}: {e}", notice.task.0);
