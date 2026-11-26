@@ -19,7 +19,7 @@
   type="button"
   class="ghost"
   aria-disabled={off || closed ? 'true' : undefined}
-  title={off ? app.conn.launchOff : 'Plan it (⇧⌘↩)'}
+  title={off ? app.conn.launchOff : 'Plan it (⇧⌘↩): an agent plans this task with you'}
   onclick={() => app.planIt(task)}
 >
   <Icon name="waves" size={14} />Plan it
@@ -30,7 +30,7 @@
   data-do-it
   aria-disabled={off || starting ? 'true' : undefined}
   aria-busy={starting}
-  title={off ? app.conn.launchOff : planned ? `Do it (⌘↩) · on ${planned}` : 'Do it (⌘↩)'}
+  title={off ? app.conn.launchOff : planned ? `Do it (⌘↩): an agent starts on this task, on branch ${planned}` : 'Do it (⌘↩): an agent starts on this task'}
   onclick={() => !starting && app.doIt(task)}
 >
   {#if starting}

@@ -202,7 +202,10 @@ fn availability_ready_missing_and_back() {
         (c.name.as_str(), c.ok, c.state.as_str()),
         ("T3 Code", true, "Connected")
     );
-    assert_eq!(c.detail, "Do it and Plan it start agent threads here.");
+    assert_eq!(
+        c.detail,
+        "Agents you start on a task open here, each in its own thread."
+    );
 
     // Unchanged: no bump.
     let seen = h.launch.changes().current();
@@ -225,7 +228,7 @@ fn availability_ready_missing_and_back() {
     assert_eq!((c.ok, c.state.as_str()), (false, "Not found"));
     assert_eq!(
         c.fix.as_deref(),
-        Some("Install T3 Code to turn on Do it and Plan it. Everything else works.")
+        Some("Install T3 Code to start agents on your tasks. Everything else works.")
     );
 
     // No launcher at all: missing without running anything.

@@ -7,7 +7,7 @@
 
 <div class="t3" role="status">
   <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="none" stroke="var(--st-blocked)" stroke-width="1.6" /><path d="M8 4.8v3.6" stroke="var(--st-blocked)" stroke-width="1.6" stroke-linecap="round" /><circle cx="8" cy="10.9" r="0.95" fill="var(--st-blocked)" /></svg>
-  <span>Do it and Plan it need {app.conn.launcherName}. Install it, then choose <button type="button" onclick={() => app.recheck()}>Check again</button>.</span>
+  <span>Starting agents needs {app.conn.launcherName}. Install it, then choose <button type="button" onclick={() => app.recheck()}>Check again</button>.</span>
 </div>
 
 <style>

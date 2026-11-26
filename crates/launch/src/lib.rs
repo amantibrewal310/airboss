@@ -271,23 +271,23 @@ fn connection(availability: &Availability) -> Connection {
             name,
             ok: true,
             state: "Connected".into(),
-            detail: "Do it and Plan it start agent threads here.".into(),
+            detail: "Agents you start on a task open here, each in its own thread.".into(),
             fix: None,
         },
         Availability::Missing { .. } => Connection {
             name,
             ok: false,
             state: "Not found".into(),
-            detail: "Do it and Plan it start agent threads here.".into(),
+            detail: "Agents you start on a task open here, each in its own thread.".into(),
             fix: Some(
-                "Install T3 Code to turn on Do it and Plan it. Everything else works.".into(),
+                "Install T3 Code to start agents on your tasks. Everything else works.".into(),
             ),
         },
         Availability::Unknown => Connection {
             name,
             ok: true,
             state: "Checking…".into(),
-            detail: "Do it and Plan it start agent threads here.".into(),
+            detail: "Agents you start on a task open here, each in its own thread.".into(),
             fix: None,
         },
     }

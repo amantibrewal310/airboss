@@ -36,7 +36,7 @@
   <div class="empty" bind:this={app.focusTargets.list} tabindex="-1">
     <Icon name="waves" size={22} />
     <h2>No plans yet</h2>
-    <p>Plan it on any task turns its plan into subtasks here.</p>
+    <p>Press Plan it on a task and an agent works out the plan with you. Its steps land here as subtasks.</p>
     <Button variant="primary" onclick={() => app.openNew({ plan: true })}><Icon name="waves" size={13} />Plan something</Button>
   </div>
 {:else}

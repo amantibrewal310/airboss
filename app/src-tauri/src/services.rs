@@ -113,7 +113,7 @@ impl Down {
     fn what(&self) -> &'static str {
         match self.kind {
             Kind::Sync => "Sync didn't start:",
-            Kind::Launch => "Do it and Plan it didn't start:",
+            Kind::Launch => "Starting agents is unavailable:",
             Kind::Attention => "Needs me didn't start:",
         }
     }

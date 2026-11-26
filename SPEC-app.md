@@ -465,7 +465,7 @@ Every screen keeps DESIGN.md's layout, sizes and motion. This section adds data,
   - On a task with no repo (`prepare` says `needs_choice`), Do it opens the **Start in menu** under the button. It lists "Start in <repo>" for each repo (this links the repo as me, then starts) and "No repo: research only". ↑↓ and ↩ pick, Esc closes.
   - On a done or dropped task (`TaskClosed`), the toast offers "Reopen and start". That sets the task to `todo`, then starts it.
 - **T3 missing:**
-  - An orange-iconed line sits under the header: "Do it and Plan it need T3 Code. Install it, then choose Check again."
+  - An orange-iconed line sits under the header: "Starting agents needs T3 Code. Install it, then choose Check again."
   - Do it and Plan it stay focusable but read as disabled (`aria-disabled`). Pressing them repeats the line as a toast.
 - **Title:** click it or press ↩ to rename in place. ↩ or blur saves; Esc cancels.
 - **Needs me callouts:** one red-washed callout per item, with the item's main action and Dismiss.
@@ -555,7 +555,7 @@ Every screen keeps DESIGN.md's layout, sizes and motion. This section adds data,
   - "Plans N", and "35% of all planned work done · 6 of 17".
   - "Plan something" opens New task in plan mode: ↩ creates the task, then runs Plan it.
 - **Grid:** cards at least 340px wide, 12px apart. ←→↑↓ move by card and by row, and ↩ opens the page.
-- **Empty:** "No plans yet", "Plan it on any task turns its plan into subtasks here.", and Plan something.
+- **Empty:** "No plans yet", "Press Plan it on a task and an agent works out the plan with you. Its steps land here as subtasks.", and Plan something.
 
 ### New task (in the app) and quick add (from anywhere)
 
@@ -698,7 +698,7 @@ A modal in the main window, built from the design's components:
     | Agents | "Agents · Ready": the CLI is installed, Claude Code or Codex has the `airboss` server, and the time of the last agent report if any | "Agents · Not set up" (no CLI), then "Agents · Not connected": "Agents can't report to Airboss yet." | Install command-line tool, then Connect Claude Code, then Copy agent note: one button whose label follows the step, so focus stays on it |
 
     **Connect Claude Code** runs `connect_claude` only when it's clicked: `claude mcp add --scope user airboss -- <home>/.local/bin/airboss mcp`, argv only (no shell, so the CLI's path is absolute), with a 20 s deadline. `claude` is found like `gh`: `~/.local/bin/claude`, `~/.claude/local/claude`, `/opt/homebrew/bin/claude`, `/usr/local/bin/claude`, then the app's `PATH`, then the login shell's (`login_path.rs`); the child gets the login shell's `PATH` with `claude`'s folder first, so a Node install finds `node`. A server already registered (in `~/.claude.json`, or `claude` saying it "already exists") is success. Success refreshes the connections and toasts "Connected Claude Code". A failure (no `claude`, a non-zero exit, the deadline) toasts the reason with the first line `claude` printed, and offers **Copy setup command**. Airboss changes an agent tool's config only on this click.
-    | T3 Code | "T3 Code · Found" | "T3 Code · Not found": Do it and Plan it are off until T3 Code is installed | Check again |
+    | T3 Code | "T3 Code · Found" | "T3 Code · Not found": "Install T3 Code to start agents on your tasks. Everything else works." | Check again |
     | GitHub | "GitHub · Signed in" | "GitHub · Not signed in": PRs won't sync. Run `gh auth login`. | Check again |
 
 - **Add repos** (from first run, the sidebar's "+", and "Add repos…"):

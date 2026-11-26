@@ -61,8 +61,8 @@ describe('connections with Herdr', () => {
   });
 
   it('names the launcher when it is missing', () => {
-    expect(launcherMissingText('herdr')).toBe('Do it and Plan it need Herdr. Install it, then choose Check again.');
-    expect(launcherMissingText('t3')).toBe('Do it and Plan it need T3 Code. Install it, then choose Check again.');
+    expect(launcherMissingText('herdr')).toBe('Starting agents needs Herdr. Install it, then choose Check again.');
+    expect(launcherMissingText('t3')).toBe('Starting agents needs T3 Code. Install it, then choose Check again.');
   });
 });
 

@@ -189,7 +189,9 @@ fn herdr_row(herdr: &Availability, chosen: bool, launcher: LauncherKind) -> Opti
             "Ready",
             &match launcher {
                 LauncherKind::Herdr => {
-                    format!("Herdr {version}. Do it and Plan it start agents here.")
+                    format!(
+                        "Herdr {version}. Agents you start on a task open here, each in its own tab."
+                    )
                 }
                 LauncherKind::T3 => format!(
                     "Herdr {version}. To start agents here, choose it in Settings › Agent setup."
@@ -253,7 +255,7 @@ pub(crate) fn merged(
             "T3 Code",
             true,
             "Found",
-            "Starts threads for Do it and Plan it.",
+            "Agents you start on a task open here, each in its own thread.",
             None,
         )),
         _ => {}

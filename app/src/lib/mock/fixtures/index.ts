@@ -24,7 +24,7 @@ export function isFixtureName(name: string): name is FixtureName {
   return (FIXTURES as readonly string[]).includes(name);
 }
 
-const T3_MISSING_REASON = 'Do it and Plan it need T3 Code. Install it, then choose Check again.';
+const T3_MISSING_REASON = 'Starting agents needs T3 Code. Install it, then choose Check again.';
 
 export function loadFixture(name: FixtureName): MockSeed {
   switch (name) {
@@ -45,7 +45,7 @@ export function loadFixture(name: FixtureName): MockSeed {
       seed.name = 't3missing';
       seed.availability = { missing: { reason: T3_MISSING_REASON } };
       seed.connections = [
-        { name: 'T3 Code', ok: false, state: 'Not found', detail: 'Do it and Plan it start agent threads here.', fix: 'Install T3 Code to turn on Do it and Plan it. Everything else works.' },
+        { name: 'T3 Code', ok: false, state: 'Not found', detail: 'Agents you start on a task open here, each in its own thread.', fix: 'Install T3 Code to start agents on your tasks. Everything else works.' },
         ...CONNECTED.filter((c) => c.name !== 'T3 Code'),
       ];
       seed.t3Projects = [];
@@ -81,7 +81,7 @@ export function loadFixture(name: FixtureName): MockSeed {
         seed.t3Projects = [];
         seed.connections = [
           { name: 'Agents', ok: true, state: 'Ready', detail: 'Agents report progress and ask questions through Airboss. Each repo needs the agent note.', fix: null },
-          { name: 'T3 Code', ok: false, state: 'Not found', detail: 'Do it and Plan it start agent threads here.', fix: 'Do it and Plan it are off until T3 Code is installed. Everything else works.' },
+          { name: 'T3 Code', ok: false, state: 'Not found', detail: 'Agents you start on a task open here, each in its own thread.', fix: 'Install T3 Code to start agents on your tasks. Everything else works.' },
           { name: 'GitHub', ok: false, state: 'Not signed in', detail: 'Pull requests sync every 5 minutes.', fix: "PRs won't sync. Run `gh auth login`." },
         ];
       } else {

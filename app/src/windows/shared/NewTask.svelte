@@ -273,7 +273,7 @@
     <span class="h"><Kbd keys="tab" /> repos</span>
     <span class="h"><Kbd keys="shift tab" /> parent</span>
     <span class="sp"></span>
-    <span class="h"><Kbd keys="mod enter" /> create and Do it</span>
+    <span class="h"><Kbd keys="mod enter" /> create and start an agent</span>
     <button type="button" class="go" disabled={empty} onclick={() => submit(plan ? 'plan_it' : 'none')}>
       {plan ? 'Create and plan' : 'Create task'} <Kbd keys="enter" onFill />
     </button>

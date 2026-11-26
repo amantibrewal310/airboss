@@ -9,7 +9,7 @@ use airboss_services::{ErrorCode, ServiceError};
 use crate::brief::one_line;
 
 /// The sentence `Availability::Missing` and `T3Missing` share, from the design.
-pub const T3_MISSING: &str = "Do it and Plan it need T3 Code. Install it, then choose Check again.";
+pub const T3_MISSING: &str = "Starting agents needs T3 Code. Install it, then choose Check again.";
 
 /// The sentence `Availability::Missing` and `HerdrMissing` share.
 pub const HERDR_MISSING: &str = "Herdr isn't installed.";

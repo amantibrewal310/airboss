@@ -92,7 +92,7 @@ function fail(code: AppError['code'], message: string, detail: string | null = n
   return { code, message, detail };
 }
 
-const T3_MISSING = 'Do it and Plan it need T3 Code. Install it, then choose Check again.';
+const T3_MISSING = 'Starting agents needs T3 Code. Install it, then choose Check again.';
 const HERDR_MISSING = "Herdr isn't installed.";
 const isReady = (a: Availability) => typeof a === 'object' && 'ready' in a;
 const isMissing = (a: Availability) => typeof a === 'object' && 'missing' in a;
@@ -250,7 +250,7 @@ export class MockBackend implements Transport {
     if (typeof h === 'object' && 'ready' in h) {
       const detail =
         this.launcher() === 'herdr'
-          ? `Herdr ${h.ready.version}. Do it and Plan it start agents here.`
+          ? `Herdr ${h.ready.version}. Agents you start on a task open here, each in its own tab.`
           : `Herdr ${h.ready.version}. To start agents here, choose it in Settings › Agent setup.`;
       rows = [{ name: 'Herdr', ok: true, state: 'Ready', detail, fix: null }, ...rows];
     } else if (typeof h === 'object' && 'missing' in h && pick === 'herdr') {

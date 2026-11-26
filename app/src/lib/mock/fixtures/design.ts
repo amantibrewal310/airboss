@@ -17,7 +17,7 @@ export const AIRBOSS = 3;
 export const DOTFILES = 4;
 
 export const CONNECTED: Connection[] = [
-  { name: 'T3 Code', ok: true, state: 'Connected', detail: 'Do it and Plan it start agent threads here.', fix: null },
+  { name: 'T3 Code', ok: true, state: 'Connected', detail: 'Agents you start on a task open here, each in its own thread.', fix: null },
   { name: 'GitHub', ok: true, state: 'Signed in', detail: 'Pull requests sync every 5 minutes. A merged PR finishes its task.', fix: null },
   { name: 'T3 Code', ok: true, state: 'Live state', detail: 'Shows which agents are working or waiting on you.', fix: null },
   { name: 'Agents', ok: true, state: 'Ready', detail: 'Agents report progress and ask questions through Airboss. Last report 6m ago.', fix: null },

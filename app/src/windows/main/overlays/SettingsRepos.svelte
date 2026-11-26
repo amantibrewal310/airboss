@@ -90,7 +90,7 @@
   <div class="row">
     <div class="lab">
       <b id="settings-repos">Repos</b>
-      <span>Do it starts agents in these folders. Tasks keep a repo when it's renamed or moved.</span>
+      <span>Agents you start on a task work in these folders. Tasks keep a repo when it's renamed or moved.</span>
     </div>
     <Button data-add-repos onclick={() => app.open({ kind: 'add_repos' })}>Add repos…</Button>
   </div>

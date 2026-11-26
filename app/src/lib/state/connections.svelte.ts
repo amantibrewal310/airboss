@@ -47,10 +47,10 @@ export class ConnectionsStore {
   private launchAvailability = $derived(this.launcher === 'herdr' ? this.herdr : this.availability);
   /** Do it and Plan it are on: the launcher in use is there. Unknown counts as on until launch says otherwise. */
   launchReady = $derived(this.launchAvailability === 'unknown' || t3Available(this.launchAvailability));
-  /** Why Do it and Plan it are off, naming the launcher ("Herdr isn't installed."). */
+  /** Why agents can't start, naming the launcher ("Starting agents needs Herdr"). */
   launchMissing = $derived(this.launchReady ? null : (t3MissingReason(this.launchAvailability) ?? launcherMissingText(this.launcher)));
   /** The disabled buttons' short reason, naming the launcher: "Herdr isn't installed". */
-  launchOff = $derived(this.launcher === 'herdr' ? "Herdr isn't installed" : 'Do it and Plan it need T3 Code');
+  launchOff = $derived(`Starting agents needs ${this.launcherName}`);
 
   set(
     rows: Connection[],

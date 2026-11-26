@@ -80,7 +80,7 @@ describe('Settings › Agent setup › Start agents in', () => {
     expect(app.settings.start_agents_in).toBe('herdr');
     expect(app.conn.launcher).toBe('herdr');
     expect(app.conn.launchReady).toBe(false);
-    expect(app.conn.launchOff).toBe("Herdr isn't installed");
+    expect(app.conn.launchOff).toBe('Starting agents needs Herdr');
     // Now chosen, the agent choice shows.
     radio('Agent in Herdr', 'Codex').click();
     await wait(30);
@@ -102,10 +102,10 @@ describe('Do it in Herdr', () => {
     app.select(146, { open: true });
     await render(Harness, { app, component: TaskPanel });
     await wait(30);
-    expect(document.querySelector('[role="status"]')!.textContent).toContain('Do it and Plan it need Herdr. Install it, then choose Check again.');
+    expect(document.querySelector('[role="status"]')!.textContent).toContain('Starting agents needs Herdr. Install it, then choose Check again.');
     const btn = document.querySelector<HTMLButtonElement>('[data-do-it]')!;
     expect(btn.getAttribute('aria-disabled')).toBe('true');
-    expect(btn.title).toBe("Herdr isn't installed");
+    expect(btn.title).toBe('Starting agents needs Herdr');
   });
 
   it('starts a Herdr terminal, links it, and Open thread shows it in Herdr', async () => {

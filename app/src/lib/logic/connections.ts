@@ -6,9 +6,9 @@ const ORDER = ['T3 Code', 'Herdr', 'GitHub', 'Agents', 'Claude Code'];
 /** Where Do it and Plan it start agents, as copy names it. */
 export const LAUNCHER_NAME: Record<LauncherKind, string> = { t3: 'T3 Code', herdr: 'Herdr' };
 
-/** "Do it and Plan it need Herdr. Install it, then choose Check again." */
+/** "Starting agents needs Herdr. Install it, then choose Check again." */
 export function launcherMissingText(launcher: LauncherKind): string {
-  return `Do it and Plan it need ${LAUNCHER_NAME[launcher]}. Install it, then choose Check again.`;
+  return `Starting agents needs ${LAUNCHER_NAME[launcher]}. Install it, then choose Check again.`;
 }
 
 export function t3Available(a: Availability): boolean {
@@ -60,8 +60,8 @@ export function mergeConnections(
       name: 'T3 Code',
       ok: false,
       state: 'Not found',
-      detail: t3?.detail ?? 'Do it and Plan it start agent threads here.',
-      fix: 'Install T3 Code to turn on Do it and Plan it. Everything else works.',
+      detail: t3?.detail ?? 'Agents you start on a task open here, each in its own thread.',
+      fix: 'Install T3 Code to start agents on your tasks. Everything else works.',
     });
   }
   const out = [...byName.values()].filter((c) => !(c.name === 'Claude Code' && c.ok));

@@ -52,7 +52,7 @@
   /** "Agent in Herdr" shows once Herdr is installed or chosen, as its connection row does. */
   const herdrShown = $derived(app.settings.start_agents_in === 'herdr' || (typeof app.conn.herdr === 'object' && 'ready' in app.conn.herdr));
   const startHint = $derived(
-    app.settings.start_agents_in === 'auto' ? `T3 Code when it's there, else Herdr. Now ${app.conn.launcherName}.` : 'Where Do it and Plan it start agents.',
+    app.settings.start_agents_in === 'auto' ? `T3 Code when it's there, else Herdr. Now ${app.conn.launcherName}.` : 'Where agents open when you start one on a task.',
   );
 </script>
 

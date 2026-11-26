@@ -109,7 +109,7 @@ fn fake_launch_records_each_start_and_answers_as_set() {
         name: "T3 Code".into(),
         ok: true,
         state: "Connected".into(),
-        detail: "Do it and Plan it start agent threads here.".into(),
+        detail: "Agents you start on a task open here, each in its own thread.".into(),
         fix: None,
     }]);
     assert_eq!(launch.connections().len(), 1);

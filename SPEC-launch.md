@@ -91,7 +91,7 @@ pub enum LaunchMsg { CheckAvailability, Settle, Woke, Tick, Shutdown }
 
 | Method | What `Launch` does |
 |---|---|
-| `connections()` | One row, `name` "T3 Code". Ready: ok, `state` "Connected", `detail` "Do it and Plan it start agent threads here." Missing: not ok, `state` "Not found", `fix` "Install T3 Code to turn on Do it and Plan it. Everything else works." Unknown: ok, `state` "Checking…" |
+| `connections()` | One row, `name` "T3 Code". Ready: ok, `state` "Connected", `detail` "Agents you start on a task open here, each in its own thread." Missing: not ok, `state` "Not found", `fix` "Install T3 Code to start agents on your tasks. Everything else works." Unknown: ok, `state` "Checking…" |
 | `recheck()` | Queues `CheckAvailability` and `Settle`; returns at once |
 | `changes()` | Bumped when availability changes or a pending row settles |
 | `store_changed(c)` | Nothing to do; returns at once |
@@ -149,7 +149,7 @@ The partial unique index makes a second pending row for the same task, repo and 
 
 ### Availability and the worker
 
-- `CheckAvailability`: `Missing` if `t3_path` doesn't exist; otherwise `<t3> --version`. Exit 0 with `t3 vX.Y.Z` is `Ready { version }`; exit 127 (the launcher's "T3 Code has moved or been removed") or anything else is `Missing { reason: "Do it and Plan it need T3 Code. Install it, then choose Check again." }`. It runs at start and on `recheck()`.
+- `CheckAvailability`: `Missing` if `t3_path` doesn't exist; otherwise `<t3> --version`. Exit 0 with `t3 vX.Y.Z` is `Ready { version }`; exit 127 (the launcher's "T3 Code has moved or been removed") or anything else is `Missing { reason: "Starting agents needs T3 Code. Install it, then choose Check again." }`. It runs at start and on `recheck()`.
 - T3 not *running* is found only when starting; checking it would cost a process.
 - The worker waits on its channel with `recv_timeout(min(next_wake − now, 15 min))`, using wall-clock `SystemTime` deadlines. With no pending rows it has no deadline: 4 empty wake-ups an hour. With pending rows it settles them at 10 s, 30 s, 60 s and 3 min after creation, and on `Settle`.
 - A panic in `handle` is caught, logged, and leaves the worker running.
@@ -303,7 +303,7 @@ The `t3` CLI writes one line to stderr and exits 1. `launch` maps it by its star
 
 | stderr starts with, or case | `ErrorCode` | Message | Stops the loop | Row |
 |---|---|---|---|---|
-| no binary, or exit 127 | `T3Missing` | "Do it and Plan it need T3 Code. Install it, then choose Check again." | yes | failed |
+| no binary, or exit 127 | `T3Missing` | "Starting agents needs T3 Code. Install it, then choose Check again." | yes | failed |
 | `No running T3 Code server uses` | `T3NotRunning` | "T3 Code isn't open. Open it, then try again." | yes | failed |
 | `Could not reach the T3 Code server` | `T3Unreachable` | "Couldn't reach T3 Code: …" | yes | failed |
 | `This T3 Code server has no` | `T3TooOld` | "Update T3 Code, then try again." | yes | failed |

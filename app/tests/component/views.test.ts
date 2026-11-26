@@ -66,12 +66,12 @@ describe('TaskPanel', () => {
     app.select(146, { open: true });
     await render(Harness, { app, component: TaskPanel });
     await wait(20);
-    expect(document.querySelector('[role="status"]')!.textContent).toContain('Do it and Plan it need T3 Code. Install it, then choose Check again.');
+    expect(document.querySelector('[role="status"]')!.textContent).toContain('Starting agents needs T3 Code. Install it, then choose Check again.');
     const btn = document.querySelector<HTMLButtonElement>('[data-do-it]')!;
     expect(btn.getAttribute('aria-disabled')).toBe('true');
     btn.click();
     await wait(20);
-    expect(app.toasts.list.at(-1)!.text).toContain('need T3 Code');
+    expect(app.toasts.list.at(-1)!.text).toContain('needs T3 Code');
     expect(backend.calls.some((c) => c.command === 'do_it')).toBe(false);
   });
 });
