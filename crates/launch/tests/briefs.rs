@@ -280,3 +280,39 @@ fn plan_it_tells_the_agent_to_import_into_this_task() {
     assert!(out.contains("in `repos`"));
     assert!(out.contains("Don't change any code."));
 }
+
+#[test]
+fn herdr_briefs_link_a_herdr_terminal_and_leave_herdr_links_out() {
+    let mut r = booking();
+    r.links.push(link(
+        LinkKind::HerdrTerminal,
+        "t4p",
+        Some("142 Booking flow"),
+        None,
+    ));
+    let all = [
+        brief::do_it_as(
+            LinkKind::HerdrTerminal,
+            &r,
+            &web(),
+            &[web()],
+            "task-142-x",
+            "main",
+            NONCE,
+        ),
+        brief::research_as(LinkKind::HerdrTerminal, &r, "/r", NONCE),
+        brief::plan_it_as(LinkKind::HerdrTerminal, &r, &[web()], NONCE),
+    ];
+    for out in &all {
+        assert!(out.contains("`kind: \"herdr_terminal\"`"), "{out}");
+        assert!(!out.contains("t3_thread"), "{out}");
+        assert!(
+            !out.contains("t4p"),
+            "a Herdr terminal is a thread link: {out}"
+        );
+    }
+    // The T3 briefs leave the Herdr link out too, and still link a T3 thread.
+    let t3 = brief::do_it(&r, &web(), &[web()], "task-142-x", "main", NONCE);
+    assert!(!t3.contains("t4p"));
+    assert!(t3.contains("`kind: \"t3_thread\"`"));
+}

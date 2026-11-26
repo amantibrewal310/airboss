@@ -79,7 +79,7 @@ const REPORT: &str = "\
 ## Report to Airboss
 Use the `airboss` MCP tools; they already know which thread you are.
 - `list_tasks` with `mine: true` should list task {id}. If it doesn't, call `link` with `id: {id}` and
-  `kind: \"t3_thread\"`.
+  `kind: \"{kind}\"`.
 - Keep the status current with `update_task`: `doing` while you work, `in_review` once your PR is open,
   `blocked` with a reason if you're stuck.
 - Link every PR you open: `link` with `id: {id}`, `kind: \"pr\"`, `ref: \"owner/repo#number\"`.
@@ -107,7 +107,7 @@ Don't import anything before I say the plan is settled.
 
 ## Report to Airboss
 - `list_tasks` with `mine: true` should list task {id}. If it doesn't, call `link` with `id: {id}` and
-  `kind: \"t3_thread\"`.
+  `kind: \"{kind}\"`.
 - Don't change the task's status; the imported steps carry the work.
 If the airboss tools aren't available, say so in your first reply; still write the plan file.
 
@@ -159,7 +159,8 @@ pub struct Reference {
     pub subtasks: Vec<SubtaskLine>,
     pub waits_on: Vec<TaskLine>,
     pub blocks: Vec<TaskLine>,
-    /// Every link; thread links are left out when shown.
+    /// Every link; thread links (T3 threads, Claude sessions, Herdr terminals) are left out
+    /// when shown.
     pub links: Vec<Link>,
 }
 
@@ -169,7 +170,7 @@ impl Reference {
     }
 }
 
-/// A Do it brief for the thread in `here`, one of `all` (the task's repos, in order).
+/// A Do it brief for the T3 thread in `here`, one of `all` (the task's repos, in order).
 pub fn do_it(
     r: &Reference,
     here: &RepoPlace,
@@ -178,7 +179,21 @@ pub fn do_it(
     base: &str,
     nonce: &str,
 ) -> String {
+    do_it_as(LinkKind::T3Thread, r, here, all, branch, base, nonce)
+}
+
+/// A Do it brief for a thread that links itself as `own` (`t3_thread`, `herdr_terminal`).
+pub fn do_it_as(
+    own: LinkKind,
+    r: &Reference,
+    here: &RepoPlace,
+    all: &[RepoPlace],
+    branch: &str,
+    base: &str,
+    nonce: &str,
+) -> String {
     let id = r.task.0.to_string();
+    let kind = own.as_str();
     let (repo, path) = (one_line(&here.name), one_line(&here.path));
     let several = all.len() > 1;
     let header = if several {
@@ -214,15 +229,21 @@ pub fn do_it(
             ("base", &one_line(base)),
             ("slack", slack(r)),
             ("siblings", &siblings),
-            ("report", &fill(REPORT, &[("id", &id)])),
+            ("report", &fill(REPORT, &[("id", &id), ("kind", kind)])),
             ("reference", &reference(r, nonce)),
         ],
     )
 }
 
-/// A research-only brief, for a thread in a folder with no repo.
+/// A research-only brief, for a T3 thread in a folder with no repo.
 pub fn research(r: &Reference, folder: &str, nonce: &str) -> String {
+    research_as(LinkKind::T3Thread, r, folder, nonce)
+}
+
+/// A research-only brief for a thread that links itself as `own`.
+pub fn research_as(own: LinkKind, r: &Reference, folder: &str, nonce: &str) -> String {
     let id = r.task.0.to_string();
+    let kind = own.as_str();
     fill(
         RESEARCH,
         &[
@@ -230,14 +251,20 @@ pub fn research(r: &Reference, folder: &str, nonce: &str) -> String {
             ("path", &one_line(folder)),
             ("notice", &fill(REFERENCE_NOTICE, &[("nonce", nonce)])),
             ("slack", slack(r)),
-            ("report", &fill(REPORT, &[("id", &id)])),
+            ("report", &fill(REPORT, &[("id", &id), ("kind", kind)])),
             ("reference", &reference(r, nonce)),
         ],
     )
 }
 
-/// A Plan it brief. `repos` are the task's repos (or its subtasks'), possibly none.
+/// A Plan it brief for a T3 thread. `repos` are the task's repos (or its subtasks'),
+/// possibly none.
 pub fn plan_it(r: &Reference, repos: &[RepoPlace], nonce: &str) -> String {
+    plan_it_as(LinkKind::T3Thread, r, repos, nonce)
+}
+
+/// A Plan it brief for a thread that links itself as `own`.
+pub fn plan_it_as(own: LinkKind, r: &Reference, repos: &[RepoPlace], nonce: &str) -> String {
     let id = r.task.0.to_string();
     let repo_lines = if repos.is_empty() {
         NO_REPOS.to_string()
@@ -256,6 +283,7 @@ pub fn plan_it(r: &Reference, repos: &[RepoPlace], nonce: &str) -> String {
         PLAN_IT,
         &[
             ("id", &id),
+            ("kind", own.as_str()),
             ("notice", &fill(REFERENCE_NOTICE, &[("nonce", nonce)])),
             ("repos", &repo_lines),
             ("subtasks", subtasks),
@@ -327,7 +355,12 @@ pub fn reference(r: &Reference, nonce: &str) -> String {
     let links: Vec<&Link> = r
         .links
         .iter()
-        .filter(|l| !matches!(l.kind, LinkKind::T3Thread | LinkKind::ClaudeSession))
+        .filter(|l| {
+            !matches!(
+                l.kind,
+                LinkKind::T3Thread | LinkKind::ClaudeSession | LinkKind::HerdrTerminal
+            )
+        })
         .collect();
     if !links.is_empty() {
         out += "Links:\n";
