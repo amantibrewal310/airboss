@@ -11,6 +11,7 @@ pub mod dbhealth;
 pub mod dto;
 pub mod errors;
 pub mod handlers;
+pub mod herdr;
 pub mod ipc;
 pub mod login_path;
 pub mod logs;

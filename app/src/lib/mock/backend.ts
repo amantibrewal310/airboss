@@ -758,6 +758,8 @@ export class MockBackend implements Transport {
     },
 
     open_thread: ({ key }) => {
+      // Rust shows a Herdr terminal by its address (herdr-app do agent.focus), known to sync or not.
+      if (key.source === 'herdr') return this.showHerdr(key.ref);
       const th = this.s.threads.get(`${key.source}:${key.ref}`);
       if (!th) throw fail('not_found', 'That thread no longer exists.');
       this.opened.push(th.url ?? th.view.project_path ?? key.ref);
@@ -773,6 +775,7 @@ export class MockBackend implements Transport {
       } else {
         const l = this.s.links.find((x) => x.id === target.link);
         if (!l) throw fail('not_found', 'That link no longer exists.');
+        if (l.kind === 'herdr_terminal') return this.showHerdr(l.ref);
         this.opened.push(l.url ?? l.ref);
       }
       return null;

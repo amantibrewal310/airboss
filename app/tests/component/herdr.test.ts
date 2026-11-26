@@ -52,4 +52,53 @@ describe('Do it in Herdr', () => {
     expect(btn.getAttribute('aria-disabled')).toBe('true');
     expect(btn.title).toBe("Herdr isn't installed");
   });
+
+  it('starts a Herdr terminal, links it, and Open thread shows it in Herdr', async () => {
+    const { app, backend } = await startApp('design');
+    backend.s.herdr = { ready: { version: '0.1.18' } };
+    await app.saveSettings({ ...app.settings, start_agents_in: 'herdr' });
+    await app.doIt(146);
+    await wait(60);
+    const toast = app.toasts.list.at(-1)!;
+    expect(toast.text).toMatch(/^Started a thread for #146/);
+    const link = backend.s.links.filter((l) => l.task === 146).at(-1)!;
+    expect(link.kind).toBe('herdr_terminal');
+    expect(link.url).toBeNull();
+    // Add to T3 is never offered for Herdr.
+    expect(toast.actions.map((a) => a.label)).toEqual(['Open thread']);
+    toast.actions[0]!.run();
+    await wait(20);
+    expect(backend.opened.at(-1)).toBe(`herdr:${link.ref}`);
+  });
+});
+
+describe('A Herdr thread on a task', () => {
+  it('shows its chip, title and Open, and its link tag opens it in Herdr', async () => {
+    const { app, backend } = await startApp('full');
+    app.go('all');
+    app.select(179, { open: true });
+    await render(Harness, { app, component: TaskPanel });
+    await wait(60);
+    const threads = document.querySelector('[aria-label="Threads"]')!;
+    expect(threads.textContent).toContain('179 Tmux status line');
+    expect(threads.textContent).toContain('working');
+    const open = [...threads.querySelectorAll('button')].find((b) => b.textContent!.includes('Open'))!;
+    open.click();
+    await wait(20);
+    expect(backend.calls.at(-1)).toMatchObject({ command: 'open_thread', args: { key: { source: 'herdr', ref: 't4p' } } });
+    expect(backend.opened.at(-1)).toBe('herdr:t4p');
+    // The tag under Links opens the same terminal.
+    const tag = [...document.querySelectorAll<HTMLButtonElement>('button.in')].find((b) => b.textContent === 'Herdr · 179 Tmux status line')!;
+    tag.click();
+    await wait(20);
+    expect(backend.calls.at(-1)).toMatchObject({ command: 'open_thread', args: { key: { source: 'herdr', ref: 't4p' } } });
+  });
+
+  it("says so when Herdr couldn't show it", async () => {
+    const { app, backend } = await startApp('full');
+    backend.s.herdrFails = true;
+    app.openThread({ source: 'herdr', ref: 't4p' });
+    await wait(20);
+    expect(app.toasts.list.at(-1)!.text).toBe("Couldn't show that terminal in Herdr.");
+  });
 });

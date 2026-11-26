@@ -838,7 +838,9 @@ export class App {
   }
 
   openLink(l: LinkDto): void {
-    const p = l.thread ? api.openThread(l.thread.key) : api.openUrl({ link: l.id });
+    // A Herdr terminal opens by its address, whether or not sync has reported it yet.
+    const key: ThreadKey | null = l.thread?.key ?? (l.kind === 'herdr_terminal' ? { source: 'herdr', ref: l.ref } : null);
+    const p = key ? api.openThread(key) : api.openUrl({ link: l.id });
     p.catch((e) => this.fail(e));
   }
 
@@ -858,7 +860,7 @@ export class App {
       }
     }
     const candidates = links
-      .filter((l) => (l.thread && (l.thread.url || l.kind === 't3_thread')) || (l.kind === 'pr' && (l.url || l.pr?.url)))
+      .filter((l) => (l.thread && (l.thread.url || l.kind === 't3_thread' || l.kind === 'herdr_terminal')) || (l.kind === 'pr' && (l.url || l.pr?.url)))
       .sort((a, b) => b.linked_at.localeCompare(a.linked_at));
     const latest = candidates[0];
     if (!latest) return this.toast(`#${id} has no thread or PR yet`);

@@ -139,10 +139,11 @@ export class SeedBuilder {
     task: TaskId | TaskId[],
     ref: string,
     state: ThreadState,
-    opts: { title?: string; repo?: string; error?: string; ask?: { id: string; kind: 'question' | 'approval'; text: string; ago: number }; ago?: number; source?: 't3' | 'claude'; stale?: boolean; launchedAgo?: number } = {},
+    opts: { title?: string; repo?: string; error?: string; ask?: { id: string; kind: 'question' | 'approval'; text: string; ago: number }; ago?: number; source?: 't3' | 'claude' | 'herdr'; stale?: boolean; launchedAgo?: number } = {},
   ): this {
     const tasks = Array.isArray(task) ? task : [task];
     const source = opts.source ?? 't3';
+    const worktree = source === 'herdr' ? `~/.herdr/worktrees/${opts.repo}/${opts.title ?? ref}` : `~/.t3/worktrees/${opts.repo}/${ref}`;
     this.threads.push({
       tasks,
       url: source === 't3' ? `t3code://threads/env-local/${ref}` : null,
@@ -156,7 +157,7 @@ export class SeedBuilder {
         run_id: state === 'errored' ? `run-${ref}` : null,
         project_path: opts.repo ? `~/Code/${opts.repo}` : null,
         branch: null,
-        worktree_path: opts.repo ? `~/.t3/worktrees/${opts.repo}/${ref}` : null,
+        worktree_path: opts.repo ? worktree : null,
         parent_ref: null,
         child_count: 0,
         last_activity_at: this.at(opts.ago ?? 10 * MIN),
@@ -165,8 +166,10 @@ export class SeedBuilder {
     });
     for (const t of tasks) {
       const by: Actor = opts.launchedAgo !== undefined ? 'launch' : 'me';
-      this.link(t, source === 't3' ? 't3_thread' : 'claude_session', ref, {
-        title: source === 't3' ? `T3 · ${opts.title ?? ref}` : `Claude · ${opts.repo ?? ref}`,
+      const kind = ({ t3: 't3_thread', claude: 'claude_session', herdr: 'herdr_terminal' } as const)[source];
+      const title = { t3: `T3 · ${opts.title ?? ref}`, claude: `Claude · ${opts.repo ?? ref}`, herdr: `Herdr · ${opts.title ?? ref}` }[source];
+      this.link(t, kind, ref, {
+        title,
         url: source === 't3' ? `t3code://threads/env-local/${ref}` : undefined,
         ago: opts.launchedAgo ?? 3 * DAY,
         by,

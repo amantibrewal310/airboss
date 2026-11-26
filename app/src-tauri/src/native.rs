@@ -264,6 +264,10 @@ impl Shell for Arc<TauriShell> {
             .map_err(|e| e.to_string())
     }
 
+    fn show_herdr_terminal(&self, terminal: &str) -> Result<(), String> {
+        crate::herdr::show_terminal(&crate::services::home(), terminal)
+    }
+
     fn copy_text(&self, text: &str) -> Result<(), String> {
         self.app
             .clipboard()

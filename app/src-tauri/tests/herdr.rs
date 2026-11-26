@@ -1,5 +1,5 @@
-//! Herdr from the app's side (SPEC-herdr "app"): the launcher "Start agents in" picks, and the
-//! Herdr connection row.
+//! Herdr from the app's side (SPEC-herdr "app"): the launcher "Start agents in" picks, the
+//! Herdr connection row, and Open thread on a Herdr terminal.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -7,11 +7,11 @@ mod common;
 
 use airboss_app::commands::app as appcmd;
 use airboss_app::commands::{detail, launch};
-use airboss_app::dto::{LauncherKind, ToastTone};
+use airboss_app::dto::{LauncherKind, OpenTarget, ToastTone};
 use airboss_app::errors::ErrorCode;
 use airboss_app::settings::{Settings, StartAgentsIn};
 use airboss_app::{Caller, UiEvent};
-use airboss_core::Actor;
+use airboss_core::{Actor, LinkKind, NewLink};
 use airboss_services::{
     Availability, Connection, ErrorCode as SvcCode, HerdrAgent, LaunchReport, Launcher, Mode,
     ServiceError, Source, StartedThread, ThreadKey,
@@ -220,6 +220,48 @@ fn herdr_errors_read_well_and_offer_retry_never_add_to_t3() {
     assert_eq!(labels, vec!["Retry"]);
 }
 
+#[test]
+fn open_thread_shows_a_herdr_terminal_through_herdr_app_then_brings_herdr_forward() {
+    let app = TestApp::new();
+    appcmd::open_thread(&app.state, M, herdr_key("t4p")).unwrap();
+    assert_eq!(
+        app.shell.calls().last().unwrap(),
+        r#"show_herdr_terminal(herdr-app do agent.focus {"terminal":"t4p"}; open -b dev.herdr.app)"#
+    );
+    // The link itself opens the same way: it has no URL, and never reaches the allowlist.
+    let t = app.add("T", None);
+    let link = app.core(|s| {
+        s.link(
+            t,
+            NewLink::new(LinkKind::HerdrTerminal, "vps/t7"),
+            &Actor::Me,
+        )
+        .unwrap()
+    });
+    appcmd::open_url(&app.state, M, OpenTarget::Link(link.id)).unwrap();
+    assert_eq!(
+        app.shell.calls().last().unwrap(),
+        r#"show_herdr_terminal(herdr-app do agent.focus {"terminal":"vps/t7"}; open -b dev.herdr.app)"#
+    );
+    assert!(!app.shell.calls().iter().any(|c| c.starts_with("open_url")));
+    // Herdr couldn't show it: the toast's sentence.
+    app.shell.fail_herdr(true);
+    let e = appcmd::open_thread(&app.state, M, herdr_key("t4p")).unwrap_err();
+    assert_eq!(
+        (e.code, e.message.as_str()),
+        (
+            ErrorCode::HerdrFailed,
+            "Couldn't show that terminal in Herdr."
+        )
+    );
+    // An address core would never store isn't passed on.
+    let before = app.shell.calls().len();
+    for bad in ["", "t 4", &"t".repeat(65), "t4\n"] {
+        assert!(appcmd::open_thread(&app.state, M, herdr_key(bad)).is_err());
+    }
+    assert_eq!(app.shell.calls().len(), before);
+}
+
 fn row<'a>(rows: &'a [Connection], name: &str) -> Option<&'a Connection> {
     rows.iter().find(|r| r.name == name)
 }
@@ -283,4 +325,46 @@ fn herdr_ready_and_no_t3_hides_the_t3_row_unless_t3_is_chosen() {
         .cloned()
         .unwrap();
     assert!(!t3.ok);
+}
+
+#[test]
+fn a_herdr_terminal_link_shows_its_thread_in_the_task_detail() {
+    let app = TestApp::new();
+    let t = app.add("T", None);
+    app.core(|s| {
+        s.link(t, NewLink::new(LinkKind::HerdrTerminal, "t4p"), &Actor::Me)
+            .unwrap()
+    });
+    app.sync_vm();
+    let mut snap = airboss_services::SyncSnapshot::default();
+    snap.threads.insert(
+        herdr_key("t4p"),
+        airboss_services::ThreadView {
+            key: herdr_key("t4p"),
+            linked: true,
+            state: airboss_services::ThreadState::NeedsMe,
+            title: Some("1 T".into()),
+            request: None,
+            error: None,
+            run_id: None,
+            project_path: Some("/w/web".into()),
+            branch: None,
+            worktree_path: None,
+            parent_ref: None,
+            child_count: 0,
+            last_activity_at: None,
+            stale: false,
+        },
+    );
+    app.sync.set_snapshot(snap);
+    let d = detail::task_detail(&app.state, M, t, 1, 30).unwrap();
+    let l = d
+        .links
+        .iter()
+        .find(|l| l.kind == LinkKind::HerdrTerminal)
+        .unwrap();
+    let th = l.thread.as_ref().unwrap();
+    assert_eq!(th.key, herdr_key("t4p"));
+    assert_eq!(th.chip, Some(airboss_services::Chip::WaitingOnYou));
+    assert_eq!(th.url, None);
 }

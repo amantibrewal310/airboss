@@ -99,6 +99,9 @@ pub trait Shell: Send + Sync {
     fn open_file(&self, path: &std::path::Path, app: &std::path::Path) -> Result<(), String>;
     /// Shows a file or folder in Finder, without opening it.
     fn reveal(&self, path: &std::path::Path) -> Result<(), String>;
+    /// Open thread on a Herdr terminal: `herdr-app do agent.focus '{"terminal":…}'`, then
+    /// `open -b dev.herdr.app`. An app constant, not a stored link, so no allowlist.
+    fn show_herdr_terminal(&self, terminal: &str) -> Result<(), String>;
     /// Puts text on the clipboard.
     fn copy_text(&self, text: &str) -> Result<(), String>;
     /// The folder picker; `None` when cancelled.
@@ -143,6 +146,7 @@ pub struct RecordingShell {
     accent: Mutex<Option<String>>,
     notifications: Arc<RecordingNotifications>,
     app_check: Arc<FakeAppCheck>,
+    herdr_fails: Mutex<bool>,
 }
 
 impl RecordingShell {
@@ -213,6 +217,11 @@ impl RecordingShell {
         self.app_check.clone()
     }
 
+    /// Makes `show_herdr_terminal` fail, as when Herdr isn't open or the terminal is gone.
+    pub fn fail_herdr(&self, fail: bool) {
+        *lock(&self.herdr_fails) = fail;
+    }
+
     /// What `accent` answers.
     pub fn set_accent(&self, accent: Option<String>) {
         *lock(&self.accent) = accent;
@@ -252,6 +261,19 @@ impl Shell for RecordingShell {
     fn reveal(&self, path: &std::path::Path) -> Result<(), String> {
         self.call(format!("reveal({})", path.display()));
         Ok(())
+    }
+    fn show_herdr_terminal(&self, terminal: &str) -> Result<(), String> {
+        // The commands it would run, as their argv.
+        let args = crate::herdr::show_args(terminal).join(" ");
+        self.call(format!(
+            "show_herdr_terminal(herdr-app {args}; open -b {})",
+            crate::herdr::BUNDLE_ID
+        ));
+        if *lock(&self.herdr_fails) {
+            Err("herdr-app exited with Some(1): {\"error\":\"no such terminal\"}".into())
+        } else {
+            Ok(())
+        }
     }
     fn copy_text(&self, text: &str) -> Result<(), String> {
         self.call(format!("copy_text({text})"));

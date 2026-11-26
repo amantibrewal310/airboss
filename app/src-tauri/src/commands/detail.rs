@@ -51,11 +51,13 @@ pub fn thread_title(actor: &airboss_core::Actor, sync: &SyncSnapshot) -> Option<
     }
 }
 
-/// `agent:t3/97b5c8b5` names thread `97b5c8b5` in T3; `claude/<id>` a Claude Code session.
+/// `agent:t3/97b5c8b5` names thread `97b5c8b5` in T3; `herdr/<address>` a Herdr terminal;
+/// `claude/<id>` a Claude Code session.
 fn thread_key_of_agent(r: &str) -> Option<ThreadKey> {
     let (source, id) = r.split_once('/')?;
     let source = match source {
         "t3" => Source::T3,
+        "herdr" => Source::Herdr,
         "claude" => Source::Claude,
         _ => return None,
     };
@@ -138,6 +140,7 @@ pub fn task_detail(
                 .and_then(|r| sync.prs.get(&r).cloned()),
             thread: match l.kind {
                 LinkKind::T3Thread => thread_view(Source::T3, &l.r#ref),
+                LinkKind::HerdrTerminal => thread_view(Source::Herdr, &l.r#ref),
                 LinkKind::ClaudeSession => thread_view(Source::Claude, &l.r#ref),
                 _ => None,
             },
