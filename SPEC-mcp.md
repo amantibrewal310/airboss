@@ -128,7 +128,7 @@ airboss show 12                       # task, repos, branch, links, history, dep
 airboss set 12 doing|in_review|blocked|todo [--note "…"]
 airboss done 12 [--note "…"]
 airboss drop 12 [--note "…"]
-airboss accept 14 | airboss reject 15 [--note "…"]
+airboss accept 14 | airboss reject 15 [16 …] [--note "…"]   # reject skips any accepted meanwhile
 airboss edit 12 [--title "…"] [--body "…"]
 airboss repo link 12 hub-ui | airboss repo unlink 12 hub-ui
 airboss branch 12 booking-flow | airboss branch 12 --clear
@@ -145,6 +145,7 @@ airboss mcp                           # the MCP server over stdio (agents only)
 
 - Output is plain text that's easy to scan. The tree prints one task per line, indented, with a status mark and `#id`. Every command except `mcp` also takes `--json`.
 - Errors print one line to stderr and exit with code 1. The message is the same one agents get.
+- `airboss reject` goes through `core`'s `reject_proposals`, all ids in one change. A missing id, or a task an agent never proposed, is an error before anything is written. A proposal accepted or dropped meanwhile (by the app, or another `airboss`) is left as it is and printed as `153 was already accepted (todo); left as is` or `153 was already dropped; left as is`, and the command still succeeds. `--json` gives `{rejected: [task…], skipped: [{id, status}…]}`.
 
 ## Performance targets
 

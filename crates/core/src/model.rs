@@ -520,6 +520,16 @@ pub struct Dependencies {
     pub blocks: Vec<Task>,
 }
 
+/// What `reject_proposals` did with each id it was given, in the order given.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RejectOutcome {
+    /// Still `proposed` when the change was written, so now `dropped` with a `rejected` event.
+    pub rejected: Vec<TaskId>,
+    /// No longer `proposed` by then (accepted, or already dropped), with the status each has.
+    /// Left exactly as they were. A task that no longer exists is in neither list.
+    pub skipped: Vec<(TaskId, Status)>,
+}
+
 /// The order a parent's open subtasks can run in (rule 18). Only shown; nothing starts itself.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RunOrder {

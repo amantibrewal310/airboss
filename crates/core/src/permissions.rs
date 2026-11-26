@@ -25,6 +25,8 @@ pub(crate) enum Call {
     Unlink,
     SetPrState,
     ChangeDependency,
+    /// `reject_proposals`: rule 6 lets only `me` leave `proposed`.
+    RejectProposals,
 }
 
 /// `Error::NotAllowed` for an agent with an empty ref: nothing it does could be traced
@@ -43,7 +45,9 @@ pub(crate) fn allowed(call: Call, actor: &Actor) -> Result<()> {
     use Call::*;
     valid_actor(actor)?;
     let ok = match call {
-        AddRepo | EditRepo | RemoveRepo | EditTask | MoveTask | DeleteTask => *actor == Me,
+        AddRepo | EditRepo | RemoveRepo | EditTask | MoveTask | DeleteTask | RejectProposals => {
+            *actor == Me
+        }
         AddTask | Unlink => matches!(actor, Me | Agent(_)),
         AddPlan | ChangeRepos | ChangeDependency => matches!(actor, Me | Plan),
         // A plan arrives as a tree of tasks; it has nothing to say about one afterwards.
@@ -98,6 +102,7 @@ mod tests {
             (Call::Unlink, vec![me.clone(), agent.clone()]),
             (Call::SetPrState, vec![me.clone(), Actor::SyncGh]),
             (Call::ChangeDependency, vec![me.clone(), Actor::Plan]),
+            (Call::RejectProposals, vec![me.clone()]),
         ];
         for (call, allowed_actors) in table {
             for actor in every_actor() {

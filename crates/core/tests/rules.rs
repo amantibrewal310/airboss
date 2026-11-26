@@ -958,3 +958,139 @@ fn a_refused_actor_is_told_so_before_its_branch_name_is_checked() {
     let err = s.set_branch(t.id, Some("--force"), &agent()).unwrap_err();
     assert!(matches!(err, Error::NotAllowed), "{err:?}");
 }
+
+// Rule 6's reject, for several proposals at once, checked and written in one transaction.
+
+fn proposal(s: &mut Store, title: &str) -> TaskId {
+    s.add_task(NewTask::new(title), &agent()).unwrap().id
+}
+
+fn kinds_of(s: &Store, id: TaskId) -> Vec<EventKind> {
+    s.history(id).unwrap().into_iter().map(|e| e.kind).collect()
+}
+
+#[test]
+fn reject_proposals_rejects_what_is_still_proposed_and_skips_the_rest() {
+    let mut s = store();
+    let p1 = proposal(&mut s, "Idea one");
+    let p2 = proposal(&mut s, "Idea two");
+    let accepted = proposal(&mut s, "Accepted idea");
+    s.set_status(accepted, Status::Todo, None, &Actor::Me)
+        .unwrap();
+    let rejected_before = proposal(&mut s, "Rejected idea");
+    s.set_status(rejected_before, Status::Dropped, None, &Actor::Me)
+        .unwrap();
+    let missing = TaskId(999);
+    let untouched = (kinds_of(&s, accepted), s.task(accepted).unwrap());
+    let rx = s.subscribe();
+
+    let out = s
+        .reject_proposals(
+            &[p1, accepted, missing, p2, p1, rejected_before],
+            Some("not now"),
+            &Actor::Me,
+        )
+        .unwrap();
+    assert_eq!(out.rejected, vec![p1, p2], "in the order given, each once");
+    assert_eq!(
+        out.skipped,
+        vec![(accepted, Status::Todo), (rejected_before, Status::Dropped)],
+        "a missing id is in neither list"
+    );
+
+    for id in [p1, p2] {
+        assert_eq!(s.task(id).unwrap().status, Status::Dropped);
+        let last = s.history(id).unwrap().pop().unwrap();
+        assert_eq!(
+            (last.kind, last.body.as_deref(), last.actor),
+            (EventKind::Rejected, Some("not now"), Actor::Me)
+        );
+        assert_eq!(s.history(id).unwrap().len(), 2, "one event each");
+    }
+    // The skipped one isn't touched at all.
+    assert_eq!(
+        (kinds_of(&s, accepted), s.task(accepted).unwrap()),
+        untouched
+    );
+    // Rejected proposals leave the tree, as with set_status.
+    let titles: Vec<String> = s
+        .tree()
+        .unwrap()
+        .into_iter()
+        .map(|n| n.task.title)
+        .collect();
+    assert_eq!(titles, ["Accepted idea"]);
+    // One commit, one notification, with exactly the two events.
+    let sent = rx.try_recv().unwrap();
+    assert_eq!(sent.len(), 2);
+    assert!(rx.try_recv().is_err());
+}
+
+#[test]
+fn rejecting_nothing_changes_nothing() {
+    let mut s = store();
+    let p = proposal(&mut s, "Idea");
+    let rx = s.subscribe();
+    let out = s.reject_proposals(&[], Some("why"), &Actor::Me).unwrap();
+    assert!(out.rejected.is_empty() && out.skipped.is_empty());
+    let out = s.reject_proposals(&[TaskId(42)], None, &Actor::Me).unwrap();
+    assert!(out.rejected.is_empty() && out.skipped.is_empty());
+    assert_eq!(s.task(p).unwrap().status, Status::Proposed);
+    assert!(rx.try_recv().is_err(), "nothing written, nobody told");
+}
+
+#[test]
+fn a_blank_reject_reason_is_no_reason() {
+    let mut s = store();
+    let p = proposal(&mut s, "Idea");
+    s.reject_proposals(&[p], Some("   "), &Actor::Me).unwrap();
+    assert_eq!(s.history(p).unwrap().pop().unwrap().body, None);
+}
+
+#[test]
+fn only_me_rejects_proposals() {
+    let mut s = store();
+    let p = proposal(&mut s, "Idea");
+    for actor in [
+        agent(),
+        Actor::Plan,
+        Actor::SyncGh,
+        Actor::SyncT3,
+        Actor::Launch,
+    ] {
+        for ids in [vec![p], vec![]] {
+            let err = s.reject_proposals(&ids, None, &actor).unwrap_err();
+            assert!(matches!(err, Error::NotAllowed), "{actor}: {err:?}");
+        }
+    }
+    assert_eq!(s.task(p).unwrap().status, Status::Proposed);
+    assert_eq!(s.history(p).unwrap().len(), 1);
+}
+
+/// The app queues a reject and writes it 5 s later. Meanwhile `airboss accept`, another
+/// process with its own handle, accepts one of them. The write must leave that one alone.
+#[test]
+fn a_proposal_accepted_from_another_handle_before_the_reject_lands_is_left_alone() {
+    let dir = common::TempDir::new();
+    let path = dir.0.join("airboss.db");
+    let mut app = Store::open(&path).unwrap();
+    let p1 = proposal(&mut app, "Idea one");
+    let p2 = proposal(&mut app, "Idea two");
+    let queued = vec![p1, p2];
+
+    let mut cli = Store::open(&path).unwrap();
+    cli.set_status(p1, Status::Todo, None, &Actor::Me).unwrap();
+
+    let out = app.reject_proposals(&queued, None, &Actor::Me).unwrap();
+    assert_eq!(out.rejected, vec![p2]);
+    assert_eq!(out.skipped, vec![(p1, Status::Todo)]);
+
+    let fresh = Store::open(&path).unwrap();
+    assert_eq!(
+        fresh.task(p1).unwrap().status,
+        Status::Todo,
+        "the accept stands"
+    );
+    assert!(!kinds_of(&fresh, p1).contains(&EventKind::Rejected));
+    assert_eq!(fresh.task(p2).unwrap().status, Status::Dropped);
+}

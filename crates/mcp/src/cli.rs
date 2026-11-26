@@ -10,8 +10,8 @@ use std::io::Write as _;
 use std::path::Path;
 
 use airboss_core::{
-    Actor, Error, Event, EventId, EventKind, LinkKind, NewLink, NewTask, Repo, Status, Store,
-    TaskEdit, TaskId, TaskNode,
+    Actor, Error, Event, EventId, EventKind, LinkKind, NewLink, NewTask, Origin, Repo, Status,
+    Store, TaskEdit, TaskId, TaskNode,
 };
 use serde::Serialize;
 
@@ -626,46 +626,113 @@ fn open_subtasks(store: &Store, id: TaskId) -> Result<usize, ToolError> {
         .count())
 }
 
-/// `airboss accept` and `reject`: only for an agent's proposal.
-pub fn decide(
-    store: &mut Store,
-    id: i64,
-    accept: bool,
-    note: Option<&str>,
-    json: bool,
-    style: Style,
-) -> Result<String, ToolError> {
+fn not_a_proposal(t: &TaskView) -> ToolError {
+    ToolError::new(format!(
+        "Task #{} isn't a proposal; it's {}. Use airboss set, done or drop instead.",
+        t.id.0, t.status
+    ))
+}
+
+/// `airboss accept`: only for an agent's proposal.
+pub fn accept(store: &mut Store, id: i64, json: bool, style: Style) -> Result<String, ToolError> {
     let id = TaskId(id);
     let before = view(store, id)?;
     if before.status != Status::Proposed {
-        return Err(ToolError::new(format!(
-            "Task #{} isn't a proposal; it's {}. Use airboss set, done or drop instead.",
-            id.0, before.status
-        )));
+        return Err(not_a_proposal(&before));
     }
-    let to = if accept {
-        Status::Todo
-    } else {
-        Status::Dropped
-    };
-    store.set_status(id, to, note, ME).map_err(fail(
+    store.set_status(id, Status::Todo, None, ME).map_err(fail(
         store,
         Subject {
-            to: Some(to),
+            to: Some(Status::Todo),
             ..Subject::task(id)
         },
     ))?;
     let t = view(store, id)?;
     done_with(&t, json, |t| {
-        if accept {
-            format!("Accepted {}; it's todo now", task_line(style, t))
-        } else {
-            format!(
-                "Rejected {}; it's dropped and hidden from the tree",
-                task_line(style, t)
-            )
-        }
+        format!("Accepted {}; it's todo now", task_line(style, t))
     })
+}
+
+/// What `airboss reject --json` prints.
+#[derive(Serialize)]
+struct Rejected {
+    rejected: Vec<TaskView>,
+    skipped: Vec<Skipped>,
+}
+
+#[derive(Serialize)]
+struct Skipped {
+    id: TaskId,
+    status: Status,
+}
+
+/// `airboss reject`: rejects each of `ids` still proposed, in one change, through `core`'s
+/// `reject_proposals`. One the app or another `airboss` accepted or dropped meanwhile is left
+/// as it is and said so. A missing id, or a task an agent never proposed, is an error before
+/// anything is written, as it was for one id.
+pub fn reject(
+    store: &mut Store,
+    ids: &[i64],
+    note: Option<&str>,
+    json: bool,
+    style: Style,
+) -> Result<String, ToolError> {
+    let mut order: Vec<TaskId> = Vec::new();
+    for &id in ids {
+        let id = TaskId(id);
+        if order.contains(&id) {
+            continue;
+        }
+        let t = view(store, id)?;
+        if t.origin != Origin::Agent {
+            return Err(not_a_proposal(&t));
+        }
+        order.push(id);
+    }
+    let out = store.reject_proposals(&order, note, ME).map_err(fail(
+        store,
+        Subject {
+            to: Some(Status::Dropped),
+            others: order.clone(),
+            ..Subject::default()
+        },
+    ))?;
+    let mut rejected = Vec::new();
+    let mut lines = String::new();
+    for id in &order {
+        if out.rejected.contains(id) {
+            let t = view(store, *id)?;
+            let _ = writeln!(
+                lines,
+                "Rejected {}; it's dropped and hidden from the tree",
+                task_line(style, &t)
+            );
+            rejected.push(t);
+        } else if let Some((_, status)) = out.skipped.iter().find(|(s, _)| s == id) {
+            let _ = match status {
+                Status::Dropped => writeln!(lines, "{} was already dropped; left as is", id.0),
+                status => writeln!(
+                    lines,
+                    "{} was already accepted ({status}); left as is",
+                    id.0
+                ),
+            };
+        } else {
+            // Deleted between the check above and the change.
+            let _ = writeln!(lines, "{} no longer exists; nothing to reject", id.0);
+        }
+    }
+    if json {
+        return to_json(&Rejected {
+            rejected,
+            skipped: out
+                .skipped
+                .into_iter()
+                .map(|(id, status)| Skipped { id, status })
+                .collect(),
+        });
+    }
+    Ok(lines)
 }
 
 /// `airboss edit`: the title, the notes, or both. An empty `--body` clears the notes.
