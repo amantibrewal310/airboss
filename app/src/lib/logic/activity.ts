@@ -41,7 +41,7 @@ export interface PhraseContext {
   repoOf?: (thread: string) => string | null;
   /** A linked item's title (the link tag's label) by kind and ref, when the task still has it. */
   linkTitle?: (kind: LinkKind, ref: string) => string | null;
-  /** A T3 thread's title by ref (its link's thread view or stored title), when the task has it. */
+  /** A T3 thread's or Herdr terminal's title by ref (its link's thread view or stored title), when the task has it. */
   threadTitle?: (ref: string) => string | null;
 }
 
@@ -51,7 +51,7 @@ export interface PhraseContext {
  */
 const isRawThreadId = (ref: string) => ref.includes(':') || /^[0-9a-f]{8}-?[0-9a-f]{4}/i.test(ref);
 
-const LINK_KINDS = new Set<string>(['t3_thread', 'claude_session', 'pr', 'slack', 'doc', 'github_issue']);
+const LINK_KINDS = new Set<string>(['t3_thread', 'herdr_terminal', 'claude_session', 'pr', 'slack', 'doc', 'github_issue']);
 
 /** core writes link events as "<kind> <ref>" (links.rs); anything else is shown as it is. */
 export function parseLinkBody(body: string | null): { kind: LinkKind; ref: string } | null {
@@ -70,7 +70,8 @@ function linkText(body: string | null, ctx: PhraseContext, fallback: string): st
 /** "#143, #145" → "143, 145". */
 const ids = (s: string) => s.replace(/#(\d+)/g, '$1');
 
-const isLaunchThread = (e: HistoryEntry) => e.kind === 'linked' && e.actor === 'launch' && parseLinkBody(e.body)?.kind === 't3_thread';
+const LAUNCHED_KINDS = new Set<string>(['t3_thread', 'herdr_terminal']);
+const isLaunchThread = (e: HistoryEntry) => e.kind === 'linked' && e.actor === 'launch' && LAUNCHED_KINDS.has(parseLinkBody(e.body)?.kind ?? '');
 
 function edited(body: string | null, it: string): string {
   if (body?.startsWith('branch: ')) return `set the branch to ${body.slice(8)}`;

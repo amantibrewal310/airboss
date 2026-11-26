@@ -6,11 +6,11 @@
   import { useApp } from '../../../lib/state/context';
   import { acceleratorLabel, acceleratorOf, RESERVED_HOTKEYS } from '../../../lib/logic/keymap';
   import { onMount } from 'svelte';
-  import type { Appearance, NotificationPermission } from '../../../lib/types';
+  import type { Appearance, HerdrAgent, NotificationPermission, StartAgentsIn } from '../../../lib/types';
 
   /**
    * ⌘,: the quick-add hotkey, open at login, appearance, repos, the command-line tool, agent
-   * setup and the database's backup.
+   * setup (with where agents start: T3 Code or Herdr) and the database's backup.
    */
   const app = useApp();
   let recording = $state(false);
@@ -48,6 +48,12 @@
     return () => window.removeEventListener('focus', read);
   });
   const blocked = $derived(app.settings.notifications && permission === 'denied');
+
+  /** "Agent in Herdr" shows once Herdr is installed or chosen, as its connection row does. */
+  const herdrShown = $derived(app.settings.start_agents_in === 'herdr' || (typeof app.conn.herdr === 'object' && 'ready' in app.conn.herdr));
+  const startHint = $derived(
+    app.settings.start_agents_in === 'auto' ? `T3 Code when it's there, else Herdr. Now ${app.conn.launcherName}.` : 'Where Do it and Plan it start agents.',
+  );
 </script>
 
 <Modal label="Settings" top="10%" width={560} onclose={() => app.close()}>
@@ -166,6 +172,39 @@
           <Button onclick={() => app.copy('setup_command')}>Copy setup command</Button>
         </div>
       </div>
+      <div class="row opt">
+        <div class="lab">
+          <b>Start agents in</b>
+          <span>{startHint}</span>
+        </div>
+        <Segmented
+          label="Start agents in"
+          options={[
+            { value: 'auto', label: 'Automatic' },
+            { value: 't3', label: 'T3 Code' },
+            { value: 'herdr', label: 'Herdr' },
+          ] as { value: StartAgentsIn; label: string }[]}
+          value={app.settings.start_agents_in}
+          onchange={(v) => app.saveSettings({ ...app.settings, start_agents_in: v })}
+        />
+      </div>
+      {#if herdrShown}
+        <div class="row opt">
+          <div class="lab">
+            <b>Agent in Herdr</b>
+            <span>What a new Herdr tab runs.</span>
+          </div>
+          <Segmented
+            label="Agent in Herdr"
+            options={[
+              { value: 'claude', label: 'Claude Code' },
+              { value: 'codex', label: 'Codex' },
+            ] as { value: HerdrAgent; label: string }[]}
+            value={app.settings.herdr_agent}
+            onchange={(v) => app.saveSettings({ ...app.settings, herdr_agent: v })}
+          />
+        </div>
+      {/if}
       <!-- Each agent tool: Connected (its config has the airboss server), or how to connect it. -->
       <ul class="tools" aria-label="Agent tools">
         <li>
@@ -181,7 +220,10 @@
         </li>
         <li>
           <span class="tool">Codex</span>
-          {#if app.conn.agents.codex}
+          {#if app.conn.codexOutdated}
+            <span class="off warn">Codex setup needs HC_TERMINAL_ID, to run in Herdr. Paste it again into <code>~/.codex/config.toml</code></span>
+            <Button size="sm" onclick={() => app.copy('codex_setup')}>Copy Codex setup</Button>
+          {:else if app.conn.agents.codex}
             <span class="on">Connected</span>
           {:else}
             <span class="off">Paste into <code>~/.codex/config.toml</code></span>
@@ -262,6 +304,9 @@
     display: flex;
     gap: 6px;
   }
+  .opt {
+    margin-top: 12px;
+  }
   .tools {
     list-style: none;
     margin: 10px 0 0;
@@ -287,6 +332,9 @@
     flex: 1;
     min-width: 0;
     color: var(--text-2);
+  }
+  .tools .warn {
+    color: var(--warn-text);
   }
   .tools .on::before {
     content: '';

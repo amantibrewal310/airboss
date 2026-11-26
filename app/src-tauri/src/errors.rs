@@ -56,6 +56,10 @@ pub enum ErrorCode {
     Waiting,
     BadAnswer,
     T3Failed,
+    HerdrMissing,
+    HerdrNotRunning,
+    WorktreeFailed,
+    HerdrFailed,
     GhMissing,
     SignedOut,
     NoAccess,
@@ -89,6 +93,10 @@ impl From<airboss_services::ErrorCode> for ErrorCode {
             S::AlreadyStarting => ErrorCode::AlreadyStarting,
             S::BadAnswer => ErrorCode::BadAnswer,
             S::T3Failed => ErrorCode::T3Failed,
+            S::HerdrMissing => ErrorCode::HerdrMissing,
+            S::HerdrNotRunning => ErrorCode::HerdrNotRunning,
+            S::WorktreeFailed => ErrorCode::WorktreeFailed,
+            S::HerdrFailed => ErrorCode::HerdrFailed,
             S::GhMissing => ErrorCode::GhMissing,
             S::SignedOut => ErrorCode::SignedOut,
             S::NoAccess => ErrorCode::NoAccess,
@@ -213,9 +221,18 @@ impl AppError {
         AppError::new(ErrorCode::DbTooNew, MSG_DB_TOO_NEW).with_detail(err.to_string())
     }
 
-    /// The in-flight guard's answer to a second Do it for the same task.
-    pub fn already_starting() -> AppError {
-        AppError::new(ErrorCode::AlreadyStarting, MSG_ALREADY_STARTING)
+    /// The in-flight guard's answer to a second Do it for the same task, naming where the
+    /// agents start.
+    pub fn already_starting(launcher: crate::dto::LauncherKind) -> AppError {
+        match launcher {
+            crate::dto::LauncherKind::T3 => {
+                AppError::new(ErrorCode::AlreadyStarting, MSG_ALREADY_STARTING)
+            }
+            crate::dto::LauncherKind::Herdr => AppError::new(
+                ErrorCode::AlreadyStarting,
+                "Already starting — check Herdr in a moment.",
+            ),
+        }
     }
 
     /// A `core` error, in the words of what the call was doing (Appendix D).

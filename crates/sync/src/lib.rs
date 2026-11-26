@@ -1,13 +1,15 @@
-//! `airboss-sync`: live state from GitHub, T3 and Claude Code, inside the app process.
+//! `airboss-sync`: live state from GitHub, T3, Claude Code and Herdr, inside the app process.
 //!
-//! See `SPEC-sync.md` at the repo root. Two worker threads (T3 and Claude; GitHub) and the
-//! kqueue watcher's thread; no tokio, no daemon.
+//! See `SPEC-sync.md` at the repo root. Two worker threads (T3, Claude and Herdr; GitHub), the
+//! kqueue watcher's thread, and one thread reading `hc events` while Herdr is installed; no
+//! tokio, no daemon.
 
 pub mod claude;
 mod db;
 mod finish;
 pub mod gh;
 mod health;
+pub mod herdr;
 mod hub;
 mod prs;
 mod secret;
@@ -37,6 +39,7 @@ use airboss_services::{
 
 use crate::claude::ClaudeSource;
 use crate::gh::{GhClient, GhOff, GhOutcome, GhRunner, PrResult};
+use crate::herdr::HerdrSource;
 use crate::t3::T3Source;
 use crate::worker::log;
 
@@ -47,6 +50,8 @@ pub struct SyncConfig {
     pub t3_dir: PathBuf,
     /// `~/.claude/sessions`.
     pub claude_sessions: PathBuf,
+    /// `~/.local/bin/hc`, Herdr's core; `PATH` is searched when it isn't there.
+    pub hc_path: PathBuf,
     /// `None`: look in `/opt/homebrew/bin`, `/usr/local/bin`, then `PATH`.
     pub gh_path: Option<PathBuf>,
     /// The GitHub timer: 5 minutes.
@@ -63,6 +68,7 @@ impl SyncConfig {
         SyncConfig {
             t3_dir: home.join(".t3").join("userdata"),
             claude_sessions: home.join(".claude").join("sessions"),
+            hc_path: home.join(".local").join("bin").join("hc"),
             gh_path: None,
             pr_every: Duration::from_secs(5 * 60),
             t3_min_gap: Duration::from_secs(2),
@@ -79,18 +85,20 @@ pub struct Tools {
     pub gh: Box<dyn GhRunner>,
     pub t3: Box<dyn T3Source>,
     pub claude: Box<dyn ClaudeSource>,
+    pub herdr: Box<dyn HerdrSource>,
     pub watch: Box<dyn WalWatch>,
     pub clock: Arc<dyn Clock>,
 }
 
 impl Tools {
-    /// The real `gh`, T3's database (read-only), the Claude sessions folder with `ps`, the
-    /// kqueue watcher and the wall clock. Never called by tests.
+    /// The real `gh`, T3's database (read-only), the Claude sessions folder with `ps`,
+    /// `hc events`, the kqueue watcher and the wall clock. Never called by tests.
     pub fn real(cfg: &SyncConfig) -> Tools {
         Tools {
             gh: Box::new(gh::ProcessGh::new(cfg.gh_path.clone())),
             t3: Box::new(t3::T3Db::new(&cfg.t3_dir)),
             claude: Box::new(claude::RealClaude::new(&cfg.claude_sessions)),
+            herdr: Box::new(herdr::RealHerdr::new(&cfg.hc_path)),
             watch: Box::new(watch::KqueueWatch::new()),
             clock: Arc::new(airboss_services::SystemClock),
         }
@@ -149,6 +157,7 @@ fn build(cfg: SyncConfig, store: SharedStore, tools: Tools) -> Result<Built, Ser
         env.clone(),
         tools.t3,
         tools.claude,
+        tools.herdr,
         tools.watch,
         t3_tx.clone(),
         gh_tx.clone(),
@@ -197,6 +206,8 @@ pub fn start(cfg: SyncConfig, store: SharedStore, tools: Tools) -> Result<Arc<Sy
                     tick: || T3Msg::Tick,
                 },
             );
+            // No `hc events` child outlives the worker.
+            w.stop();
             let _ = done.send(());
         })?);
     }
@@ -231,7 +242,10 @@ pub fn start(cfg: SyncConfig, store: SharedStore, tools: Tools) -> Result<Arc<Sy
     }))
 }
 
-/// One T3 and Claude pass and one GitHub pass, on this thread, for the CLI's `--once`.
+/// How long `run_once` waits for Herdr's first snapshot.
+pub const ONCE_HERDR_WAIT: Duration = Duration::from_secs(2);
+
+/// One T3, Claude and Herdr pass and one GitHub pass, on this thread, for the CLI's `--once`.
 pub fn run_once(
     cfg: SyncConfig,
     store: SharedStore,
@@ -240,6 +254,18 @@ pub fn run_once(
     let mut b = build(cfg, store, tools)?;
     let now = b.clock.now();
     b.t3.start(now);
+    // Herdr's state arrives on its stream: wait a moment for the snapshot.
+    let deadline = Instant::now() + ONCE_HERDR_WAIT;
+    while !b.t3.herdr_read() {
+        let left = deadline.saturating_duration_since(Instant::now());
+        match b.t3_rx.recv_timeout(left) {
+            Ok(msg) => {
+                b.t3.handle(msg, b.clock.now());
+            }
+            Err(_) => break,
+        }
+    }
+    b.t3.stop();
     b.gh.start(now);
     b.gh.handle(GhMsg::Recheck, now);
     Ok((*b.hub.snapshot()).clone())

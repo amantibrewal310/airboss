@@ -28,7 +28,12 @@ claude: boolean,
 /**
  * `~/.codex/config.toml` has `[mcp_servers.airboss]`.
  */
-codex: boolean, };
+codex: boolean, 
+/**
+ * That table's `env_vars` passes `HC_TERMINAL_ID`, which Codex in Herdr needs to say
+ * which terminal it is. A setup copied before Herdr has only `T3CODE_THREAD_ID`.
+ */
+codex_terminal_id: boolean, };
 
 /**
  * Why a command failed: a code the UI may branch on, and one sentence to show.
@@ -51,7 +56,7 @@ detail: string | null, };
  * The service codes mirror `airboss_services::ErrorCode` one for one, so a service's error
  * passes through with its own code and message.
  */
-export type AppErrorCode = "empty_title" | "not_found" | "invalid_target" | "loop" | "already_exists" | "not_allowed" | "invalid_transition" | "db" | "already_starting" | "undo_refused" | "not_a_link" | "url_not_allowed" | "app_unverified" | "db_unavailable" | "db_too_new" | "hotkey_in_use" | "hotkey_reserved" | "internal" | "t3_missing" | "t3_not_running" | "t3_unreachable" | "t3_too_old" | "timeout" | "not_a_project" | "repo_missing" | "no_base_branch" | "bad_branch" | "task_closed" | "task_proposed" | "needs_choice" | "waiting" | "bad_answer" | "t3_failed" | "gh_missing" | "signed_out" | "no_access" | "pr_not_found" | "bad_pr_ref" | "rate_limited" | "gh_failed" | "t3_unavailable" | "core" | "storage" | "shutting_down";
+export type AppErrorCode = "empty_title" | "not_found" | "invalid_target" | "loop" | "already_exists" | "not_allowed" | "invalid_transition" | "db" | "already_starting" | "undo_refused" | "not_a_link" | "url_not_allowed" | "app_unverified" | "db_unavailable" | "db_too_new" | "hotkey_in_use" | "hotkey_reserved" | "internal" | "t3_missing" | "t3_not_running" | "t3_unreachable" | "t3_too_old" | "timeout" | "not_a_project" | "repo_missing" | "no_base_branch" | "bad_branch" | "task_closed" | "task_proposed" | "needs_choice" | "waiting" | "bad_answer" | "t3_failed" | "herdr_missing" | "herdr_not_running" | "worktree_failed" | "herdr_failed" | "gh_missing" | "signed_out" | "no_access" | "pr_not_found" | "bad_pr_ref" | "rate_limited" | "gh_failed" | "t3_unavailable" | "core" | "storage" | "shutting_down";
 
 /**
  * System, Dark or Light. System (the default) follows macOS.
@@ -81,6 +86,14 @@ export type Bootstrap = { seq: number,
  * In tree order.
  */
 rows: Array<RowDto>, order: Array<TaskId>, repos: Array<Repo>, needs: NeedsList, connections: Array<Connection>, availability: Availability, 
+/**
+ * Whether Herdr is there to start agents in.
+ */
+herdr: Availability, 
+/**
+ * Where Do it and Plan it start agents now.
+ */
+launcher: LauncherKind, 
 /**
  * When an agent last reported (the newest `agent:*` event), for the Agents row.
  */
@@ -114,6 +127,14 @@ export type Connection = { name: string, ok: boolean, state: string, detail: str
  * `connections:changed`'s payload.
  */
 export type ConnectionsChanged = { connections: Array<Connection>, availability: Availability, 
+/**
+ * Whether Herdr is there to start agents in.
+ */
+herdr: Availability, 
+/**
+ * Where Do it and Plan it start agents now: "Start agents in", resolved.
+ */
+launcher: LauncherKind, 
 /**
  * When an agent last reported (the newest `agent:*` event), for "Last report 3m ago".
  */
@@ -169,7 +190,7 @@ export type DoItResult = { "needs_choice": { choices: Array<Repo>, research_dir:
 /**
  * `services::ErrorCode`: a service's error codes.
  */
-export type ErrorCode = "t3_missing" | "t3_not_running" | "t3_unreachable" | "t3_too_old" | "timeout" | "not_a_project" | "repo_missing" | "no_base_branch" | "bad_branch" | "task_closed" | "task_proposed" | "needs_choice" | "waiting" | "already_starting" | "bad_answer" | "t3_failed" | "gh_missing" | "signed_out" | "no_access" | "pr_not_found" | "bad_pr_ref" | "rate_limited" | "gh_failed" | "t3_unavailable" | "not_found" | "core" | "storage" | "internal" | "shutting_down";
+export type ErrorCode = "t3_missing" | "t3_not_running" | "t3_unreachable" | "t3_too_old" | "timeout" | "not_a_project" | "repo_missing" | "no_base_branch" | "bad_branch" | "task_closed" | "task_proposed" | "needs_choice" | "waiting" | "already_starting" | "bad_answer" | "t3_failed" | "herdr_missing" | "herdr_not_running" | "worktree_failed" | "herdr_failed" | "gh_missing" | "signed_out" | "no_access" | "pr_not_found" | "bad_pr_ref" | "rate_limited" | "gh_failed" | "t3_unavailable" | "not_found" | "core" | "storage" | "internal" | "shutting_down";
 
 /**
  * `core::Event`.
@@ -201,6 +222,11 @@ view: string, };
 export type FocusZone = "list" | "panel" | "sidebar" | "field" | "overlay" | "quickadd";
 
 /**
+ * `services::HerdrAgent`: the agent a Herdr tab runs.
+ */
+export type HerdrAgent = "claude" | "codex";
+
+/**
  * One event in the activity feed (an `Event`), with the agent's thread title when known
  * ("Agent in slot-picker").
  */
@@ -219,6 +245,12 @@ on_path: boolean, };
  * `services::LaunchReport`.
  */
 export type LaunchReport = { started: Array<StartedThread>, skipped: Array<RepoId>, failed: Array<[RepoId | null, ServiceError]>, branch: string | null, moved_to_doing: boolean, };
+
+/**
+ * Where Do it and Plan it start agents now: "Start agents in", resolved against what's Ready
+ * (`Settings::launcher`). The buttons, their disabled reason and the copy follow it.
+ */
+export type LauncherKind = "t3" | "herdr";
 
 /**
  * `core::Link`.
@@ -243,7 +275,7 @@ export type LinkId = number;
 /**
  * `core::LinkKind`.
  */
-export type LinkKind = "t3_thread" | "claude_session" | "pr" | "slack" | "doc" | "github_issue";
+export type LinkKind = "t3_thread" | "claude_session" | "pr" | "slack" | "doc" | "github_issue" | "herdr_terminal";
 
 /**
  * `menu:action`'s payload: a command id from `lib/logic/commands.ts`.
@@ -558,12 +590,25 @@ notifications: boolean,
 /**
  * Parents folded in the tree; saved a second after the last change.
  */
-folded: Array<TaskId>, };
+folded: Array<TaskId>, 
+/**
+ * Where Do it and Plan it start agents.
+ */
+start_agents_in: StartAgentsIn, 
+/**
+ * The agent a Herdr tab runs: Claude Code (the default) or Codex.
+ */
+herdr_agent: HerdrAgent, };
 
 /**
  * `services::Source`.
  */
-export type Source = "t3" | "claude";
+export type Source = "t3" | "claude" | "herdr";
+
+/**
+ * Settings › Agent setup › "Start agents in": where Do it and Plan it start agents.
+ */
+export type StartAgentsIn = "auto" | "t3" | "herdr";
 
 /**
  * `services::StartedThread`.
@@ -581,7 +626,7 @@ export type Status = "proposed" | "todo" | "doing" | "in_review" | "blocked" | "
 export type T3Project = { id: string, name: string, path: string, };
 
 /**
- * One of T3's projects, for Add repos.
+ * One of T3's projects, or a folder Herdr knows (`herdr_folders`), for Add repos.
  */
 export type T3ProjectRow = { path: string, name: string, 
 /**

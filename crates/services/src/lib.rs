@@ -31,7 +31,8 @@ pub use attention::{
 };
 pub use changes::Changes;
 pub use launch::{
-    Availability, LaunchReport, LaunchService, Mode, Place, Prepared, StartRequest, StartedThread,
+    Availability, HerdrAgent, LaunchReport, LaunchService, Launcher, Mode, Place, Prepared,
+    StartRequest, StartedThread,
 };
 pub use pr_ref::PrRef;
 pub use sync::{
@@ -154,6 +155,14 @@ pub enum ErrorCode {
     AlreadyStarting,
     BadAnswer,
     T3Failed,
+    /// Herdr's `hc` or `herdr-app` isn't installed.
+    HerdrMissing,
+    /// Herdr's window didn't answer, even after opening it.
+    HerdrNotRunning,
+    /// `git worktree add` failed for a Herdr Do it; the message is git's.
+    WorktreeFailed,
+    /// `herdr-app` or `hc` answered with an error.
+    HerdrFailed,
     // sync
     GhMissing,
     SignedOut,

@@ -55,6 +55,7 @@ export interface Commands {
   plans: C<{ req: number }, PlanCard[]>;
   quickadd_data: C<None, QuickaddData>;
   t3_projects: C<None, T3ProjectRow[]>;
+  herdr_folders: C<None, T3ProjectRow[]>;
   create_task: C<{ task: CreateTaskInput }, CreateTaskResult>;
   rename_task: C<{ id: TaskId; title: string }, Patch>;
   edit_notes: C<{ id: TaskId; body: string | null }, Patch>;
@@ -125,7 +126,7 @@ export type ResultOf<K extends CommandName> = Commands[K]['result'];
 
 /** Every command name, in Appendix A order (used by tests and the mock's coverage check). */
 export const COMMAND_NAMES = [
-  'bootstrap', 'task_detail', 'run_map', 'plans', 'quickadd_data', 't3_projects', 'create_task',
+  'bootstrap', 'task_detail', 'run_map', 'plans', 'quickadd_data', 't3_projects', 'herdr_folders', 'create_task',
   'rename_task', 'edit_notes', 'set_status', 'toggle_done', 'accept_proposals', 'reject_proposals',
   'move_task', 'reorder', 'link_repo', 'unlink_repo', 'add_repos', 'edit_repo', 'remove_repo',
   'back_up_database', 'pick_folder', 'set_branch',

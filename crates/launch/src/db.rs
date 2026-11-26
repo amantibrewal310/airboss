@@ -1,14 +1,14 @@
 //! Launch's own connection and tables: `launch_threads` and `launch_repos`.
 //!
-//! The schema is migrations `launch` v1 and v2, run through `core`'s `migrate_module` on the same
+//! The schema is migrations `launch` v1 to v3, run through `core`'s `migrate_module` on the same
 //! file as `core`'s tables. After that, launch reads and writes its own tables only, on its
 //! own connection.
 
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
-use airboss_core::{Migration, RepoId, Store, TaskId};
-use airboss_services::{Mode, ServiceError, time};
+use airboss_core::{LinkKind, Migration, RepoId, Store, TaskId};
+use airboss_services::{Launcher, Mode, ServiceError, Source, time};
 use rusqlite::{Connection, OptionalExtension, Row as SqlRow, TransactionBehavior, params};
 
 use crate::errors;
@@ -23,7 +23,59 @@ pub const MIGRATIONS: &[Migration] = &[
         version: 2,
         sql: include_str!("migrations/002_repo_path.sql"),
     },
+    Migration {
+        version: 3,
+        sql: include_str!("migrations/003_herdr.sql"),
+    },
 ];
+
+/// Where a row's thread runs: a T3 Code thread, or a terminal in Herdr.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum Runs {
+    T3,
+    Herdr,
+}
+
+impl Runs {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Runs::T3 => "t3",
+            Runs::Herdr => "herdr",
+        }
+    }
+
+    fn parse(text: &str) -> Option<Runs> {
+        match text {
+            "t3" => Some(Runs::T3),
+            "herdr" => Some(Runs::Herdr),
+            _ => None,
+        }
+    }
+
+    /// The link kind and thread source for this place's threads.
+    pub fn link_kind(self) -> LinkKind {
+        match self {
+            Runs::T3 => LinkKind::T3Thread,
+            Runs::Herdr => LinkKind::HerdrTerminal,
+        }
+    }
+
+    pub fn source(self) -> Source {
+        match self {
+            Runs::T3 => Source::T3,
+            Runs::Herdr => Source::Herdr,
+        }
+    }
+}
+
+impl From<Launcher> for Runs {
+    fn from(l: Launcher) -> Runs {
+        match l {
+            Launcher::T3 => Runs::T3,
+            Launcher::Herdr { .. } => Runs::Herdr,
+        }
+    }
+}
 
 /// Where one row stands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -78,6 +130,16 @@ pub(crate) struct Row {
     pub title: String,
     pub linked: bool,
     pub created_at: SystemTime,
+    pub runs: Runs,
+    /// The worktree Herdr's Do it made for the thread.
+    pub worktree: Option<String>,
+}
+
+impl Row {
+    /// The folder the thread's terminal starts in: its worktree, else the place's folder.
+    pub fn folder(&self) -> &str {
+        self.worktree.as_deref().unwrap_or(&self.project_path)
+    }
 }
 
 /// What a new pending row records.
@@ -90,6 +152,9 @@ pub(crate) struct NewRow<'a> {
     /// The branch and its base, for Do it in a repo.
     pub branch: Option<(&'a str, &'a str)>,
     pub title: &'a str,
+    pub runs: Runs,
+    /// The worktree Herdr's Do it made (or will make) for the thread.
+    pub worktree: Option<&'a str>,
 }
 
 /// What `insert_pending` found.
@@ -104,7 +169,7 @@ pub(crate) enum Inserted {
 }
 
 const COLUMNS: &str = "id, task_id, repo_id, mode, state, thread_id, project_path, branch, \
-                       title, linked, created_at";
+                       title, linked, created_at, launcher, worktree_path";
 
 fn from_row(r: &SqlRow<'_>) -> rusqlite::Result<Row> {
     let bad = |i: usize, text: &str| {
@@ -117,6 +182,7 @@ fn from_row(r: &SqlRow<'_>) -> rusqlite::Result<Row> {
     let mode: String = r.get(3)?;
     let state: String = r.get(4)?;
     let created: String = r.get(10)?;
+    let runs: String = r.get(11)?;
     Ok(Row {
         id: r.get(0)?,
         task: TaskId(r.get(1)?),
@@ -129,6 +195,8 @@ fn from_row(r: &SqlRow<'_>) -> rusqlite::Result<Row> {
         title: r.get(8)?,
         linked: r.get::<_, i64>(9)? == 1,
         created_at: time::from_ts(&created).ok_or_else(|| bad(10, &created))?,
+        runs: Runs::parse(&runs).ok_or_else(|| bad(11, &runs))?,
+        worktree: r.get(12)?,
     })
 }
 
@@ -260,8 +328,9 @@ impl Db {
         }
         let inserted = tx.execute(
             "INSERT INTO launch_threads
-               (task_id, repo_id, mode, state, project_path, branch, base_ref, title, created_at)
-             VALUES (?1, ?2, ?3, 'pending', ?4, ?5, ?6, ?7, ?8)",
+               (task_id, repo_id, mode, state, project_path, branch, base_ref, title, created_at,
+                launcher, worktree_path)
+             VALUES (?1, ?2, ?3, 'pending', ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
                 new.task.0,
                 new.repo.map(|r| r.0),
@@ -270,7 +339,9 @@ impl Db {
                 new.branch.map(|(b, _)| b),
                 new.branch.map(|(_, base)| base),
                 new.title,
-                at
+                at,
+                new.runs.as_str(),
+                new.worktree,
             ],
         );
         match inserted {
@@ -371,6 +442,17 @@ impl Db {
             .map_err(storage)
     }
 
+    /// Whether any row already has `thread` as its thread.
+    pub fn has_thread(&self, thread: &str) -> Result<bool> {
+        self.conn
+            .query_row(
+                "SELECT EXISTS (SELECT 1 FROM launch_threads WHERE thread_id = ?1)",
+                params![thread],
+                |r| r.get(0),
+            )
+            .map_err(storage)
+    }
+
     /// Whether any row of this task already used `branch`.
     pub fn branch_used(&self, task: TaskId, branch: &str) -> Result<bool> {
         self.conn
@@ -466,6 +548,8 @@ mod tests {
             project_path: "/src/web",
             branch: Some(("task-1-x", "main")),
             title: "1 X",
+            runs: Runs::T3,
+            worktree: None,
         }
     }
 

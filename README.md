@@ -20,9 +20,9 @@ To-do apps don't know agent threads exist. Agent tools know threads, but not tas
 
 - **Capture from anywhere.** ⌃⌥N opens a quick-add box over any app. Paste a PR, issue, Slack or `t3code://` link into it and it's attached.
 - **Tasks of any size.** Every task can have subtasks, at any depth, linked to one or more repos. Subtasks can wait on each other, and a parent shows its run order in waves.
-- **Do it and Plan it.** ⌘↩ starts a T3 Code thread for the task, one per linked repo, each in its own worktree on a shared branch, with the task's notes as the brief. ⇧⌘↩ starts a planning thread, and the settled plan comes back as subtasks.
+- **Do it and Plan it.** ⌘↩ starts an agent for the task, in a T3 Code thread or a Herdr tab, one per linked repo, each in its own worktree on a shared branch, with the task's notes as the brief. ⇧⌘↩ starts a planning thread, and the settled plan comes back as subtasks.
 - **Needs me first.** The home screen lists what is waiting on you: agent questions and approvals, PRs to review, failed runs, agents that stopped without a PR, proposed subtasks, tasks that just became ready, parents whose subtasks are all done, and work quiet for 5 days. The menu-bar icon shows the count.
-- **Status is read, not typed.** Agents report through an MCP server. A merged PR finishes its task. T3 Code's threads show whether an agent is working, waiting on you or stopped.
+- **Status is read, not typed.** Agents report through an MCP server. A merged PR finishes its task. T3 Code and Herdr show whether an agent is working, waiting on you or stopped.
 - **Agents propose, you decide.** Agents can move their tasks along and propose new ones. Only you accept proposals, drop tasks, or finish a task whose PR hasn't merged.
 - **Keyboard first, and a real Mac app.** Native menus, a menu-bar item, open at login, dark and light, ⌘K to jump anywhere, ⌘Z to undo a slip, and a shortcut for every main action.
 - **A CLI too.** The `airboss` command adds, moves, links and finishes tasks from a terminal, and accepts or rejects proposals.
@@ -41,13 +41,13 @@ You need a Mac with Apple silicon, on macOS 13 or later.
 
    The alpha isn't notarized by Apple yet. A copy downloaded in a browser gets "Apple could not verify Airboss…" the first time. If you went that way, clear the flag once with `xattr -dr com.apple.quarantine /Applications/Airboss.app`.
 2. On the first-run screen:
-   - Tick the repos you work in, from T3 Code's projects or any folder.
+   - Tick the repos you work in, from T3 Code's projects, Herdr's spaces, or any folder.
    - In **Agents**, choose **Install command-line tool**, then **Connect Claude Code**. That registers Airboss's MCP server with Claude Code, at user scope. Codex takes one more step: see [Getting started](docs/getting-started.md#codex).
    - Paste the agent note (**Help › Copy Agent Note**) into each repo's `AGENTS.md` or `CLAUDE.md`.
 
 Airboss works on its own, and each of these turns on more. Without them, those features switch off and say why:
 
-- T3 Code: Do it, Plan it, and live thread state.
+- T3 Code or Herdr: Do it, Plan it, and live thread state. With both, choose in **Settings › Agent setup › Start agents in**.
 - Claude Code or Codex: agents report on their tasks.
 - The GitHub CLI (`gh`), signed in: PR state, reviews and checks.
 
@@ -82,13 +82,13 @@ The design is in [DESIGN.md](DESIGN.md) and [docs/design](docs/design/README.md)
 
 ## Status
 
-Alpha: 0.1.0-alpha.1. Every module is built, tested and merged: the task store, the MCP server and CLI, the Mac app, Do it and Plan it, sync with GitHub and T3 Code, and Needs me. Every Rust crate is tested (`cargo test --workspace`), and the interface has unit, component and end-to-end tests. The native parts (menus, the hotkey, notifications, the menu bar) were also checked by hand on a real Mac.
+Alpha: 0.1.0-alpha.2. Every module is built, tested and merged: the task store, the MCP server and CLI, the Mac app, Do it and Plan it, sync with GitHub and T3 Code, and Needs me. Every Rust crate is tested (`cargo test --workspace`), and the interface has unit, component and end-to-end tests. The native parts (menus, the hotkey, notifications, the menu bar) were also checked by hand on a real Mac.
 
 Known gaps:
 
 - It isn't notarized: install it with the line above, or clear the download flag. It's Apple silicon only.
 - There are no automatic updates yet. Watch the [releases](https://github.com/amantibrewal310/airboss/releases).
-- It's built around T3 Code, Claude Code, Codex and `gh`. Other agent tools can report through MCP, but Do it and Plan it start T3 Code threads only.
+- It's built around T3 Code or Herdr, Claude Code or Codex, and `gh`. Other agent tools can report through MCP, but Do it and Plan it start agents only in T3 Code or Herdr.
 - Plan it doesn't yet show that a planning thread is running until its plan comes back.
 - VoiceOver has been checked through the accessibility tree, not yet by listening.
 
@@ -107,7 +107,7 @@ Airboss is local only. There's no account, no server and no telemetry.
 - The app opens no network port, and its windows load nothing from the network.
 - The only network traffic is the `gh` CLI reading the PRs you've linked, and your own open PRs, from GitHub, about every 5 minutes, with your own `gh` sign-in.
 - It reads T3 Code's database read-only, and Claude Code's session files in `~/.claude/sessions`, to see what your agents are doing. It never writes to either.
-- Do it and Plan it run the `t3` CLI, which starts threads in T3 Code on your Mac.
+- Do it and Plan it run the `t3` CLI, which starts threads in T3 Code on your Mac, or Herdr's `herdr-app` and `hc`, which open tabs in Herdr. For Herdr, Airboss makes the task's git worktree itself, and follows its agents through `hc events`.
 - **Help › Report a Problem…** only opens a GitHub page in your browser. Nothing is sent unless you submit it there.
 
 ## License

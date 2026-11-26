@@ -10,8 +10,8 @@ use airboss_core::{
     EventId, EventKind, LinkId, LinkKind, Origin, PrState, Repo, RepoId, Status, Task, TaskId,
 };
 use airboss_services::{
-    Availability, Chip, Connection, LaunchReport, NeedsItem, NeedsList, PrView, Prepared, Request,
-    ThreadKey, ThreadState, ThreadView,
+    Availability, Chip, Connection, HerdrAgent, LaunchReport, Launcher, NeedsItem, NeedsList,
+    PrView, Prepared, Request, ThreadKey, ThreadState, ThreadView,
 };
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -115,6 +115,7 @@ pub enum LinkKindTs {
     Slack,
     Doc,
     GithubIssue,
+    HerdrTerminal,
 }
 
 /// `core::PrState`.
@@ -224,6 +225,10 @@ pub enum ServiceErrorCodeTs {
     AlreadyStarting,
     BadAnswer,
     T3Failed,
+    HerdrMissing,
+    HerdrNotRunning,
+    WorktreeFailed,
+    HerdrFailed,
     GhMissing,
     SignedOut,
     NoAccess,
@@ -255,6 +260,7 @@ pub struct ServiceErrorTs {
 pub enum SourceTs {
     T3,
     Claude,
+    Herdr,
 }
 
 /// `services::ThreadKey`.
@@ -419,6 +425,39 @@ pub enum AvailabilityTs {
     Unknown,
     Ready { version: String },
     Missing { reason: String },
+}
+
+/// `services::HerdrAgent`: the agent a Herdr tab runs.
+#[derive(TS)]
+#[ts(
+    rename = "HerdrAgent",
+    rename_all = "snake_case",
+    export_to = "types.ts"
+)]
+#[allow(dead_code)]
+pub enum HerdrAgentTs {
+    Claude,
+    Codex,
+}
+
+/// Where Do it and Plan it start agents now: "Start agents in", resolved against what's Ready
+/// (`Settings::launcher`). The buttons, their disabled reason and the copy follow it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export_to = "types.ts")]
+pub enum LauncherKind {
+    #[default]
+    T3,
+    Herdr,
+}
+
+impl From<Launcher> for LauncherKind {
+    fn from(l: Launcher) -> LauncherKind {
+        match l {
+            Launcher::T3 => LauncherKind::T3,
+            Launcher::Herdr { .. } => LauncherKind::Herdr,
+        }
+    }
 }
 
 /// `services::Mode`.
@@ -729,6 +768,20 @@ pub struct AgentTools {
     pub claude: bool,
     /// `~/.codex/config.toml` has `[mcp_servers.airboss]`.
     pub codex: bool,
+    /// That table's `env_vars` passes `HC_TERMINAL_ID`, which Codex in Herdr needs to say
+    /// which terminal it is. A setup copied before Herdr has only `T3CODE_THREAD_ID`.
+    pub codex_terminal_id: bool,
+}
+
+impl AgentTools {
+    /// Codex runs in Herdr (`launcher` is Herdr and its agent is Codex) with an `airboss`
+    /// table that doesn't pass `HC_TERMINAL_ID`, so its agents can't name their terminal.
+    pub fn codex_needs_terminal_id(&self, launcher: LauncherKind, agent: HerdrAgent) -> bool {
+        launcher == LauncherKind::Herdr
+            && agent == HerdrAgent::Codex
+            && self.codex
+            && !self.codex_terminal_id
+    }
 }
 
 /// Everything the main window draws first, read once before it shows.
@@ -749,6 +802,11 @@ pub struct Bootstrap {
     pub connections: Vec<Connection>,
     #[ts(as = "AvailabilityTs")]
     pub availability: Availability,
+    /// Whether Herdr is there to start agents in.
+    #[ts(as = "AvailabilityTs")]
+    pub herdr: Availability,
+    /// Where Do it and Plan it start agents now.
+    pub launcher: LauncherKind,
     /// When an agent last reported (the newest `agent:*` event), for the Agents row.
     #[ts(as = "Option<TimestampTs>")]
     pub agent_report: Option<Timestamp>,
@@ -767,6 +825,11 @@ pub struct ConnectionsChanged {
     pub connections: Vec<Connection>,
     #[ts(as = "AvailabilityTs")]
     pub availability: Availability,
+    /// Whether Herdr is there to start agents in.
+    #[ts(as = "AvailabilityTs")]
+    pub herdr: Availability,
+    /// Where Do it and Plan it start agents now: "Start agents in", resolved.
+    pub launcher: LauncherKind,
     /// When an agent last reported (the newest `agent:*` event), for "Last report 3m ago".
     #[ts(as = "Option<TimestampTs>")]
     pub agent_report: Option<Timestamp>,
@@ -1004,7 +1067,7 @@ pub struct QuickaddData {
     pub parents: Vec<ParentOption>,
 }
 
-/// One of T3's projects, for Add repos.
+/// One of T3's projects, or a folder Herdr knows (`herdr_folders`), for Add repos.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[ts(export_to = "types.ts")]
 pub struct T3ProjectRow {

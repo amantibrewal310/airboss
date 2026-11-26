@@ -39,7 +39,7 @@
       <button type="button" class="ib" title="Open page (⌘↓)" aria-label="Open page" onclick={() => app.openPage(row.id)}><Icon name="expand" size={14} /></button>
       <button type="button" class="ib" title="Close (Esc)" aria-label="Close" onclick={() => app.closePanel()}><Icon name="close" size={14} /></button>
     </div>
-    {#if !app.conn.t3Ready}<T3Banner />{/if}
+    {#if !app.conn.launchReady}<T3Banner />{/if}
     <div class="pk">
       <Title task={row.id} title={row.title} />
       {#if app.detail.skeleton && !fresh}

@@ -124,6 +124,10 @@ impl LaunchService for Checked<FakeLaunch> {
         self.check();
         self.inner.availability()
     }
+    fn herdr_availability(&self) -> Availability {
+        self.check();
+        self.inner.herdr_availability()
+    }
     fn prepare(&self, task: TaskId, mode: Mode) -> Result<Prepared, ServiceError> {
         self.check();
         self.inner.prepare(task, mode)

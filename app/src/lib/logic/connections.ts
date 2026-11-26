@@ -1,7 +1,15 @@
-import type { AgentTools, Availability, Connection, Timestamp } from '../types';
+import type { AgentTools, Availability, Connection, HerdrAgent, LauncherKind, Timestamp } from '../types';
 import { ago } from './time';
 
-const ORDER = ['T3 Code', 'GitHub', 'Agents', 'Claude Code'];
+const ORDER = ['T3 Code', 'Herdr', 'GitHub', 'Agents', 'Claude Code'];
+
+/** Where Do it and Plan it start agents, as copy names it. */
+export const LAUNCHER_NAME: Record<LauncherKind, string> = { t3: 'T3 Code', herdr: 'Herdr' };
+
+/** "Do it and Plan it need Herdr. Install it, then choose Check again." */
+export function launcherMissingText(launcher: LauncherKind): string {
+  return `Do it and Plan it need ${LAUNCHER_NAME[launcher]}. Install it, then choose Check again.`;
+}
 
 export function t3Available(a: Availability): boolean {
   return typeof a === 'object' && 'ready' in a;
@@ -13,13 +21,14 @@ export function t3MissingReason(a: Availability): string | null {
 
 /**
  * Rows with the same name are one row: ok when all are ok; state, detail and fix from the
- * first that isn't (EM decision, 26 Nov). T3 Code is also off when `launch` says it's missing.
+ * first that isn't (EM decision, 26 Nov). T3 Code is also off when `launch` says it's missing,
+ * unless agents start in Herdr (Rust leaves that row out then, and it isn't put back).
  * Claude Code shows only when it's broken.
  */
 export function mergeConnections(
   rows: Connection[],
   availability: Availability,
-  app: { cliInstalled?: boolean; agents?: AgentTools; agentReport?: Timestamp | null; now?: number } = {},
+  app: { cliInstalled?: boolean; agents?: AgentTools; agentReport?: Timestamp | null; now?: number; launcher?: LauncherKind } = {},
 ): Connection[] {
   const byName = new Map<string, Connection>();
   for (const r of rows) {
@@ -46,7 +55,7 @@ export function mergeConnections(
   }
   const missing = t3MissingReason(availability);
   const t3 = byName.get('T3 Code');
-  if (missing && (!t3 || t3.ok)) {
+  if (missing && (t3 ? t3.ok : app.launcher !== 'herdr')) {
     byName.set('T3 Code', {
       name: 'T3 Code',
       ok: false,
@@ -73,13 +82,23 @@ export function anyConnected(a: AgentTools): boolean {
 }
 
 /**
- * The Agents row's one next step on first run: install the CLI (missing or broken), connect
- * Claude Code (no agent tool has the server), or copy the agent note (ready).
+ * Codex runs in Herdr with an airboss table from before Herdr: without `HC_TERMINAL_ID` its
+ * agents can't say which terminal they are (Rust turns the Agents row orange for it).
  */
-export type AgentsStep = 'install' | 'connect' | 'note';
+export function codexNeedsTerminalId(agents: AgentTools, launcher: LauncherKind, agent: HerdrAgent): boolean {
+  return launcher === 'herdr' && agent === 'codex' && agents.codex && !agents.codex_terminal_id;
+}
 
-export function agentsStep(cliInstalled: boolean, agents: AgentTools): AgentsStep {
+/**
+ * The Agents row's one next step on first run: install the CLI (missing or broken), connect
+ * Claude Code (no agent tool has the server), copy the Codex setup again (Codex in Herdr
+ * with a setup that lacks `HC_TERMINAL_ID`), or copy the agent note (ready).
+ */
+export type AgentsStep = 'install' | 'connect' | 'codex' | 'note';
+
+export function agentsStep(cliInstalled: boolean, agents: AgentTools, codexOutdated = false): AgentsStep {
   if (!cliInstalled) return 'install';
+  if (codexOutdated) return 'codex';
   return anyConnected(agents) ? 'note' : 'connect';
 }
 

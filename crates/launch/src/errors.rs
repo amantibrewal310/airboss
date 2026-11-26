@@ -11,6 +11,9 @@ use crate::brief::one_line;
 /// The sentence `Availability::Missing` and `T3Missing` share, from the design.
 pub const T3_MISSING: &str = "Do it and Plan it need T3 Code. Install it, then choose Check again.";
 
+/// The sentence `Availability::Missing` and `HerdrMissing` share.
+pub const HERDR_MISSING: &str = "Herdr isn't installed.";
+
 pub(crate) fn t3_missing() -> ServiceError {
     ServiceError::new(ErrorCode::T3Missing, T3_MISSING)
 }
@@ -100,28 +103,98 @@ pub(crate) fn t3_failed(line: &str) -> ServiceError {
     ServiceError::new(ErrorCode::T3Failed, short(line))
 }
 
-/// A pending row already exists for this place.
-pub(crate) fn already_starting(repo: Option<&str>) -> ServiceError {
+/// A pending row already exists for this place. `app` is where it's starting: "T3" or
+/// "Herdr".
+pub(crate) fn already_starting(repo: Option<&str>, app: &str) -> ServiceError {
     let what = match repo {
         Some(name) => one_line(name),
         None => "This task's thread".to_string(),
     };
     ServiceError::new(
         ErrorCode::AlreadyStarting,
-        format!("{what} is still starting. Check T3, or choose Start again."),
+        format!("{what} is still starting. Check {app}, or choose Start again."),
     )
 }
 
-/// Another call in this process is running `t3` for this place right now.
-pub(crate) fn starting_now(repo: Option<&str>) -> ServiceError {
+/// Another call in this process is starting this place right now.
+pub(crate) fn starting_now(repo: Option<&str>, app: &str) -> ServiceError {
     let what = match repo {
         Some(name) => one_line(name),
         None => "This task's thread".to_string(),
     };
     ServiceError::new(
         ErrorCode::AlreadyStarting,
-        format!("{what} is starting right now. Wait a moment, then check T3."),
+        format!("{what} is starting right now. Wait a moment, then check {app}."),
     )
+}
+
+pub(crate) fn herdr_missing() -> ServiceError {
+    ServiceError::new(ErrorCode::HerdrMissing, HERDR_MISSING)
+}
+
+pub(crate) fn herdr_not_running() -> ServiceError {
+    ServiceError::new(
+        ErrorCode::HerdrNotRunning,
+        "Herdr didn't open. Open it and try again.",
+    )
+}
+
+/// `herdr-app`'s own `{error}`, or what else it printed.
+pub(crate) fn herdr_failed(message: &str) -> ServiceError {
+    ServiceError::new(ErrorCode::HerdrFailed, short(message))
+}
+
+pub(crate) fn herdr_timeout(after: Duration) -> ServiceError {
+    ServiceError::new(
+        ErrorCode::Timeout,
+        format!(
+            "Herdr didn't answer in {} s. If the tab opens, Airboss links it once it can tell which \
+             tab it is; if it can't, choose Start again in 2 minutes.",
+            after.as_secs()
+        ),
+    )
+}
+
+/// A `herdr-app` call that makes nothing (listing spaces) didn't answer in time.
+pub(crate) fn herdr_slow(after: Duration) -> ServiceError {
+    ServiceError::new(
+        ErrorCode::Timeout,
+        format!(
+            "Herdr didn't answer in {} s. Try again in a moment.",
+            after.as_secs()
+        ),
+    )
+}
+
+pub(crate) fn herdr_bad_answer() -> ServiceError {
+    ServiceError::new(
+        ErrorCode::BadAnswer,
+        "Herdr answered in a way Airboss doesn't understand.",
+    )
+}
+
+/// git's own message, as one sentence: its first line, without `fatal: `, capitalised and
+/// ending with a full stop.
+pub(crate) fn worktree_failed(git_says: &str) -> ServiceError {
+    let line = git_says
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .unwrap_or("git couldn't make the worktree");
+    let line = ["fatal:", "error:"]
+        .iter()
+        .find_map(|p| line.strip_prefix(p))
+        .unwrap_or(line)
+        .trim();
+    let mut chars = line.chars();
+    let mut sentence: String = match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => "Git couldn't make the worktree".to_string(),
+    };
+    if !sentence.ends_with(['.', '!', '?']) {
+        sentence.push('.');
+    }
+    ServiceError::new(ErrorCode::WorktreeFailed, short(&sentence))
 }
 
 pub(crate) fn task_proposed(task: TaskId) -> ServiceError {
@@ -223,6 +296,21 @@ mod tests {
         assert_eq!(
             waiting(t, &[TaskId(1), TaskId(2), TaskId(3)]).message,
             "Task 146 waits on 1, 2 and 3."
+        );
+    }
+
+    #[test]
+    fn gits_message_becomes_one_sentence() {
+        let e = worktree_failed("fatal: 'task-1' is already used by worktree at '/x'\nmore");
+        assert_eq!(e.code, ErrorCode::WorktreeFailed);
+        assert_eq!(e.message, "'task-1' is already used by worktree at '/x'.");
+        assert_eq!(
+            worktree_failed("fatal: invalid reference: main").message,
+            "Invalid reference: main."
+        );
+        assert_eq!(
+            worktree_failed("").message,
+            "Git couldn't make the worktree."
         );
     }
 

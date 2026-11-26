@@ -346,7 +346,16 @@ impl AppState {
         let problems = lock(&self.problems).clone();
         let cli = crate::commands::app::cli_status(self);
         let agents = crate::connections::agent_tools(&self.config.home);
-        crate::connections::merged(&self.services, vm, &problems, cli, agents, agent_report)
+        let settings = self.settings();
+        crate::connections::merged(
+            &self.services,
+            vm,
+            &problems,
+            &settings,
+            cli,
+            agents,
+            agent_report,
+        )
     }
 
     /// Runs the user's shell to see whether `~/.local/bin` is on its `PATH` (up to 3 s), and
@@ -460,7 +469,8 @@ impl AppState {
     /// same task is `AlreadyStarting`.
     pub(crate) fn begin_launch(&self, id: TaskId) -> AppResult<LaunchGuard<'_>> {
         if !lock(&self.launching).insert(id) {
-            return Err(AppError::already_starting());
+            let launcher = crate::commands::launch::launcher(self);
+            return Err(AppError::already_starting(launcher.into()));
         }
         Ok(LaunchGuard { state: self, id })
     }

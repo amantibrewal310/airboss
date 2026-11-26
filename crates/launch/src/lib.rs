@@ -1,7 +1,8 @@
 //! `airboss-launch`: Do it and Plan it.
 //!
-//! The only module that runs the `t3` CLI. It commits a `pending` row to its own table before
-//! every `t3` call, so a retry, a timeout or a restart never starts a second thread for the
+//! The only module that runs the `t3` CLI, and Herdr's `herdr-app` and `hc` to start agents
+//! in Herdr tabs. It commits a `pending` row to its own table before
+//! every start, so a retry, a timeout or a restart never starts a second thread for the
 //! same task, repo and mode. See `SPEC-launch.md` at the repo root, and the decisions in
 //! `tasks/launch-plan.md`.
 //!
@@ -16,6 +17,7 @@ mod errors;
 #[cfg(feature = "fakes")]
 pub mod fake;
 mod git;
+pub mod herdr;
 mod prepare;
 mod process;
 mod settle;
@@ -38,8 +40,9 @@ use airboss_services::{
 
 pub use core_access::{CoreAccess, CoreWrite, FailWith};
 pub use db::MIGRATIONS;
-pub use errors::T3_MISSING;
-pub use git::{Git, RealGit};
+pub use errors::{HERDR_MISSING, T3_MISSING};
+pub use git::{Git, RealGit, Worktree};
+pub use herdr::{HerdrCli, RealHerdr};
 pub use process::{CmdOutput, ProcessRunner, REMOVED_VARS, child_env};
 pub use start::Brief;
 pub use t3cli::T3Cli;
@@ -63,6 +66,12 @@ pub struct LaunchConfig {
     pub home: PathBuf,
     /// Launch's own tables. `None`: the same file as `core`'s (`Store::path()`).
     pub db_path: Option<PathBuf>,
+    /// Herdr's settings, read only for `worktrees.directory`:
+    /// `~/.config/herdr-app/settings.json`.
+    pub herdr_settings: PathBuf,
+    /// A pending Herdr row whose terminal no live terminal's labels match this long after it
+    /// was made is `lost`: 2 minutes.
+    pub herdr_settle_after: Duration,
 }
 
 impl LaunchConfig {
@@ -75,6 +84,8 @@ impl LaunchConfig {
             settle_after: Duration::from_secs(180),
             home: home.to_path_buf(),
             db_path: None,
+            herdr_settings: home.join(".config/herdr-app/settings.json"),
+            herdr_settle_after: Duration::from_secs(120),
         }
     }
 }
@@ -83,12 +94,14 @@ impl LaunchConfig {
 pub struct LaunchTools {
     pub t3: Box<dyn T3Cli>,
     pub git: Box<dyn Git>,
+    pub herdr: Box<dyn HerdrCli>,
     pub clock: Arc<dyn Clock>,
 }
 
 impl LaunchTools {
-    /// The real `t3` (from `cfg.t3_path`), `/usr/bin/git` and the wall clock. Never called by
-    /// tests: it would run the real `t3`.
+    /// The real `t3` (from `cfg.t3_path`), `/usr/bin/git`, Herdr's `herdr-app` and `hc`
+    /// (from `~/.local/bin`, else `PATH`) and the wall clock. Never called by tests: it would
+    /// run the real `t3` and Herdr.
     pub fn real(cfg: &LaunchConfig) -> LaunchTools {
         LaunchTools {
             t3: Box::new(ProcessRunner::new(
@@ -97,6 +110,7 @@ impl LaunchTools {
                 child_env(std::env::vars_os()),
             )),
             git: Box::new(RealGit::new(&cfg.home)),
+            herdr: Box::new(RealHerdr::new(&cfg.home)),
             clock: Arc::new(SystemClock),
         }
     }
@@ -138,14 +152,16 @@ pub(crate) struct Inner {
     pub core: CoreAccess,
     pub db: Mutex<Db>,
     pub t3: Mutex<Box<dyn T3Cli>>,
+    pub herdr: Mutex<Box<dyn HerdrCli>>,
     pub git: Mutex<GitCache>,
     pub clock: Arc<dyn Clock>,
     pub sync: Arc<dyn SyncService>,
     pub availability: Mutex<Availability>,
+    pub herdr_availability: Mutex<Availability>,
     pub changes: Changes,
     pub queue: Sender<LaunchMsg>,
     pub shut: AtomicBool,
-    /// Places a `start` in this process is running `t3` for right now. Their pending rows
+    /// Places a `start` in this process is starting right now. Their pending rows
     /// aren't stale, so "Start again" doesn't replace them.
     pub in_flight: Mutex<HashSet<PlaceKey>>,
 }
@@ -169,8 +185,8 @@ pub struct Launch {
 /// The longest `shutdown` waits for the worker.
 const SHUTDOWN_WAIT: Duration = Duration::from_secs(1);
 
-/// Starts launch for the app: [`open`], plus the worker thread, which checks T3 and settles
-/// any pending rows left by the last run straight away.
+/// Starts launch for the app: [`open`], plus the worker thread, which checks T3 and Herdr
+/// and settles any pending rows left by the last run straight away.
 ///
 /// `cfg` is usually `LaunchConfig::defaults(home)`; `core` wraps the app's `SharedStore`;
 /// `tools` is `LaunchTools::real(&cfg)`.
@@ -224,6 +240,7 @@ pub fn open(
         core,
         db: Mutex::new(db),
         t3: Mutex::new(tools.t3),
+        herdr: Mutex::new(tools.herdr),
         git: Mutex::new(GitCache {
             git: tools.git,
             defaults: HashMap::new(),
@@ -231,6 +248,7 @@ pub fn open(
         clock: tools.clock,
         sync,
         availability: Mutex::new(Availability::Unknown),
+        herdr_availability: Mutex::new(Availability::Unknown),
         changes: Changes::new(),
         queue: tx,
         shut: AtomicBool::new(false),
@@ -322,6 +340,10 @@ impl Drop for Launch {
 impl LaunchService for Launch {
     fn availability(&self) -> Availability {
         lock(&self.inner.availability).clone()
+    }
+
+    fn herdr_availability(&self) -> Availability {
+        lock(&self.inner.herdr_availability).clone()
     }
 
     fn prepare(&self, task: TaskId, mode: Mode) -> Result<Prepared, ServiceError> {

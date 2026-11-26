@@ -318,6 +318,35 @@ The `t3` CLI writes one line to stderr and exits 1. `launch` maps it by its star
 
 If worktree setup fails after `t3` returned (for example a base ref missing on the server), the thread ends with a failed run, which `sync` reports and Needs me shows.
 
+## Herdr
+
+[SPEC-herdr.md](SPEC-herdr.md) is the authority; this records how `launch` built it (26 Nov 2026).
+
+- **Code:** `src/herdr.rs` holds every Herdr fact: the `HerdrCli` trait (`run(tool, argv, timeout)` for `herdr-app`, `hc` and `/usr/bin/open`, and `pause`), `RealHerdr` (`~/.local/bin/<name>`, else the first on `PATH`; no shell; the child loses `HC_TERMINAL_ID` as well as the T3 variables), the argv builders and the answer readers. `FakeHerdr` is in `src/fake.rs`. `LaunchTools` has a `herdr` field; `LaunchTools::real` fills it.
+- **Rows:** migration 3 adds `launcher` (`t3` | `herdr`) and `worktree_path`. A place is still task, repo and mode, whatever the launcher: a T3 thread already started there makes a Herdr Do it `skipped`, and the other way round.
+- **Availability:** the worker runs `hc --version` and `herdr-app --version` beside `t3 --version`. Both answering is `Ready` with herdr-app's version; else `Missing`, "Herdr isn't installed." `connections()` still has only the T3 Code row; the app builds Herdr's from `herdr_availability()`.
+- **Start, per place,** after the pending row is committed: `herdr-app ls` (opening Herdr if need be, so a stopped Herdr fails before any git work), then Do it makes or reuses the worktree, then `tab.new` in the repo's space (or `space.new`), then `hc label`. The tab's agent is `["claude"]` or `["codex", "--no-daemon"]`, and its `task` is the brief.
+- **Worktree:** reused when `git worktree list` has that path on that branch and its checkout finished. One a killed `git worktree add` left (still locked `initializing`, which git writes until the checkout is done and `rev-parse HEAD` doesn't catch; or prunable; or with no `HEAD`) is removed with `git worktree remove -f -f` and made again. Git runs with `LC_ALL=C` so the lock reason reads as written. Another branch there is `WorktreeFailed`. Otherwise `git worktree add <path> <branch>` when the branch exists, else `-b <branch> <path> <base>`, from the local `<base>` if the repo has it, else `origin/<base>`. No fetch: launch makes no network call, so the base is as fresh as the repo's last fetch.
+- **Space:** on this computer only (`machine` empty), by name, else by folder. A new space is the repo's: named after it, in the repo's folder. `space.new` always makes a first tab, so for Do it that's a plain shell named after the repo (no agent, unlabelled, not linked), and the agent's tab goes in with `tab.new`, in the worktree. For Plan it and research, whose tab is in the space's own folder, the agent's tab is the space's first tab. Research only names the space after its folder.
+- **Herdr not open:** a `herdr-app` call that fails while `status` doesn't answer means no window. Launch runs `open -g -b dev.herdr.app` (`-g`: Herdr opens behind, as tabs open without focus), checks `status` every 0.5 s for 10 s, and runs the call once more.
+- **The brief** for Herdr names `herdr_terminal` as the agent's own kind, and its "in {repo} ({path})" path is the worktree, where the agent actually is. Every brief leaves Herdr terminal links out of the reference, as it does T3 threads and Claude sessions.
+- **Settling:** a pending Herdr row is looked up at 10 s, 30 s, 60 s and 2 minutes with `hc ls --json --label airboss=1 --label airboss.task=<id> --label airboss.launch=<row>`. A live match makes it `started`. With none, it may be a tab whose answer was lost (a timeout, a signal, output launch couldn't read), which has no labels. So launch looks, right after such an answer and on each settle, at `hc ls --json` for live terminals whose `cwd` is the tab's folder, then `hc get --json` for each: made at or after the row (`created_ms`), with no `airboss.launch` label, no launch row and no link to another task. Exactly one is labelled for the row and bound; none or several bind nothing. The row is `lost` at 2 minutes either way, also while `hc` can't answer. The timeout message says so: "If the tab opens, Airboss links it once it can tell which tab it is; if it can't, choose Start again in 2 minutes."
+- **Errors:** `herdr-app`'s `{"error"}` is `HerdrFailed` and fails only its place, with the row `failed`; git's message is `WorktreeFailed`; `HerdrMissing`, `HerdrNotRunning` and `Timeout` stop the loop. A `tab.new` timeout (30 s) or an answer without a terminal leaves the row pending. A failed `hc label` is logged; the thread still starts and is linked.
+
+**Checked on this Mac** (`herdr-app` 0.1.18, `hc` 0.1.22, in a space named `airboss-test` that the probes made and closed):
+
+- `space.new` and `tab.new` answer in about 40 ms with `{"space": "sp…", "tab": "tb…", "terminal": "t4z"}`, pretty-printed, exit 0. There's no `pane` key. They don't wait for the program or the task.
+- `task` reaches the program as its **last argument**, not as typed input: the terminal runs `/bin/zsh -lic '"$@"; exec "$0" -li' /bin/zsh <argv…> <task>`, so `claude <brief>` starts with the brief as its first message, in the login shell's `PATH`, and a shell stays when the agent exits.
+- `focus: false` left the shown space and tab as they were.
+- Refusals are exit 1 with `{"error": "no space \"spnope\""}`, `{"error": "cannot start a terminal: …"}` (a missing folder) or `{"error": "tab.new: unknown argument(s): …"}`. None made a tab.
+- With no window (tried with `HERDR_APP_HOME` set to an empty temp dir, never by closing the real one), `status` and `ls` exit 2 with `herdr-app: no Herdr window at <home>/herdr-app.sock: …` on stderr.
+- `hc label <t> k=v…` exits 0 and prints the terminal; an unknown terminal exits 3 with `{"error": {"kind": "not_found", …}}`. `hc ls --json --label k=v` (repeatable) lists only live terminals carrying every label: `{terminals: [{address, agent, cwd, state, turn, where}]}`. `hc get --json` has the labels, including Herdr's own `herdr.space`, `herdr.tab` and `where`.
+- `space.close {"id", "confirmed": true}` answers `{"ok": true}`; its terminals are `finished` a moment later.
+- `space.new` with no `argv` makes the space with one shell tab (named by `tab`) in `folder`, and answers with that terminal. `hc ls --json` gives each terminal's launch `cwd` as passed; `hc get --json` adds `created_ms` and the labels.
+- A worktree `git worktree add` is still making is listed `locked initializing` in `git worktree list --porcelain`, and `rev-parse --verify HEAD` already succeeds in it. `git worktree remove --force` refuses it; `-f -f` removes it, and removes one whose folder is gone.
+
+**Not verified:** `herdr-app do` with the real window closed and Herdr reopened by `open` (only the fake covers it), and a real `claude` or `codex` in a tab (no model calls were made).
+
 ## Performance targets
 
 | What | Target |

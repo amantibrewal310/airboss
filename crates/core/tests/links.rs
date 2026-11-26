@@ -487,3 +487,44 @@ fn other_link_kinds_keep_their_ref_as_given() {
         vec![t]
     );
 }
+
+#[test]
+fn a_herdr_terminal_is_linked_by_its_address() {
+    let mut s = store();
+    let t = task(&mut s, "Fix typo");
+    let by_launch = s
+        .link(
+            t,
+            NewLink::new(LinkKind::HerdrTerminal, "t4p"),
+            &Actor::Launch,
+        )
+        .unwrap();
+    assert_eq!(by_launch.kind, LinkKind::HerdrTerminal);
+    assert_eq!(by_launch.r#ref, "t4p");
+    // The agent in that terminal linking "this thread" finds the same link, not a second one.
+    let by_agent = s
+        .link(
+            t,
+            NewLink::new(LinkKind::HerdrTerminal, "t4p"),
+            &agent("herdr/t4p"),
+        )
+        .unwrap();
+    assert_eq!(by_agent, by_launch);
+    assert_eq!(s.links(t).unwrap().len(), 1);
+    // A terminal on another machine.
+    s.link(
+        t,
+        NewLink::new(LinkKind::HerdrTerminal, "vps/t7"),
+        &Actor::Me,
+    )
+    .unwrap();
+    for bad in ["", "t 4p", "t4p\n", "tä", &"t".repeat(65)] {
+        assert!(
+            matches!(
+                s.link(t, NewLink::new(LinkKind::HerdrTerminal, bad), &Actor::Me),
+                Err(Error::InvalidTarget)
+            ),
+            "{bad:?}"
+        );
+    }
+}

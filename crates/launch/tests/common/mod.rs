@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use airboss_core::{Actor, NewTask, Repo, RepoId, Store, Task, TaskId};
-use airboss_launch::fake::{FakeGit, FakeT3Cli};
+use airboss_launch::fake::{FakeGit, FakeHerdr, FakeT3Cli};
 use airboss_launch::{CoreAccess, Launch, LaunchConfig, LaunchTools, LaunchWorker};
 use airboss_services::fakes::{FakeClock, FakeSync};
 use airboss_services::{Mode, Place, SharedStore, Source, StartRequest, ThreadKey};
@@ -32,6 +32,7 @@ pub struct H {
     pub core: CoreAccess,
     pub t3: FakeT3Cli,
     pub git: FakeGit,
+    pub herdr: FakeHerdr,
     pub sync: Arc<FakeSync>,
     pub clock: Arc<FakeClock>,
     pub cfg: LaunchConfig,
@@ -46,6 +47,9 @@ impl H {
         let core = CoreAccess::new(store.clone());
         let t3 = FakeT3Cli::new();
         let git = FakeGit::new();
+        let herdr = FakeHerdr::new();
+        // New fake terminals are made at t0, as the launch rows are.
+        herdr.set_now_ms(t0().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64);
         let sync = Arc::new(FakeSync::new());
         let clock = Arc::new(FakeClock::at(t0()));
         let home = dir.dir("home");
@@ -55,13 +59,14 @@ impl H {
         std::fs::write(&cfg.t3_path, "not t3").unwrap();
         cfg.research_dir = dir.dir("research");
         cfg.db_path = Some(dir.path().join("launch.db"));
-        let (launch, worker) = open(&cfg, &core, &t3, &git, &sync, &clock);
+        let (launch, worker) = open(&cfg, &core, &t3, &git, &herdr, &sync, &clock);
         H {
             dir,
             store,
             core,
             t3,
             git,
+            herdr,
             sync,
             clock,
             cfg,
@@ -77,6 +82,7 @@ impl H {
             &self.core,
             &self.t3,
             &self.git,
+            &self.herdr,
             &self.sync,
             &self.clock,
         );
@@ -145,6 +151,7 @@ fn open(
     core: &CoreAccess,
     t3: &FakeT3Cli,
     git: &FakeGit,
+    herdr: &FakeHerdr,
     sync: &Arc<FakeSync>,
     clock: &Arc<FakeClock>,
 ) -> (Arc<Launch>, LaunchWorker) {
@@ -155,6 +162,7 @@ fn open(
         LaunchTools {
             t3: Box::new(t3.clone()),
             git: Box::new(git.clone()),
+            herdr: Box::new(herdr.clone()),
             clock: clock.clone(),
         },
     )
@@ -167,6 +175,7 @@ pub fn do_it(task: TaskId) -> StartRequest {
         mode: Mode::DoIt,
         place: Place::TaskRepos,
         again: false,
+        launcher: airboss_services::Launcher::T3,
     }
 }
 
@@ -176,6 +185,7 @@ pub fn plan_it(task: TaskId) -> StartRequest {
         mode: Mode::PlanIt,
         place: Place::TaskRepos,
         again: false,
+        launcher: airboss_services::Launcher::T3,
     }
 }
 

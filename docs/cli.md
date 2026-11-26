@@ -228,6 +228,7 @@ Links something to a task. `KIND` is one of:
 | `slack` | the message's permalink |
 | `doc` | a file path |
 | `t3_thread` | a T3 Code thread id |
+| `herdr_terminal` | a Herdr terminal's address, such as `t4p` |
 | `claude_session` | a Claude Code session id |
 
 A PR is stored as `owner/repo#n` in lowercase, however you give it, so the same PR is never linked twice. Linking the same thing again returns the link that's there.

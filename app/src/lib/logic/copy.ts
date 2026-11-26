@@ -21,6 +21,6 @@ export function threadSummary(t: ThreadDto, now: number): string {
   if (t.state === 'needs_me' && t.request) return `${t.request.kind === 'approval' ? 'wants approval' : 'asked a question'} ${ago(at, now)}`;
   if (t.state === 'errored') return t.error ?? 'stopped with an error';
   if (t.state === 'running') return `working · ${relative(at, now)}`;
-  if (t.state === 'gone') return 'no longer in T3';
+  if (t.state === 'gone') return t.key.source === 'herdr' ? 'no longer in Herdr' : 'no longer in T3';
   return `stopped ${ago(at, now)}`;
 }

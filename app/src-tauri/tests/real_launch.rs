@@ -123,6 +123,7 @@ fn one_real_do_it() {
             calls: calls.clone(),
         }),
         git: Box::new(RealGit::new(&home)),
+        herdr: Box::new(airboss_launch::RealHerdr::new(&home)),
         clock: Arc::new(SystemClock),
     };
     let launch = airboss_launch::start(

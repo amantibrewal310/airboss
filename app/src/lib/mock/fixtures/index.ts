@@ -16,9 +16,9 @@ import { fullSeed } from './full';
 import { perfSeed } from './perf';
 import { SeedBuilder } from './build';
 
-export type FixtureName = 'design' | 'full' | 'perf' | 'empty' | 'welcome' | 't3missing' | 'nothing' | 'dberror' | 'stopped';
+export type FixtureName = 'design' | 'full' | 'perf' | 'empty' | 'welcome' | 't3missing' | 'herdr' | 'nothing' | 'dberror' | 'stopped';
 
-export const FIXTURES: readonly FixtureName[] = ['design', 'full', 'perf', 'empty', 'welcome', 't3missing', 'nothing', 'dberror', 'stopped'];
+export const FIXTURES: readonly FixtureName[] = ['design', 'full', 'perf', 'empty', 'welcome', 't3missing', 'herdr', 'nothing', 'dberror', 'stopped'];
 
 export function isFixtureName(name: string): name is FixtureName {
   return (FIXTURES as readonly string[]).includes(name);
@@ -51,13 +51,30 @@ export function loadFixture(name: FixtureName): MockSeed {
       seed.t3Projects = [];
       return seed;
     }
+    case 'herdr': {
+      // First run on a Mac with Herdr and no T3 Code: agents start in Herdr, and the Repos
+      // step lists Herdr's space and recent folders.
+      const b = new SeedBuilder('2026-11-25T10:44:00.000Z');
+      const seed = seedDefaults(b, name, []);
+      seed.availability = { missing: { reason: T3_MISSING_REASON } };
+      seed.herdr = { ready: { version: '0.1.18' } };
+      seed.t3Projects = [];
+      seed.connections = CONNECTED.filter((c) => c.name !== 'T3 Code');
+      seed.herdrFolders = [
+        { name: 'booking-web', folder: '~/Code/booking-web' },
+        { name: 'Notes', folder: '~/Documents/notes' },
+        { name: 'scratch', folder: '/tmp/scratch' },
+        { name: 'personal-site', folder: '~/Code/personal-site' },
+      ];
+      return seed;
+    }
     case 'empty':
     case 'welcome': {
       const b = new SeedBuilder('2026-11-25T10:44:00.000Z');
       const seed = seedDefaults(b, name, []);
       seed.cli = { installed: false, path: '~/.local/bin/airboss', on_path: true };
       // #9: installing the CLI isn't enough; no agent tool has the server yet.
-      seed.agents = { claude: false, codex: false };
+      seed.agents = { claude: false, codex: false, codex_terminal_id: false };
       seed.settings.open_at_login = true;
       if (name === 'empty') {
         seed.availability = { missing: { reason: T3_MISSING_REASON } };

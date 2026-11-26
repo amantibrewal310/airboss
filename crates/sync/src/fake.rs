@@ -806,3 +806,116 @@ impl crate::gh::GhRunner for FakeGh {
         }
     }
 }
+
+/// A Herdr that the test speaks for: each `follow` starts a new stream (numbered by the
+/// worker), and the test hands the worker that stream's lines, written exactly as
+/// `hc events --json` writes them and read with the real parser. Clones share one state.
+#[derive(Clone, Default)]
+pub struct FakeHerdr(std::sync::Arc<std::sync::Mutex<FakeHerdrState>>);
+
+#[derive(Default)]
+struct FakeHerdrState {
+    missing: bool,
+    fail: std::collections::VecDeque<std::io::Error>,
+    stream: Option<(u64, std::sync::mpsc::Sender<crate::T3Msg>)>,
+    follows: u32,
+    stops: u32,
+}
+
+impl FakeHerdr {
+    /// Herdr installed; `hc events` starts and waits for the test's lines.
+    pub fn new() -> FakeHerdr {
+        FakeHerdr::default()
+    }
+
+    /// `hc` isn't installed (or is again, with `false`).
+    pub fn set_missing(&self, missing: bool) {
+        lock(&self.0).missing = missing;
+    }
+
+    /// The next `follow` fails with `e`, as a failed spawn would.
+    pub fn fail_next(&self, e: std::io::Error) {
+        lock(&self.0).fail.push_back(e);
+    }
+
+    /// How many times a stream was started.
+    pub fn follows(&self) -> u32 {
+        lock(&self.0).follows
+    }
+
+    /// How many times the source was told to stop.
+    pub fn stops(&self) -> u32 {
+        lock(&self.0).stops
+    }
+
+    /// Whether a stream is running.
+    pub fn running(&self) -> bool {
+        lock(&self.0).stream.is_some()
+    }
+
+    /// The running stream's number.
+    pub fn stream(&self) -> Option<u64> {
+        lock(&self.0).stream.as_ref().map(|(n, _)| *n)
+    }
+
+    /// The message one line of the running stream becomes, for a test driving the worker;
+    /// `None` for a line the reader drops (a heartbeat). A line it can't read ends the stream.
+    #[allow(clippy::expect_used)]
+    pub fn line(&self, line: &str) -> Option<crate::T3Msg> {
+        let stream = self.stream().expect("FakeHerdr: no stream is running");
+        let feed = match crate::herdr::parse_line(line) {
+            Ok(Some(u)) => crate::herdr::HerdrFeed::Update(u),
+            Ok(None) => return None,
+            Err(e) => crate::herdr::HerdrFeed::Ended(format!("hc sent {e}")),
+        };
+        Some(crate::T3Msg::Herdr { stream, feed })
+    }
+
+    /// The message the running stream's end becomes.
+    #[allow(clippy::expect_used)]
+    pub fn ended(&self, why: &str) -> crate::T3Msg {
+        crate::T3Msg::Herdr {
+            stream: self.stream().expect("FakeHerdr: no stream is running"),
+            feed: crate::herdr::HerdrFeed::Ended(why.to_string()),
+        }
+    }
+
+    /// Sends one line on the running stream's channel, as the reader thread would, for a
+    /// test with real worker threads. Returns whether a stream took it.
+    pub fn send(&self, line: &str) -> bool {
+        let Some(msg) = self.stream().and_then(|_| self.line(line)) else {
+            return false;
+        };
+        let tx = lock(&self.0).stream.as_ref().map(|(_, tx)| tx.clone());
+        tx.is_some_and(|tx| tx.send(msg).is_ok())
+    }
+}
+
+impl crate::herdr::HerdrSource for FakeHerdr {
+    fn follow(
+        &mut self,
+        stream: u64,
+        tx: std::sync::mpsc::Sender<crate::T3Msg>,
+    ) -> std::io::Result<()> {
+        let mut s = lock(&self.0);
+        s.stream = None;
+        if s.missing {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "hc isn't installed",
+            ));
+        }
+        if let Some(e) = s.fail.pop_front() {
+            return Err(e);
+        }
+        s.follows += 1;
+        s.stream = Some((stream, tx));
+        Ok(())
+    }
+
+    fn stop(&mut self) {
+        let mut s = lock(&self.0);
+        s.stops += 1;
+        s.stream = None;
+    }
+}

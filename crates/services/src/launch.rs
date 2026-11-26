@@ -11,6 +11,8 @@ use crate::{Service, ServiceError, ThreadKey};
 pub trait LaunchService: Service {
     /// Whether T3 Code is there to start threads in; cached, no process.
     fn availability(&self) -> Availability;
+    /// Whether Herdr is there to start agents in (`hc` and `herdr-app`); cached, no process.
+    fn herdr_availability(&self) -> Availability;
     /// What `start` would do for this task, without doing it. May block briefly.
     fn prepare(&self, task: TaskId, mode: Mode) -> Result<Prepared, ServiceError>;
     /// Starts the threads. Blocks for seconds; `Err` only when nothing could begin.
@@ -53,6 +55,28 @@ pub enum Place {
     NoRepo(PathBuf),
 }
 
+/// Where Do it and Plan it start agents: the app's "Start agents in" setting, resolved.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Launcher {
+    /// T3 Code threads, through the `t3` CLI.
+    #[default]
+    T3,
+    /// Herdr tabs, through `herdr-app` and `hc`, running this agent.
+    Herdr { agent: HerdrAgent },
+}
+
+/// The agent a Herdr tab runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HerdrAgent {
+    /// `claude`
+    #[default]
+    Claude,
+    /// `codex --no-daemon`: without it, Codex's commands run outside hc.
+    Codex,
+}
+
 /// One press of Do it or Plan it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StartRequest {
@@ -61,6 +85,9 @@ pub struct StartRequest {
     pub place: Place,
     /// "Start again": start new threads even where some already started or are starting.
     pub again: bool,
+    /// Where to start them; T3 Code when left out.
+    #[serde(default)]
+    pub launcher: Launcher,
 }
 
 /// What `start` would do, for the task panel and the "where to start" choice.

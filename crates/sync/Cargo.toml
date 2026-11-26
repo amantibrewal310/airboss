@@ -1,14 +1,14 @@
 [package]
 name = "airboss-sync"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 edition.workspace = true
 rust-version.workspace = true
 repository.workspace = true
 license.workspace = true
-description = "Live state for Airboss: GitHub PRs through gh, T3 threads from T3's database, Claude Code sessions."
+description = "Live state for Airboss: GitHub PRs through gh, T3 threads from T3's database, Claude Code sessions, Herdr terminals."
 
 [features]
-# Fake sources (gh, T3, Claude, the watcher) and a settable clock, for tests.
+# Fake sources (gh, T3, Claude, Herdr, the watcher) and a settable clock, for tests.
 fakes = ["airboss-services/fakes"]
 
 [dependencies]

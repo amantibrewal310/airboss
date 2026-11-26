@@ -1,5 +1,6 @@
-//! The T3 and Claude worker: reads T3's database when its WAL is written and Claude's
-//! session files when they change, and publishes the thread half of the snapshot.
+//! The T3 and Claude worker: reads T3's database when its WAL is written, Claude's session
+//! files when they change and Herdr's `hc events` stream as it arrives, and publishes the
+//! thread half of the snapshot.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
@@ -14,6 +15,7 @@ use super::{Env, GhMsg, Step, StoreSummary, T3Msg, WalWatch, WatchTarget, log};
 use crate::claude::{self, ClaudeSession, ClaudeSource};
 use crate::db::{SyncDb, WaitingPr};
 use crate::health::{Health, HealthState};
+use crate::herdr::{self, HerdrFeed, HerdrSource, HerdrTable, HerdrUpdate};
 use crate::hub::ThreadsPart;
 use crate::t3::{T3Error, T3Query, T3Source};
 use crate::threads;
@@ -24,6 +26,18 @@ pub const ITEM_GRACE: Duration = Duration::from_secs(10);
 pub const UNTRACKED_EVERY: Duration = Duration::from_secs(60);
 /// How often T3's layout and values are checked again.
 pub const CHECK_EVERY: Duration = Duration::from_secs(3600);
+/// How long an `hc events` stream must have run for its end to count as the first failure
+/// of a new streak, rather than one more in a row.
+pub const HERDR_STEADY: Duration = Duration::from_secs(60);
+/// How many restarts of `hc events` may fail in a row before Herdr counts as broken.
+pub const HERDR_RESTARTS: u32 = 3;
+
+/// The wait before restarting `hc events` after its `failures`-th end in a row: 1 s,
+/// doubling to 60 s.
+pub fn herdr_backoff(failures: u32) -> Duration {
+    let secs = 1u64 << failures.saturating_sub(1).min(6);
+    Duration::from_secs(secs.min(60))
+}
 
 /// The T3 and Claude worker. See the module docs.
 pub struct T3Worker {
@@ -31,11 +45,12 @@ pub struct T3Worker {
     db: SyncDb,
     t3: Box<dyn T3Source>,
     claude: Box<dyn ClaudeSource>,
+    herdr: Box<dyn HerdrSource>,
     watch: Box<dyn WalWatch>,
     me: Sender<T3Msg>,
     gh: Sender<GhMsg>,
 
-    /// Every `t3_thread` and `claude_session` link, of every task.
+    /// Every `t3_thread`, `claude_session` and `herdr_terminal` link, of every task.
     links: Vec<Link>,
     open: HashSet<TaskId>,
 
@@ -57,6 +72,17 @@ pub struct T3Worker {
     /// Liveness by (pid, procStart), from the last `ps`.
     claude_alive: HashMap<(u32, String), bool>,
 
+    /// The current `hc events` stream's number; lines from older ones are ignored.
+    herdr_stream: u64,
+    /// When the current stream started; `None` while none runs.
+    herdr_started: Option<SystemTime>,
+    /// When to start the stream again, after it ended.
+    herdr_restart_at: Option<SystemTime>,
+    /// Ends in a row, each before its snapshot and within [`HERDR_STEADY`] of its start.
+    herdr_failures: u32,
+    /// Every terminal, from the latest snapshot on; `None` until one arrives.
+    herdr_table: Option<HerdrTable>,
+
     part: ThreadsPart,
     /// What `observed_threads` holds, so rows are written only on change.
     stored: HashMap<ThreadKey, ThreadView>,
@@ -75,6 +101,7 @@ fn kind_source(kind: LinkKind) -> Option<Source> {
     match kind {
         LinkKind::T3Thread => Some(Source::T3),
         LinkKind::ClaudeSession => Some(Source::Claude),
+        LinkKind::HerdrTerminal => Some(Source::Herdr),
         _ => None,
     }
 }
@@ -89,10 +116,13 @@ fn same(a: &ThreadView, b: &ThreadView) -> bool {
 impl T3Worker {
     /// A worker that hasn't read anything yet; [`start`](T3Worker::start) does the first
     /// passes. `open` is the open tasks from the one `core` snapshot read at start.
+    // One argument per source it reads, plus its channels and the open tasks.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         env: Env,
         t3: Box<dyn T3Source>,
         claude: Box<dyn ClaudeSource>,
+        herdr: Box<dyn HerdrSource>,
         watch: Box<dyn WalWatch>,
         me: Sender<T3Msg>,
         gh: Sender<GhMsg>,
@@ -116,6 +146,7 @@ impl T3Worker {
             match (source.as_str(), scope.as_str()) {
                 ("t3", "") => part.t3 = health,
                 ("claude", "") => part.claude = health,
+                ("herdr", "") => part.herdr = health,
                 _ => {}
             }
         }
@@ -124,6 +155,7 @@ impl T3Worker {
             db,
             t3,
             claude,
+            herdr,
             watch,
             me,
             gh,
@@ -141,11 +173,20 @@ impl T3Worker {
             noted,
             claude_files: BTreeSet::new(),
             claude_alive: HashMap::new(),
+            herdr_stream: 0,
+            herdr_started: None,
+            herdr_restart_at: None,
+            herdr_failures: 0,
+            herdr_table: None,
             part,
             stored,
             saved_health: HashMap::new(),
         };
-        worker.reload_links(&[LinkKind::T3Thread, LinkKind::ClaudeSession]);
+        worker.reload_links(&[
+            LinkKind::T3Thread,
+            LinkKind::ClaudeSession,
+            LinkKind::HerdrTerminal,
+        ]);
         worker.rebuild_tasks();
         // What was seen before shows at once, stale until the first pass.
         worker.publish();
@@ -158,7 +199,23 @@ impl T3Worker {
         self.env.hub.publish_threads(&self.part);
         self.claude_pass(now, true);
         self.t3_pass(now);
+        self.herdr_start(now);
         self.step(true, now)
+    }
+
+    /// Stops what the worker runs outside its thread (the `hc events` child). The thread
+    /// loop calls it on shutdown.
+    pub fn stop(&mut self) {
+        self.herdr.stop();
+        self.herdr_started = None;
+        self.herdr_restart_at = None;
+    }
+
+    /// Whether a Herdr snapshot has arrived since the worker started, or `hc` was found
+    /// missing.
+    pub fn herdr_read(&self) -> bool {
+        let missing = self.part.herdr.state == HealthState::Off && !self.part.herdr.stale;
+        self.herdr_table.is_some() || missing
     }
 
     /// One message, at `now`.
@@ -187,9 +244,19 @@ impl T3Worker {
                 };
                 let _ = reply.send(found);
             }
+            T3Msg::Herdr { stream, feed } => {
+                if stream == self.herdr_stream {
+                    match feed {
+                        HerdrFeed::Update(u) => self.herdr_update(u, now),
+                        HerdrFeed::Ended(why) => self.herdr_ended(why, now),
+                    }
+                }
+            }
             T3Msg::Woke => {
                 self.claude_pass(now, true);
                 self.want_pass(now, false);
+                // A stream may not survive a sleep without noticing: read Herdr afresh.
+                self.herdr_start(now);
             }
             T3Msg::Recheck => {
                 if !self.part.t3.is_ok() {
@@ -198,6 +265,8 @@ impl T3Worker {
                 self.update_watches();
                 self.claude_pass(now, true);
                 self.want_pass(now, true);
+                self.herdr_failures = 0;
+                self.herdr_start(now);
             }
             T3Msg::Tick => {
                 // The GitHub timer: T3 retried if it's off or broken, `data_version` read as
@@ -207,18 +276,29 @@ impl T3Worker {
                 }
                 self.want_pass(now, false);
                 self.claude_pass(now, true);
+                // Herdr installed since it was found missing.
+                if self.part.herdr.state == HealthState::Off {
+                    self.herdr_start(now);
+                }
             }
             T3Msg::Shutdown => {}
         }
         if self.pass_due.is_some_and(|due| due <= now) {
             self.t3_pass(now);
         }
+        if self.herdr_restart_at.is_some_and(|at| at <= now) {
+            self.herdr_start(now);
+        }
         let changed = !std::sync::Arc::ptr_eq(&before, &self.env.hub.snapshot());
         self.step(changed, now)
     }
 
     fn step(&self, changed: bool, now: SystemTime) -> Step {
-        Step::at(changed, self.pass_due, now)
+        let wanted = [self.pass_due, self.herdr_restart_at]
+            .into_iter()
+            .flatten()
+            .min();
+        Step::at(changed, wanted, now)
     }
 
     /// Marks the source broken after a panic in `handle`.
@@ -293,6 +373,7 @@ impl T3Worker {
     fn follow(&mut self, s: StoreSummary, now: SystemTime) {
         let t3_before = self.open_linked(Source::T3);
         let claude_before = self.open_linked(Source::Claude);
+        let herdr_before = self.open_linked(Source::Herdr);
         let kinds: Vec<LinkKind> = s
             .kinds()
             .into_iter()
@@ -309,6 +390,9 @@ impl T3Worker {
         }
         if self.open_linked(Source::Claude) != claude_before {
             self.claude_pass(now, false);
+        }
+        if self.open_linked(Source::Herdr) != herdr_before {
+            self.herdr_views(now);
         }
         self.publish();
     }
@@ -691,6 +775,98 @@ impl T3Worker {
         self.publish();
     }
 
+    // ---- Herdr ----
+
+    /// Starts `hc events` afresh, stopping the stream that runs, if any.
+    fn herdr_start(&mut self, now: SystemTime) {
+        self.herdr_stream += 1;
+        self.herdr_restart_at = None;
+        match self.herdr.follow(self.herdr_stream, self.me.clone()) {
+            Ok(()) => self.herdr_started = Some(now),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                self.herdr_started = None;
+                self.herdr_failures = 0;
+                self.herdr_table = None;
+                self.part
+                    .herdr
+                    .set(HealthState::Off, "hc isn't installed", now);
+                self.save_health("herdr");
+                // No Herdr: every linked terminal is gone, so none can hold a finish.
+                self.herdr_views(now);
+                self.publish();
+            }
+            Err(e) => {
+                self.herdr_started = Some(now);
+                self.herdr_ended(format!("hc events couldn't start: {e}"), now);
+            }
+        }
+    }
+
+    fn herdr_update(&mut self, u: HerdrUpdate, now: SystemTime) {
+        let snapshot = matches!(u, HerdrUpdate::Snapshot { .. });
+        if !snapshot && self.herdr_table.is_none() {
+            // hc always sends its snapshot first; a change before it has nothing to change.
+            return;
+        }
+        let table = self.herdr_table.get_or_insert_with(HerdrTable::default);
+        let changed = table.apply(u, now);
+        if snapshot {
+            if self.part.herdr.state == HealthState::Broken {
+                log("Herdr sync works again");
+            }
+            self.part.herdr.ok(now);
+            self.save_health("herdr");
+            // A stream that delivered its snapshot didn't fail to restart.
+            self.herdr_failures = 0;
+        }
+        if changed || snapshot {
+            self.herdr_views(now);
+        }
+        self.publish();
+    }
+
+    /// The stream stopped: its child is reaped, and it starts again after the backoff.
+    /// After [`HERDR_RESTARTS`] failed restarts in a row (each ending before its snapshot,
+    /// and within [`HERDR_STEADY`]), Herdr is broken (and still restarted, every minute).
+    fn herdr_ended(&mut self, why: String, now: SystemTime) {
+        self.herdr.stop();
+        let steady = self
+            .herdr_started
+            .is_some_and(|s| now.duration_since(s).is_ok_and(|d| d >= HERDR_STEADY));
+        self.herdr_started = None;
+        self.herdr_failures = if steady {
+            1
+        } else {
+            self.herdr_failures.saturating_add(1)
+        };
+        self.herdr_restart_at = Some(now + herdr_backoff(self.herdr_failures));
+        if self.herdr_failures > HERDR_RESTARTS {
+            if self.part.herdr.state != HealthState::Broken {
+                log(&format!("Herdr sync broken: {why}"));
+            }
+            self.part.herdr.set(HealthState::Broken, why, now);
+            self.save_health("herdr");
+            self.publish();
+        }
+    }
+
+    /// Reports every `herdr_terminal` link on an open task: from the table, or gone when
+    /// Herdr isn't installed. Until the first snapshot, what was seen before stays.
+    fn herdr_views(&mut self, now: SystemTime) {
+        let linked = self.open_linked(Source::Herdr);
+        let views = match &self.herdr_table {
+            Some(table) => herdr::views(table, &linked),
+            None if self.part.herdr.state == HealthState::Off && !self.part.herdr.stale => {
+                herdr::views(&HerdrTable::default(), &linked)
+            }
+            None => return,
+        };
+        let views = views.into_iter().map(|v| (v.key.clone(), v)).collect();
+        if self.replace(Source::Herdr, views, now) {
+            self.threads_changed(now);
+        }
+    }
+
     // ---- watching, health, publishing ----
 
     fn targets(&self) -> Vec<WatchTarget> {
@@ -729,6 +905,7 @@ impl T3Worker {
     fn save_health(&mut self, source: &'static str) {
         let h: &Health = match source {
             "t3" => &self.part.t3,
+            "herdr" => &self.part.herdr,
             _ => &self.part.claude,
         };
         if self

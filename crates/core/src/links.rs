@@ -140,11 +140,24 @@ pub(crate) fn canonical_pr_ref(input: &str) -> Result<String> {
     ))
 }
 
-/// A link's ref as stored: canonical for PRs (rule 29), as given for everything else.
+/// A link's ref as stored: canonical for PRs (rule 29), a Herdr terminal's address checked,
+/// and as given for everything else.
 fn stored_ref(kind: LinkKind, r#ref: &str) -> Result<String> {
     match kind {
         LinkKind::Pr => canonical_pr_ref(r#ref),
+        LinkKind::HerdrTerminal => herdr_address(r#ref),
         _ => Ok(r#ref.to_string()),
+    }
+}
+
+/// A Herdr terminal's address: 1–64 printable ASCII characters with no spaces, such as `t4p`
+/// or `vps/t7`.
+fn herdr_address(r#ref: &str) -> Result<String> {
+    let ok = (1..=64).contains(&r#ref.len()) && r#ref.bytes().all(|b| b.is_ascii_graphic());
+    if ok {
+        Ok(r#ref.to_string())
+    } else {
+        Err(Error::InvalidTarget)
     }
 }
 

@@ -9,9 +9,9 @@ use std::time::{Duration, UNIX_EPOCH};
 use airboss_core::{RepoId, TaskId};
 use airboss_services::fakes::{FAKE_ENVIRONMENT, FakeAttention, FakeClock, FakeLaunch, FakeSync};
 use airboss_services::{
-    AttentionService, Clock, Connection, ErrorCode, LaunchService, Mode, NeedsGroup, NeedsItem,
-    NeedsKey, NeedsKind, Place, PrRef, Refresh, Service, Source, StartRequest, SyncService,
-    SyncSnapshot, Target, ThreadKey,
+    AttentionService, Clock, Connection, ErrorCode, LaunchService, Launcher, Mode, NeedsGroup,
+    NeedsItem, NeedsKey, NeedsKind, Place, PrRef, Refresh, Service, Source, StartRequest,
+    SyncService, SyncSnapshot, Target, ThreadKey,
 };
 
 /// Compiles only if each fake implements its trait and every supertrait, and each trait is
@@ -91,6 +91,7 @@ fn fake_launch_records_each_start_and_answers_as_set() {
         mode: Mode::DoIt,
         place: Place::TaskRepos,
         again: false,
+        launcher: Launcher::T3,
     };
     assert!(launch.start(&req).unwrap().started.is_empty());
     launch.set_start(Err(airboss_services::ServiceError::new(

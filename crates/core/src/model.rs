@@ -353,6 +353,8 @@ impl TaskEdit {
 pub enum LinkKind {
     T3Thread,
     ClaudeSession,
+    /// A terminal in Herdr, by its address (`t4p`, `vps/t7`).
+    HerdrTerminal,
     Pr,
     Slack,
     Doc,
@@ -365,6 +367,7 @@ impl LinkKind {
         match self {
             LinkKind::T3Thread => "t3_thread",
             LinkKind::ClaudeSession => "claude_session",
+            LinkKind::HerdrTerminal => "herdr_terminal",
             LinkKind::Pr => "pr",
             LinkKind::Slack => "slack",
             LinkKind::Doc => "doc",
@@ -376,6 +379,7 @@ impl LinkKind {
         Some(match text {
             "t3_thread" => LinkKind::T3Thread,
             "claude_session" => LinkKind::ClaudeSession,
+            "herdr_terminal" => LinkKind::HerdrTerminal,
             "pr" => LinkKind::Pr,
             "slack" => LinkKind::Slack,
             "doc" => LinkKind::Doc,

@@ -182,6 +182,7 @@ fn research_only_starts_in_the_chosen_folder() {
         mode: Mode::DoIt,
         place: Place::NoRepo(h.cfg.research_dir.clone()),
         again: false,
+        launcher: airboss_services::Launcher::T3,
     };
     let report = h.launch.start(&req).unwrap();
     let call = &h.t3.starts()[0];
