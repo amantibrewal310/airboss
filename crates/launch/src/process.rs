@@ -22,8 +22,10 @@ pub const REMOVED_VARS: [&str; 3] = [
 /// The most of stdout or stderr kept; the rest is read and dropped so the child never blocks.
 const OUTPUT_LIMIT: u64 = 1 << 20;
 
-/// How long to wait for a child's output after it exits. A grandchild could hold the pipes.
-const READ_GRACE: Duration = Duration::from_secs(1);
+/// How long to wait for a child's output after it exits. A grandchild could hold the pipes,
+/// so this stays bounded; but it's generous, because `t3`'s stderr decides how a failed start
+/// is reported, and on a loaded Mac a reader thread can take well over a second to be scheduled.
+const READ_GRACE: Duration = Duration::from_secs(5);
 
 /// What a finished process printed, and how it ended.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

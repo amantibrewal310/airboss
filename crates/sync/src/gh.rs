@@ -577,8 +577,9 @@ impl ProcessGh {
 }
 
 /// How long to wait for `gh`'s output once it has exited, or been killed. A process `gh`
-/// started could still hold the pipes; `launch`'s runner waits the same.
-const READ_GRACE: Duration = Duration::from_secs(1);
+/// started could still hold the pipes, so this stays bounded; but it's generous, because on a
+/// loaded Mac a reader thread can take over a second to be scheduled. `launch` waits the same.
+const READ_GRACE: Duration = Duration::from_secs(5);
 
 /// Waits for `child`, killing it at `timeout`, then gives its readers `grace` to finish.
 /// `status` is `None` when it was killed. Like `launch`'s runner, it never waits on the
