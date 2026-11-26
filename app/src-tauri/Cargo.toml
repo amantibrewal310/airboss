@@ -69,3 +69,8 @@ unsafe_code = "deny"
 [lints.clippy]
 unwrap_used = "deny"
 expect_used = "deny"
+
+# AppKit menus are made on the main thread only: this test runs in its own `main`.
+[[test]]
+name = "menu_native"
+harness = false

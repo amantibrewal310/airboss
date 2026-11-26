@@ -33,7 +33,7 @@ use crate::services::Services;
 use crate::settings::{self, Appearance};
 use crate::shell::{Shell, UiEvent};
 use crate::state::{AppConfig, AppState, Caller, lock, share};
-use crate::updates::{Progress, Release, Updater};
+use crate::updates::{DownloadProgress, InstallError, LIMITS, Limits, Progress, Release, Updater};
 use crate::util::Debounced;
 use crate::{macos, quickadd, tray};
 
@@ -147,21 +147,33 @@ impl Notifications for TauriNotifications {
 ///
 /// Both calls block on the plugin's async work with `tauri::async_runtime::block_on`. They
 /// run on a command's blocking thread or the update checker's own thread, never on the main
-/// thread or inside an async task.
-pub struct TauriUpdater {
-    app: AppHandle<Wry>,
-    /// What the last check found, so `install` downloads exactly what the card offered.
-    kept: Mutex<Option<tauri_plugin_updater::Update>>,
+/// thread or inside an async task. Every request has the [`Limits`], so neither can hang.
+pub struct TauriUpdater<R: Runtime = Wry> {
+    app: AppHandle<R>,
+    limits: Limits,
 }
 
-impl TauriUpdater {
-    /// Checks the manifest and keeps what it found.
+impl<R: Runtime> TauriUpdater<R> {
+    /// An updater for `app`, whose updater plugin is registered, waiting at most `limits`.
+    pub fn new(app: AppHandle<R>, limits: Limits) -> TauriUpdater<R> {
+        TauriUpdater { app, limits }
+    }
+
+    /// Reads the manifest now. Nothing is kept: every install checks again.
     fn find(&self) -> Result<Option<tauri_plugin_updater::Update>, String> {
-        let updater = self.app.updater().map_err(|e| failed("set-up", &e))?;
-        let found =
-            tauri::async_runtime::block_on(updater.check()).map_err(|e| failed("check", &e))?;
-        *lock(&self.kept) = found.clone();
-        Ok(found)
+        let Limits {
+            connect,
+            read,
+            check,
+        } = self.limits;
+        let updater = self
+            .app
+            .updater_builder()
+            .timeout(check)
+            .configure_client(move |c| c.connect_timeout(connect).read_timeout(read))
+            .build()
+            .map_err(|e| failed("set-up", &e))?;
+        tauri::async_runtime::block_on(updater.check()).map_err(|e| failed("check", &e))
     }
 }
 
@@ -171,7 +183,7 @@ fn failed(what: &str, e: &tauri_plugin_updater::Error) -> String {
     crate::updates::plain_reason(e)
 }
 
-impl Updater for TauriUpdater {
+impl<R: Runtime> Updater for TauriUpdater<R> {
     fn available(&self) -> bool {
         !cfg!(debug_assertions) && in_bundle()
     }
@@ -180,33 +192,32 @@ impl Updater for TauriUpdater {
         Ok(self.find()?.map(|u| Release { version: u.version }))
     }
 
-    fn install(&self, version: &str, progress: &mut dyn FnMut(Progress)) -> Result<(), String> {
-        let kept = lock(&self.kept).clone().filter(|u| u.version == version);
-        let update = match kept {
-            Some(u) => u,
-            None => self
-                .find()?
-                .filter(|u| u.version == version)
-                .ok_or_else(|| format!("Airboss {version} isn't offered any more."))?,
+    fn install(
+        &self,
+        version: &str,
+        progress: &mut dyn FnMut(Progress),
+    ) -> Result<(), InstallError> {
+        // A fresh manifest every time: after a fix to the manifest (a new signature, say),
+        // Try again must install what it says now, not what an earlier check saw.
+        let found = self.find().map_err(InstallError::Failed)?;
+        crate::updates::still_offered(found.as_ref().map(|u| u.version.as_str()), version)?;
+        let Some(mut update) = found else {
+            return Err(InstallError::NotOffered(None));
         };
+        // The check's total timeout would also cap the whole download; the read timeout
+        // from `configure_client` stays, so a stalled download fails and a slow one finishes.
+        update.timeout = None;
         // Both callbacks report progress; the plugin calls them one after the other.
         let progress = RefCell::new(progress);
-        let (mut got, mut shown) = (0u64, None);
+        let mut counter = DownloadProgress::default();
         let on_chunk = |chunk: usize, total: Option<u64>| {
-            got = got.saturating_add(chunk as u64);
-            if let Some(total) = total.filter(|t| *t > 0) {
-                let percent =
-                    u8::try_from((got.saturating_mul(100) / total).min(100)).unwrap_or(100);
-                // Whole-percent changes only: a few hundred events at most, not one per chunk.
-                if shown != Some(percent) {
-                    shown = Some(percent);
-                    (*progress.borrow_mut())(Progress::Downloading(Some(percent)));
-                }
+            if let Some(p) = counter.chunk(chunk, total) {
+                (*progress.borrow_mut())(p);
             }
         };
         let on_finish = || (*progress.borrow_mut())(Progress::Installing);
         tauri::async_runtime::block_on(update.download_and_install(on_chunk, on_finish))
-            .map_err(|e| failed("install", &e))
+            .map_err(|e| InstallError::Failed(failed("install", &e)))
     }
 }
 
@@ -227,10 +238,7 @@ impl TauriShell {
     fn new(app: AppHandle<Wry>, hotkey: String) -> Arc<TauriShell> {
         let shell = Arc::new(TauriShell {
             notifications: TauriNotifications::new(app.clone()),
-            updater: Arc::new(TauriUpdater {
-                app: app.clone(),
-                kept: Mutex::new(None),
-            }),
+            updater: Arc::new(TauriUpdater::new(app.clone(), LIMITS)),
             app,
             menus: Mutex::new(None),
             tray: Mutex::new(None),
@@ -477,11 +485,16 @@ impl Shell for Arc<TauriShell> {
     ///    main thread, so the window keeps drawing "Restarting…". It can't deadlock: shutdown
     ///    waits only for the services' own threads (and gives up after 1 s), never for this
     ///    thread or the main one, and a second call returns at once.
-    /// 2. The rest touches AppKit, so it goes to the main thread and returns: the window
-    ///    state is saved (Tauri's `Exit` handlers, which would save it, don't run on this
-    ///    path), `cleanup_before_exit` drops the menu-bar item and releases the
-    ///    single-instance socket, and `tauri::process::restart` opens the new bundle through
-    ///    LaunchServices (`open -n -g`) and exits. The command returns `Ok` meanwhile.
+    /// 2. The rest touches AppKit, so it goes to the main thread and returns; the command
+    ///    returns `Ok` meanwhile. There: the window state is saved (Tauri's `Exit` handlers,
+    ///    which would save it, don't run on this path); the global hotkey is let go, so the
+    ///    new instance can register it while this one is still exiting; `cleanup_before_exit`
+    ///    drops the menu-bar item and releases the single-instance socket; then the new
+    ///    bundle opens through `/usr/bin/open` with [`crate::updates::relaunch_args`] (in
+    ///    front, with the `AIRBOSS_*` variables, without `--hidden`) and this process exits.
+    ///    If `open` fails, the new executable starts directly as our child, inheriting our
+    ///    environment. Only outside a bundle (never an update in practice) does Tauri's own
+    ///    restart run.
     fn restart(&self) {
         if let Some(s) = self.app.try_state::<App>().and_then(|a| a.current()) {
             s.shutdown(Duration::from_secs(1));
@@ -490,34 +503,53 @@ impl Shell for Arc<TauriShell> {
             if let Err(e) = app.save_window_state(StateFlags::SIZE | StateFlags::POSITION) {
                 log::warn!("couldn't save the window state before restarting: {e}");
             }
+            if let Err(e) = app.global_shortcut().unregister_all() {
+                log::warn!("couldn't let go of the hotkey before restarting: {e}");
+            }
             app.cleanup_before_exit();
             log::info!("restarting into the new Airboss");
-            // Our own relaunch rather than `tauri::process::restart`, which passes `-g` and
-            // none of our environment (see `updates::relaunch_args`).
-            let bundle = std::env::current_exe()
-                .ok()
-                .and_then(|exe| crate::updates::bundle_of(&exe));
-            if let Some(bundle) = bundle {
-                let args =
-                    crate::updates::relaunch_args(&bundle, std::env::vars_os(), &app.env().args_os);
-                match std::process::Command::new("/usr/bin/open")
+            let args_os = app.env().args_os;
+            let exe = std::env::current_exe().ok();
+            let bundle = exe.as_deref().and_then(crate::updates::bundle_of);
+            let (Some(exe), Some(bundle)) = (exe, bundle) else {
+                // Not in a bundle: Tauri's own restart, without `--hidden`.
+                let mut env = app.env();
+                env.args_os.retain(|a| a != "--hidden");
+                tauri::process::restart(&env);
+            };
+            let args = crate::updates::relaunch_args(&bundle, std::env::vars_os(), &args_os);
+            match std::process::Command::new("/usr/bin/open")
+                .args(&args)
+                .stdin(std::process::Stdio::null())
+                .output()
+            {
+                Ok(out) if out.status.success() => std::process::exit(0),
+                Ok(out) => log::error!(
+                    "couldn't reopen Airboss with open ({}): {}; starting it directly",
+                    out.status,
+                    String::from_utf8_lossy(&out.stderr).trim()
+                ),
+                Err(e) => log::error!("couldn't run open: {e}; starting Airboss directly"),
+            }
+            // Never Tauri's restart here: it runs `open` without our `--env`, which would
+            // bring a copy run on `AIRBOSS_DB` back on the default database.
+            if let Some((new_exe, args)) = crate::updates::direct_relaunch(&bundle, &exe, &args_os)
+            {
+                use std::os::unix::process::CommandExt as _;
+                let started = std::process::Command::new(&new_exe)
                     .args(&args)
+                    // Its own process group, and none of our stdio: it outlives this process.
+                    .process_group(0)
                     .stdin(std::process::Stdio::null())
-                    .output()
-                {
-                    Ok(out) if out.status.success() => std::process::exit(0),
-                    Ok(out) => log::error!(
-                        "couldn't reopen Airboss ({}): {}",
-                        out.status,
-                        String::from_utf8_lossy(&out.stderr).trim()
-                    ),
-                    Err(e) => log::error!("couldn't reopen Airboss: {e}"),
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .spawn();
+                match started {
+                    Ok(child) => log::info!("started {} ({})", new_exe.display(), child.id()),
+                    Err(e) => log::error!("couldn't start {}: {e}", new_exe.display()),
                 }
             }
-            // Not in a bundle, or `open` failed: Tauri's own restart, without `--hidden`.
-            let mut env = app.env();
-            env.args_os.retain(|a| a != "--hidden");
-            tauri::process::restart(&env);
+            std::process::exit(0);
         });
     }
 
@@ -904,12 +936,6 @@ pub fn on_menu_event(app: &AppHandle<Wry>, event: MenuEvent) {
         ids::COPY_SETUP => menu_command(app, Some("Copied the setup command."), |s| {
             crate::commands::app::copy_text(s, Caller::Other, CopyWhat::SetupCommand)
         }),
-        // Forwarded, so the window runs its own "Check for updates": that also shows again a
-        // card hidden with Later. The check toasts its outcome over the window.
-        ids::CHECK_FOR_UPDATES => {
-            show_main_window(app);
-            emit(app, UiEvent::MenuAction(MenuAction { command: id }));
-        }
         // The browser coming forward with the form says it worked.
         ids::REPORT_PROBLEM => menu_command(app, None, |s| {
             crate::commands::app::report_problem(s, Caller::Other)

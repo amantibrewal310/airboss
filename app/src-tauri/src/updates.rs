@@ -22,6 +22,26 @@ pub const EVERY: Duration = Duration::from_secs(6 * 60 * 60);
 /// How often the checker looks at the clock, so a sleeping Mac doesn't stretch the wait.
 pub const TICK: Duration = Duration::from_secs(5 * 60);
 
+/// How long the updater waits for GitHub, so a stalled connection can't hang the checker or
+/// leave an install stuck in `downloading`. The download has only a read timeout, not a
+/// total one, so a slow link still finishes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Limits {
+    /// To open a connection.
+    pub connect: Duration,
+    /// Between two reads of a response, the download included.
+    pub read: Duration,
+    /// The whole manifest request.
+    pub check: Duration,
+}
+
+/// The real limits: 20 s to connect, 30 s of silence, 30 s for the manifest.
+pub const LIMITS: Limits = Limits {
+    connect: Duration::from_secs(20),
+    read: Duration::from_secs(30),
+    check: Duration::from_secs(30),
+};
+
 /// A newer release the manifest offers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Release {
@@ -37,6 +57,16 @@ pub enum Progress {
     Installing,
 }
 
+/// Why an install didn't happen.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InstallError {
+    /// It stopped before the swap: one plain sentence for the card.
+    Failed(String),
+    /// The manifest, read again for the install, no longer offers that version: what it
+    /// offers now (a newer release, or nothing).
+    NotOffered(Option<Release>),
+}
+
 /// Finds and installs a new Airboss. Every method blocks; none is called with a lock held.
 pub trait Updater: Send + Sync {
     /// An installed release build: inside an `.app`, not a debug build.
@@ -44,9 +74,15 @@ pub trait Updater: Send + Sync {
     /// Reads the manifest: the release newer than this one, if any. The error is one plain
     /// sentence for a toast or the card.
     fn check(&self) -> Result<Option<Release>, String>;
-    /// Downloads `version`, verifies its signature and swaps the app in place, reporting
-    /// progress. Doesn't restart.
-    fn install(&self, version: &str, progress: &mut dyn FnMut(Progress)) -> Result<(), String>;
+    /// Reads the manifest afresh and, if it still offers `version`, downloads that, verifies
+    /// its signature and swaps the app in place, reporting progress. Nothing from an earlier
+    /// check is reused, so Try again after a fixed manifest gets the fixed release. Doesn't
+    /// restart.
+    fn install(
+        &self,
+        version: &str,
+        progress: &mut dyn FnMut(Progress),
+    ) -> Result<(), InstallError>;
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -61,8 +97,11 @@ struct Script {
     check_error: Option<String>,
     install_error: Option<String>,
     steps: Vec<Progress>,
+    panics: bool,
     held: bool,
     installing: bool,
+    check_held: bool,
+    checking: bool,
     calls: Vec<String>,
 }
 
@@ -82,8 +121,11 @@ impl Default for FakeUpdater {
                 check_error: None,
                 install_error: None,
                 steps: vec![Progress::Installing],
+                panics: false,
                 held: false,
                 installing: false,
+                check_held: false,
+                checking: false,
                 calls: Vec::new(),
             }),
             changed: Condvar::new(),
@@ -117,6 +159,27 @@ impl FakeUpdater {
         lock(&self.script).steps = steps;
     }
 
+    /// Makes `install` panic after its progress steps, as a bug in the updater would.
+    pub fn panic_install(&self, on: bool) {
+        lock(&self.script).panics = on;
+    }
+
+    /// Holds `check` until [`release_check`](FakeUpdater::release_check).
+    pub fn hold_check(&self) {
+        lock(&self.script).check_held = true;
+    }
+
+    /// Lets a held `check` answer.
+    pub fn release_check(&self) {
+        lock(&self.script).check_held = false;
+        self.changed.notify_all();
+    }
+
+    /// Waits until a `check` is running (held or not), up to `timeout`.
+    pub fn wait_checking(&self, timeout: Duration) -> bool {
+        self.wait_until(timeout, |s| s.checking)
+    }
+
     /// Holds `install` before its first step until [`release`](FakeUpdater::release).
     pub fn hold(&self) {
         lock(&self.script).held = true;
@@ -130,9 +193,13 @@ impl FakeUpdater {
 
     /// Waits until an `install` is running (held or not), up to `timeout`.
     pub fn wait_installing(&self, timeout: Duration) -> bool {
+        self.wait_until(timeout, |s| s.installing)
+    }
+
+    fn wait_until(&self, timeout: Duration, f: impl Fn(&Script) -> bool) -> bool {
         let deadline = Instant::now() + timeout;
         let mut s = lock(&self.script);
-        while !s.installing {
+        while !f(&s) {
             let Some(left) = deadline.checked_duration_since(Instant::now()) else {
                 return false;
             };
@@ -159,29 +226,45 @@ impl Updater for FakeUpdater {
     fn check(&self) -> Result<Option<Release>, String> {
         let mut s = lock(&self.script);
         s.calls.push("check".into());
+        s.checking = true;
+        self.changed.notify_all();
+        while s.check_held {
+            s = self.changed.wait(s).unwrap_or_else(PoisonError::into_inner);
+        }
+        s.checking = false;
         if let Some(e) = &s.check_error {
             return Err(e.clone());
         }
         Ok(s.offer.clone().map(|version| Release { version }))
     }
 
-    fn install(&self, version: &str, progress: &mut dyn FnMut(Progress)) -> Result<(), String> {
-        let (steps, error) = {
+    /// Like the real one, it goes by what's offered now, not by an earlier check.
+    fn install(
+        &self,
+        version: &str,
+        progress: &mut dyn FnMut(Progress),
+    ) -> Result<(), InstallError> {
+        let (steps, error, panics) = {
             let mut s = lock(&self.script);
             s.calls.push(format!("install({version})"));
+            let offer = s.offer.clone();
+            still_offered(offer.as_deref(), version)?;
             s.installing = true;
             self.changed.notify_all();
             while s.held {
                 s = self.changed.wait(s).unwrap_or_else(PoisonError::into_inner);
             }
-            (s.steps.clone(), s.install_error.clone())
+            (s.steps.clone(), s.install_error.clone(), s.panics)
         };
         for step in steps {
             progress(step);
         }
         lock(&self.script).installing = false;
+        if panics {
+            panic!("the fake updater broke");
+        }
         match error {
-            Some(e) => Err(e),
+            Some(e) => Err(InstallError::Failed(e)),
             None => Ok(()),
         }
     }
@@ -196,6 +279,47 @@ pub fn due(now: SystemTime, started: SystemTime, last: Option<SystemTime>) -> bo
         None => since(started).is_none_or(|d| d >= FIRST_CHECK),
         Some(last) => since(last).is_none_or(|d| d >= EVERY),
     }
+}
+
+/// Whether a fresh check that found `found` still offers `wanted`: the install goes on only
+/// for exactly that version.
+pub fn still_offered(found: Option<&str>, wanted: &str) -> Result<(), InstallError> {
+    match found {
+        Some(v) if v == wanted => Ok(()),
+        other => Err(InstallError::NotOffered(other.map(|v| Release {
+            version: v.to_string(),
+        }))),
+    }
+}
+
+/// Turns the plugin's download callbacks into whole-percent [`Progress`].
+#[derive(Debug, Default)]
+pub struct DownloadProgress {
+    got: u64,
+    shown: Option<u8>,
+}
+
+impl DownloadProgress {
+    /// One chunk of `len` bytes, of `total` when the server said: the new percent, only when
+    /// it changed (a few hundred events at most, not one per chunk).
+    pub fn chunk(&mut self, len: usize, total: Option<u64>) -> Option<Progress> {
+        self.got = self
+            .got
+            .saturating_add(u64::try_from(len).unwrap_or(u64::MAX));
+        let percent = percent(self.got, total)?;
+        if self.shown == Some(percent) {
+            return None;
+        }
+        self.shown = Some(percent);
+        Some(Progress::Downloading(Some(percent)))
+    }
+}
+
+/// `got` of `total` bytes as a whole percent, at most 100; `None` without a size.
+pub fn percent(got: u64, total: Option<u64>) -> Option<u8> {
+    let total = total.filter(|t| *t > 0)?;
+    let p = (u128::from(got) * 100 / u128::from(total)).min(100);
+    Some(u8::try_from(p).unwrap_or(100))
 }
 
 /// The updater plugin's error as one plain sentence for the card or a toast. The raw error
@@ -264,7 +388,9 @@ pub fn relaunch_args(
     env: impl IntoIterator<Item = (std::ffi::OsString, std::ffi::OsString)>,
     args: &[std::ffi::OsString],
 ) -> Vec<std::ffi::OsString> {
-    let mut out: Vec<std::ffi::OsString> = vec!["-n".into(), bundle.as_os_str().to_owned()];
+    // Options first, then the bundle, then `--args`: `open` reads options only before the
+    // operand.
+    let mut out: Vec<std::ffi::OsString> = vec!["-n".into()];
     let mut vars: Vec<_> = env
         .into_iter()
         .filter(|(k, _)| k.to_string_lossy().starts_with("AIRBOSS_"))
@@ -277,17 +403,37 @@ pub fn relaunch_args(
         out.push("--env".into());
         out.push(kv);
     }
-    let rest: Vec<_> = args
-        .iter()
-        .skip(1)
-        .filter(|a| *a != "--hidden")
-        .cloned()
-        .collect();
+    out.push(bundle.as_os_str().to_owned());
+    let rest = without_hidden(args);
     if !rest.is_empty() {
         out.push("--args".into());
         out.extend(rest);
     }
     out
+}
+
+/// This launch's arguments after the program, without `--hidden`.
+fn without_hidden(args: &[std::ffi::OsString]) -> Vec<std::ffi::OsString> {
+    args.iter()
+        .skip(1)
+        .filter(|a| *a != "--hidden")
+        .cloned()
+        .collect()
+}
+
+/// When `open` fails: the updated app's executable in `bundle` (by this executable's name)
+/// and the arguments to start it with directly, without `--hidden`. Started as our child,
+/// it inherits our environment, `AIRBOSS_*` included.
+pub fn direct_relaunch(
+    bundle: &std::path::Path,
+    exe: &std::path::Path,
+    args: &[std::ffi::OsString],
+) -> Option<(std::path::PathBuf, Vec<std::ffi::OsString>)> {
+    let name = exe.file_name()?;
+    Some((
+        bundle.join("Contents/MacOS").join(name),
+        without_hidden(args),
+    ))
 }
 
 /// Whether an install is under way: no second one, and no check, until it ends.
@@ -493,20 +639,108 @@ mod tests {
         );
         assert_eq!(
             args,
+            // Options before the operand: `open` stops reading options at the bundle.
             [
                 "-n",
-                "/Applications/Airboss.app",
                 "--env",
-                "AIRBOSS_DB=/tmp/qa/airboss.db"
+                "AIRBOSS_DB=/tmp/qa/airboss.db",
+                "/Applications/Airboss.app"
             ]
             .map(os)
         );
         let with_more = relaunch_args(
             std::path::Path::new("/A.app"),
-            [],
+            [(os("AIRBOSS_B"), os("2")), (os("AIRBOSS_A"), os("1"))],
             &[os("exe"), os("--hidden"), os("--other")],
         );
-        assert_eq!(with_more, ["-n", "/A.app", "--args", "--other"].map(os));
+        assert_eq!(
+            with_more,
+            [
+                "-n",
+                "--env",
+                "AIRBOSS_A=1",
+                "--env",
+                "AIRBOSS_B=2",
+                "/A.app",
+                "--args",
+                "--other"
+            ]
+            .map(os)
+        );
+    }
+
+    #[test]
+    fn without_open_the_new_executable_starts_directly_without_hidden() {
+        use std::ffi::OsString;
+        use std::path::{Path, PathBuf};
+        let os = |s: &str| OsString::from(s);
+        let (exe, args) = direct_relaunch(
+            Path::new("/Applications/Airboss.app"),
+            Path::new("/Applications/Airboss.app/Contents/MacOS/airboss-app"),
+            &[
+                os("/Applications/Airboss.app/Contents/MacOS/airboss-app"),
+                os("--hidden"),
+                os("--x"),
+            ],
+        )
+        .unwrap();
+        assert_eq!(
+            exe,
+            PathBuf::from("/Applications/Airboss.app/Contents/MacOS/airboss-app")
+        );
+        assert_eq!(args, vec![os("--x")]);
+        assert_eq!(
+            direct_relaunch(Path::new("/A.app"), Path::new("/"), &[]),
+            None
+        );
+    }
+
+    #[test]
+    fn the_percent_is_whole_capped_and_only_with_a_size() {
+        assert_eq!(percent(0, Some(200)), Some(0));
+        assert_eq!(percent(1, Some(200)), Some(0));
+        assert_eq!(percent(2, Some(200)), Some(1));
+        assert_eq!(percent(199, Some(200)), Some(99));
+        assert_eq!(percent(200, Some(200)), Some(100));
+        // A server that sent more than it said, or an absurd size, still ends at 100.
+        assert_eq!(percent(300, Some(200)), Some(100));
+        assert_eq!(percent(u64::MAX, Some(1)), Some(100));
+        assert_eq!(percent(u64::MAX, Some(u64::MAX)), Some(100));
+        assert_eq!(percent(10, None), None);
+        assert_eq!(percent(10, Some(0)), None);
+    }
+
+    #[test]
+    fn download_progress_reports_only_percent_changes() {
+        let mut p = DownloadProgress::default();
+        let d = |n| Some(Progress::Downloading(Some(n)));
+        assert_eq!(p.chunk(10, Some(1000)), d(1));
+        assert_eq!(p.chunk(5, Some(1000)), None); // still 1 %
+        assert_eq!(p.chunk(5, Some(1000)), d(2));
+        assert_eq!(p.chunk(500, Some(1000)), d(52));
+        assert_eq!(p.chunk(480, Some(1000)), d(100));
+        assert_eq!(p.chunk(1, Some(1000)), None);
+        // No size: nothing to report beyond the command's own "downloading".
+        let mut unknown = DownloadProgress::default();
+        assert_eq!(unknown.chunk(4096, None), None);
+    }
+
+    #[test]
+    fn an_install_goes_on_only_for_the_version_still_offered() {
+        assert_eq!(
+            still_offered(Some("0.1.0-alpha.5"), "0.1.0-alpha.5"),
+            Ok(())
+        );
+        assert_eq!(
+            still_offered(Some("0.1.0-alpha.6"), "0.1.0-alpha.5"),
+            Err(InstallError::NotOffered(Some(Release {
+                version: "0.1.0-alpha.6".into()
+            })))
+        );
+        assert_eq!(
+            still_offered(None, "0.1.0-alpha.5"),
+            Err(InstallError::NotOffered(None))
+        );
     }
 
     #[test]
@@ -595,8 +829,9 @@ mod tests {
         f.set_steps(vec![Progress::Downloading(Some(50)), Progress::Installing]);
         f.fail_install(Some("bad"));
         let mut seen = Vec::new();
+        f.offer(Some("1.0.0"));
         let r = f.install("1.0.0", &mut |p| seen.push(p));
-        assert_eq!(r, Err("bad".into()));
+        assert_eq!(r, Err(InstallError::Failed("bad".into())));
         assert_eq!(
             seen,
             vec![Progress::Downloading(Some(50)), Progress::Installing]

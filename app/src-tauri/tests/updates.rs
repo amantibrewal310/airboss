@@ -8,7 +8,9 @@ mod common;
 use std::sync::Arc;
 use std::time::Duration;
 
-use airboss_app::commands::updates::{self, MSG_NOT_INSTALLED, MSG_NOTHING_TO_INSTALL};
+use airboss_app::commands::updates::{
+    self, MSG_NOT_INSTALLED, MSG_NOTHING_TO_INSTALL, MSG_UPDATER_BROKE,
+};
 use airboss_app::dto::{ToastEvent, ToastTone, UpdateStatus};
 use airboss_app::errors::ErrorCode;
 use airboss_app::settings::Settings;
@@ -388,4 +390,161 @@ fn install_update_with_nothing_to_install_is_not_found() {
     assert_eq!(e.message, "There's no update to install.");
     assert!(fake(&app).calls().is_empty());
     assert!(app.shell.calls().is_empty());
+}
+
+// ---------------------------------------------------------------------------- round 2
+
+#[test]
+fn a_manual_check_restarts_the_six_hour_wait() {
+    let app = TestApp::new();
+    app.clock.advance(Duration::from_secs(30));
+    app.state.update_tick();
+    assert_eq!(fake(&app).calls(), vec!["check"]);
+    app.clock.advance(Duration::from_secs(5 * 3600));
+    updates::check_for_updates(&app.state, M).unwrap();
+    assert_eq!(fake(&app).calls().len(), 2);
+    // Six hours after the automatic check, but two after the manual one: not yet.
+    app.clock.advance(Duration::from_secs(2 * 3600));
+    app.state.update_tick();
+    assert_eq!(fake(&app).calls().len(), 2);
+    app.clock.advance(Duration::from_secs(4 * 3600));
+    app.state.update_tick();
+    assert_eq!(fake(&app).calls().len(), 3);
+}
+
+#[test]
+fn a_manual_check_offers_again_a_version_that_failed() {
+    let app = offered();
+    fake(&app).fail_install(Some("Couldn't reach GitHub."));
+    updates::install_update(&app.state, M).unwrap();
+    assert!(matches!(
+        app.state.update_status(),
+        UpdateStatus::Failed { .. }
+    ));
+    app.shell.take_events();
+    // An automatic check leaves the failure (Try again is on the card)…
+    app.clock.advance(Duration::from_secs(7 * 3600));
+    app.state.update_tick();
+    assert!(changes(&app).is_empty());
+    // …but asked for by hand, it's Update and restart again, with the toast.
+    let status = updates::check_for_updates(&app.state, M).unwrap();
+    assert_eq!(status, available(NEXT));
+    assert_eq!(changes(&app), vec![available(NEXT)]);
+    assert_eq!(toasts(&app)[0].text, "Airboss 0.1.0-alpha.5 is available.");
+}
+
+#[test]
+fn an_automatic_check_after_a_failure_with_nothing_offered_goes_idle() {
+    let app = offered();
+    fake(&app).fail_install(Some("Couldn't reach GitHub."));
+    updates::install_update(&app.state, M).unwrap();
+    fake(&app).offer(None);
+    app.shell.take_events();
+    app.clock.advance(Duration::from_secs(7 * 3600));
+    app.state.update_tick();
+    assert_eq!(app.state.update_status(), UpdateStatus::Idle);
+    assert_eq!(changes(&app), vec![UpdateStatus::Idle]);
+    assert!(toasts(&app).is_empty());
+}
+
+#[test]
+fn an_updater_that_panics_leaves_a_failure_not_a_stuck_download() {
+    let app = offered();
+    fake(&app).panic_install(true);
+    updates::install_update(&app.state, M).unwrap();
+    assert_eq!(
+        app.state.update_status(),
+        UpdateStatus::Failed {
+            version: NEXT.into(),
+            message: MSG_UPDATER_BROKE.into()
+        }
+    );
+    assert_eq!(MSG_UPDATER_BROKE, "The updater stopped with an error.");
+    assert!(!app.shell.calls().contains(&"restart".to_string()));
+    // Try again isn't blocked by a busy status.
+    fake(&app).panic_install(false);
+    updates::install_update(&app.state, M).unwrap();
+    assert_eq!(app.shell.calls(), vec!["restart"]);
+}
+
+#[test]
+fn try_again_after_the_manifest_moved_on_offers_the_newer_release() {
+    // The QA finding: Try again must go by the manifest now, not by an earlier check.
+    let app = offered();
+    fake(&app).fail_install(Some(
+        "The download's signature didn't match, so it wasn't installed.",
+    ));
+    updates::install_update(&app.state, M).unwrap();
+    fake(&app).fail_install(None);
+    fake(&app).offer(Some("0.1.0-alpha.6"));
+    app.shell.take_events();
+    updates::install_update(&app.state, M).unwrap();
+    assert_eq!(
+        changes(&app),
+        vec![
+            UpdateStatus::Downloading {
+                version: NEXT.into(),
+                percent: None
+            },
+            available("0.1.0-alpha.6"),
+        ]
+    );
+    assert!(app.shell.calls().is_empty(), "restarted");
+    // The next Update and restart installs that one.
+    updates::install_update(&app.state, M).unwrap();
+    assert_eq!(
+        app.state.update_status(),
+        UpdateStatus::Restarting {
+            version: "0.1.0-alpha.6".into()
+        }
+    );
+    assert_eq!(fake(&app).calls().last().unwrap(), "install(0.1.0-alpha.6)");
+}
+
+#[test]
+fn an_install_of_a_release_that_was_pulled_says_so_on_the_card() {
+    let app = offered();
+    fake(&app).offer(None);
+    updates::install_update(&app.state, M).unwrap();
+    assert_eq!(
+        app.state.update_status(),
+        UpdateStatus::Failed {
+            version: NEXT.into(),
+            message: "Airboss 0.1.0-alpha.5 isn't offered any more.".into()
+        }
+    );
+    assert!(app.shell.calls().is_empty());
+}
+
+/// A manual check is held in `check` while an install runs to the end, then answers `answer`.
+fn check_across_an_install(answer: impl FnOnce(&FakeUpdater)) -> (TestApp, UpdateStatus) {
+    let app = offered();
+    fake(&app).hold_check();
+    let state = app.state.clone();
+    let check = std::thread::spawn(move || updates::check_for_updates(&state, M));
+    assert!(fake(&app).wait_checking(Duration::from_secs(5)));
+    updates::install_update(&app.state, M).unwrap();
+    answer(&fake(&app));
+    app.shell.take_events();
+    fake(&app).release_check();
+    let status = check.join().unwrap().unwrap();
+    (app, status)
+}
+
+#[test]
+fn a_manual_check_that_ends_after_an_install_began_says_nothing() {
+    let restarting = UpdateStatus::Restarting {
+        version: NEXT.into(),
+    };
+    let (app, status) = check_across_an_install(|f| f.offer(None));
+    assert_eq!(status, restarting);
+    assert!(app.shell.events().is_empty(), "{:?}", app.shell.events());
+
+    let (app, status) = check_across_an_install(|f| f.fail_check(Some("Couldn't reach GitHub.")));
+    assert_eq!(status, restarting);
+    assert!(app.shell.events().is_empty(), "{:?}", app.shell.events());
+
+    let (app, status) = check_across_an_install(|_| {});
+    assert_eq!(status, restarting);
+    assert!(app.shell.events().is_empty(), "{:?}", app.shell.events());
 }
