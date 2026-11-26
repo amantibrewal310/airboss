@@ -3,6 +3,7 @@
 
 #![allow(dead_code, clippy::unwrap_used, clippy::expect_used)]
 
+use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, TryLockError};
@@ -175,7 +176,8 @@ pub struct TestApp {
     pub gate: Arc<Gate>,
 }
 
-/// A unique temporary folder for one test.
+/// A unique temporary folder for one test. It's removed when the test ends, pass or fail:
+/// each test runs on its own thread, and the folders it made go with that thread.
 pub fn temp_dir(name: &str) -> PathBuf {
     static N: AtomicUsize = AtomicUsize::new(0);
     let dir = std::env::temp_dir().join(format!(
@@ -185,7 +187,23 @@ pub fn temp_dir(name: &str) -> PathBuf {
     ));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
+    MADE.with(|m| m.0.borrow_mut().push(dir.clone()));
     dir
+}
+
+/// The temporary folders this thread's test made.
+struct Made(RefCell<Vec<PathBuf>>);
+
+impl Drop for Made {
+    fn drop(&mut self) {
+        for dir in self.0.get_mut().drain(..) {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+    }
+}
+
+thread_local! {
+    static MADE: Made = const { Made(RefCell::new(Vec::new())) };
 }
 
 impl TestApp {
