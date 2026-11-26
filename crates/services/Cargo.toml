@@ -4,6 +4,7 @@ version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 repository.workspace = true
+license.workspace = true
 description = "The contract between the Airboss app and its services: shared types and traits, std only."
 
 [features]

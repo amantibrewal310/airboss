@@ -4,6 +4,7 @@ version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 repository.workspace = true
+license.workspace = true
 description = "Decides what's waiting on me: the Needs me list, its callouts and the menu-bar count."
 
 [dependencies]

@@ -76,7 +76,6 @@ Version 0.1.0. Every module is built, tested and merged: the task store, the MCP
 What isn't done yet:
 
 - Automated QA, integration QA with real agents and a real Do it, two design and accessibility passes, and a security review are done. A person hasn't yet worked through the native parts by hand (the menu bar, the ⌃⌥N hotkey, notifications, VoiceOver, sleep and wake): see the checklist in [`app/QA.md`](app/QA.md).
-- No licence has been chosen yet.
 - There's no release download. Build it from source, as above.
 - It's Apple silicon only, and signed ad hoc.
 - It's built for one person's setup (T3 Code, Claude Code, Codex and `gh`). There's no onboarding for other setups.
@@ -93,4 +92,4 @@ Airboss is local only. There's no account, no server and no telemetry.
 
 ## License
 
-License: not chosen yet.
+MIT. See [LICENSE](LICENSE).

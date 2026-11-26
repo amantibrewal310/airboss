@@ -129,7 +129,7 @@ Then, for the whole product:
 
 - **B1 (a link added by an agent can run code):** must fix before daily use. Strict URL allowlist: `file:///abs` with no host, query or fragment; the path canonicalized; only safe file types opened; everything else revealed in Finder. `t3code:` only as `threads/<env>/<id>`. `https:` only for opening in the browser.
 - **B2 (the app has never been used by a human):** this session can't capture the screen. A short manual checklist, `app/QA.md`, goes to the user.
-- **B3 (licence):** the user decides before open-sourcing. Recommendation: MIT.
+- **B3 (licence):** the user decides before open-sourcing. Recommendation: MIT. **Decided 26 Nov 2026: MIT** (`LICENSE`, Cargo and npm metadata, the About panel and Info.plist). The dependencies are permissive, except four MPL-2.0 crates that come with Tauri (`cssparser`, `selectors`, `dtoa-short`, `option-ext`), used unmodified, which MIT can sit beside.
 - **Should-fix 1–12 and the nits:** fix all of them, split by area. Core, sync, mcp, CLI and docs go to one engineer now. App-side fixes (undo correctness, reorder, reject write retry with a toast, the agents-ready check, the `zshrc` PATH check, the 0-byte CLI build) go to another once R5 lands.
 - **Week-1 gaps, added to v1:**
   - **macOS notifications** for agent questions and approvals, failed runs and Agent stopped. On by default, can be turned off in Settings, and grouped per task.

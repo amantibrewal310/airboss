@@ -6,6 +6,7 @@ members = ["app/src-tauri", "crates/attention", "crates/core", "crates/launch", 
 edition = "2024"
 rust-version = "1.100"
 repository = "https://github.com/amantibrewal310/airboss"
+license = "MIT"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

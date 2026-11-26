@@ -4,6 +4,7 @@ version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 repository.workspace = true
+license.workspace = true
 description = "The Airboss Mac app: windows, menus, the view model, and the services in one process."
 default-run = "airboss-app"
 

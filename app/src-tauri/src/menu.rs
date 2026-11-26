@@ -215,6 +215,7 @@ pub fn build<R: Runtime>(
     let about = AboutMetadata {
         name: Some("Airboss".into()),
         comments: Some("A to-do list where agents do the work.".into()),
+        copyright: Some("Copyright © 2026 Aman Tibrewal. MIT License.".into()),
         ..AboutMetadata::default()
     };
     let app_menu = Submenu::with_items(

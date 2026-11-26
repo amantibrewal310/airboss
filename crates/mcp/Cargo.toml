@@ -4,6 +4,7 @@ version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 repository.workspace = true
+license.workspace = true
 description = "The airboss binary: a per-thread MCP server for agents, and a small CLI for me."
 
 [[bin]]
