@@ -1926,6 +1926,9 @@
           ]
         ]
       }
+    },
+    "update_status": {
+      "state": "idle"
     }
   },
   "script": [

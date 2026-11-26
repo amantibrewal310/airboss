@@ -37,7 +37,8 @@ warnings print in the same terminal.
 
 The mock picks its data with `?fixture=`: `full` (default, about 60 tasks), `design` (the
 design's sample data), `perf` (2,000 tasks), `empty` and `welcome` (first run), `t3missing`,
-`nothing` and `dberror`, or `recorded`: Rust's own answers from `src/lib/mock/fixtures/recorded.json`
+`nothing`, `dberror`, `stopped` and `update` (an available Airboss 0.1.0-alpha.5 on the sidebar's
+update card), or `recorded`: Rust's own answers from `src/lib/mock/fixtures/recorded.json`
 (reads only; writes must follow its script). `?view=all&select=144` starts somewhere other than
 Needs me. The quick-add panel is at `/quickadd.html`.
 
