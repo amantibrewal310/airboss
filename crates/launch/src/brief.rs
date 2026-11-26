@@ -88,6 +88,23 @@ Use the `airboss` MCP tools; they already know which thread you are.
 If the airboss tools aren't available, say so in your first reply and carry on with the task.
 ";
 
+/// The report section for a task with subtasks: the work is reported on each step, so the
+/// steps' statuses and PRs carry it and the task's progress counts up.
+const REPORT_STEPS: &str = "\
+## Report to Airboss
+Use the `airboss` MCP tools; they already know which thread you are.
+- `list_tasks` with `mine: true` should list task {id}. If it doesn't, call `link` with `id: {id}` and
+  `kind: \"{kind}\"`.
+- Task {id} has subtasks (see the reference), each tracked on its own. Report on each step, not on
+  task {id}: before you start one, `link` it (its id, `kind: \"{kind}\"`) and `update_task` it to
+  `doing`; `blocked` with a reason if you're stuck on it.
+- Link each PR to the step it does: `link` with the step's id, `kind: \"pr\"`, `ref: \"owner/repo#number\"`.
+  Set that step to `in_review` once its PR is open. A step finishes when its PR merges.
+- Leave task {id}'s own status alone; it follows its steps.
+- Put new work you spot in `propose_tasks`, not in these PRs.
+If the airboss tools aren't available, say so in your first reply and carry on with the task.
+";
+
 const PLAN_IT: &str = "\
 Plan Airboss task {id} with me, using the plan-review skill: read the code, show me the review page, fold
 in my comments, and write the implementation plan once I say the plan is settled. Don't change any code.
@@ -229,10 +246,16 @@ pub fn do_it_as(
             ("base", &one_line(base)),
             ("slack", slack(r)),
             ("siblings", &siblings),
-            ("report", &fill(REPORT, &[("id", &id), ("kind", kind)])),
+            ("report", &report(r, &id, kind)),
             ("reference", &reference(r, nonce)),
         ],
     )
+}
+
+/// The report section: per step when the task has subtasks.
+fn report(r: &Reference, id: &str, kind: &str) -> String {
+    let template = if r.subtasks.is_empty() { REPORT } else { REPORT_STEPS };
+    fill(template, &[("id", id), ("kind", kind)])
 }
 
 /// A research-only brief, for a T3 thread in a folder with no repo.
@@ -251,7 +274,7 @@ pub fn research_as(own: LinkKind, r: &Reference, folder: &str, nonce: &str) -> S
             ("path", &one_line(folder)),
             ("notice", &fill(REFERENCE_NOTICE, &[("nonce", nonce)])),
             ("slack", slack(r)),
-            ("report", &fill(REPORT, &[("id", &id), ("kind", kind)])),
+            ("report", &report(r, &id, kind)),
             ("reference", &reference(r, nonce)),
         ],
     )

@@ -228,7 +228,9 @@ pub struct Proposal {
     /// Notes: why, and anything the user needs to decide.
     #[serde(default)]
     pub body: Option<String>,
-    /// The repos it touches, by name.
+    /// The repos it touches, by name. Only the user can add repos: for one that isn't
+    /// registered, leave it out and start the title with its folder name ("hub-ui: …"), and
+    /// Do it offers to add it.
     #[serde(default)]
     pub repos: Vec<String>,
 }
@@ -259,7 +261,9 @@ pub struct PlanStep {
     /// Notes for whoever picks it up.
     #[serde(default)]
     pub body: Option<String>,
-    /// The repos it touches, by name.
+    /// The repos it touches, by name. Only the user can add repos: for one that isn't
+    /// registered, leave it out and start the title with its folder name ("hub-ui: …"), and
+    /// Do it offers to add it.
     #[serde(default)]
     pub repos: Vec<String>,
     /// What it waits on: other steps' keys, or existing task ids.
@@ -600,7 +604,9 @@ pub fn import_plan(
                 .map_err(|e| after(store, e))?;
         }
     }
-    let note = format!("Imported by {} from {path}", who.actor);
+    // The note's actor is the sending thread, so the body needn't repeat it; the file name is
+    // enough to read, and the top-level tasks link the full path.
+    let note = format!("Imported from {title}");
     for &id in &result.created {
         store
             .add_note(id, &note, &who.actor)
