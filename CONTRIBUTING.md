@@ -109,6 +109,15 @@ A small fix doesn't need a new spec, but it still starts with a failing test.
 - **No AI attribution.** No "Co-Authored-By" lines for tools or assistants, and no "Generated with" footers, in commits or pull requests.
 - Work on a branch, and merge to `main` only when every check passes.
 
+## Releasing
+
+Alphas are `0.1.0-alpha.N`, with the macOS build number `N`.
+
+1. Set the version in `app/src-tauri/tauri.conf.json` (`version`, and `bundle.macOS.bundleVersion`), `app/package.json`, and every crate's `Cargo.toml`. `airboss --version` and the MCP server report the crate version, and the About panel the app's, so keep them the same.
+2. Run every check above, then build: `cd app && CI=true pnpm bundle --bundles app,dmg`.
+3. Check the signature, from the repo root: `codesign --verify --deep --strict target/release/bundle/macos/Airboss.app`.
+4. Tag `vX.Y.Z-alpha.N`, push the tag, and publish a pre-release with the `.dmg` and its SHA-256: `gh release create vX.Y.Z-alpha.N --prerelease --notes-file … Airboss_….dmg Airboss_….dmg.sha256`.
+
 ## Reporting a problem
 
-Say what you did, what you expected and what happened. Include the relevant lines of `~/Library/Logs/Airboss/app.log`, and for a connection problem, what its row in the connections popover says. [docs/troubleshooting.md](docs/troubleshooting.md) covers the common ones.
+**Help › Report a Problem…** opens the bug form with your versions filled in. Say what you did, what you expected and what happened. Include the relevant lines of `~/Library/Logs/Airboss/app.log`, and for a connection problem, what its row in the connections popover says. [docs/troubleshooting.md](docs/troubleshooting.md) covers the common ones.

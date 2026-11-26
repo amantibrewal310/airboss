@@ -1,6 +1,6 @@
 # Program: Airboss v1
 
-Who drives it: Claude, acting as engineering manager, with a team of up to five agents. The user delegated the whole build on 25 Nov 2026: "drive it end to end, testing and bug fixes included; high quality, polished, great UX". The user comes back in only for decisions that can't be made without them.
+The brief, 25 Nov 2026: build it end to end, testing and bug fixes included; high quality, polished, great UX. Decisions that only the owner can make are marked as theirs.
 
 Inputs: [docs/idea.md](../docs/idea.md), [CAPABILITIES.md](../CAPABILITIES.md), [PRODUCT.md](../PRODUCT.md), [DESIGN.md](../DESIGN.md) (with the prototype in `docs/design/`), and one spec per module.
 
@@ -154,3 +154,10 @@ Then, for the whole product:
 - The app is used end to end, keyboard-only, in dark and light: capture a task, plan it, Do it, an agent reports, a PR merges, Needs me clears.
 - `cargo clippy -D warnings`, `cargo fmt --check`, every Rust test and every UI test are clean.
 - No AI attribution anywhere.
+
+## Alpha 1 (26 Nov 2026)
+
+- **Public:** the repo goes public under MIT after an audit: gitleaks over the whole history (one false positive, a shortcut string), no home paths, work names or private data in the tree or history, and PR #1 checked. The one real work repo name used as an example (`hub-ui`) became `booking-web`.
+- **Version `0.1.0-alpha.1`, build 1,** for the app, the CLI and the MCP server. Releases are GitHub pre-releases with the `.dmg` and its SHA-256 (CONTRIBUTING › Releasing).
+- **Install:** signed ad hoc, not notarized. The docs clear the quarantine flag with `xattr -dr`, which also covers the CLI inside the bundle that agents start. Notarizing needs an Apple Developer ID: the owner's call, before a wider release.
+- **Feedback:** Help › Report a Problem… opens the bug form with the app and macOS versions filled in. There are issue forms for bugs and alpha feedback, and SECURITY.md asks for private vulnerability reports.

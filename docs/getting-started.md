@@ -1,12 +1,11 @@
 # Getting started
 
-This page takes you from a fresh clone to agents reporting on your tasks.
+This page takes you from a download, or a fresh clone, to agents reporting on your tasks.
 
 ## What you need
 
 - A Mac with Apple silicon, on macOS 13 or later.
-- [rustup](https://rustup.rs). The repo pins Rust 1.100 in `rust-toolchain.toml`, so rustup installs the right toolchain, with clippy and rustfmt, the first time you build.
-- Node 24 and pnpm, to build the app's interface. Nothing Node runs in the finished app.
+- To build it yourself: [rustup](https://rustup.rs) (the repo pins Rust 1.100 in `rust-toolchain.toml`, so rustup installs the right toolchain, with clippy and rustfmt, the first time you build), and Node 24 with pnpm for the app's interface. Nothing Node runs in the finished app.
 
 Optional, and each one turns on more:
 
@@ -16,7 +15,24 @@ Optional, and each one turns on more:
 | GitHub CLI (`gh`), signed in | PR state, reviews and checks; a merged PR finishes its task | PRs stay as links. Everything else works. |
 | Claude Code, Codex, or any MCP client | Agents report on their tasks | You update tasks yourself, in the app or with the CLI. |
 
-## Build the app
+## Install the alpha
+
+Download `Airboss_0.1.0-alpha.1_aarch64.dmg` from the [latest release](https://github.com/amantibrewal310/airboss/releases), open it, and drag Airboss to Applications.
+
+The alpha is signed ad hoc and not notarized, so macOS blocks a downloaded copy the first time. Clear the download flag once, in Terminal:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/Airboss.app
+open /Applications/Airboss.app
+```
+
+`-r` clears the whole bundle, including the `airboss` CLI inside it, which agents start from a terminal. The other way is to open the app once, dismiss the warning, and choose **Open Anyway** in **System Settings › Privacy & Security**. That clears the app, but a quarantined CLI may still be stopped when an agent starts it, so the Terminal line is the surer one.
+
+To update, quit Airboss (⌘Q), replace the app in Applications with the new one, and clear the flag again. Your tasks, settings and agent setup stay as they are.
+
+Then skip to [Install the `airboss` CLI](#install-the-airboss-cli).
+
+## Or build it yourself
 
 ```sh
 git clone https://github.com/amantibrewal310/airboss.git
@@ -34,7 +50,7 @@ cp -R ../target/release/bundle/macos/Airboss.app /Applications/
 open /Applications/Airboss.app
 ```
 
-The app is signed ad hoc, not with a developer ID, so build it on the Mac you'll run it on.
+A build you made yourself isn't flagged as downloaded, so it opens straight away.
 
 ## Install the `airboss` CLI
 

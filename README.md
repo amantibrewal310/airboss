@@ -8,6 +8,8 @@ On an aircraft carrier, the air boss launches every plane, tracks each one in th
 
 *A design screenshot of Needs me, with made-up sample data. The built screen follows it closely.*
 
+> **Alpha.** This is an early build for a few people to try. Expect rough edges, and please [say what you find](#feedback).
+
 ## Why
 
 Running many agent threads at once has a cost. In seven weeks of one engineer's work, 35 of 853 threads were check-ins like "where are we?" or "find thread X". A stack of 10 PRs sat idle for 19 days before anyone noticed. Plan docs drifted out of date, and tasks were spread across memory, saved chat messages and a tracker.
@@ -25,14 +27,34 @@ To-do apps don't know agent threads exist. Agent tools know threads, but not tas
 - **Keyboard first, and a real Mac app.** Native menus, a menu-bar item, open at login, dark and light, ⌘K to jump anywhere, ⌘Z to undo a slip, and a shortcut for every main action.
 - **A CLI too.** The `airboss` command adds, moves, links and finishes tasks from a terminal, and accepts or rejects proposals.
 
-## Requirements
+## Install
 
-- macOS 13 or later, on Apple silicon.
-- Rust 1.100. `rust-toolchain.toml` pins it, so rustup installs it on the first build.
-- Node 24 and pnpm, to build the app's interface.
-- Optional: T3 Code for Do it, Plan it and live thread state, and the GitHub CLI (`gh`, signed in) for PR sync. Without them, those features switch off and everything else works.
+You need a Mac with Apple silicon, on macOS 13 or later.
 
-## Quick start
+1. Download `Airboss_0.1.0-alpha.1_aarch64.dmg` from the [latest release](https://github.com/amantibrewal310/airboss/releases), open it, and drag Airboss to Applications.
+2. The alpha isn't notarized by Apple yet, so macOS blocks it the first time. Clear the download flag once, in Terminal:
+
+   ```sh
+   xattr -dr com.apple.quarantine /Applications/Airboss.app
+   ```
+
+   (Or open it once, dismiss the warning, then choose **Open Anyway** in **System Settings › Privacy & Security**. The Terminal line also clears the `airboss` command-line tool inside the app, which agents start.)
+3. Open Airboss. The first-run screen walks you through the rest:
+   - Tick the repos you work in, from T3 Code's projects or any folder.
+   - In **Agents**, choose **Install command-line tool**, then **Connect Claude Code**. That registers Airboss's MCP server with Claude Code, at user scope. Codex takes one more step: see [Getting started](docs/getting-started.md#codex).
+   - Paste the agent note (**Help › Copy Agent Note**) into each repo's `AGENTS.md` or `CLAUDE.md`.
+
+Airboss works on its own, and each of these turns on more. Without them, those features switch off and say why:
+
+- T3 Code: Do it, Plan it, and live thread state.
+- Claude Code or Codex: agents report on their tasks.
+- The GitHub CLI (`gh`), signed in: PR state, reviews and checks.
+
+To update, quit Airboss, replace the app with the new one, and clear the download flag again. Your tasks stay where they are.
+
+### Build from source
+
+You need Rust (`rust-toolchain.toml` pins 1.100, and rustup installs it on the first build), Node 24 and pnpm.
 
 ```sh
 git clone https://github.com/amantibrewal310/airboss.git
@@ -43,19 +65,7 @@ cp -R ../target/release/bundle/macos/Airboss.app /Applications/
 open /Applications/Airboss.app
 ```
 
-Then, in the app:
-
-1. On first run, keep **Open Airboss at login** ticked and add your repos.
-2. Choose **Airboss › Install Command-Line Tool**. It links `~/.local/bin/airboss` to the CLI inside the app.
-3. Connect your agents. For Claude Code, once:
-
-   ```sh
-   claude mcp add --scope user airboss -- ~/.local/bin/airboss mcp
-   ```
-
-4. Paste the agent note (Help › Copy Agent Note) into each repo's `AGENTS.md` or `CLAUDE.md`.
-
-Codex needs one more line of config. [Getting started](docs/getting-started.md) has the details.
+A build you made yourself isn't flagged as downloaded, so it opens straight away.
 
 ## Docs
 
@@ -71,14 +81,22 @@ The design is in [DESIGN.md](DESIGN.md) and [docs/design](docs/design/README.md)
 
 ## Status
 
-Version 0.1.0. Every module is built, tested and merged: the task store, the MCP server and CLI, the Mac app, Do it and Plan it, sync with GitHub and T3 Code, and Needs me. Every Rust crate is tested (`cargo test --workspace`), and the interface has unit, component and end-to-end tests.
+Alpha: 0.1.0-alpha.1. Every module is built, tested and merged: the task store, the MCP server and CLI, the Mac app, Do it and Plan it, sync with GitHub and T3 Code, and Needs me. Every Rust crate is tested (`cargo test --workspace`), and the interface has unit, component and end-to-end tests. The native parts (menus, the hotkey, notifications, the menu bar) were also checked by hand on a real Mac.
 
-What isn't done yet:
+Known gaps:
 
-- Automated QA, integration QA with real agents and a real Do it, two design and accessibility passes, and a security review are done. A person hasn't yet worked through the native parts by hand (the menu bar, the ⌃⌥N hotkey, notifications, VoiceOver, sleep and wake): see the checklist in [`app/QA.md`](app/QA.md).
-- There's no release download. Build it from source, as above.
-- It's Apple silicon only, and signed ad hoc.
-- It's built for one person's setup (T3 Code, Claude Code, Codex and `gh`). There's no onboarding for other setups.
+- It isn't notarized, so the first open needs the step above. It's Apple silicon only.
+- There are no automatic updates yet. Watch the [releases](https://github.com/amantibrewal310/airboss/releases).
+- It's built around T3 Code, Claude Code, Codex and `gh`. Other agent tools can report through MCP, but Do it and Plan it start T3 Code threads only.
+- Plan it doesn't yet show that a planning thread is running until its plan comes back.
+- VoiceOver has been checked through the accessibility tree, not yet by listening.
+
+## Feedback
+
+- **Help › Report a Problem…** in the app opens a bug report here with your Airboss and macOS versions filled in.
+- Or open an issue: [a bug](https://github.com/amantibrewal310/airboss/issues/new?template=bug.yml), or [alpha feedback](https://github.com/amantibrewal310/airboss/issues/new?template=feedback.yml) on what worked and what got in the way.
+- The log is at `~/Library/Logs/Airboss/app.log`. It can name your tasks, repos and folders, so read it before you share it.
+- Security problems: please report them privately, as [SECURITY.md](SECURITY.md) says.
 
 ## Privacy
 
@@ -89,6 +107,7 @@ Airboss is local only. There's no account, no server and no telemetry.
 - The only network traffic is the `gh` CLI reading the PRs you've linked, and your own open PRs, from GitHub, about every 5 minutes, with your own `gh` sign-in.
 - It reads T3 Code's database read-only, and Claude Code's session files in `~/.claude/sessions`, to see what your agents are doing. It never writes to either.
 - Do it and Plan it run the `t3` CLI, which starts threads in T3 Code on your Mac.
+- **Help › Report a Problem…** only opens a GitHub page in your browser. Nothing is sent unless you submit it there.
 
 ## License
 

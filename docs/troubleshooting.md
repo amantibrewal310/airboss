@@ -4,6 +4,17 @@ Start with the footer at the bottom of the sidebar. It reads "All connected", or
 
 When a source is off, Airboss keeps its last known state and marks it "May be out of date". Nothing else stops working.
 
+## macOS won't open Airboss
+
+A downloaded alpha is signed ad hoc and not notarized. macOS says it "can't be opened", that Apple "could not verify" it, or that it's "damaged". It isn't damaged: macOS only checks for a notarization ticket. Clear the download flag on the whole app, then open it:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/Airboss.app
+open /Applications/Airboss.app
+```
+
+If an agent can't start `airboss mcp` after you used **Open Anyway** instead, run the same `xattr` line: it clears the CLI inside the app too.
+
 ## GitHub
 
 Airboss reads PRs with the GitHub CLI. It looks for `gh` at `/opt/homebrew/bin/gh`, then `/usr/local/bin/gh`, then on the app's `PATH`. An app opened from Finder has a short `PATH` without Homebrew, so install `gh` in one of the first two places.
