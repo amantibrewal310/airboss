@@ -129,6 +129,18 @@ Agents don't create tasks. They propose them, and proposals wait for you, under 
 
 The menu-bar icon shows the Needs me count, or nothing at 0. Its menu lists up to six items, with clock times; choosing one opens the window on that item. Below them are **Open Airboss** (⌘0), **Quick Add…** and **Quit Airboss**.
 
+## Updates
+
+When a newer Airboss is out, a card at the foot of the sidebar says "Airboss 0.1.0-alpha.5 is available".
+
+- **Update and restart** downloads it, with a progress bar, checks its signature, puts it in place of the app you're running, and restarts. The window comes back where it was, with your tasks and settings.
+- **What's new** opens the release's page on GitHub. **Later** hides the card until Airboss starts again.
+- If an update fails, the card says why and offers **Try again**. The app you're running is untouched.
+
+Airboss looks for a new version 30 seconds after it starts and then every 6 hours, unless you turn off **Check for updates automatically** in Settings. **Airboss › Check for Updates…** (or "Check for updates" in ⌘K) looks right away, whatever the setting. Each check reads one small file from GitHub; nothing about you is sent.
+
+Each update is signed with Airboss's own key, and the app refuses a download whose signature doesn't match.
+
 ## Settings
 
 ⌘, opens Settings:
@@ -136,6 +148,7 @@ The menu-bar icon shows the Needs me count, or nothing at 0. Its menu lists up t
 - **Quick-add hotkey:** press the button and type a new one. It needs ⌃, ⌥ or ⌘ and one other key. Keys macOS uses (⌃Space, ⌃⌥Space, ⌘Space, ⌥⌘Space, ⌃⌘Space) are refused, and so is a key another app holds.
 - **Open Airboss at login**
 - **Appearance:** System (the default), Dark or Light
+- **Check for updates automatically:** on by default, with **Check now** ([Updates](#updates))
 - **Command-line tool:** Install, with its path and whether its folder is on your `PATH`
 - **Agent setup:** Copy agent note, and Copy setup command
 

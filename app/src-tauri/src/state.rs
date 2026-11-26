@@ -74,6 +74,9 @@ pub struct AppConfig {
     /// The `claude` that Connect Claude Code runs. `None` looks for it (`commands/app.rs`);
     /// tests point it at a fake.
     pub claude_path: Option<PathBuf>,
+    /// The update checker's first look after start (30 s) and the looks after (5 min).
+    pub update_first: Duration,
+    pub update_tick: Duration,
 }
 
 impl AppConfig {
@@ -92,6 +95,8 @@ impl AppConfig {
             started: Instant::now(),
             shell: Some(crate::login_path::user_shell()),
             claude_path: None,
+            update_first: crate::updates::FIRST_CHECK,
+            update_tick: crate::updates::TICK,
         }
     }
 }
@@ -134,6 +139,8 @@ pub struct AppState {
     pub(crate) login_path: Mutex<Option<bool>>,
     /// What the notification decisions remember (`notify.rs`).
     pub(crate) notify: Mutex<crate::notify::Memory>,
+    /// The in-app update's status and schedule (`updates.rs`).
+    pub(crate) updates: crate::updates::Updates,
     /// The main window has focus: no notifications then.
     pub(crate) main_focused: AtomicBool,
     pub(crate) config: AppConfig,
@@ -176,6 +183,7 @@ impl AppState {
             db: Mutex::new(db),
             login_path: Mutex::new(None),
             notify: Mutex::new(crate::notify::Memory::new(started)),
+            updates: crate::updates::Updates::new(started),
             main_focused: AtomicBool::new(false),
             main_shown: AtomicBool::new(false),
             stopping: AtomicBool::new(false),
@@ -521,6 +529,7 @@ impl AppState {
             }
         }
         self.trigger(Trigger::Stop);
+        self.updates.stop();
         lock(&self.watch).take();
     }
 }

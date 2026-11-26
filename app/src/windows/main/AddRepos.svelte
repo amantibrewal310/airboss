@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, tick, untrack } from 'svelte';
+  import { fullTitle } from '../../lib/actions/fullTitle';
   import Button from '../../lib/components/Button.svelte';
   import Icon from '../../lib/components/Icon.svelte';
   import type { T3ProjectRow } from '../../lib/types';
@@ -139,13 +140,12 @@
           aria-label={r.name}
           aria-describedby="{id(i, 'path')}{why ? ` ${id(i, 'why')}` : ''}"
           tabindex={r.path === current ? 0 : -1}
-          title={why ?? r.path}
           onclick={() => toggle(r)}
           onfocus={() => (active = r.path)}
         >
           <span class="box" aria-hidden="true">{#if r.added || ticked.includes(r.path)}<Icon name="check" size={12} stroke={2} />{/if}</span>
           <span class="name">{r.name}</span>
-          <span class="path" id={id(i, 'path')}>{r.path}</span>
+          <span class="path" id={id(i, 'path')} use:fullTitle={r.path}>{r.path}</span>
           {#if why}<span class="why" id={id(i, 'why')}>{why}</span>{/if}
         </div>
       {/each}
@@ -171,6 +171,9 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
+    /* In the modal, the list shrinks and scrolls so the buttons stay in the window. */
+    flex: 1 1 auto;
+    min-height: 0;
   }
   .list {
     border: 1px solid var(--line);
@@ -178,6 +181,11 @@
     background: var(--bg-raised);
     overflow: hidden;
     outline: none;
+  }
+  .ar:not(.embedded) .list {
+    overflow-y: auto;
+    min-height: 0;
+    flex: 0 1 auto;
   }
   .r {
     display: flex;

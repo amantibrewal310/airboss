@@ -14,7 +14,7 @@ use serde::Serialize;
 
 use crate::dto::{
     AppearanceChanged, BackgroundError, ConnectionsChanged, MenuAction, NavOpen, Patch,
-    QuickaddReset, ToastEvent,
+    QuickaddReset, ToastEvent, UpdateStatus,
 };
 use crate::errors::AppError;
 use crate::handlers::{AppCheck, FakeAppCheck};
@@ -22,6 +22,7 @@ use crate::herdr::{FakeHerdrFolders, HerdrFolders};
 use crate::menu::MenuState;
 use crate::notify::{Notifications, RecordingNotifications};
 use crate::settings::Appearance;
+use crate::updates::{FakeUpdater, Updater};
 
 /// An event for the web views (Appendix B).
 #[derive(Debug, Clone, PartialEq)]
@@ -37,6 +38,8 @@ pub enum UiEvent {
     ErrorBackground(BackgroundError),
     /// The database broke while the app ran: the full-window database problem state.
     DbUnavailable(AppError),
+    /// The in-app update's status changed (SPEC-updates).
+    UpdateChanged(UpdateStatus),
 }
 
 impl UiEvent {
@@ -53,6 +56,7 @@ impl UiEvent {
             UiEvent::AppearanceChanged(_) => "appearance:changed",
             UiEvent::ErrorBackground(_) => "error:background",
             UiEvent::DbUnavailable(_) => "db:unavailable",
+            UiEvent::UpdateChanged(_) => "update:changed",
         }
     }
 
@@ -72,6 +76,7 @@ impl UiEvent {
             UiEvent::AppearanceChanged(a) => json(a),
             UiEvent::ErrorBackground(e) => json(e),
             UiEvent::DbUnavailable(e) => json(e),
+            UiEvent::UpdateChanged(u) => json(u),
         }
     }
 
@@ -131,6 +136,12 @@ pub trait Shell: Send + Sync {
     fn notifications(&self) -> Arc<dyn Notifications>;
     /// Which app opens a URL, and whether its signature meets a requirement.
     fn app_check(&self) -> Arc<dyn AppCheck>;
+    /// Finds and installs a new Airboss (SPEC-updates).
+    fn updater(&self) -> Arc<dyn Updater>;
+    /// After an update is in place: saves the windows, stops the app as quit does, releases
+    /// the single-instance lock and opens the new app without `--hidden`. Returns at once;
+    /// the process exits soon after.
+    fn restart(&self);
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -152,6 +163,7 @@ pub struct RecordingShell {
     app_check: Arc<FakeAppCheck>,
     herdr_fails: Mutex<bool>,
     herdr_folders: Arc<FakeHerdrFolders>,
+    updater: Arc<FakeUpdater>,
 }
 
 impl RecordingShell {
@@ -230,6 +242,11 @@ impl RecordingShell {
     /// The Herdr folders fake: no Herdr until a test says otherwise.
     pub fn herdr_folders_fake(&self) -> Arc<FakeHerdrFolders> {
         self.herdr_folders.clone()
+    }
+
+    /// The updater fake: an installed build that's up to date, until a test says otherwise.
+    pub fn updater_fake(&self) -> Arc<FakeUpdater> {
+        self.updater.clone()
     }
 
     /// What `accent` answers.
@@ -332,5 +349,11 @@ impl Shell for RecordingShell {
     }
     fn app_check(&self) -> Arc<dyn AppCheck> {
         self.app_check.clone()
+    }
+    fn updater(&self) -> Arc<dyn Updater> {
+        self.updater.clone()
+    }
+    fn restart(&self) {
+        self.call("restart".into());
     }
 }

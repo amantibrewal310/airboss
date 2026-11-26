@@ -27,11 +27,12 @@ import type {
   Status,
   TaskId,
   UndoEntry,
+  UpdateStatus,
 } from '../types';
 import { classify } from '../logic/links';
 import { codexNeedsTerminalId } from '../logic/connections';
 import { recomputeNeeds, sortNeeds } from './attention';
-import { isOpen, stateFromSeed, ts, type MockSeed, type MockState } from './model';
+import { isOpen, MOCK_VERSION, stateFromSeed, ts, type MockSeed, type MockState } from './model';
 import {
   ancestors,
   buildDetail,
@@ -63,11 +64,13 @@ export interface MockDelays {
   attention: number;
   /** The deferred reject. */
   reject: number;
-  /** A PR lookup after ⌘L. */
+  /** A PR lookup after ⌘L, and a check for updates. */
   lookup: number;
+  /** Update and restart, from the download's first step to Restarting… */
+  install: number;
 }
 
-const DEFAULT_DELAYS: MockDelays = { launch: 1200, attention: 250, reject: 5000, lookup: 600 };
+const DEFAULT_DELAYS: MockDelays = { launch: 1200, attention: 250, reject: 5000, lookup: 600, install: 1500 };
 
 interface UndoRecord extends UndoEntry {
   tasks: TaskId[];
@@ -113,6 +116,8 @@ export class MockBackend implements Transport {
   private launching = new Set<TaskId>();
   private needsVersion = { value: 1 };
   private attentionTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Update and restart is running: a second one does nothing. */
+  private updating = false;
   private readonly t0 = Date.now();
   private readonly seedNow: number;
   private readonly delays: MockDelays;
@@ -910,7 +915,59 @@ export class MockBackend implements Transport {
       this.emit('nav:open', { view, task, needs_key: needsKey });
       return null;
     },
+
+    // In-app updates (SPEC-updates), as commands/updates.rs answers them.
+    update_status: () => this.s.updateStatus,
+
+    check_for_updates: async () => {
+      const u = this.s.update ?? { current: MOCK_VERSION, latest: null };
+      if (this.delays.lookup) await new Promise((r) => setTimeout(r, this.delays.lookup));
+      // A check while an install runs changes nothing.
+      if (this.updating) return this.s.updateStatus;
+      if (u.unavailable) {
+        this.emit('toast', { text: 'Updates work only in the installed Airboss app.', actions: [], undo: null });
+      } else if (u.checkError) {
+        this.emit('toast', { text: `Couldn't check for updates: ${u.checkError}`, actions: [], undo: null, tone: 'warning' });
+      } else if (!u.latest) {
+        this.setUpdate({ state: 'idle' });
+        this.emit('toast', { text: `You have the newest Airboss, ${u.current}.`, actions: [], undo: null });
+      } else {
+        this.setUpdate({ state: 'available', ...u.latest });
+        this.emit('toast', {
+          text: `Airboss ${u.latest.version} is available.`,
+          actions: [{ label: 'Update and restart', command: 'install_update', args: {} }],
+          undo: null,
+        });
+      }
+      return this.s.updateStatus;
+    },
+
+    install_update: () => {
+      if (this.updating) return null;
+      const s = this.s.updateStatus;
+      if (s.state !== 'available' && s.state !== 'failed') throw fail('not_found', "There's no update to install.");
+      this.updating = true;
+      const version = s.version;
+      const error = this.s.update?.installError;
+      const steps: UpdateStatus[] = [0, 25, 50, 75, 100].map((percent) => ({ state: 'downloading', version, percent }));
+      steps.push(error ? { state: 'failed', version, message: error } : { state: 'installing', version });
+      if (!error) steps.push({ state: 'restarting', version });
+      steps.forEach((step, i) =>
+        setTimeout(() => {
+          this.setUpdate(step);
+          if (step.state === 'failed') this.updating = false;
+        }, (i * this.delays.install) / (steps.length - 1)),
+      );
+      return null;
+    },
   };
+
+  /** The update's new status, sent as `update:changed` when it changed. */
+  private setUpdate(next: UpdateStatus): void {
+    if (JSON.stringify(next) === JSON.stringify(this.s.updateStatus)) return;
+    this.s.updateStatus = next;
+    this.emit('update:changed', next);
+  }
 
   private place(id: TaskId, parent: TaskId | null, position: number | null) {
     const t = this.s.tasks.get(id)!;

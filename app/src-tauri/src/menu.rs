@@ -179,6 +179,10 @@ pub mod ids {
     pub const COPY_AGENT_NOTE: &str = "copy_agent_note";
     pub const COPY_SETUP: &str = "copy_setup_command";
     pub const REPORT_PROBLEM: &str = "report_problem";
+    /// Not answered by Rust: like the View and Task items it goes to the window as
+    /// `menu:action`, so the window runs its own "Check for updates", which also shows again
+    /// a card hidden with Later. The check toasts its outcome over the window.
+    pub const CHECK_FOR_UPDATES: &str = "check_for_updates";
 }
 
 /// The handles Rust keeps to enable, disable and relabel items.
@@ -228,6 +232,13 @@ pub fn build<R: Runtime>(
         true,
         &[
             &PredefinedMenuItem::about(app, Some("About Airboss"), Some(about))?,
+            &MenuItem::with_id(
+                app,
+                ids::CHECK_FOR_UPDATES,
+                "Check for Updates…",
+                true,
+                None::<&str>,
+            )?,
             &PredefinedMenuItem::separator(app)?,
             &MenuItem::with_id(app, ids::SETTINGS, "Settings…", true, Some("CmdOrCtrl+,"))?,
             &MenuItem::with_id(

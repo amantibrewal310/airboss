@@ -188,7 +188,7 @@ There is one process, `Airboss.app`, with a Dock icon (activation policy Regular
   - `withGlobalTauri` is off.
   - Each window's capability file allows only the commands that window uses.
 - **The native menu bar:**
-  - Airboss: About, Settings… ⌘,, Install Command-Line Tool, Quit ⌘Q.
+  - Airboss: About, Check for Updates… ([SPEC-updates](SPEC-updates.md)), Settings… ⌘,, Install Command-Line Tool, Quit ⌘Q.
   - File: New Task ⌘N, Quick Add, Close Window ⌘W.
   - Edit: the predefined Undo, Redo, Cut, Copy, Paste and Select All, which text fields need.
   - Task, View, Window, Help.
@@ -417,6 +417,7 @@ Every screen keeps DESIGN.md's layout, sizes and motion. This section adds data,
 - **Counts:** Needs me is the attention count, as a red badge hidden at 0. Ready to start counts ready leaves. Plans counts plan cards. In progress counts `doing` and `in_review`. All tasks counts open tasks.
 - **Parents:** open top-level tasks with subtasks, in position order. Each shows its status icon, percentage and ring, and opens the per-parent view.
 - **Repos:** each repo with its colour dot, opening the per-repo view. A "+" on the section header opens Add repos.
+- **Update card:** directly above the footer, only while an update has something to say: available, downloading, installing, restarting or failed ([SPEC-updates](SPEC-updates.md), decision 5).
 - **Footer:**
   - It reads "All connected" with a green dot, or names the first problem in orange, or says "N connections need setup".
   - Clicking it opens the 300px popover, with one line per row below and a "Check again" button (`recheck_connections`).
@@ -673,6 +674,7 @@ A modal in the main window, built from the design's components:
 - **Open at login:** a switch.
 - **Notifications:** a switch, on by default; see "Notifications".
 - **Appearance:** System (the default), Dark or Light.
+- **Check for updates automatically:** on by default, with **Check now** ([SPEC-updates](SPEC-updates.md)).
 - **Command-line tool:** Install, with its path, and whether `~/.local/bin` is on `PATH`.
   - "On `PATH`" means the user's own shell's `PATH`: `$SHELL -ilc` (interactive and login, so `~/.zprofile` **and** `~/.zshrc` count, as in Terminal), reading the `PATH` after a marker, with a 3 s deadline, after which the shell is killed; it's always reaped (`login_path.rs`). It runs in the background at start and after Install, and the answer reaches the UI as `cli` in `connections:changed`. The app's own `PATH` is launchd's and never has `~/.local/bin`.
 - **Agent setup:** "Copy agent note", and "Copy setup command" (`claude mcp add --scope user airboss -- ~/.local/bin/airboss mcp`). Below them, one line per agent tool:
@@ -1038,6 +1040,9 @@ Writes return `Patch` (shown as → P). All `core` calls act as `me`, with one l
 | `ui_ready` | `window` | | shows the main window (2 s backstop) |
 | `quickadd_shown` / `quickadd_hide` / `quickadd_resize` | `height` | | timing, hide (then the UI resets), size |
 | `show_main` | `view?, task?, needs_key?` | | shows and focuses the main window, emits `nav:open` |
+| `update_status` | | `UpdateStatus` | the in-app update's status ([SPEC-updates](SPEC-updates.md)) |
+| `check_for_updates` | | `UpdateStatus` | checks for a newer release now, and toasts the outcome |
+| `install_update` | | | downloads, verifies and installs the update, then restarts; progress as `update:changed` |
 
 ## Appendix B: Events
 
@@ -1053,6 +1058,7 @@ Writes return `Patch` (shown as → P). All `core` calls act as `me`, with one l
 | `appearance:changed` | `{accent?, theme}` | the system accent or appearance changed |
 | `error:background` | `{source, message}` | the watcher or an app thread failed; also updates the footer |
 | `db:unavailable` | `AppError` (`db_unavailable`, message, detail `"<path>: <reason>"`) | the database broke while the app ran (once); the UI shows the database problem state |
+| `update:changed` | `UpdateStatus` | an update was found, or an install moved on ([SPEC-updates](SPEC-updates.md)) |
 
 ## Appendix C: Keyboard map and focus rules
 

@@ -92,7 +92,7 @@ The target is an agent's write showing in an open window within 300 ms.
 | `launch` | git | `/usr/bin/git`, to find a repo's default branch and check branch names |
 | `app` | your browser, T3 Code, Finder | Opens `http`, `https`, `file` and `t3code://` links |
 
-The windows load nothing from the network. Their content security policy is `default-src 'self'`.
+The windows load nothing from the network. Their content security policy is `default-src 'self'`. The app's only own network use is the updater, in Rust (`updates.rs`): the manifest on GitHub and a signed release download ([SPEC-updates](../SPEC-updates.md)).
 
 ## Data model
 

@@ -29,6 +29,7 @@ import type {
   ThreadKey,
   ToastEvent,
   UndoableWrite,
+  UpdateStatus,
 } from '../types';
 import { tick as svelteTick } from 'svelte';
 import { now as clockNow } from '../logic/clock';
@@ -62,6 +63,7 @@ import { NeedsStore } from './needs.svelte';
 import { TasksStore } from './tasks.svelte';
 import { ToastStore, type ToastAction } from './toasts.svelte';
 import { UiStore, type Anchor, type Overlay } from './ui.svelte';
+import { UpdateStore } from './updates.svelte';
 
 export type ViewKind = 'list' | 'needs' | 'plans' | 'page';
 
@@ -76,6 +78,7 @@ const DEFAULT_SETTINGS: Settings = {
   folded: [],
   start_agents_in: 'auto',
   herdr_agent: 'claude',
+  check_for_updates: true,
 };
 
 export function asAppError(e: unknown): AppError {
@@ -90,6 +93,7 @@ export class App {
   readonly ui = new UiStore();
   readonly detail = new DetailStore();
   readonly toasts = new ToastStore();
+  readonly updates = new UpdateStore();
 
   settings = $state.raw<Settings>(DEFAULT_SETTINGS);
   cli = $state.raw<CliStatus>({ installed: false, path: '~/.local/bin/airboss', on_path: true });
@@ -204,7 +208,9 @@ export class App {
       on('appearance:changed', (a) => applyAccent(document.documentElement, a.accent)),
       on('error:background', (e) => (this.conn.background = e.message)),
       on('db:unavailable', (e) => this.lost(e)),
+      on('update:changed', (s) => this.updateChanged(s)),
     ]);
+    this.loadUpdateStatus();
     const tick = () => (this.now = this.conn.now = clockNow());
     setInterval(() => {
       if (document.visibilityState === 'visible') tick();
@@ -1393,6 +1399,66 @@ export class App {
     }
   }
 
+  // ================================================================== updates (SPEC-updates)
+
+  /** Counts `update:changed` events, so a slow first read never replaces a newer status. */
+  private updateEvents = 0;
+
+  private updateChanged(s: UpdateStatus): void {
+    this.updateEvents++;
+    this.updates.set(s);
+  }
+
+  /** The status at start; from then on `update:changed` keeps it. */
+  private loadUpdateStatus(): void {
+    const seen = this.updateEvents;
+    api
+      .updateStatus()
+      .then((s) => {
+        if (seen === this.updateEvents) this.updates.set(s);
+      })
+      .catch(() => {});
+  }
+
+  /** Check for updates (⌘K, Settings' Check now): Rust toasts the outcome, and the card shows again. */
+  async checkForUpdates(): Promise<void> {
+    this.updates.unhide();
+    if (this.updates.checking) return;
+    this.updates.checking = true;
+    const seen = this.updateEvents;
+    try {
+      const s = await api.checkForUpdates();
+      // An install it started may already have sent newer statuses: don't step the card back.
+      if (seen === this.updateEvents) this.updates.set(s);
+    } catch (e) {
+      this.fail(e);
+    } finally {
+      this.updates.checking = false;
+    }
+  }
+
+  /** Update and restart, and Try again: progress arrives as `update:changed`. */
+  async installUpdate(): Promise<void> {
+    try {
+      await api.installUpdate();
+    } catch (e) {
+      this.fail(e);
+    }
+  }
+
+  /** What's new: the release's GitHub page. */
+  async openReleaseNotes(url: string): Promise<void> {
+    try {
+      await api.openUrl({ url });
+    } catch (e) {
+      this.fail(e);
+    }
+  }
+
+  async setCheckForUpdates(on: boolean): Promise<void> {
+    await this.saveSettings({ ...this.settings, check_for_updates: on });
+  }
+
   // ================================================================== commands and keys
 
   /** Plans grid columns, measured by the grid. */
@@ -1493,6 +1559,8 @@ export class App {
         return this.focusToasts();
       case 'check_connections':
         return void this.recheck();
+      case 'check_for_updates':
+        return void this.checkForUpdates();
       case 'up':
         return this.moveSelection(-1);
       case 'down':

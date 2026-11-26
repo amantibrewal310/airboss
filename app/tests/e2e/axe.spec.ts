@@ -10,6 +10,10 @@ const AXE = 'node_modules/axe-core/axe.min.js';
 
 type Screen = [name: string, url: string, steps?: (page: Page) => Promise<void>];
 
+/** SPEC-updates: the sidebar's update card in a state, as Rust would send it. */
+const update = (status: object) => (p: Page) =>
+  p.evaluate((s) => (window as unknown as { __airbossMock: { emit: (e: string, x: unknown) => void } }).__airbossMock.emit('update:changed', s), status);
+
 const SCREENS: Screen[] = [
   ['needs', '/?fixture=design'],
   ['needs-full', '/?fixture=full'],
@@ -29,6 +33,11 @@ const SCREENS: Screen[] = [
   ['herdr-first-run', '/?fixture=herdr'],
   ['herdr-thread', '/?fixture=full&view=all&select=179'],
   ['dberror', '/?fixture=dberror'],
+  ['update-available', '/?fixture=update&view=all&select=144'],
+  ['update-downloading', '/?fixture=update', update({ state: 'downloading', version: '0.1.0-alpha.5', percent: 42 })],
+  ['update-downloading-unknown', '/?fixture=update', update({ state: 'downloading', version: '0.1.0-alpha.5', percent: null })],
+  ['update-failed', '/?fixture=update', update({ state: 'failed', version: '0.1.0-alpha.5', message: 'The download’s signature didn’t match, so it wasn’t installed.' })],
+  ['update-settings', '/?fixture=update&view=all&select=144', (p) => p.keyboard.press('Meta+Comma')],
 ];
 
 const MODES = [

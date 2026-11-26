@@ -5,7 +5,7 @@ members = ["app/src-tauri", "crates/attention", "crates/core", "crates/launch", 
 [workspace.package]
 # The one version every crate and the app share. Releasing (CONTRIBUTING.md) says what else
 # changes with it, and tests/version.rs in the app checks they agree.
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 edition = "2024"
 rust-version = "1.100"
 repository = "https://github.com/amantibrewal310/airboss"

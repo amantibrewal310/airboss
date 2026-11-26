@@ -56,4 +56,7 @@ pub const COMMAND_NAMES: &[&str] = &[
     "quickadd_hide",
     "quickadd_resize",
     "show_main",
+    "update_status",
+    "check_for_updates",
+    "install_update",
 ];

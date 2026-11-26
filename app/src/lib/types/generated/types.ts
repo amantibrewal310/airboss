@@ -598,7 +598,12 @@ start_agents_in: StartAgentsIn,
 /**
  * The agent a Herdr tab runs: Claude Code (the default) or Codex.
  */
-herdr_agent: HerdrAgent, };
+herdr_agent: HerdrAgent, 
+/**
+ * Look for a new Airboss every 6 hours (SPEC-updates). On by default; Check for
+ * Updates… works either way.
+ */
+check_for_updates: boolean, };
 
 /**
  * `services::Source`.
@@ -767,6 +772,13 @@ patch: Patch | null,
  * `null` when the write changed nothing.
  */
 undo: UndoEntry | null, };
+
+/**
+ * In-app updates (SPEC-updates): what the sidebar's update card shows, and
+ * `update:changed`'s payload. `Idle` is nothing to show: not checked yet, up to date, or
+ * automatic checks off.
+ */
+export type UpdateStatus = { "state": "idle" } | { "state": "available", version: string, notes_url: string, } | { "state": "downloading", version: string, percent: number | null, } | { "state": "installing", version: string, } | { "state": "restarting", version: string, } | { "state": "failed", version: string, message: string, };
 
 /**
  * Which window reports its focus.

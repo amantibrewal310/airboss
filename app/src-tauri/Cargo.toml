@@ -31,6 +31,8 @@ tauri-plugin-opener = "=2.7.3"
 tauri-plugin-clipboard-manager = "=2.5.0"
 tauri-plugin-dialog = "=2.8.4"
 tauri-plugin-log = "=2.10.2"
+# In-app updates: the manifest, the signed download and the bundle swap (`updates.rs`).
+tauri-plugin-updater = "=2.14.1"
 tauri-nspanel = "=2.1.1"
 notify = { version = "=9.0.0", default-features = false, features = ["macos_kqueue"] }
 objc2 = "=0.6.5"
@@ -67,3 +69,8 @@ unsafe_code = "deny"
 [lints.clippy]
 unwrap_used = "deny"
 expect_used = "deny"
+
+# AppKit menus are made on the main thread only: this test runs in its own `main`.
+[[test]]
+name = "menu_native"
+harness = false

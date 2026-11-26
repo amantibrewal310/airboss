@@ -88,6 +88,7 @@ export const COMMAND_IDS = [
   'layout_status',
   'move_under',
   'check_connections',
+  'check_for_updates',
 ] as const;
 
 export type CommandId = (typeof COMMAND_IDS)[number];
@@ -113,6 +114,8 @@ export const COMMANDS: Command[] = [
   { id: 'undo', label: 'Undo', bind: [['mod+z', 'undo']], menu: 'task' },
   { id: 'toasts', label: 'Go to notifications', bind: [['f6', 'f6']] },
   { id: 'check_connections', label: 'Check connections again', bind: [], palette: true },
+  // ⌘K, and Airboss › Check for Updates…, which Rust forwards as `menu:action`.
+  { id: 'check_for_updates', label: 'Check for updates', bind: [], menu: 'app', palette: true },
   // The list
   { id: 'up', label: 'Move up', bind: [['up', 'nav']], views: LIST },
   { id: 'down', label: 'Move down', bind: [['down', 'nav']], views: LIST },

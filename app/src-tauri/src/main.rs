@@ -63,6 +63,9 @@ fn main() {
                 .build(),
         )
         .plugin(tauri_nspanel::init())
+        // In-app updates (SPEC-updates): its config, the public key and the manifest URL, is
+        // `plugins.updater` in tauri.conf.json. Rust drives it; the web views can't.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(airboss_app::ipc::handler())
         .setup(move |app| Ok(native::setup(app, hidden, started)?))
         .on_window_event(native::on_window_event)

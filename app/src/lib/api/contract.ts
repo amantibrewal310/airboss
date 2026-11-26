@@ -28,6 +28,7 @@ import type {
   OpenTarget,
   Patch,
   PlanCard,
+  UpdateStatus,
   QuickaddData,
   QuickaddReset,
   RemoveRepoResult,
@@ -103,6 +104,10 @@ export interface Commands {
   quickadd_hide: C<None, null>;
   quickadd_resize: C<{ height: number }, null>;
   show_main: C<{ view: string | null; task: TaskId | null; needsKey: NeedsKey | null }, null>;
+  /** In-app updates (SPEC-updates). */
+  update_status: C<None, UpdateStatus>;
+  check_for_updates: C<None, UpdateStatus>;
+  install_update: C<None, null>;
 }
 
 export interface Events {
@@ -117,6 +122,8 @@ export interface Events {
   'error:background': BackgroundError;
   /** The database broke while the app ran (R2): the full-window database problem state. */
   'db:unavailable': AppError;
+  /** The in-app update's status changed (SPEC-updates). */
+  'update:changed': UpdateStatus;
 }
 
 export type CommandName = keyof Commands;
@@ -134,10 +141,11 @@ export const COMMAND_NAMES = [
   'add_to_t3', 'reopen_and_start', 'open_thread', 'open_url', 'needs_dismiss', 'needs_snooze',
   'needs_restore', 'undo', 'recheck_connections', 'copy_text', 'install_cli', 'connect_claude', 'get_settings',
   'set_settings', 'notification_permission', 'open_notification_settings', 'set_folded', 'set_focus_context', 'ui_ready', 'quickadd_shown', 'quickadd_hide',
-  'quickadd_resize', 'show_main',
+  'quickadd_resize', 'show_main', 'update_status', 'check_for_updates', 'install_update',
 ] as const satisfies readonly CommandName[];
 
 export const EVENT_NAMES = [
   'tree:patch', 'needs:changed', 'connections:changed', 'menu:action', 'nav:open',
   'quickadd:reset', 'toast', 'appearance:changed', 'error:background', 'db:unavailable',
+  'update:changed',
 ] as const satisfies readonly EventName[];

@@ -9,8 +9,9 @@
   import type { Appearance, HerdrAgent, NotificationPermission, StartAgentsIn } from '../../../lib/types';
 
   /**
-   * ⌘,: the quick-add hotkey, open at login, appearance, repos, the command-line tool, agent
-   * setup (with where agents start: T3 Code or Herdr) and the database's backup.
+   * ⌘,: the quick-add hotkey, open at login, appearance, update checks (SPEC-updates), repos,
+   * the command-line tool, agent setup (with where agents start: T3 Code or Herdr) and the
+   * database's backup.
    */
   const app = useApp();
   let recording = $state(false);
@@ -140,6 +141,26 @@
           value={appearance}
           onchange={(v) => app.saveSettings({ ...app.settings, appearance: v })}
         />
+      </div>
+    </section>
+
+    <section>
+      <div class="row">
+        <div class="lab">
+          <b>Check for updates automatically</b>
+          <span>Airboss looks on GitHub for a new version every 6 hours. Nothing about you is sent.</span>
+        </div>
+        <Button size="sm" aria-disabled={app.updates.checking ? 'true' : undefined} onclick={() => app.checkForUpdates()}>
+          {app.updates.checking ? 'Checking…' : 'Check now'}
+        </Button>
+        <button
+          type="button"
+          class="switch"
+          role="switch"
+          aria-checked={app.settings.check_for_updates}
+          aria-label="Check for updates automatically"
+          onclick={() => app.setCheckForUpdates(!app.settings.check_for_updates)}><i></i></button
+        >
       </div>
     </section>
 

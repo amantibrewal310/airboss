@@ -59,6 +59,9 @@ pub struct Settings {
     /// The agent a Herdr tab runs: Claude Code (the default) or Codex.
     #[ts(as = "crate::dto::HerdrAgentTs")]
     pub herdr_agent: HerdrAgent,
+    /// Look for a new Airboss every 6 hours (SPEC-updates). On by default; Check for
+    /// Updates… works either way.
+    pub check_for_updates: bool,
     /// Release the hidden quick-add panel after this many idle minutes (off by default; see
     /// SPEC-app "Memory"). Not shown in the UI.
     #[ts(skip)]
@@ -75,6 +78,7 @@ impl Default for Settings {
             folded: Vec::new(),
             start_agents_in: StartAgentsIn::Auto,
             herdr_agent: HerdrAgent::Claude,
+            check_for_updates: true,
             quickadd_release_after_min: None,
         }
     }
@@ -259,6 +263,7 @@ mod tests {
             folded: vec![TaskId(3)],
             start_agents_in: StartAgentsIn::Herdr,
             herdr_agent: HerdrAgent::Codex,
+            check_for_updates: false,
             quickadd_release_after_min: Some(10),
         };
         save(&path, &s).unwrap();
