@@ -115,10 +115,12 @@ enum Command {
         #[command(flatten)]
         out: Out,
     },
-    /// Reject an agent's proposal; it's dropped, hidden from the tree, kept in history.
+    /// Reject agents' proposals; each is dropped, hidden from the tree, kept in history.
+    /// One accepted or dropped in the meantime is left as it is.
     Reject {
-        /// The proposed task's id.
-        id: i64,
+        /// The proposed tasks' ids.
+        #[arg(required = true)]
+        ids: Vec<i64>,
         /// Why, for the agent and for history.
         #[arg(long)]
         note: Option<String>,
@@ -353,9 +355,9 @@ fn run(command: Command) -> Result<String, String> {
         Command::Drop { id, note, out } => {
             cli::set(store, id, Status::Dropped, note.as_deref(), out.json, style)
         }
-        Command::Accept { id, out } => cli::decide(store, id, true, None, out.json, style),
-        Command::Reject { id, note, out } => {
-            cli::decide(store, id, false, note.as_deref(), out.json, style)
+        Command::Accept { id, out } => cli::accept(store, id, out.json, style),
+        Command::Reject { ids, note, out } => {
+            cli::reject(store, &ids, note.as_deref(), out.json, style)
         }
         Command::Edit {
             id,

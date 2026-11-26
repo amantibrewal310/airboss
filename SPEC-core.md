@@ -215,6 +215,12 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
    | `sync:t3`, `plan` | (none) | (none) | They never change status |
 
    `proposed` is left only by `me`: accepting moves it to `todo`, and rejecting moves it to `dropped` with an optional reason. A rejection writes a single `rejected` event (with the reason as its body) instead of a `status` event. The tree hides a task that is `dropped` and whose latest status change was a `rejected` event, so it depends on the event kind, never on the wording of a note. A proposal I accepted and later dropped stays visible, and so does an open proposal dropped along with its parent (rule 9). If I reopen a rejected proposal, it comes back.
+
+   **Rejecting several at once, without a race.** `reject_proposals(ids, reason, me)` rejects, as above, each of `ids` that is still `proposed`, and reads each status inside the same IMMEDIATE transaction that writes. The app queues a reject and writes it 5 seconds later; if `airboss accept`, in another process, accepted one meanwhile, that one is now `todo` and is left exactly as it is. It returns a `RejectOutcome`:
+   - `rejected`: the tasks it rejected, each with one `rejected` event.
+   - `skipped`: the tasks no longer `proposed`, with the status each has, untouched.
+   - A task that no longer exists is in neither list. Calling it `dropped` would be wrong, and the caller already knows which ids it sent.
+   - Each id counts once, in the order given. A blank reason is no reason. An empty list writes nothing and tells nobody. Only `me` may call it (rule 8); anyone else gets `NotAllowed`, even with an empty list.
 7. **An open PR reopens a done task.** If an actor other than `me` links an `open` PR to a `done` task, the task moves to `in_review` in the same change. A PR linked already `merged` or `closed` reopens nothing. And when `set_pr_state` records a PR as `open` again, every `done` task linked to it moves to `in_review`, with a `status` event after the `link_state` event, by the same actor. Code can't stay done while its PR is unmerged.
 
 ### Who may do everything else (enforced by code)
@@ -233,6 +239,7 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
    | `add_note` | yes | yes | (no) | yes | yes | yes |
    | `move_task` | yes | (no) | (no) | (no) | (no) | (no) |
    | `delete_task` | yes | (no) | (no) | (no) | (no) | (no) |
+   | `reject_proposals` | yes | (no) | (no) | (no) | (no) | (no) |
    | `link` | yes | yes | yes | yes | yes | yes |
    | `unlink` | yes | only links it added | (no) | (no) | (no) | (no) |
    | `set_pr_state` | yes | (no) | (no) | yes | (no) | (no) |
@@ -355,6 +362,7 @@ impl Store {
     pub fn add_note(&mut self, id: TaskId, text: &str, actor: &Actor) -> Result<()>;
     pub fn move_task(&mut self, id: TaskId, parent: Option<TaskId>, position: u32, actor: &Actor) -> Result<()>;
     pub fn set_status(&mut self, id: TaskId, to: Status, note: Option<&str>, actor: &Actor) -> Result<Task>;
+    pub fn reject_proposals(&mut self, ids: &[TaskId], reason: Option<&str>, actor: &Actor) -> Result<RejectOutcome>;  // rule 6
     pub fn delete_task(&mut self, id: TaskId, actor: &Actor) -> Result<()>;
 
     pub fn task(&self, id: TaskId) -> Result<Task>;      // Error::NotFound if missing
@@ -393,6 +401,7 @@ pub struct NewLink { kind, r#ref, url, pr_state, title: Option<String> }  // .wi
 pub struct Link { id, task, kind, r#ref, url, pr_state, title: Option<String>, linked_by, linked_at }
 pub struct Dependencies { waits_on: Vec<Task>, blocks: Vec<Task> }
 pub struct ReadyTask { task: Task, since: String }
+pub struct RejectOutcome { rejected: Vec<TaskId>, skipped: Vec<(TaskId, Status)> }  // a missing id is in neither
 pub struct RunOrder { waves: Vec<Vec<Task>>, waiting_outside: Vec<OutsideWait>, tangled: Vec<Task> }
 pub struct OutsideWait { task: Task, blockers: Vec<TaskId> }
 pub struct CoreSnapshot { tree: Vec<TaskNode>, edges: Vec<(TaskId, TaskId)>, ready: Vec<ReadyTask>,
@@ -630,6 +639,16 @@ The final audit of `main` found gaps that need `core`. They're folded into the r
 - [x] `edit_repo` and `remove_repo` are `me`'s only; removing writes one `repo_unlinked` event per task and is all or nothing.
 - [x] A backup opens as the same tasks and history, leaves out uncommitted writes, keeps an existing file unless told, and never targets the database itself.
 - [x] A repo's id is never handed out again after `remove_repo` (`a_removed_repos_id_is_never_handed_out_again`, which fails without `004`), and a database at migration 3 keeps every repo and link through `004` (`migration_4_keeps_every_repo_and_link_and_never_reuses_a_repo_id`).
+
+## v5 (26 Nov 2026)
+
+1. **A conditional reject.** The app's reject waits 5 seconds so it can be undone. A `set_status(…, Dropped)` sent then would overwrite a proposal that `airboss accept` had accepted from another process in the meantime. `reject_proposals` checks each task is still `proposed` inside the transaction that writes, and skips the ones that aren't (rules 6 and 8). `airboss reject` uses it too.
+
+**Success criteria for v5:**
+
+- [x] A mix of proposed, accepted, already dropped, missing and repeated ids rejects only the proposals, each with one event, and leaves the rest untouched (`reject_proposals_rejects_what_is_still_proposed_and_skips_the_rest`).
+- [x] A proposal accepted through a second `Store` handle before the reject lands stays `todo`, with no `rejected` event (`a_proposal_accepted_from_another_handle_before_the_reject_lands_is_left_alone`).
+- [x] A reject that fails partway rejects nothing and tells nobody; an empty list writes nothing; only `me` may reject.
 
 ## Open questions
 

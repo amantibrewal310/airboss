@@ -393,6 +393,71 @@ fn set_done_and_drop_change_status() {
     assert_eq!(json(&db, &["done", "4"])["status"], "done");
 }
 
+/// Proposals 1 to 4 from an agent, and 5, my own task.
+fn proposals(db: &Path) {
+    let mut s = Store::open(db).unwrap();
+    let agent = Actor::Agent("t3/x".into());
+    for title in ["Idea one", "Idea two", "Idea three", "Idea four"] {
+        s.add_task(NewTask::new(title), &agent).unwrap();
+    }
+    s.add_task(NewTask::new("Mine"), &Actor::Me).unwrap();
+}
+
+#[test]
+fn reject_leaves_a_proposal_that_was_accepted_meanwhile_as_it_is() {
+    let dir = TempDir::new();
+    let db = dir.db();
+    proposals(&db);
+    ok(&db, &["accept", "1"]);
+    ok(&db, &["reject", "2"]);
+    assert_eq!(
+        ok(
+            &db,
+            &["reject", "3", "1", "2", "4", "3", "--note", "not now"]
+        ),
+        "Rejected ⊗ #3 Idea three; it's dropped and hidden from the tree\n\
+         1 was already accepted (todo); left as is\n\
+         2 was already dropped; left as is\n\
+         Rejected ⊗ #4 Idea four; it's dropped and hidden from the tree\n"
+    );
+    let s = Store::open(&db).unwrap();
+    assert_eq!(s.task(TaskId(1)).unwrap().status, Status::Todo);
+    let last = s.history(TaskId(4)).unwrap().pop().unwrap();
+    assert_eq!(last.body.as_deref(), Some("not now"));
+}
+
+#[test]
+fn reject_refuses_a_missing_task_or_one_never_proposed_and_rejects_nothing() {
+    let dir = TempDir::new();
+    let db = dir.db();
+    proposals(&db);
+    assert_eq!(
+        fails(&db, &["reject", "1", "9"]),
+        "There's no task #9. List the tasks to find the right id."
+    );
+    assert_eq!(
+        fails(&db, &["reject", "1", "5"]),
+        "Task #5 isn't a proposal; it's todo. Use airboss set, done or drop instead."
+    );
+    let s = Store::open(&db).unwrap();
+    assert_eq!(s.task(TaskId(1)).unwrap().status, Status::Proposed);
+}
+
+#[test]
+fn reject_as_json_lists_what_it_rejected_and_skipped() {
+    let dir = TempDir::new();
+    let db = dir.db();
+    proposals(&db);
+    ok(&db, &["accept", "1"]);
+    let v = json(&db, &["reject", "1", "2"]);
+    assert_eq!(v["rejected"][0]["id"], 2);
+    assert_eq!(v["rejected"][0]["status"], "dropped");
+    assert_eq!(
+        v["skipped"],
+        serde_json::json!([{"id": 1, "status": "todo"}])
+    );
+}
+
 #[test]
 fn accept_and_reject_only_take_proposals() {
     let dir = TempDir::new();
