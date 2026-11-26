@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 
 use airboss_core::{Dependencies, Link, Repo, RunOrder, Status, Task, TaskId, TaskNode};
-use airboss_services::{Mode, Prepared, ServiceError, Source, StartedThread, ThreadKey};
+use airboss_services::{Mode, Prepared, ServiceError, StartedThread, ThreadKey};
 
 use crate::brief::{Reference, SubtaskLine, TaskLine};
 use crate::db::{Row, State};
@@ -195,7 +195,7 @@ pub(crate) fn started_thread(row: &Row) -> Option<StartedThread> {
     let thread = row.thread_id.as_ref()?;
     (row.state == State::Started).then(|| StartedThread {
         key: ThreadKey {
-            source: Source::T3,
+            source: row.runs.source(),
             r#ref: thread.clone(),
         },
         mode: row.mode,

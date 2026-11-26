@@ -8,7 +8,7 @@ use std::time::{Duration, SystemTime};
 
 use airboss_services::Availability;
 
-use crate::{Inner, lock, log, settle, t3cli};
+use crate::{Inner, herdr, lock, log, settle, t3cli};
 
 /// The longest the worker ever waits: 4 empty wake-ups an hour.
 pub const MAX_WAIT: Duration = Duration::from_secs(15 * 60);
@@ -22,7 +22,8 @@ const VERSION_TIMEOUT: Duration = Duration::from_secs(10);
 /// What the worker is asked to do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LaunchMsg {
-    /// Run `t3 --version` and update `availability()`.
+    /// Run `t3 --version`, `hc --version` and `herdr-app --version`, and update
+    /// `availability()` and `herdr_availability()`.
     CheckAvailability,
     /// Settle pending rows and link unlinked ones now.
     Settle,
@@ -89,8 +90,18 @@ impl LaunchWorker {
         }
     }
 
-    /// `Missing` without a launcher file; otherwise what `t3 --version` says.
+    /// T3: `Missing` without a launcher file, otherwise what `t3 --version` says. Herdr: what
+    /// `hc --version` and `herdr-app --version` say.
     fn check_availability(&self) -> bool {
+        let t3 = self.check_t3();
+        let found = herdr::availability(lock(&self.inner.herdr).as_mut());
+        let mut now = lock(&self.inner.herdr_availability);
+        let herdr = *now != found;
+        *now = found;
+        t3 || herdr
+    }
+
+    fn check_t3(&self) -> bool {
         let found = if self.inner.cfg.t3_path.exists() {
             let result = lock(&self.inner.t3).run(
                 &t3cli::version_argv(),
@@ -109,7 +120,7 @@ impl LaunchWorker {
         changed
     }
 
-    /// The next settle time of any pending Do it row, a minute from now if a thread is
+    /// The next settle time of any pending row, a minute from now if a thread is
     /// still unlinked, and never more than 15 minutes away.
     fn next_wake(&self, now: SystemTime) -> SystemTime {
         let cap = now + MAX_WAIT;
@@ -123,10 +134,9 @@ impl LaunchWorker {
                 }
             }
         };
-        let settle_after = self.inner.cfg.settle_after;
         pending
             .iter()
-            .filter_map(|row| settle::next_check(row, settle_after, now))
+            .filter_map(|row| settle::next_check(row, &self.inner.cfg, now))
             .chain((!unlinked.is_empty()).then_some(now + RELINK_AFTER))
             .chain([cap])
             .min()

@@ -1,5 +1,5 @@
-//! Fakes of `t3` and `git` for tests, behind the `fakes` feature. Neither runs a process,
-//! so no test can start a real T3 thread.
+//! Fakes of `t3`, `git` and Herdr for tests, behind the `fakes` feature. None runs a
+//! process, so no test can start a real T3 thread or Herdr tab.
 //!
 //! [`FakeT3Cli`] is a recorded-behaviour runner: it checks each call's command and key
 //! arguments, records argv and stdin, runs an optional hook at call time (to look at the
@@ -12,7 +12,10 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
+use serde_json::{Value, json};
+
 use crate::git::{Git, Worktree};
+use crate::herdr::{HerdrCli, Tool};
 use crate::process::CmdOutput;
 use crate::t3cli::T3Cli;
 
@@ -395,5 +398,436 @@ impl Git for FakeGit {
                 branch: Some(branch.to_string()),
             });
         Ok(())
+    }
+}
+
+/// One call made to [`FakeHerdr`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HerdrCall {
+    pub tool: Tool,
+    pub argv: Vec<String>,
+}
+
+impl HerdrCall {
+    /// `herdr-app do <command> …`: the command's name.
+    pub fn command(&self) -> Option<&str> {
+        (self.tool == Tool::App && self.argv.first().is_some_and(|a| a == "do"))
+            .then(|| self.argv.get(1).map(String::as_str))
+            .flatten()
+    }
+
+    /// The JSON object `herdr-app do` was given.
+    pub fn args(&self) -> Option<Value> {
+        self.command()?;
+        serde_json::from_str(self.argv.get(2)?).ok()
+    }
+}
+
+/// A tab the fake Herdr opened.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FakeTab {
+    pub space: String,
+    pub name: String,
+    pub folder: String,
+    pub argv: Vec<String>,
+    pub task: String,
+    pub focus: Option<bool>,
+    /// Its terminal's address.
+    pub terminal: String,
+    /// Made by `space.new` rather than `tab.new`.
+    pub new_space: bool,
+}
+
+/// How the fake `herdr-app do` answers one `tab.new` or `space.new`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HerdrReply {
+    /// Exit 1 with `{"error": message}`.
+    Error(String),
+    /// Exit 0 with this stdout.
+    Stdout(String),
+    /// No answer in time.
+    Timeout,
+}
+
+#[derive(Default)]
+struct FakeSpace {
+    id: String,
+    name: Option<String>,
+    folder: String,
+    machine: Option<String>,
+}
+
+type HerdrHook = Box<dyn FnMut(&HerdrCall) + Send>;
+
+struct HerdrState {
+    installed: bool,
+    hc_installed: bool,
+    window: bool,
+    /// What `open -b` does to the window: opens it after this many `status` calls, or never.
+    opens_after: Option<u32>,
+    statuses_left: Option<u32>,
+    spaces: Vec<FakeSpace>,
+    tabs: Vec<FakeTab>,
+    replies: VecDeque<HerdrReply>,
+    labels: HashMap<String, Vec<(String, String)>>,
+    finished: HashSet<String>,
+    hc_broken: bool,
+    label_fails: bool,
+    calls: Vec<HerdrCall>,
+    pauses: Vec<Duration>,
+    next: u32,
+    hook: Option<HerdrHook>,
+}
+
+impl Default for HerdrState {
+    fn default() -> HerdrState {
+        HerdrState {
+            installed: true,
+            hc_installed: true,
+            window: true,
+            opens_after: Some(1),
+            statuses_left: None,
+            spaces: Vec::new(),
+            tabs: Vec::new(),
+            replies: VecDeque::new(),
+            labels: HashMap::new(),
+            finished: HashSet::new(),
+            hc_broken: false,
+            label_fails: false,
+            calls: Vec::new(),
+            pauses: Vec::new(),
+            next: 0,
+            hook: None,
+        }
+    }
+}
+
+/// A scripted Herdr: `herdr-app` with an open window and no spaces, and `hc` holding the
+/// labels of the terminals it "started". Clones share one state.
+#[derive(Clone, Default)]
+pub struct FakeHerdr(Arc<Mutex<HerdrState>>);
+
+impl FakeHerdr {
+    pub fn new() -> FakeHerdr {
+        FakeHerdr::default()
+    }
+
+    /// Neither `herdr-app` nor `hc` is installed.
+    pub fn uninstall(&self) {
+        let mut s = lock(&self.0);
+        s.installed = false;
+        s.hc_installed = false;
+    }
+
+    /// `herdr-app` is installed but `hc` isn't.
+    pub fn without_hc(&self) {
+        lock(&self.0).hc_installed = false;
+    }
+
+    /// The window is closed. `open -b` opens it, answering the second `status` after it.
+    pub fn close_window(&self) {
+        lock(&self.0).window = false;
+    }
+
+    /// The window is closed, and `open -b` never opens it.
+    pub fn never_opens(&self) {
+        let mut s = lock(&self.0);
+        s.window = false;
+        s.opens_after = None;
+    }
+
+    /// A space on this computer (`machine: None`) or another.
+    pub fn add_space(&self, id: &str, name: Option<&str>, folder: &Path, machine: Option<&str>) {
+        lock(&self.0).spaces.push(FakeSpace {
+            id: id.to_string(),
+            name: name.map(str::to_string),
+            folder: folder.display().to_string(),
+            machine: machine.map(str::to_string),
+        });
+    }
+
+    /// How the next `tab.new` or `space.new` answers instead of opening a tab. Queued.
+    pub fn push(&self, reply: HerdrReply) {
+        lock(&self.0).replies.push_back(reply);
+    }
+
+    /// A terminal Airboss didn't start, carrying these labels (to settle against).
+    pub fn add_terminal(&self, address: &str, labels: &[(&str, &str)]) {
+        lock(&self.0).labels.insert(
+            address.to_string(),
+            labels
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+        );
+    }
+
+    /// The terminal's program ended: `hc ls` no longer lists it.
+    pub fn finish(&self, address: &str) {
+        lock(&self.0).finished.insert(address.to_string());
+    }
+
+    /// Every `hc` call fails.
+    pub fn break_hc(&self) {
+        lock(&self.0).hc_broken = true;
+    }
+
+    /// `hc label` fails.
+    pub fn fail_labels(&self) {
+        lock(&self.0).label_fails = true;
+    }
+
+    /// Runs on every call, before the answer, with no lock held.
+    pub fn on_call(&self, hook: impl FnMut(&HerdrCall) + Send + 'static) {
+        lock(&self.0).hook = Some(Box::new(hook));
+    }
+
+    pub fn calls(&self) -> Vec<HerdrCall> {
+        lock(&self.0).calls.clone()
+    }
+
+    /// Every tab opened so far, in order.
+    pub fn tabs(&self) -> Vec<FakeTab> {
+        lock(&self.0).tabs.clone()
+    }
+
+    /// A terminal's labels, as `key=value`, sorted.
+    pub fn labels(&self, address: &str) -> Vec<String> {
+        let s = lock(&self.0);
+        let mut out: Vec<String> = s
+            .labels
+            .get(address)
+            .into_iter()
+            .flatten()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect();
+        out.sort();
+        out
+    }
+
+    /// Every pause taken while waiting for the window.
+    pub fn pauses(&self) -> Vec<Duration> {
+        lock(&self.0).pauses.clone()
+    }
+
+    /// The ids and names of the spaces it has.
+    pub fn spaces(&self) -> Vec<(String, Option<String>, String)> {
+        lock(&self.0)
+            .spaces
+            .iter()
+            .map(|s| (s.id.clone(), s.name.clone(), s.folder.clone()))
+            .collect()
+    }
+}
+
+fn exit(code: i32, stdout: String, stderr: &str) -> io::Result<CmdOutput> {
+    Ok(CmdOutput {
+        status: Some(code),
+        stdout,
+        stderr: stderr.to_string(),
+    })
+}
+
+impl HerdrState {
+    fn app(&mut self, argv: &[String]) -> io::Result<CmdOutput> {
+        if !self.installed {
+            return Err(io::Error::from(io::ErrorKind::NotFound));
+        }
+        let args: Vec<&str> = argv.iter().map(String::as_str).collect();
+        if args == ["--version"] {
+            return exit(0, "herdr-app 0.1.18\n".into(), "");
+        }
+        if !self.window {
+            if args == ["status"]
+                && let Some(left) = self.statuses_left.as_mut()
+            {
+                if *left == 0 {
+                    self.window = true;
+                } else {
+                    *left -= 1;
+                }
+            }
+            if !self.window {
+                return exit(
+                    2,
+                    String::new(),
+                    "herdr-app: no Herdr window at /fake/herdr-app.sock: No such file or directory\n",
+                );
+            }
+        }
+        match args.as_slice() {
+            ["status"] => exit(0, "{\"errors\": []}\n".into(), ""),
+            ["ls"] => {
+                let spaces: Vec<Value> = self
+                    .spaces
+                    .iter()
+                    .map(|s| {
+                        json!({"id": s.id, "name": s.name, "folder": s.folder,
+                               "machine": s.machine, "active": false, "tabs": []})
+                    })
+                    .collect();
+                exit(0, json!({"spaces": spaces, "recent": []}).to_string(), "")
+            }
+            ["do", cmd @ ("tab.new" | "space.new"), json] => self.open(cmd, json),
+            _ => exit(
+                1,
+                json!({"error": format!("fake herdr-app: {argv:?}")}).to_string(),
+                "",
+            ),
+        }
+    }
+
+    fn open(&mut self, cmd: &str, json: &str) -> io::Result<CmdOutput> {
+        let refuse = |m: String| exit(1, json!({ "error": m }).to_string(), "");
+        let Ok(args) = serde_json::from_str::<Value>(json) else {
+            return refuse("fake herdr-app: not one JSON object".into());
+        };
+        match self.replies.pop_front() {
+            Some(HerdrReply::Error(m)) => return refuse(m),
+            Some(HerdrReply::Stdout(text)) => return exit(0, text, ""),
+            Some(HerdrReply::Timeout) => return Err(io::Error::from(io::ErrorKind::TimedOut)),
+            None => {}
+        }
+        let text = |k: &str| args.get(k).and_then(Value::as_str).map(str::to_string);
+        let folder = text("folder").unwrap_or_default();
+        if !Path::new(&folder).is_dir() {
+            return refuse(format!("cannot start a terminal: no folder {folder}"));
+        }
+        self.next += 1;
+        let space = if cmd == "space.new" {
+            let id = format!("sp{}", self.next);
+            self.spaces.push(FakeSpace {
+                id: id.clone(),
+                name: text("name"),
+                folder: folder.clone(),
+                machine: None,
+            });
+            id
+        } else {
+            let id = text("space").unwrap_or_default();
+            if !self.spaces.iter().any(|s| s.id == id) {
+                return refuse(format!("no space \"{id}\""));
+            }
+            id
+        };
+        let terminal = format!("t{}", self.next);
+        self.tabs.push(FakeTab {
+            space: space.clone(),
+            name: text(if cmd == "space.new" { "tab" } else { "name" }).unwrap_or_default(),
+            folder,
+            argv: args
+                .get("argv")
+                .and_then(Value::as_array)
+                .map(|a| {
+                    a.iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default(),
+            task: text("task").unwrap_or_default(),
+            focus: args.get("focus").and_then(Value::as_bool),
+            terminal: terminal.clone(),
+            new_space: cmd == "space.new",
+        });
+        self.labels.entry(terminal.clone()).or_default();
+        let out = json!({"space": space, "tab": format!("tb{}", self.next), "terminal": terminal});
+        exit(0, format!("{out:#}\n"), "")
+    }
+
+    fn hc(&mut self, argv: &[String]) -> io::Result<CmdOutput> {
+        if !self.hc_installed {
+            return Err(io::Error::from(io::ErrorKind::NotFound));
+        }
+        let args: Vec<&str> = argv.iter().map(String::as_str).collect();
+        if args == ["--version"] {
+            return exit(0, "hc 0.1.22\n".into(), "");
+        }
+        if self.hc_broken {
+            return exit(1, String::new(), "hc: the core isn't answering\n");
+        }
+        match args.as_slice() {
+            ["label", address, pairs @ ..] => {
+                if self.label_fails || !self.labels.contains_key(*address) {
+                    return exit(3, json!({"error": {"kind": "not_found"}}).to_string(), "");
+                }
+                let labels = self.labels.entry(address.to_string()).or_default();
+                for pair in pairs {
+                    if let Some((k, v)) = pair.split_once('=') {
+                        labels.retain(|(key, _)| key != k);
+                        labels.push((k.to_string(), v.to_string()));
+                    }
+                }
+                exit(0, json!({"address": address}).to_string(), "")
+            }
+            ["ls", "--json", rest @ ..] => {
+                let wanted: Vec<(&str, &str)> = rest
+                    .chunks(2)
+                    .filter_map(|c| match c {
+                        ["--label", kv] => kv.split_once('='),
+                        _ => None,
+                    })
+                    .collect();
+                let mut found: Vec<&String> = self
+                    .labels
+                    .iter()
+                    .filter(|(a, _)| !self.finished.contains(*a))
+                    .filter(|(_, have)| {
+                        wanted
+                            .iter()
+                            .all(|(k, v)| have.iter().any(|(hk, hv)| hk == k && hv == v))
+                    })
+                    .map(|(a, _)| a)
+                    .collect();
+                found.sort();
+                let terminals: Vec<Value> = found
+                    .into_iter()
+                    .map(|a| json!({"address": a, "state": "live"}))
+                    .collect();
+                exit(0, json!({"terminals": terminals}).to_string(), "")
+            }
+            _ => exit(2, String::new(), &format!("fake hc: unexpected {argv:?}")),
+        }
+    }
+}
+
+impl HerdrCli for FakeHerdr {
+    fn run(&mut self, tool: Tool, argv: &[String], _timeout: Duration) -> io::Result<CmdOutput> {
+        let call = HerdrCall {
+            tool,
+            argv: argv.to_vec(),
+        };
+        let mut hook = {
+            let mut s = lock(&self.0);
+            s.calls.push(call.clone());
+            s.hook.take()
+        };
+        if let Some(h) = hook.as_mut() {
+            h(&call);
+        }
+        let mut s = lock(&self.0);
+        if s.hook.is_none() {
+            s.hook = hook;
+        }
+        match tool {
+            Tool::App => s.app(argv),
+            Tool::Hc => s.hc(argv),
+            Tool::Open => {
+                if argv != ["-g", "-b", "dev.herdr.app"] {
+                    return exit(1, String::new(), "fake open: unexpected argv");
+                }
+                if !s.installed {
+                    return exit(1, String::new(), "Unable to find application dev.herdr.app");
+                }
+                if !s.window {
+                    s.statuses_left = s.opens_after;
+                }
+                exit(0, String::new(), "")
+            }
+        }
+    }
+
+    fn pause(&mut self, d: Duration) {
+        lock(&self.0).pauses.push(d);
     }
 }
