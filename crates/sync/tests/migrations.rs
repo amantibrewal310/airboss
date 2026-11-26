@@ -46,7 +46,7 @@ fn opening_twice_applies_the_migration_once() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(n, 1);
+    assert_eq!(n, 2, "versions 1 and 2, once each");
 }
 
 #[test]
@@ -69,6 +69,13 @@ fn observed_threads_checks() {
         "INSERT INTO observed_threads (source, ref, linked, state, request_id, request_kind)
          VALUES ('claude','b',0,'needs_me','r1','question')",
     );
+    // Herdr terminals, and needing me without saying what for (Herdr's blocked, Claude's
+    // waiting).
+    ok(
+        &c,
+        "INSERT INTO observed_threads (source, ref, linked, state) VALUES ('herdr','vps/t7',1,'needs_me');
+         INSERT INTO observed_threads (source, ref, linked, state) VALUES ('claude','w',1,'needs_me');",
+    );
     for bad in [
         "INSERT INTO observed_threads (source, ref, linked, state) VALUES ('slack','c',1,'idle')",
         "INSERT INTO observed_threads (source, ref, linked, state) VALUES ('t3','',1,'idle')",
@@ -82,8 +89,7 @@ fn observed_threads_checks() {
         // A request id without a kind, and a kind without an id.
         "INSERT INTO observed_threads (source, ref, linked, state, request_id) VALUES ('t3','c',1,'needs_me','r')",
         "INSERT INTO observed_threads (source, ref, linked, state, request_kind) VALUES ('t3','c',1,'idle','question')",
-        // needs_me exactly when there's a request.
-        "INSERT INTO observed_threads (source, ref, linked, state) VALUES ('t3','c',1,'needs_me')",
+        // A request only while needs_me.
         "INSERT INTO observed_threads (source, ref, linked, state, request_id, request_kind)
          VALUES ('t3','c',1,'running','r','approval')",
     ] {
@@ -157,7 +163,8 @@ fn sync_health_checks() {
         &c,
         "INSERT INTO sync_health (source, scope, state, since) VALUES ('gh','me','ok','x');
          INSERT INTO sync_health (source, state, since) VALUES ('t3','broken','x');
-         INSERT INTO sync_health (source, scope, state, since, next_try_at) VALUES ('gh','work','rate_limited','x','y');",
+         INSERT INTO sync_health (source, scope, state, since, next_try_at) VALUES ('gh','work','rate_limited','x','y');
+         INSERT INTO sync_health (source, state, since) VALUES ('herdr','ok','x');",
     );
     for bad in [
         "INSERT INTO sync_health (source, state, since) VALUES ('slack','ok','x')",
@@ -167,6 +174,75 @@ fn sync_health_checks() {
     ] {
         refused(&c, bad);
     }
+}
+
+/// A file migrated to version 1 by an earlier build keeps its rows through version 2, and
+/// takes Herdr rows after it.
+#[test]
+fn version_2_keeps_version_1_rows_and_allows_herdr() {
+    let dir = TempDir::new();
+    let path = dir.path().join("airboss.db");
+    {
+        let mut store = Store::open(&path).unwrap();
+        store
+            .migrate_module(airboss_sync::MODULE, &airboss_sync::MIGRATIONS[..1])
+            .unwrap();
+    }
+    let c = Connection::open(&path).unwrap();
+    ok(
+        &c,
+        "INSERT INTO observed_threads (source, ref, linked, state, request_id, request_kind,
+           request_text, pr_seen, noted_run_id, first_seen_at)
+         VALUES ('t3','a',1,'needs_me','q1','question','Which one?','[\"a/b#1\"]','r0','2026-11-01T00:00:00.000Z');
+         INSERT INTO sync_health (source, scope, state, since, failures) VALUES ('gh','me','broken','x',3);",
+    );
+    refused(
+        &c,
+        "INSERT INTO observed_threads (source, ref, linked, state) VALUES ('herdr','t1',1,'idle')",
+    );
+    drop(c);
+    let store = store_in(&dir);
+    SyncDb::open(&store).unwrap();
+    let c = Connection::open(&path).unwrap();
+    let row: (String, String, String, String, String) = c
+        .query_row(
+            "SELECT state, request_text, pr_seen, noted_run_id, first_seen_at
+             FROM observed_threads WHERE source = 't3' AND ref = 'a'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        row,
+        (
+            "needs_me".into(),
+            "Which one?".into(),
+            "[\"a/b#1\"]".into(),
+            "r0".into(),
+            "2026-11-01T00:00:00.000Z".into()
+        )
+    );
+    let failures: i64 = c
+        .query_row(
+            "SELECT failures FROM sync_health WHERE source = 'gh' AND scope = 'me'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(failures, 3);
+    ok(
+        &c,
+        "INSERT INTO observed_threads (source, ref, linked, state) VALUES ('herdr','t1',1,'idle');
+         INSERT INTO sync_health (source, state, since) VALUES ('herdr','broken','x');",
+    );
+    let index: i64 = c
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE type = 'index' AND name = 'observed_threads_linked_idx'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(index, 1, "the index is made again");
 }
 
 #[test]
