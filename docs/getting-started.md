@@ -17,18 +17,22 @@ Optional, and each one turns on more:
 
 ## Install the alpha
 
-Download `Airboss_0.1.0-alpha.1_aarch64.dmg` from the [latest release](https://github.com/amantibrewal310/airboss/releases), open it, and drag Airboss to Applications.
+In Terminal:
 
-The alpha is signed ad hoc and not notarized, so macOS blocks a downloaded copy the first time. Clear the download flag once, in Terminal:
+```sh
+curl -fsSL https://raw.githubusercontent.com/amantibrewal310/airboss/main/install.sh | sh
+```
+
+[`install.sh`](../install.sh) finds the newest release (alphas included), downloads its `.dmg` and SHA-256, checks one against the other and the app's signature, copies `Airboss.app` to `/Applications` and opens it. To update, quit Airboss and run it again. `AIRBOSS_TAG=v0.1.0-alpha.1` before `sh` installs a given release.
+
+The alpha is signed ad hoc and not notarized. A `curl` download isn't flagged by macOS, so it opens without a warning. A copy downloaded in a browser is: macOS says "Apple could not verify Airboss…" and won't open it. Clear the flag on the whole bundle once:
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/Airboss.app
 open /Applications/Airboss.app
 ```
 
-`-r` clears the whole bundle, including the `airboss` CLI inside it, which agents start from a terminal. The other way is to open the app once, dismiss the warning, and choose **Open Anyway** in **System Settings › Privacy & Security**. That clears the app, but a quarantined CLI may still be stopped when an agent starts it, so the Terminal line is the surer one.
-
-To update, quit Airboss (⌘Q), replace the app in Applications with the new one, and clear the flag again. Your tasks, settings and agent setup stay as they are.
+`-r` clears the `airboss` CLI inside the app too, which agents start from a terminal. **Open Anyway** in **System Settings › Privacy & Security** clears the app but may leave the CLI blocked, so the Terminal line is the surer one.
 
 Then skip to [Install the `airboss` CLI](#install-the-airboss-cli).
 

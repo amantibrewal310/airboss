@@ -31,15 +31,16 @@ To-do apps don't know agent threads exist. Agent tools know threads, but not tas
 
 You need a Mac with Apple silicon, on macOS 13 or later.
 
-1. Download `Airboss_0.1.0-alpha.1_aarch64.dmg` from the [latest release](https://github.com/amantibrewal310/airboss/releases), open it, and drag Airboss to Applications.
-2. The alpha isn't notarized by Apple yet, so macOS blocks it the first time. Clear the download flag once, in Terminal:
+1. In Terminal:
 
    ```sh
-   xattr -dr com.apple.quarantine /Applications/Airboss.app
+   curl -fsSL https://raw.githubusercontent.com/amantibrewal310/airboss/main/install.sh | sh
    ```
 
-   (Or open it once, dismiss the warning, then choose **Open Anyway** in **System Settings › Privacy & Security**. The Terminal line also clears the `airboss` command-line tool inside the app, which agents start.)
-3. Open Airboss. The first-run screen walks you through the rest:
+   It downloads the newest release, checks it against its SHA-256, puts Airboss in Applications and opens it. Run it again to update. ([Read it first](install.sh) if you like: it's short.)
+
+   The alpha isn't notarized by Apple yet. A copy downloaded in a browser gets "Apple could not verify Airboss…" the first time. If you went that way, clear the flag once with `xattr -dr com.apple.quarantine /Applications/Airboss.app`.
+2. On the first-run screen:
    - Tick the repos you work in, from T3 Code's projects or any folder.
    - In **Agents**, choose **Install command-line tool**, then **Connect Claude Code**. That registers Airboss's MCP server with Claude Code, at user scope. Codex takes one more step: see [Getting started](docs/getting-started.md#codex).
    - Paste the agent note (**Help › Copy Agent Note**) into each repo's `AGENTS.md` or `CLAUDE.md`.
@@ -50,7 +51,7 @@ Airboss works on its own, and each of these turns on more. Without them, those f
 - Claude Code or Codex: agents report on their tasks.
 - The GitHub CLI (`gh`), signed in: PR state, reviews and checks.
 
-To update, quit Airboss, replace the app with the new one, and clear the download flag again. Your tasks stay where they are.
+To update, quit Airboss and run the same line again. Your tasks stay where they are.
 
 ### Build from source
 
@@ -85,7 +86,7 @@ Alpha: 0.1.0-alpha.1. Every module is built, tested and merged: the task store, 
 
 Known gaps:
 
-- It isn't notarized, so the first open needs the step above. It's Apple silicon only.
+- It isn't notarized: install it with the line above, or clear the download flag. It's Apple silicon only.
 - There are no automatic updates yet. Watch the [releases](https://github.com/amantibrewal310/airboss/releases).
 - It's built around T3 Code, Claude Code, Codex and `gh`. Other agent tools can report through MCP, but Do it and Plan it start T3 Code threads only.
 - Plan it doesn't yet show that a planning thread is running until its plan comes back.

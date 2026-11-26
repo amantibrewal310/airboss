@@ -6,7 +6,7 @@ When a source is off, Airboss keeps its last known state and marks it "May be ou
 
 ## macOS won't open Airboss
 
-A downloaded alpha is signed ad hoc and not notarized. macOS says it "can't be opened", that Apple "could not verify" it, or that it's "damaged". It isn't damaged: macOS only checks for a notarization ticket. Clear the download flag on the whole app, then open it:
+The alpha is signed ad hoc and not notarized. A copy downloaded in a browser makes macOS say it "can't be opened", that Apple "could not verify" it, or that it's "damaged". It isn't damaged: macOS only checks for a notarization ticket. Install with the [one-line installer](getting-started.md#install-the-alpha) instead, which macOS doesn't flag, or clear the download flag on the whole app and open it:
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/Airboss.app
