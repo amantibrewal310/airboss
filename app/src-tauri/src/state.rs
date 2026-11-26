@@ -71,6 +71,9 @@ pub struct AppConfig {
     /// The user's shell, run as `-ilc` to see whether `~/.local/bin` is on their `PATH`.
     /// `None` skips the check (tests, which mustn't read the developer's startup files).
     pub shell: Option<PathBuf>,
+    /// The `claude` that Connect Claude Code runs. `None` looks for it (`commands/app.rs`);
+    /// tests point it at a fake.
+    pub claude_path: Option<PathBuf>,
 }
 
 impl AppConfig {
@@ -88,6 +91,7 @@ impl AppConfig {
             start_hidden: false,
             started: Instant::now(),
             shell: Some(crate::login_path::user_shell()),
+            claude_path: None,
         }
     }
 }
@@ -341,7 +345,8 @@ impl AppState {
     ) -> ConnectionsChanged {
         let problems = lock(&self.problems).clone();
         let cli = crate::commands::app::cli_status(self);
-        crate::connections::merged(&self.services, vm, &problems, cli, agent_report)
+        let agents = crate::connections::agent_tools(&self.config.home);
+        crate::connections::merged(&self.services, vm, &problems, cli, agents, agent_report)
     }
 
     /// Runs the user's shell to see whether `~/.local/bin` is on its `PATH` (up to 3 s), and

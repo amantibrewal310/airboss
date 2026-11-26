@@ -1,4 +1,4 @@
-import type { Availability, Connection, Timestamp } from '../types';
+import type { AgentTools, Availability, Connection, Timestamp } from '../types';
 import { ago } from './time';
 
 const ORDER = ['T3 Code', 'GitHub', 'Agents', 'Claude Code'];
@@ -19,7 +19,7 @@ export function t3MissingReason(a: Availability): string | null {
 export function mergeConnections(
   rows: Connection[],
   availability: Availability,
-  app: { cliInstalled?: boolean; agentReport?: Timestamp | null; now?: number } = {},
+  app: { cliInstalled?: boolean; agents?: AgentTools; agentReport?: Timestamp | null; now?: number } = {},
 ): Connection[] {
   const byName = new Map<string, Connection>();
   for (const r of rows) {
@@ -32,6 +32,11 @@ export function mergeConnections(
   const agents = byName.get('Agents');
   if (app.cliInstalled === false && agents?.ok) {
     byName.set('Agents', { ...agents, ok: false, state: 'Not set up', fix: 'Install the command-line tool, then copy the agent note into each repo.' });
+  }
+  // The CLI alone isn't enough (#9): an agent tool needs the airboss MCP server too.
+  const wired = byName.get('Agents');
+  if (app.cliInstalled !== false && app.agents && !anyConnected(app.agents) && wired?.ok) {
+    byName.set('Agents', { ...wired, ...NOT_CONNECTED });
   }
   // A Ready Agents row says when an agent last reported (SPEC-app: the CLI is installed, and
   // the time of the last report), or that none has: Ready alone doesn't mean one is set up.
@@ -53,6 +58,29 @@ export function mergeConnections(
   const out = [...byName.values()].filter((c) => !(c.name === 'Claude Code' && c.ok));
   const rank = (n: string) => (ORDER.indexOf(n) === -1 ? ORDER.length : ORDER.indexOf(n));
   return out.sort((a, b) => rank(a.name) - rank(b.name));
+}
+
+/** The Agents row with the CLI but no agent tool that has the server, as Rust words it. */
+const NOT_CONNECTED = {
+  ok: false,
+  state: 'Not connected',
+  detail: "Agents can't report to Airboss yet.",
+  fix: "Agents can't report to Airboss yet. Connect Claude Code in Settings › Agent setup.",
+};
+
+export function anyConnected(a: AgentTools): boolean {
+  return a.claude || a.codex;
+}
+
+/**
+ * The Agents row's one next step on first run: install the CLI (missing or broken), connect
+ * Claude Code (no agent tool has the server), or copy the agent note (ready).
+ */
+export type AgentsStep = 'install' | 'connect' | 'note';
+
+export function agentsStep(cliInstalled: boolean, agents: AgentTools): AgentsStep {
+  if (!cliInstalled) return 'install';
+  return anyConnected(agents) ? 'note' : 'connect';
 }
 
 /** The footer: "All connected", the first problem in plain words, or "N connections need setup". */

@@ -43,6 +43,7 @@ pub const COMMAND_NAMES: &[&str] = &[
     "recheck_connections",
     "copy_text",
     "install_cli",
+    "connect_claude",
     "get_settings",
     "set_settings",
     "notification_permission",

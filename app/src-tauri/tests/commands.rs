@@ -1121,13 +1121,13 @@ fn recheck_copy_and_install_cli() {
     let link = app.home.join(".local/bin/airboss");
     assert_eq!(out.path, link.to_string_lossy());
     assert_eq!(std::fs::read_link(&link).unwrap(), sidecar);
-    // Installing again replaces our own link.
+    // Installing again replaces our own link. No agent tool has the server yet (#9).
     appcmd::install_cli(&app.state, M).unwrap();
     assert!(
         app.state
             .connection_rows()
             .iter()
-            .any(|c| c.name == "Agents" && c.ok)
+            .any(|c| c.name == "Agents" && !c.ok && c.state == "Not connected")
     );
     std::fs::remove_file(&link).unwrap();
     std::fs::write(&link, b"someone else's").unwrap();
@@ -1171,6 +1171,11 @@ fn agents_are_ready_only_with_a_working_cli_and_say_when_one_last_reported() {
 
     std::fs::write(&cli, b"#!/bin/sh\n").unwrap();
     std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::fs::write(
+        app.home.join(".claude.json"),
+        r#"{"mcpServers":{"airboss":{}}}"#,
+    )
+    .unwrap();
     let a = agents(&app);
     assert_eq!((a.ok, a.state.as_str()), (true, "Ready"), "{a:?}");
     assert_eq!(a.detail, "No agent has reported yet.");
@@ -1199,6 +1204,156 @@ fn agents_are_ready_only_with_a_working_cli_and_say_when_one_last_reported() {
     assert_eq!(
         detail::bootstrap(&app.state, M).unwrap().agent_report,
         Some(at)
+    );
+}
+
+/// A working `~/.local/bin/airboss` under the test's home.
+fn install_fake_cli(app: &TestApp) {
+    use std::os::unix::fs::{PermissionsExt, symlink};
+    let cli = temp_dir("cli").join("airboss");
+    std::fs::write(&cli, b"#!/bin/sh\n").unwrap();
+    std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let bin = app.home.join(".local/bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    symlink(&cli, bin.join("airboss")).unwrap();
+}
+
+/// A fake `claude` that writes its argv, one per line, and `$HOME` to `<dir>/args`, then runs
+/// `body`. It never touches the real `~/.claude.json`: `HOME` is the test's.
+fn fake_claude(body: &str) -> (PathBuf, PathBuf) {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = temp_dir("claude");
+    let args = dir.join("args");
+    let script = dir.join("claude");
+    std::fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\nfor a in \"$@\"; do printf '%s\\n' \"$a\"; done > '{}'\necho \"HOME=$HOME\" >> '{}'\n{body}\n",
+            args.display(),
+            args.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    (script, args)
+}
+
+/// #9: Ready needs an agent tool that has the server, not only the CLI.
+#[test]
+fn agents_are_not_connected_until_claude_or_codex_has_the_server() {
+    let app = TestApp::new();
+    install_fake_cli(&app);
+    let a = agents(&app);
+    assert_eq!((a.ok, a.state.as_str()), (false, "Not connected"), "{a:?}");
+    assert_eq!(a.detail, "Agents can't report to Airboss yet.");
+    let b = detail::bootstrap(&app.state, M).unwrap();
+    assert_eq!((b.agents.claude, b.agents.codex), (false, false));
+
+    // A malformed file is not connected, and nothing breaks.
+    std::fs::write(app.home.join(".claude.json"), "{\"mcpServers\": ").unwrap();
+    assert!(!agents(&app).ok);
+
+    // Codex alone is enough.
+    std::fs::create_dir_all(app.home.join(".codex")).unwrap();
+    std::fs::write(
+        app.home.join(".codex/config.toml"),
+        "[mcp_servers.airboss]\ncommand = \"airboss\"\nargs = [\"mcp\"]\n",
+    )
+    .unwrap();
+    let a = agents(&app);
+    assert_eq!((a.ok, a.state.as_str()), (true, "Ready"), "{a:?}");
+    assert_eq!(a.detail, "No agent has reported yet.");
+    let b = detail::bootstrap(&app.state, M).unwrap();
+    assert_eq!((b.agents.claude, b.agents.codex), (false, true));
+    assert!(app.shell.events().iter().any(|e| matches!(
+        e,
+        UiEvent::ConnectionsChanged(c) if c.agents.codex && !c.agents.claude
+    )));
+}
+
+#[test]
+fn connect_claude_runs_claude_mcp_add_with_the_absolute_cli_path() {
+    // The fake registers the server the way the real one does: in $HOME/.claude.json.
+    let (claude, args) = fake_claude(
+        "printf '{\"mcpServers\":{\"airboss\":{\"command\":\"x\"}}}' > \"$HOME/.claude.json\"\necho 'Added stdio MCP server airboss'",
+    );
+    let app = TestApp::new().with_claude(claude);
+    // Without the CLI there's nothing to point Claude Code at.
+    let (code, message) = err_code(appcmd::connect_claude(&app.state, M));
+    assert_eq!(code, ErrorCode::NotFound);
+    assert!(
+        message.contains("Install the command-line tool"),
+        "{message}"
+    );
+    assert!(!args.exists(), "claude ran without the CLI");
+
+    install_fake_cli(&app);
+    assert!(!agents(&app).ok);
+    appcmd::connect_claude(&app.state, M).unwrap();
+    let bin = app.home.join(".local/bin/airboss");
+    assert_eq!(
+        std::fs::read_to_string(&args).unwrap(),
+        format!(
+            "mcp\nadd\n--scope\nuser\nairboss\n--\n{}\nmcp\nHOME={}\n",
+            bin.display(),
+            app.home.display()
+        )
+    );
+    let a = agents(&app);
+    assert_eq!((a.ok, a.state.as_str()), (true, "Ready"), "{a:?}");
+    assert!(app.shell.events().iter().any(|e| matches!(
+        e,
+        UiEvent::ConnectionsChanged(c) if c.agents.claude
+    )));
+
+    // Already registered: success, and claude isn't run again.
+    std::fs::remove_file(&args).unwrap();
+    appcmd::connect_claude(&app.state, M).unwrap();
+    assert!(!args.exists());
+}
+
+#[test]
+fn connect_claude_reports_a_failure_by_its_first_line_and_takes_already_exists_as_done() {
+    let (claude, args) = fake_claude(
+        "echo '' >&2\necho 'Error: Invalid scope: user' >&2\necho 'Usage: claude mcp add' >&2\nexit 1",
+    );
+    let app = TestApp::new().with_claude(claude);
+    install_fake_cli(&app);
+    let (code, message) = err_code(appcmd::connect_claude(&app.state, M));
+    assert_eq!(code, ErrorCode::Internal);
+    assert_eq!(
+        message,
+        "Couldn't connect Claude Code: Error: Invalid scope: user"
+    );
+    assert!(args.exists());
+    assert!(!agents(&app).ok);
+
+    // Registered in a way Airboss doesn't read (another config dir): claude says so; that's done.
+    let (claude, _) =
+        fake_claude("echo 'MCP server airboss already exists in user config' >&2\nexit 1");
+    let app = app.with_claude(claude);
+    appcmd::connect_claude(&app.state, M).unwrap();
+
+    // No claude at all.
+    let app = app.with_claude(PathBuf::from("/nonexistent/airboss-test/claude"));
+    let (code, message) = err_code(appcmd::connect_claude(&app.state, M));
+    assert_eq!(code, ErrorCode::NotFound);
+    assert!(message.contains("Copy the setup command"), "{message}");
+}
+
+#[test]
+fn copy_codex_setup_names_the_cli_by_its_absolute_path_and_passes_the_thread_id() {
+    let app = TestApp::new();
+    appcmd::copy_text(&app.state, M, CopyWhat::CodexSetup).unwrap();
+    let bin = app.home.join(".local/bin/airboss");
+    let expected = format!(
+        "copy_text([mcp_servers.airboss]\ncommand = \"{}\"\nargs = [\"mcp\"]\nenv_vars = [\"T3CODE_THREAD_ID\"]\n)",
+        bin.display()
+    );
+    assert!(
+        app.shell.calls().contains(&expected),
+        "{:?}",
+        app.shell.calls()
     );
 }
 

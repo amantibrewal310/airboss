@@ -90,6 +90,7 @@ export interface Commands {
   recheck_connections: C<None, null>;
   copy_text: C<{ what: CopyWhat }, null>;
   install_cli: C<None, InstallCliResult>;
+  connect_claude: C<None, null>;
   get_settings: C<None, Settings>;
   set_settings: C<{ settings: Settings }, Settings>;
   notification_permission: C<None, NotificationPermission>;
@@ -130,7 +131,7 @@ export const COMMAND_NAMES = [
   'back_up_database', 'pick_folder', 'set_branch',
   'add_dependency', 'remove_dependency', 'add_link', 'remove_link', 'add_note', 'do_it', 'plan_it',
   'add_to_t3', 'reopen_and_start', 'open_thread', 'open_url', 'needs_dismiss', 'needs_snooze',
-  'needs_restore', 'undo', 'recheck_connections', 'copy_text', 'install_cli', 'get_settings',
+  'needs_restore', 'undo', 'recheck_connections', 'copy_text', 'install_cli', 'connect_claude', 'get_settings',
   'set_settings', 'notification_permission', 'open_notification_settings', 'set_folded', 'set_focus_context', 'ui_ready', 'quickadd_shown', 'quickadd_hide',
   'quickadd_resize', 'show_main',
 ] as const satisfies readonly CommandName[];

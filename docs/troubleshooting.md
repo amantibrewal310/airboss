@@ -59,6 +59,21 @@ If another app takes the hotkey before Airboss starts, Airboss can't register it
 
 ## Agents
 
+**The Agents row says "Not connected"** ("Agents can't report to Airboss yet."). The command-line tool is installed, but no agent tool has the `airboss` MCP server, so an agent says something like "Airboss tools aren't available". Choose **Connect Claude Code** on the first-run screen, or **Settings › Agent setup › Claude Code › Connect**. Airboss reads, never writes, `~/.claude.json` (a top-level `mcpServers` entry named `airboss`) and `~/.codex/config.toml` (`[mcp_servers.airboss]`) to tell. A server added to one project only, without `--scope user`, doesn't count. Start a new agent thread afterwards: a running one doesn't pick up new servers.
+
+**Connect Claude Code failed.** The toast gives the reason and offers **Copy setup command**. Run that in Terminal instead.
+
+| The toast says | What to do |
+|---|---|
+| Couldn't find Claude Code's claude command. | Airboss looks in `~/.local/bin`, `~/.claude/local`, `/opt/homebrew/bin` and `/usr/local/bin`, then on your shell's `PATH`. Install Claude Code, or run the copied command where `claude` works. |
+| Couldn't connect Claude Code: … | `claude mcp add` failed; the rest is its first line. |
+| Claude Code didn't answer within 20 seconds. | Run the copied command in Terminal to see what it's waiting for. |
+| Install the command-line tool first, then connect Claude Code. | Choose Install command-line tool first. |
+
+If the row stays "Not connected" after a successful connect, Claude Code may keep its config somewhere else (`CLAUDE_CONFIG_DIR`). Airboss only reads `~/.claude.json`.
+
+**Codex** isn't connected in one click, because it needs a line `codex mcp add` can't write. **Settings › Agent setup › Codex › Copy Codex setup** copies the table for `~/.codex/config.toml`. See [Getting started](getting-started.md#codex).
+
 **An agent shows up as `agent:unknown/<pid>`,** or `list_tasks` with `mine: true` says "This server doesn't know which thread it serves". The `airboss mcp` process didn't get a thread id from its client.
 
 - **Codex** passes a server only a few variables. Add `env_vars = ["T3CODE_THREAD_ID"]` to `[mcp_servers.airboss]` in `~/.codex/config.toml`, then start a new thread. `codex mcp add` can't set this; it's a hand edit. See [Getting started](getting-started.md#codex).
@@ -67,7 +82,7 @@ If another app takes the hotkey before Airboss starts, Airboss can't register it
 
 The server's instructions name the actor it acts as, so asking the agent "who does Airboss say you are?" is a quick check.
 
-**Agents don't report.** Check the tools are connected: the agent should list six `airboss` tools. Then add the [agent note](getting-started.md#tell-agents-to-report) to the repo's `AGENTS.md` or `CLAUDE.md`.
+**Agents don't report.** Check the Agents row says Ready, and that the agent lists six `airboss` tools. Then add the [agent note](getting-started.md#tell-agents-to-report) to the repo's `AGENTS.md` or `CLAUDE.md`.
 
 **An agent's update doesn't show in the window.** They should show within 300 ms. If the Live updates row says "Not watching", changes from agents show when the window gains focus; restart Airboss. Also check the agent and the app use the same database (see below).
 

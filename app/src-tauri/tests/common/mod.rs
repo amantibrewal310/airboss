@@ -201,12 +201,17 @@ impl TestApp {
 
     /// Any store, and a chosen home folder.
     pub fn with_home(store: Store, home: PathBuf) -> TestApp {
-        TestApp::build(share(store), home, None)
+        TestApp::build(share(store), home, None, None)
     }
 
     /// No login shell runs in tests unless one is given: the PATH check would read the
     /// developer's own startup files.
-    fn build(store: SharedStore, home: PathBuf, login_shell: Option<PathBuf>) -> TestApp {
+    fn build(
+        store: SharedStore,
+        home: PathBuf,
+        login_shell: Option<PathBuf>,
+        claude: Option<PathBuf>,
+    ) -> TestApp {
         let violations = Arc::new(AtomicUsize::new(0));
         let sync = Arc::new(FakeSync::new());
         let launch = Arc::new(FakeLaunch::new());
@@ -241,6 +246,8 @@ impl TestApp {
         config.reject_retry = vec![Duration::from_millis(50)];
         config.fold_save_delay = Duration::from_millis(30);
         config.shell = login_shell;
+        // Never the real `claude`: a fake, or a path where nothing is.
+        config.claude_path = Some(claude.unwrap_or_else(|| home.join("no-claude/claude")));
         let state = AppState::new(
             store.clone(),
             services,
@@ -265,7 +272,12 @@ impl TestApp {
 
     /// The same app, rebuilt with `shell` as the user's shell for the PATH check.
     pub fn with_shell(self, shell: PathBuf) -> TestApp {
-        TestApp::build(self.store, self.home, Some(shell))
+        TestApp::build(self.store, self.home, Some(shell), None)
+    }
+
+    /// The same app, rebuilt with `claude` as Claude Code's command, for Connect Claude Code.
+    pub fn with_claude(self, claude: PathBuf) -> TestApp {
+        TestApp::build(self.store, self.home, None, Some(claude))
     }
 
     /// Adds a task as me, straight to `core` (no catch-up).

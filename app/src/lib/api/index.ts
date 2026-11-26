@@ -70,6 +70,8 @@ export const api = {
   recheckConnections: () => call('recheck_connections', none),
   copyText: (what: CopyWhat) => call('copy_text', { what }),
   installCli: () => call('install_cli', none),
+  /** Connect Claude Code: `claude mcp add --scope user airboss …`, only on the user's click. */
+  connectClaude: () => call('connect_claude', none),
   getSettings: () => call('get_settings', none),
   setSettings: (settings: Settings) => call('set_settings', { settings }),
   notificationPermission: () => call('notification_permission', none),

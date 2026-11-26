@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import Button from '../../lib/components/Button.svelte';
   import Icon from '../../lib/components/Icon.svelte';
   import Kbd from '../../lib/components/Kbd.svelte';
@@ -9,15 +10,30 @@
 
   /**
    * First run (any start with no tasks): "Nothing here yet", New task and Change hotkey…, the
-   * ticked "Open Airboss at login" box, the Add repos step while no repo is added, and the
-   * connections with what each needs.
+   * ticked "Open Airboss at login" box, the Add repos step, and the connections with what each
+   * needs. The Repos step shows when the screen opens with no repo, and then stays for as long
+   * as the screen does, so adding one folder doesn't take the list (and its ticks) away.
    */
   const app = useApp();
+  const showRepos = untrack(() => !app.tasks.repos.length);
   const rows = $derived(app.conn.merged.filter((c) => ['Agents', 'T3 Code', 'GitHub'].includes(c.name)));
   const order = (c: Connection) => ['Agents', 'T3 Code', 'GitHub'].indexOf(c.name);
 
+  const agentsLabel = $derived(
+    { install: 'Install command-line tool', connect: app.conn.connecting ? 'Connecting…' : 'Connect Claude Code', note: 'Copy agent note' }[app.conn.agentsStep],
+  );
+
+  function agentsAction() {
+    const step = app.conn.agentsStep;
+    if (step === 'install') void app.installCli();
+    else if (step === 'connect') void app.connectClaude();
+    else void app.copy('agent_note');
+  }
+
   function detail(c: Connection): string {
     if (c.ok) return c.detail;
+    // Connect Claude Code is right here; the fix points elsewhere.
+    if (c.name === 'Agents' && app.conn.agentsStep === 'connect') return c.detail;
     return c.fix ?? c.detail;
   }
 </script>
@@ -43,7 +59,7 @@
       </div>
     </div>
 
-    {#if !app.tasks.repos.length}
+    {#if showRepos}
       <section>
         <h2>Repos</h2>
         <AddRepos embedded />
@@ -67,11 +83,8 @@
               <span>{#each detail(c).split('`') as part, i (i)}{#if i % 2}<code>{part}</code>{:else}{part}{/if}{/each}</span>
             </div>
             {#if c.name === 'Agents'}
-              {#if app.cli.installed}
-                <Button onclick={() => app.copy('agent_note')}>Copy agent note</Button>
-              {:else}
-                <Button onclick={() => app.installCli()}>Install command-line tool</Button>
-              {/if}
+              <!-- One button whose step changes, so focus stays on it from Install to Connect to Copy. -->
+              <Button aria-disabled={app.conn.connecting ? 'true' : undefined} onclick={agentsAction}>{agentsLabel}</Button>
             {:else}
               <Button onclick={() => app.recheck()}>Check again</Button>
             {/if}

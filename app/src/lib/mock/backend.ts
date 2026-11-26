@@ -9,6 +9,7 @@ import type { ArgsOf, CommandName, EventName, Events, ResultOf } from '../api/co
 import type { Transport } from '../api/transport';
 import type {
   AppError,
+  Connection,
   DoItPlace,
   DoItResult,
   EventKind,
@@ -205,6 +206,29 @@ export class MockBackend implements Transport {
   }
 
   /** The newest agent event's time, as Rust's catch-up tracks it. */
+  /** `connections:changed`, as Rust sends it. */
+  private emitConnections(): void {
+    this.emit('connections:changed', { connections: this.s.connections, availability: this.s.availability, agent_report: this.agentReport(), cli: this.s.cli, agents: this.s.agents });
+  }
+
+  /** The Agents row as Rust words it (`connections.rs`): the CLI, then an agent tool with the server. */
+  private agentsRow(): Connection {
+    if (!this.s.cli.installed) {
+      return { name: 'Agents', ok: false, state: 'Not set up', detail: 'Agents report progress and ask questions through the airboss command.', fix: 'Install the command-line tool, then copy the agent note.' };
+    }
+    if (!this.s.agents.claude && !this.s.agents.codex) {
+      return { name: 'Agents', ok: false, state: 'Not connected', detail: "Agents can't report to Airboss yet.", fix: "Agents can't report to Airboss yet. Connect Claude Code in Settings › Agent setup." };
+    }
+    return { name: 'Agents', ok: true, state: 'Ready', detail: 'Agents report progress and ask questions through the airboss command.', fix: null };
+  }
+
+  private setAgentsRow(): void {
+    const row = this.agentsRow();
+    this.s.connections = this.s.connections.some((c) => c.name === 'Agents')
+      ? this.s.connections.map((c) => (c.name === 'Agents' ? row : c))
+      : [...this.s.connections, row];
+  }
+
   private agentReport(): string | null {
     let at: string | null = null;
     for (const e of this.s.events) if (e.actor.startsWith('agent:') && (at === null || e.at > at)) at = e.at;
@@ -342,6 +366,7 @@ export class MockBackend implements Transport {
         settings: this.s.settings,
         accent: null,
         cli: this.s.cli,
+        agents: this.s.agents,
       };
     },
 
@@ -717,7 +742,7 @@ export class MockBackend implements Transport {
     },
 
     recheck_connections: () => {
-      setTimeout(() => this.emit('connections:changed', { connections: this.s.connections, availability: this.s.availability, agent_report: this.agentReport(), cli: this.s.cli }), 400);
+      setTimeout(() => this.emitConnections(), 400);
       return null;
     },
 
@@ -729,7 +754,9 @@ export class MockBackend implements Transport {
             : String(what.task_number)
           : what === 'agent_note'
             ? 'Airboss tracks this work. Use the airboss MCP tools to report progress.'
-            : 'claude mcp add --scope user airboss -- ~/.local/bin/airboss mcp';
+            : what === 'codex_setup'
+              ? '[mcp_servers.airboss]\ncommand = "/Users/you/.local/bin/airboss"\nargs = ["mcp"]\nenv_vars = ["T3CODE_THREAD_ID"]\n'
+              : 'claude mcp add --scope user airboss -- ~/.local/bin/airboss mcp';
       this.opened.push(`clipboard:${text}`);
       void globalThis.navigator?.clipboard?.writeText(text).catch(() => {});
       return null;
@@ -737,11 +764,20 @@ export class MockBackend implements Transport {
 
     install_cli: () => {
       this.s.cli = { ...this.s.cli, installed: true };
-      this.s.connections = this.s.connections.map((c) =>
-        c.name === 'Agents' ? { ...c, ok: true, state: 'Ready', fix: null } : c,
-      );
-      this.emit('connections:changed', { connections: this.s.connections, availability: this.s.availability, agent_report: this.agentReport(), cli: this.s.cli });
+      this.setAgentsRow();
+      this.emitConnections();
       return { path: this.s.cli.path, on_path: this.s.cli.on_path };
+    },
+
+    connect_claude: async () => {
+      if (!this.s.cli.installed) throw fail('not_found', 'Install the command-line tool first, then connect Claude Code.');
+      await new Promise((r) => setTimeout(r, this.delays.lookup));
+      if (this.s.connectClaudeError) throw fail('internal', this.s.connectClaudeError);
+      this.opened.push('claude mcp add --scope user airboss -- ~/.local/bin/airboss mcp');
+      this.s.agents = { ...this.s.agents, claude: true };
+      this.setAgentsRow();
+      this.emitConnections();
+      return null;
     },
 
     get_settings: () => this.s.settings,

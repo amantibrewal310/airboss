@@ -2,9 +2,15 @@
 
 use airboss_services::{Availability, Connection};
 
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::time::SystemTime;
 
-use crate::dto::{CliStatus, ConnectionsChanged};
+use serde::Deserialize;
+use tauri_plugin_log::log;
+
+use crate::dto::{AgentTools, CliStatus, ConnectionsChanged};
 use crate::services::Services;
 use crate::state::Problems;
 use crate::viewmodel::ViewModel;
@@ -66,6 +72,95 @@ pub fn cli_at(link: &std::path::Path) -> Cli {
     }
 }
 
+/// Claude Code's user config: its top-level `mcpServers` is where `claude mcp add --scope user`
+/// writes. Everything else in the file (often megabytes of history) is skipped unparsed.
+#[derive(Deserialize)]
+struct ClaudeJson {
+    #[serde(rename = "mcpServers", default)]
+    mcp_servers: Option<HashMap<String, serde::de::IgnoredAny>>,
+}
+
+/// Whether `~/.claude.json`'s text registers `airboss`; `Err` when it isn't valid JSON or
+/// `mcpServers` isn't an object.
+pub fn claude_has_airboss(text: &str) -> Result<bool, String> {
+    let c: ClaudeJson = serde_json::from_str(text).map_err(|e| e.to_string())?;
+    Ok(c.mcp_servers.is_some_and(|m| m.contains_key("airboss")))
+}
+
+/// Whether `~/.codex/config.toml`'s text has an `airboss` table under `mcp_servers` (written
+/// as `[mcp_servers.airboss]`, an inline table, or dotted keys); `Err` when it isn't TOML.
+pub fn codex_has_airboss(text: &str) -> Result<bool, String> {
+    let t: toml::Table = toml::from_str(text).map_err(|e| e.to_string())?;
+    Ok(t.get("mcp_servers")
+        .and_then(|m| m.get("airboss"))
+        .is_some_and(toml::Value::is_table))
+}
+
+/// A file as last read: its modification time and size, and what it said.
+struct Seen {
+    stamp: Option<(SystemTime, u64)>,
+    found: bool,
+}
+
+/// What each agent config file said, by path. Connections are recomputed on every catch-up,
+/// so a file is read again only when its time or size changes; a problem is logged once each
+/// time the file changes, not on every pass.
+static SEEN: Mutex<Option<HashMap<PathBuf, Seen>>> = Mutex::new(None);
+
+/// Whether the agent config at `path` registers `airboss`, by `parse`. Missing, unreadable
+/// or malformed is "no": never an error, never a crash.
+fn registered(path: &Path, parse: fn(&str) -> Result<bool, String>) -> bool {
+    let meta = std::fs::metadata(path);
+    let stamp = meta
+        .as_ref()
+        .ok()
+        .map(|m| (m.modified().unwrap_or(SystemTime::UNIX_EPOCH), m.len()));
+    let mut seen = crate::state::lock(&SEEN);
+    let seen = seen.get_or_insert_with(HashMap::new);
+    if let Some(s) = seen.get(path)
+        && s.stamp == stamp
+    {
+        return s.found;
+    }
+    let found = match meta {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            log::info!("{} isn't there: not connected", path.display());
+            false
+        }
+        Err(e) => {
+            log::warn!("can't read {}: {e}; not connected", path.display());
+            false
+        }
+        Ok(_) => match std::fs::read_to_string(path)
+            .map_err(|e| e.to_string())
+            .and_then(|t| parse(&t))
+        {
+            Ok(found) => {
+                log::info!(
+                    "{} {} airboss",
+                    path.display(),
+                    if found { "has" } else { "doesn't have" }
+                );
+                found
+            }
+            Err(e) => {
+                log::warn!("can't read {}: {e}; not connected", path.display());
+                false
+            }
+        },
+    };
+    seen.insert(path.to_path_buf(), Seen { stamp, found });
+    found
+}
+
+/// Which agent tools under `home` have the `airboss` MCP server.
+pub fn agent_tools(home: &Path) -> AgentTools {
+    AgentTools {
+        claude: registered(&home.join(".claude.json"), claude_has_airboss),
+        codex: registered(&home.join(".codex/config.toml"), codex_has_airboss),
+    }
+}
+
 /// Every row the footer shows, and T3's availability. `agent_report` is the time of the
 /// newest `agent:*` event, which the UI shows as "Last report 3m ago".
 pub(crate) fn merged(
@@ -73,6 +168,7 @@ pub(crate) fn merged(
     _vm: &ViewModel,
     problems: &Problems,
     cli_status: CliStatus,
+    agents: AgentTools,
     agent_report: Option<&str>,
 ) -> ConnectionsChanged {
     let cli = cli_at(Path::new(&cli_status.path));
@@ -102,7 +198,15 @@ pub(crate) fn merged(
         _ => {}
     }
     let detail = "Agents report progress and ask questions through the airboss command.";
+    let connected = agents.claude || agents.codex;
     rows.push(match (cli, agent_report) {
+        (Cli::Ready, _) if !connected => row(
+            "Agents",
+            false,
+            "Not connected",
+            "Agents can't report to Airboss yet.",
+            Some("Agents can't report to Airboss yet. Connect Claude Code in Settings › Agent setup."),
+        ),
         (Cli::Ready, Some(_)) => row("Agents", true, "Ready", detail, None),
         (Cli::Ready, None) => row("Agents", true, "Ready", "No agent has reported yet.", None),
         (Cli::Broken, _) => row(
@@ -166,12 +270,126 @@ pub(crate) fn merged(
         availability,
         agent_report: agent_report.map(str::to_string),
         cli: cli_status,
+        agents,
     }
 }
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used)]
+
     use super::*;
+
+    /// A throwaway home folder with `files` written under it.
+    fn home(name: &str, files: &[(&str, &str)]) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("airboss-agents-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        for (path, text) in files {
+            let p = dir.join(path);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, text).unwrap();
+        }
+        dir
+    }
+
+    #[test]
+    fn claude_counts_only_a_top_level_airboss_server() {
+        let yes = r#"{"numStartups":3,"mcpServers":{"airboss":{"type":"stdio","command":"/Users/x/.local/bin/airboss","args":["mcp"]}},"projects":{}}"#;
+        assert_eq!(claude_has_airboss(yes), Ok(true));
+        assert_eq!(
+            claude_has_airboss(r#"{"mcpServers":{"other":{}}}"#),
+            Ok(false)
+        );
+        assert_eq!(claude_has_airboss(r#"{"mcpServers":{}}"#), Ok(false));
+        assert_eq!(claude_has_airboss("{}"), Ok(false));
+        // A project-scoped server isn't the user-scope one Airboss needs.
+        let project = r#"{"projects":{"/x":{"mcpServers":{"airboss":{}}}}}"#;
+        assert_eq!(claude_has_airboss(project), Ok(false));
+        assert!(claude_has_airboss("{not json").is_err());
+        assert!(claude_has_airboss(r#"{"mcpServers":["airboss"]}"#).is_err());
+    }
+
+    #[test]
+    fn codex_counts_an_airboss_table_however_it_is_written() {
+        let table = "model = \"o4\"\n[mcp_servers.airboss]\ncommand = \"/Users/x/.local/bin/airboss\"\nargs = [\"mcp\"]\nenv_vars = [\"T3CODE_THREAD_ID\"]\n";
+        assert_eq!(codex_has_airboss(table), Ok(true));
+        let inline = "[mcp_servers]\nairboss = { command = \"airboss\", args = [\"mcp\"] }\n";
+        assert_eq!(codex_has_airboss(inline), Ok(true));
+        assert_eq!(
+            codex_has_airboss("mcp_servers.airboss.command = \"airboss\"\n"),
+            Ok(true)
+        );
+        assert_eq!(
+            codex_has_airboss("[mcp_servers.other]\ncommand = \"x\"\n"),
+            Ok(false)
+        );
+        assert_eq!(
+            codex_has_airboss("[mcp_servers]\nairboss = \"x\"\n"),
+            Ok(false)
+        );
+        assert_eq!(codex_has_airboss(""), Ok(false));
+        assert!(codex_has_airboss("[mcp_servers.airboss\ncommand =").is_err());
+    }
+
+    #[test]
+    fn agent_tools_read_both_files_under_home_and_treat_problems_as_not_connected() {
+        let claude = r#"{"mcpServers":{"airboss":{}}}"#;
+        let codex = "[mcp_servers.airboss]\ncommand = \"airboss\"\n";
+        let none = home("none", &[]);
+        assert_eq!(agent_tools(&none), AgentTools::default());
+        let both = home(
+            "both",
+            &[(".claude.json", claude), (".codex/config.toml", codex)],
+        );
+        assert_eq!(
+            agent_tools(&both),
+            AgentTools {
+                claude: true,
+                codex: true
+            }
+        );
+        let broken = home(
+            "broken",
+            &[
+                (".claude.json", "{\"mcpServers\": {\"airb"),
+                (".codex/config.toml", "[[["),
+            ],
+        );
+        assert_eq!(agent_tools(&broken), AgentTools::default());
+        // A folder where the file should be can't be read: not connected, no panic.
+        let odd = home("odd", &[(".claude.json/x", "")]);
+        assert!(!agent_tools(&odd).claude);
+        // Unreadable (no permission): not connected.
+        let locked = home("locked", &[(".claude.json", claude)]);
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let p = locked.join(".claude.json");
+            std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o000)).unwrap();
+            // Root can read anything; the check only means something for a normal user.
+            if std::fs::read(&p).is_err() {
+                assert!(!agent_tools(&locked).claude);
+            }
+            std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o644)).unwrap();
+        }
+        for d in [none, both, broken, odd, locked] {
+            let _ = std::fs::remove_dir_all(d);
+        }
+    }
+
+    #[test]
+    fn a_changed_file_is_read_again_and_an_unchanged_one_is_not() {
+        let dir = home("cache", &[(".claude.json", "{}")]);
+        assert!(!agent_tools(&dir).claude);
+        // A different size changes the stamp, even within the same mtime tick.
+        std::fs::write(dir.join(".claude.json"), r#"{"mcpServers":{"airboss":{}}}"#).unwrap();
+        assert!(agent_tools(&dir).claude);
+        // Removing it is noticed too.
+        std::fs::remove_file(dir.join(".claude.json")).unwrap();
+        assert!(!agent_tools(&dir).claude);
+        let _ = std::fs::remove_dir_all(dir);
+    }
 
     #[test]
     fn rows_with_the_same_name_merge_and_the_worst_state_wins() {

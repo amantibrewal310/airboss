@@ -166,6 +166,29 @@
           <Button onclick={() => app.copy('setup_command')}>Copy setup command</Button>
         </div>
       </div>
+      <!-- Each agent tool: Connected (its config has the airboss server), or how to connect it. -->
+      <ul class="tools" aria-label="Agent tools">
+        <li>
+          <span class="tool">Claude Code</span>
+          {#if app.conn.agents.claude}
+            <span class="on">Connected</span>
+          {:else}
+            <span class="off">Not connected</span>
+            <Button size="sm" aria-disabled={app.conn.connecting ? 'true' : undefined} onclick={() => app.connectClaude()}>
+              {app.conn.connecting ? 'Connecting…' : 'Connect'}
+            </Button>
+          {/if}
+        </li>
+        <li>
+          <span class="tool">Codex</span>
+          {#if app.conn.agents.codex}
+            <span class="on">Connected</span>
+          {:else}
+            <span class="off">Paste into <code>~/.codex/config.toml</code></span>
+            <Button size="sm" onclick={() => app.copy('codex_setup')}>Copy Codex setup</Button>
+          {/if}
+        </li>
+      </ul>
       <pre>claude mcp add --scope user airboss -- ~/.local/bin/airboss mcp</pre>
     </section>
 
@@ -238,6 +261,42 @@
   .btns {
     display: flex;
     gap: 6px;
+  }
+  .tools {
+    list-style: none;
+    margin: 10px 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .tools li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 24px;
+    font-size: var(--fs-meta);
+  }
+  .tool {
+    width: 92px;
+    flex: none;
+    font-weight: 500;
+  }
+  .tools .on,
+  .tools .off {
+    flex: 1;
+    min-width: 0;
+    color: var(--text-2);
+  }
+  .tools .on::before {
+    content: '';
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    margin-right: 6px;
+    border-radius: 50%;
+    background: var(--st-review);
+    vertical-align: 1px;
   }
   .rec {
     min-width: 96px;

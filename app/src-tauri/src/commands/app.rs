@@ -1,6 +1,8 @@
 //! App commands: the opener, the clipboard, the CLI, settings, focus, and the windows.
 
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use airboss_core::{LinkKind, TaskId};
 use airboss_services::ThreadKey;
@@ -23,6 +25,16 @@ use crate::state::{AppState, Caller, lock};
 pub const AGENT_NOTE: &str = include_str!("../../resources/agent-note.md");
 /// The command "Copy setup command" copies.
 pub const SETUP_COMMAND: &str = "claude mcp add --scope user airboss -- ~/.local/bin/airboss mcp";
+/// What "Copy Codex setup" copies: `codex mcp add` can't set `env_vars`, which Codex needs to
+/// pass T3's thread id to the server, so it's a table for `~/.codex/config.toml` (`{bin}` is
+/// the CLI's absolute path).
+pub const CODEX_SETUP: &str = "[mcp_servers.airboss]\ncommand = \"{bin}\"\nargs = [\"mcp\"]\nenv_vars = [\"T3CODE_THREAD_ID\"]\n";
+/// How long Connect Claude Code waits for `claude mcp add`.
+pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
+/// Where Claude Code's `claude` usually is, under the home folder and then the system's,
+/// before the app's `PATH` and the user's login shell's.
+const CLAUDE_PLACES: &[&str] = &[".local/bin/claude", ".claude/local/claude"];
+const CLAUDE_SYSTEM_PLACES: &[&str] = &["/opt/homebrew/bin/claude", "/usr/local/bin/claude"];
 
 /// Opens a thread in T3 Code through `sync.thread_url` (`t3code://threads/…`).
 pub fn open_thread(s: &AppState, _c: Caller, key: ThreadKey) -> AppResult<()> {
@@ -113,6 +125,7 @@ pub fn copy_text(s: &AppState, _c: Caller, what: CopyWhat) -> AppResult<()> {
         CopyWhat::TaskNumber(id) => id.0.to_string(),
         CopyWhat::AgentNote => AGENT_NOTE.to_string(),
         CopyWhat::SetupCommand => SETUP_COMMAND.to_string(),
+        CopyWhat::CodexSetup => codex_setup(&s.config.home),
         CopyWhat::Link(url) => url,
     };
     s.shell
@@ -164,6 +177,135 @@ pub fn install_cli(s: &AppState, _c: Caller) -> AppResult<InstallCliResult> {
         path: path_text(&link),
         on_path,
     })
+}
+
+/// The `[mcp_servers.airboss]` table for `~/.codex/config.toml`, with the CLI's real path.
+pub fn codex_setup(home: &Path) -> String {
+    CODEX_SETUP.replace("{bin}", &home.join(".local/bin/airboss").to_string_lossy())
+}
+
+/// An executable file at `p`.
+fn runnable(p: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(p).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+}
+
+/// Finds `claude` the way `gh` is found (`sync::gh::find_gh`): the usual places first, then
+/// the app's `PATH`, then the user's login shell's (`login_path.rs`), since an app opened from
+/// Finder has launchd's short `PATH`. Returns it with the `PATH` its child should get, so a
+/// `claude` that's a Node script finds `node`.
+fn find_claude(s: &AppState) -> Option<(PathBuf, OsString)> {
+    let app_path = std::env::var_os("PATH").unwrap_or_default();
+    if let Some(p) = &s.config.claude_path {
+        return runnable(p).then(|| (p.clone(), app_path));
+    }
+    let home = &s.config.home;
+    let login = s.config.shell.as_deref().and_then(|sh| {
+        crate::login_path::login_shell_path(sh, &[], crate::login_path::DEADLINE)
+            .map(OsString::from)
+    });
+    let on = |path: &OsString| {
+        std::env::split_paths(path)
+            .map(|d| d.join("claude"))
+            .find(|p| runnable(p))
+    };
+    let found = CLAUDE_PLACES
+        .iter()
+        .map(|p| home.join(p))
+        .chain(CLAUDE_SYSTEM_PLACES.iter().map(PathBuf::from))
+        .find(|p| runnable(p))
+        .or_else(|| on(&app_path))
+        .or_else(|| login.as_ref().and_then(on))?;
+    Some((found, login.unwrap_or(app_path)))
+}
+
+/// The first line worth showing from what `claude` printed: stderr's, else stdout's.
+fn first_line(out: &airboss_launch::CmdOutput) -> String {
+    [&out.stderr, &out.stdout]
+        .iter()
+        .flat_map(|t| t.lines())
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .unwrap_or("it gave no reason")
+        .to_string()
+}
+
+/// "Connect Claude Code", only ever on the user's click: `claude mcp add --scope user airboss
+/// -- <home>/.local/bin/airboss mcp`, with argv only (no shell, so the path is absolute) and a
+/// 20 s deadline. Already registered counts as done. The connections refresh after.
+pub fn connect_claude(s: &AppState, _c: Caller) -> AppResult<()> {
+    let home = &s.config.home;
+    let bin = home.join(".local/bin/airboss");
+    if crate::connections::cli_at(&bin) != crate::connections::Cli::Ready {
+        return Err(AppError::new(
+            ErrorCode::NotFound,
+            "Install the command-line tool first, then connect Claude Code.",
+        ));
+    }
+    if crate::connections::agent_tools(home).claude {
+        s.refresh_connections();
+        return Ok(());
+    }
+    let (claude, path) = find_claude(s).ok_or_else(|| {
+        AppError::new(
+            ErrorCode::NotFound,
+            "Couldn't find Claude Code's claude command. Copy the setup command and run it in Terminal.",
+        )
+    })?;
+    // `claude`'s own folder first, so a Node install finds the `node` beside it.
+    let path = std::env::join_paths(
+        claude
+            .parent()
+            .map(Path::to_path_buf)
+            .into_iter()
+            .chain(std::env::split_paths(&path)),
+    )
+    .unwrap_or(path);
+    let mut env = airboss_launch::child_env(std::env::vars_os());
+    env.retain(|(k, _)| k != "PATH" && k != "HOME");
+    env.push(("PATH".into(), path));
+    env.push(("HOME".into(), home.clone().into_os_string()));
+    let argv: Vec<String> = [
+        "mcp",
+        "add",
+        "--scope",
+        "user",
+        "airboss",
+        "--",
+        &bin.to_string_lossy(),
+        "mcp",
+    ]
+    .iter()
+    .map(|a| a.to_string())
+    .collect();
+    log::info!("connect_claude: {} {}", claude.display(), argv.join(" "));
+    let out = airboss_launch::ProcessRunner::new(claude, home.clone(), env)
+        .run(&argv, None, CONNECT_TIMEOUT)
+        .map_err(|e| match e.kind() {
+            std::io::ErrorKind::TimedOut => AppError::new(
+                ErrorCode::Timeout,
+                "Claude Code didn't answer within 20 seconds. Copy the setup command and run it in Terminal.",
+            ),
+            _ => AppError::new(
+                ErrorCode::NotFound,
+                format!("Couldn't run Claude Code's claude command: {e}"),
+            ),
+        })?;
+    let already = format!("{}{}", out.stdout, out.stderr).contains("already exists");
+    if out.status != Some(0) && !already {
+        let line = first_line(&out);
+        log::warn!(
+            "connect_claude: claude exited with {:?}: {line}",
+            out.status
+        );
+        return Err(AppError::new(
+            ErrorCode::Internal,
+            format!("Couldn't connect Claude Code: {line}"),
+        ));
+    }
+    log::info!("connect_claude: connected");
+    s.refresh_connections();
+    Ok(())
 }
 
 /// The settings now.
