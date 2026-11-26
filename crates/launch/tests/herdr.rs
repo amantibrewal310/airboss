@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use airboss_core::{LinkKind, Repo, Status, Task, TaskId};
-use airboss_launch::fake::{HerdrReply, Reply};
+use airboss_launch::fake::{FakeTab, HerdrReply, Reply};
 use airboss_launch::herdr::Tool;
 use airboss_launch::{HERDR_MISSING, LaunchMsg};
 use airboss_services::{
@@ -77,6 +77,15 @@ fn task(h: &H, title: &str, repos: &[&Repo]) -> Task {
     h.task(title, repos)
 }
 
+/// The tabs that run an agent, leaving out new spaces' shell tabs.
+fn agent_tabs(h: &H) -> Vec<FakeTab> {
+    h.herdr
+        .tabs()
+        .into_iter()
+        .filter(|t| !t.argv.is_empty())
+        .collect()
+}
+
 fn app_commands(h: &H) -> Vec<String> {
     h.herdr
         .calls()
@@ -105,11 +114,24 @@ fn do_it_in_one_repo_makes_the_worktree_and_opens_a_tab_in_a_new_space() {
     )));
     assert!(wt.is_dir());
 
-    // No space for the repo yet: space.new makes one, named after it, without focus.
-    let tabs = h.herdr.tabs();
+    // No space for the repo yet: space.new makes one, named after it, in the repo's folder,
+    // with a shell tab named after it; then the agent's tab goes in, without focus.
+    let all = h.herdr.tabs();
+    assert_eq!(all.len(), 2);
+    let shell = &all[0];
+    assert!(shell.new_space);
+    assert_eq!(
+        (shell.name.as_str(), shell.folder.as_str()),
+        ("web", web.path.as_str())
+    );
+    assert!(shell.argv.is_empty() && shell.task.is_empty());
+    assert_eq!(shell.focus, Some(false));
+    assert_eq!(h.herdr.spaces()[0].2, web.path);
+    let tabs = agent_tabs(&h);
     assert_eq!(tabs.len(), 1);
     let tab = &tabs[0];
-    assert!(tab.new_space);
+    assert!(!tab.new_space);
+    assert_eq!(tab.space, shell.space);
     assert_eq!(tab.name, format!("{} Booking flow", t.id.0));
     assert_eq!(tab.folder, wt.display().to_string());
     assert_eq!(tab.argv, ["claude"]);
@@ -177,7 +199,7 @@ fn the_repos_space_is_found_by_name_then_by_folder_on_this_computer() {
     let t = task(&h, "X", &[&web, &api, &db]);
     let report = h.launch.start(&do_it(t.id)).unwrap();
     assert_eq!(report.started.len(), 3, "{:?}", report.failed);
-    let tabs = h.herdr.tabs();
+    let tabs = agent_tabs(&h);
     let in_space = |name: &str| {
         tabs.iter()
             .find(|t| t.name.ends_with(&format!(" · {name}")))
@@ -188,7 +210,14 @@ fn the_repos_space_is_found_by_name_then_by_folder_on_this_computer() {
     assert_eq!(in_space("web").space, "sp-web");
     assert!(!in_space("web").new_space);
     assert_eq!(in_space("api").space, "sp-api");
-    assert!(in_space("db").new_space);
+    // db has none: its own, in its folder.
+    let db_space = in_space("db").space;
+    let spaces = h.herdr.spaces();
+    let made = spaces.iter().find(|s| s.0 == db_space).unwrap();
+    assert_eq!(
+        (made.1.as_deref(), made.2.as_str()),
+        (Some("db"), db.path.as_str())
+    );
 }
 
 #[test]
@@ -200,7 +229,7 @@ fn do_it_in_two_repos_uses_one_branch_and_a_worktree_each() {
     let report = h.launch.start(&do_it(t.id)).unwrap();
     assert_eq!(report.started.len(), 2);
     let branch = report.branch.clone().unwrap();
-    let tabs = h.herdr.tabs();
+    let tabs = agent_tabs(&h);
     // By name: booking-api first.
     assert_eq!(
         tabs[0].folder,
@@ -240,7 +269,7 @@ fn an_existing_worktree_on_the_branch_is_reused() {
     let report = h.launch.start(&do_it(t.id)).unwrap();
     assert_eq!(report.started.len(), 1);
     assert!(!h.git.calls().iter().any(|c| c.starts_with("add_worktree")));
-    assert_eq!(h.herdr.tabs()[0].folder, wt.display().to_string());
+    assert_eq!(agent_tabs(&h)[0].folder, wt.display().to_string());
 }
 
 #[test]
@@ -280,7 +309,7 @@ fn gits_refusal_is_worktree_failed_and_doesnt_stop_the_others() {
         "'task-1-x' is already checked out at '/src/api'."
     );
     assert_eq!(report.started.len(), 1);
-    assert_eq!(h.herdr.tabs().len(), 1, "no tab for the failed repo");
+    assert_eq!(agent_tabs(&h).len(), 1, "no tab for the failed repo");
 }
 
 #[test]
@@ -331,7 +360,7 @@ fn start_again_uses_the_again_branch_and_its_own_worktree() {
     // A second press without again skips.
     let report = h.launch.start(&do_it(t.id)).unwrap();
     assert_eq!(report.skipped, [web.id]);
-    assert_eq!(h.herdr.tabs().len(), 1);
+    assert_eq!(agent_tabs(&h).len(), 1);
 
     let report = h.launch.start(&common::again(do_it(t.id))).unwrap();
     assert_eq!(report.started.len(), 1);
@@ -343,7 +372,7 @@ fn start_again_uses_the_again_branch_and_its_own_worktree() {
         web.path,
         wt.display()
     )));
-    let tabs = h.herdr.tabs();
+    let tabs = agent_tabs(&h);
     assert_eq!(tabs[1].folder, wt.display().to_string());
     // The second tab goes in the space the first made.
     assert!(!tabs[1].new_space);
@@ -359,7 +388,7 @@ fn a_t3_thread_already_started_here_is_skipped() {
     h.launch.start(&common::do_it(t.id)).unwrap();
     let report = h.launch.start(&do_it(t.id)).unwrap();
     assert_eq!(report.skipped, [web.id]);
-    assert!(h.herdr.tabs().is_empty());
+    assert!(agent_tabs(&h).is_empty());
 }
 
 #[test]
@@ -371,7 +400,7 @@ fn plan_it_opens_one_tab_in_the_first_repo_with_no_worktree() {
     let report = h.launch.start(&plan_it(t.id)).unwrap();
     assert_eq!(report.started.len(), 1);
     assert_eq!(report.branch, None);
-    let tabs = h.herdr.tabs();
+    let tabs = agent_tabs(&h);
     assert_eq!(tabs.len(), 1);
     assert_eq!(tabs[0].name, format!("Plan {} Big thing", t.id.0));
     assert_eq!(tabs[0].folder, api.path);
@@ -394,7 +423,7 @@ fn research_only_opens_one_tab_in_the_folder() {
     let report = h.launch.start(&req).unwrap();
     assert_eq!(report.started.len(), 1);
     assert_eq!(report.started[0].repo, None);
-    let tab = &h.herdr.tabs()[0];
+    let tab = &agent_tabs(&h)[0];
     assert_eq!(tab.folder, dir.display().to_string());
     assert!(tab.task.contains("No repo: this is research or writing."));
     assert!(tab.task.contains("`kind: \"herdr_terminal\"`"));
@@ -414,7 +443,7 @@ fn codex_runs_without_its_daemon() {
         ..common::do_it(t.id)
     };
     h.launch.start(&req).unwrap();
-    assert_eq!(h.herdr.tabs()[0].argv, ["codex", "--no-daemon"]);
+    assert_eq!(agent_tabs(&h)[0].argv, ["codex", "--no-daemon"]);
 }
 
 #[test]
@@ -431,7 +460,7 @@ fn herdrs_worktree_directory_setting_is_used() {
         .home
         .join("Developer/wt/web")
         .join(format!("task-{}-x", t.id.0));
-    assert_eq!(h.herdr.tabs()[0].folder, expected.display().to_string());
+    assert_eq!(agent_tabs(&h)[0].folder, expected.display().to_string());
 }
 
 #[test]
@@ -557,7 +586,8 @@ fn the_pending_row_is_committed_before_the_tab_opens() {
         }
     });
     h.launch.start(&do_it(t.id)).unwrap();
-    assert_eq!(*seen.lock().unwrap(), ["pending"]);
+    // The space's shell tab, then the agent's.
+    assert_eq!(*seen.lock().unwrap(), ["pending", "pending"]);
 }
 
 #[test]
@@ -642,7 +672,7 @@ fn a_pending_row_with_no_terminal_is_lost_after_2_minutes() {
 }
 
 #[test]
-fn while_hc_cant_answer_a_pending_row_stays_pending() {
+fn while_hc_cant_answer_a_pending_row_is_still_lost_after_2_minutes() {
     let mut h = H::new();
     let web = repo(&h, "web");
     let t = task(&h, "X", &[&web]);
@@ -650,8 +680,11 @@ fn while_hc_cant_answer_a_pending_row_stays_pending() {
     h.launch.start(&do_it(t.id)).unwrap();
     h.herdr.break_hc();
     h.worker
-        .handle(LaunchMsg::Tick, t0() + Duration::from_secs(600));
+        .handle(LaunchMsg::Tick, t0() + Duration::from_secs(60));
     assert_eq!(h.rows(t.id)[0].2, "pending");
+    h.worker
+        .handle(LaunchMsg::Tick, t0() + Duration::from_secs(120));
+    assert_eq!(h.rows(t.id)[0].2, "lost");
 }
 
 #[test]
@@ -784,4 +817,167 @@ fn the_real_runner_finds_local_bin_then_path_and_drops_thread_variables() {
         .run(Tool::App, &["--version".into()], Duration::from_secs(5))
         .unwrap_err();
     assert_eq!(e.kind(), std::io::ErrorKind::NotFound);
+}
+
+/// The row id of a task's only launch row.
+fn row_id(h: &H, task: TaskId) -> i64 {
+    herdr_rows(h, task)[0].0
+}
+
+#[test]
+fn a_tab_whose_answer_was_lost_is_adopted_when_its_the_only_one() {
+    let h = H::new();
+    let web = repo(&h, "web");
+    let t = task(&h, "X", &[&web]);
+    h.herdr.push(HerdrReply::OpensThenTimeout);
+    let report = h.launch.start(&do_it(t.id)).unwrap();
+    assert!(report.failed.is_empty(), "{:?}", report.failed);
+    let tab = &agent_tabs(&h)[0];
+    assert_eq!(report.started[0].key, key(&tab.terminal));
+    assert!(
+        h.herdr
+            .labels(&tab.terminal)
+            .contains(&format!("airboss.launch={}", row_id(&h, t.id)))
+    );
+    let links = h.store.lock().unwrap().links(t.id).unwrap();
+    assert_eq!(links[0].kind, LinkKind::HerdrTerminal);
+    assert_eq!(links[0].r#ref, tab.terminal);
+}
+
+#[test]
+fn a_lost_answer_with_two_candidates_adopts_neither_and_says_so() {
+    let mut h = H::new();
+    let t = task(&h, "X", &[]);
+    let dir = h.dir.dir("notes");
+    let req = StartRequest {
+        place: Place::NoRepo(dir.clone()),
+        ..plan_it(t.id)
+    };
+    // Another unlabelled terminal started in the same folder at the same time.
+    let t0_ms = t0()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    h.herdr.add_terminal_in("t90", &dir, t0_ms, &[]);
+    h.herdr.push(HerdrReply::OpensThenTimeout);
+    let report = h.launch.start(&req).unwrap();
+    let e = &report.failed[0].1;
+    assert_eq!(e.code, ErrorCode::Timeout);
+    assert!(
+        e.message.contains("choose Start again in 2 minutes"),
+        "{}",
+        e.message
+    );
+    assert_eq!(h.rows(t.id)[0].2, "pending");
+    // Settling finds the same two, and binds neither; at 2 minutes the row is lost.
+    h.worker
+        .handle(LaunchMsg::Tick, t0() + Duration::from_secs(10));
+    assert_eq!(h.rows(t.id)[0].2, "pending");
+    // One of them ends: now only one can be the tab, and settling adopts it.
+    h.herdr.finish("t90");
+    h.worker
+        .handle(LaunchMsg::Tick, t0() + Duration::from_secs(30));
+    let tab = &agent_tabs(&h)[0];
+    assert_eq!(h.rows(t.id)[0].2, "started");
+    assert_eq!(h.rows(t.id)[0].3.as_deref(), Some(tab.terminal.as_str()));
+}
+
+#[test]
+fn adoption_skips_old_labelled_or_linked_terminals() {
+    let mut h = H::new();
+    let t = task(&h, "X", &[]);
+    let other = task(&h, "Other", &[]);
+    let dir = h.dir.dir("notes");
+    let t0_ms = t0()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    // Older than the row; Airboss-labelled; linked to another task: none can be the tab.
+    h.herdr.add_terminal_in("t91", &dir, t0_ms - 1, &[]);
+    h.herdr
+        .add_terminal_in("t92", &dir, t0_ms, &[("airboss.launch", "77")]);
+    h.herdr.add_terminal_in("t93", &dir, t0_ms, &[]);
+    h.store
+        .lock()
+        .unwrap()
+        .link(
+            other.id,
+            airboss_core::NewLink::new(LinkKind::HerdrTerminal, "t93"),
+            &airboss_core::Actor::Me,
+        )
+        .unwrap();
+    let req = StartRequest {
+        place: Place::NoRepo(dir.clone()),
+        ..plan_it(t.id)
+    };
+    h.herdr.push(HerdrReply::Timeout);
+    h.launch.start(&req).unwrap();
+    assert_eq!(h.rows(t.id)[0].2, "pending");
+    // A terminal in another folder doesn't count either; one in this folder, new, does.
+    h.herdr
+        .add_terminal_in("t94", &h.dir.dir("elsewhere"), t0_ms, &[]);
+    h.worker
+        .handle(LaunchMsg::Tick, t0() + Duration::from_secs(10));
+    assert_eq!(h.rows(t.id)[0].2, "pending");
+    h.herdr.add_terminal_in("t95", &dir, t0_ms + 5, &[]);
+    h.worker
+        .handle(LaunchMsg::Tick, t0() + Duration::from_secs(30));
+    assert_eq!(h.rows(t.id)[0].3.as_deref(), Some("t95"));
+    assert!(
+        h.herdr
+            .labels("t95")
+            .contains(&format!("airboss.launch={}", row_id(&h, t.id)))
+    );
+}
+
+#[test]
+fn a_stopped_herdr_fails_before_any_git_work() {
+    let h = H::new();
+    let web = repo(&h, "web");
+    let t = task(&h, "X", &[&web]);
+    h.herdr.never_opens();
+    let report = h.launch.start(&do_it(t.id)).unwrap();
+    assert_eq!(report.failed[0].1.code, ErrorCode::HerdrNotRunning);
+    assert!(!h.git.calls().iter().any(|c| c.contains("worktree")));
+}
+
+#[test]
+fn a_half_made_worktree_is_removed_and_made_again() {
+    let h = H::new();
+    let web = repo(&h, "web");
+    let t = task(&h, "X", &[&web]);
+    let branch = format!("task-{}-x", t.id.0);
+    let wt = worktree(&h, &web, &branch);
+    // A killed `git worktree add` left it locked as initializing.
+    h.git.half_made_worktree_at(&web.path, &wt, &branch);
+    let report = h.launch.start(&do_it(t.id)).unwrap();
+    assert_eq!(report.started.len(), 1, "{:?}", report.failed);
+    let calls = h.git.calls();
+    let removed = calls
+        .iter()
+        .position(|c| *c == format!("remove_worktree({}, {})", web.path, wt.display()))
+        .unwrap();
+    let added = calls
+        .iter()
+        .position(|c| *c == format!("add_worktree({}, {}, {branch}, -)", web.path, wt.display()))
+        .unwrap();
+    assert!(removed < added);
+
+    // One with no HEAD is made again too.
+    let h = H::new();
+    let web = repo(&h, "web");
+    let t = task(&h, "X", &[&web]);
+    let branch = format!("task-{}-x", t.id.0);
+    let wt = worktree(&h, &web, &branch);
+    h.git.add_worktree_at(&web.path, &wt, Some(&branch));
+    h.git.add_branch(&web.path, &branch);
+    h.git.no_head_in(&wt);
+    h.launch.start(&do_it(t.id)).unwrap();
+    assert!(
+        h.git
+            .calls()
+            .iter()
+            .any(|c| c.starts_with("remove_worktree"))
+    );
+    assert!(h.git.calls().iter().any(|c| c.starts_with("add_worktree")));
 }

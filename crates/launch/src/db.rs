@@ -131,6 +131,15 @@ pub(crate) struct Row {
     pub linked: bool,
     pub created_at: SystemTime,
     pub runs: Runs,
+    /// The worktree Herdr's Do it made for the thread.
+    pub worktree: Option<String>,
+}
+
+impl Row {
+    /// The folder the thread's terminal starts in: its worktree, else the place's folder.
+    pub fn folder(&self) -> &str {
+        self.worktree.as_deref().unwrap_or(&self.project_path)
+    }
 }
 
 /// What a new pending row records.
@@ -160,7 +169,7 @@ pub(crate) enum Inserted {
 }
 
 const COLUMNS: &str = "id, task_id, repo_id, mode, state, thread_id, project_path, branch, \
-                       title, linked, created_at, launcher";
+                       title, linked, created_at, launcher, worktree_path";
 
 fn from_row(r: &SqlRow<'_>) -> rusqlite::Result<Row> {
     let bad = |i: usize, text: &str| {
@@ -187,6 +196,7 @@ fn from_row(r: &SqlRow<'_>) -> rusqlite::Result<Row> {
         linked: r.get::<_, i64>(9)? == 1,
         created_at: time::from_ts(&created).ok_or_else(|| bad(10, &created))?,
         runs: Runs::parse(&runs).ok_or_else(|| bad(11, &runs))?,
+        worktree: r.get(12)?,
     })
 }
 
@@ -429,6 +439,17 @@ impl Db {
                 from_row,
             )
             .optional()
+            .map_err(storage)
+    }
+
+    /// Whether any row already has `thread` as its thread.
+    pub fn has_thread(&self, thread: &str) -> Result<bool> {
+        self.conn
+            .query_row(
+                "SELECT EXISTS (SELECT 1 FROM launch_threads WHERE thread_id = ?1)",
+                params![thread],
+                |r| r.get(0),
+            )
             .map_err(storage)
     }
 

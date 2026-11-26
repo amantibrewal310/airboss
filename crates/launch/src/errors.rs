@@ -148,7 +148,8 @@ pub(crate) fn herdr_timeout(after: Duration) -> ServiceError {
     ServiceError::new(
         ErrorCode::Timeout,
         format!(
-            "Herdr didn't answer in {} s. The tab may still appear; Airboss will link it if it does.",
+            "Herdr didn't answer in {} s. If the tab opens, Airboss links it once it can tell which \
+             tab it is; if it can't, choose Start again in 2 minutes.",
             after.as_secs()
         ),
     )

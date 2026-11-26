@@ -4,7 +4,7 @@
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
-use airboss_core::{Error, TaskId};
+use airboss_core::{Error, LinkKind, TaskId};
 use airboss_services::{ServiceError, Source};
 
 use crate::db::{Row, Runs, State};
@@ -82,8 +82,9 @@ fn settle_pending(inner: &Inner, row: &Row, now: SystemTime) -> Result<bool, Ser
 }
 
 /// A pending Herdr row is `started` once a live terminal carries its labels (`airboss.task`
-/// and `airboss.launch`), or `lost` `herdr_settle_after` after it was made. While `hc`
-/// can't answer, the row stays pending: a terminal may exist.
+/// and `airboss.launch`), or, when none does, once [`adopt`] finds the one unlabelled tab
+/// that must be it. It's `lost` `herdr_settle_after` after it was made, whether or not `hc`
+/// could answer.
 fn settle_herdr(inner: &Inner, row: &Row, now: SystemTime) -> Result<bool, ServiceError> {
     let result = lock(&inner.herdr).run(
         Tool::Hc,
@@ -94,12 +95,22 @@ fn settle_herdr(inner: &Inner, row: &Row, now: SystemTime) -> Result<bool, Servi
         Ok(out) => herdr::read_found(out),
         Err(_) => None,
     };
-    let Some(found) = found else {
-        log(&format!(
-            "couldn't ask hc about launch row {}: {result:?}",
-            row.id
-        ));
-        return Ok(false);
+    let found = match found {
+        Some(Some(address)) => Some(address),
+        Some(None) => adopt(
+            inner,
+            row.task,
+            row.id,
+            Path::new(row.folder()),
+            row.created_at,
+        ),
+        None => {
+            log(&format!(
+                "couldn't ask hc about launch row {}: {result:?}",
+                row.id
+            ));
+            None
+        }
     };
     if let Some(address) = found
         && bind(inner, row, &address, now)?
@@ -110,6 +121,56 @@ fn settle_herdr(inner: &Inner, row: &Row, now: SystemTime) -> Result<bool, Servi
         return lock(&inner.db).lost(row.id, now);
     }
     Ok(false)
+}
+
+/// A tab whose answer was lost (a timeout, a signal, output Airboss couldn't read) has no
+/// labels. It's adopted only when exactly one live terminal could be it: started in `folder`
+/// since the row was made, with no `airboss.launch` label, no launch row, and no link to
+/// another task. Then it's labelled for the row, and its address returned.
+pub(crate) fn adopt(
+    inner: &Inner,
+    task: TaskId,
+    row: i64,
+    folder: &Path,
+    since: SystemTime,
+) -> Option<String> {
+    let found = herdr::unlabelled_in(lock(&inner.herdr).as_mut(), folder, since)?;
+    let mut free = Vec::new();
+    for address in found {
+        let known = lock(&inner.db).has_thread(&address);
+        if !matches!(known, Ok(false)) {
+            continue;
+        }
+        let tasks = inner
+            .core
+            .read(|s| s.tasks_for_link(LinkKind::HerdrTerminal, &address));
+        // Linked to this task is fine: the agent linked itself, as its brief asks.
+        if tasks.is_ok_and(|t| t.iter().all(|id| *id == task)) {
+            free.push(address);
+        }
+    }
+    let [address] = free.as_slice() else {
+        if !free.is_empty() {
+            log(&format!(
+                "launch row {row}: {} unlabelled Herdr terminals in {} could be its tab; \
+                 linking none",
+                free.len(),
+                folder.display()
+            ));
+        }
+        return None;
+    };
+    let labelled = lock(&inner.herdr).run(
+        Tool::Hc,
+        &herdr::label_argv(address, task, row),
+        herdr::QUICK_TIMEOUT,
+    );
+    if !matches!(&labelled, Ok(out) if out.status == Some(0)) {
+        log(&format!(
+            "couldn't label Herdr terminal {address}: {labelled:?}"
+        ));
+    }
+    Some(address.clone())
 }
 
 /// Binds a pending row to the thread found for it, links it and moves its task to `doing`.

@@ -518,7 +518,8 @@ fn run(
         let name = spot.repo.as_ref().map(|x| x.name.as_str());
         return Err(errors::starting_now(name, app));
     };
-    let inserted = lock(&inner.db).insert_pending(&new, req.again, go.seen, inner.clock.now())?;
+    let made_at = inner.clock.now();
+    let inserted = lock(&inner.db).insert_pending(&new, req.again, go.seen, made_at)?;
     let id = match inserted {
         Inserted::Row(id) => id,
         // Another call got here first, between this call's check and now.
@@ -533,7 +534,7 @@ fn run(
             let result = lock(&inner.t3).run(&go.argv, Some(&go.stdin), inner.cfg.timeout);
             t3cli::read_start(result, &spot.label(), inner.cfg.timeout)
         }
-        Some(place) => open_tab(inner, task, id, spot, go, place),
+        Some(place) => open_tab(inner, (task, id, made_at), spot, go, place),
     };
     let now = inner.clock.now();
     match answer {
@@ -595,60 +596,115 @@ pub(crate) fn thread_link(runs: Runs, thread: &str, title: &str) -> NewLink {
     NewLink::new(runs.link_kind(), thread).with_title(title)
 }
 
-/// Herdr: makes or reuses the worktree, opens the tab in the repo's space (making the space
-/// if there's none), and labels its terminal with the task and this row.
+/// Herdr: checks Herdr is there (opening it if need be), makes or reuses the worktree, opens
+/// the tab in the repo's space (making the space if there's none), and labels its terminal
+/// with the task and this row. `row` is the task, the row's id and when it was made.
 fn open_tab(
     inner: &Inner,
-    task: TaskId,
-    row: i64,
+    row: (TaskId, i64, std::time::SystemTime),
     spot: &Spot,
     go: &Go,
     place: &HerdrGo,
 ) -> Answer {
+    let (task, id, made_at) = row;
+    // Before any git work, so a stopped Herdr fails first.
+    let spaces = match list_spaces(inner) {
+        Ok(spaces) => spaces,
+        Err(e) => return Answer::Failed(e),
+    };
     if let (Some(worktree), Some((branch, base))) = (&place.worktree, &go.branch)
         && let Err(e) = ensure_worktree(inner, spot, worktree, branch, base)
     {
         return Answer::Failed(e);
     }
-    let mut cli = lock(&inner.herdr);
-    let spaces = match herdr::run_app(cli.as_mut(), &herdr::ls_argv(), herdr::QUICK_TIMEOUT) {
-        AppRun::Ran(out) if out.status == Some(0) => match herdr::read_ls(&out.stdout) {
-            Some(spaces) => spaces,
-            None => {
-                return Answer::Failed(errors::herdr_failed("Herdr's spaces couldn't be read."));
-            }
-        },
-        AppRun::Ran(out) => return Answer::Failed(herdr::refusal(&out)),
-        // Listing makes nothing, so nothing can have appeared.
-        AppRun::Failed(e) => return Answer::Failed(e),
-        AppRun::Unsure(_) => return Answer::Failed(errors::herdr_slow(herdr::QUICK_TIMEOUT)),
-    };
     let folder = place.folder.display().to_string();
+    let tab_new = |space: &str| herdr::tab_new_argv(space, &go.title, &folder, &go.argv, &go.stdin);
     let argv = match herdr::find_space(&spaces, &place.space_name, &place.space_folder) {
-        Some(space) => herdr::tab_new_argv(&space.id, &go.title, &folder, &go.argv, &go.stdin),
-        None => herdr::space_new_argv(&place.space_name, &folder, &go.title, &go.argv, &go.stdin),
-    };
-    let answer = herdr::read_opened(herdr::run_app(cli.as_mut(), &argv, inner.cfg.timeout));
-    if let Answer::Started { thread_id, .. } = &answer {
-        let labelled = cli.run(
-            Tool::Hc,
-            &herdr::label_argv(thread_id, task, row),
-            herdr::QUICK_TIMEOUT,
-        );
-        if !matches!(&labelled, Ok(out) if out.status == Some(0)) {
-            // The tab exists and the row will hold its address; only a restart mid-start
-            // needs the labels.
-            log(&format!(
-                "couldn't label Herdr terminal {thread_id}: {labelled:?}"
-            ));
+        Some(space) => tab_new(&space.id),
+        // Plan it and research: the tab's folder is the space's, so it's the first tab.
+        None if place.folder == place.space_folder => {
+            herdr::space_new_argv(&place.space_name, &folder, &go.title, &go.argv, &go.stdin)
         }
+        // Do it: the space is the repo's, in the repo's folder, with a shell tab named
+        // after it; the thread's tab, in the worktree, goes in after.
+        None => match new_space(inner, place) {
+            Ok(space) => tab_new(&space),
+            Err(e) => return Answer::Failed(e),
+        },
+    };
+    let answer = herdr::read_opened(herdr::run_app(
+        lock(&inner.herdr).as_mut(),
+        &argv,
+        inner.cfg.timeout,
+    ));
+    match answer {
+        Answer::Started { ref thread_id, .. } => {
+            let labelled = lock(&inner.herdr).run(
+                Tool::Hc,
+                &herdr::label_argv(thread_id, task, id),
+                herdr::QUICK_TIMEOUT,
+            );
+            if !matches!(&labelled, Ok(out) if out.status == Some(0)) {
+                // The tab exists and the row will hold its address; only a restart
+                // mid-start needs the labels.
+                log(&format!(
+                    "couldn't label Herdr terminal {thread_id}: {labelled:?}"
+                ));
+            }
+            answer
+        }
+        // The tab may exist without labels: adopt it if it's the only one it can be.
+        Answer::Unsure(e) => match settle::adopt(inner, task, id, &place.folder, made_at) {
+            Some(thread_id) => Answer::Started {
+                thread_id,
+                project_id: None,
+            },
+            None => Answer::Unsure(e),
+        },
+        Answer::Failed(_) => answer,
     }
-    answer
 }
 
-/// The worktree Herdr's Do it works in: reused when it's already this repo's worktree on
-/// `branch`; else `git worktree add`, on the branch if it exists, else a new branch from
-/// `base` (the local branch if the repo has it, else `origin/<base>`).
+/// `herdr-app ls`, opening Herdr first if its window doesn't answer. Listing makes nothing,
+/// so every failure is a plain failure.
+fn list_spaces(inner: &Inner) -> Result<Vec<herdr::Space>, ServiceError> {
+    let run = herdr::run_app(
+        lock(&inner.herdr).as_mut(),
+        &herdr::ls_argv(),
+        herdr::QUICK_TIMEOUT,
+    );
+    match run {
+        AppRun::Ran(out) if out.status == Some(0) => herdr::read_ls(&out.stdout)
+            .ok_or_else(|| errors::herdr_failed("Herdr's spaces couldn't be read.")),
+        AppRun::Ran(out) => Err(herdr::refusal(&out)),
+        AppRun::Failed(e) => Err(e),
+        AppRun::Unsure(_) => Err(errors::herdr_slow(herdr::QUICK_TIMEOUT)),
+    }
+}
+
+/// A new space for the repo, in its folder, whose first tab is a shell named after it.
+/// Its id. A space that may have been made is found by name on the next start.
+fn new_space(inner: &Inner, place: &HerdrGo) -> Result<String, ServiceError> {
+    let argv = herdr::space_shell_argv(
+        &place.space_name,
+        &place.space_folder.display().to_string(),
+        &place.space_name,
+    );
+    let run = herdr::run_app(lock(&inner.herdr).as_mut(), &argv, inner.cfg.timeout);
+    match run {
+        AppRun::Ran(out) if out.status == Some(0) => herdr::read_space_id(&out)
+            .ok_or_else(|| errors::herdr_failed("Herdr's new space couldn't be read.")),
+        AppRun::Ran(out) => Err(herdr::refusal(&out)),
+        AppRun::Failed(e) => Err(e),
+        AppRun::Unsure(_) => Err(errors::herdr_slow(inner.cfg.timeout)),
+    }
+}
+
+/// The worktree Herdr's Do it works in. Reused when it's already this repo's worktree on
+/// `branch` and its checkout finished; one a killed `git worktree add` left (still locked
+/// `initializing`, its folder gone, or no `HEAD`) is removed and made again. Made with
+/// `git worktree add`: on the branch if it exists, else a new branch from `base` (the local
+/// branch if the repo has it, else `origin/<base>`).
 fn ensure_worktree(
     inner: &Inner,
     spot: &Spot,
@@ -662,15 +718,25 @@ fn ensure_worktree(
     let git = &mut git.git;
     let known = git.worktrees(repo).map_err(failed)?;
     if let Some(wt) = known.iter().find(|w| herdr::same_path(&w.path, path)) {
-        return match wt.branch.as_deref() {
-            Some(b) if b == branch => Ok(()),
-            other => Err(errors::worktree_failed(&format!(
-                "{} is already a worktree of {}, on {}",
-                path.display(),
-                spot.label(),
-                other.unwrap_or("no branch")
-            ))),
-        };
+        let finished = !wt.unfinished() && git.has_head(&wt.path).map_err(failed)?;
+        match wt.branch.as_deref() {
+            Some(b) if b == branch && finished => return Ok(()),
+            _ if !finished => {
+                log(&format!(
+                    "removing the unfinished worktree {} to make it again",
+                    wt.path.display()
+                ));
+                git.remove_worktree(repo, &wt.path).map_err(failed)?;
+            }
+            other => {
+                return Err(errors::worktree_failed(&format!(
+                    "{} is already a worktree of {}, on {}",
+                    path.display(),
+                    spot.label(),
+                    other.unwrap_or("no branch")
+                )));
+            }
+        }
     }
     let start = if git.has_branch(repo, branch).map_err(failed)? {
         None

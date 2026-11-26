@@ -29,6 +29,10 @@ pub trait Git: Send {
         branch: &str,
         start: Option<&str>,
     ) -> io::Result<()>;
+    /// `git -C <worktree> rev-parse --verify --quiet HEAD` succeeds.
+    fn has_head(&mut self, worktree: &Path) -> io::Result<bool>;
+    /// `git worktree remove -f -f <path>`: also a locked one, or one whose folder is gone.
+    fn remove_worktree(&mut self, repo: &Path, path: &Path) -> io::Result<()>;
 }
 
 /// One worktree from `git worktree list`.
@@ -37,7 +41,23 @@ pub struct Worktree {
     pub path: PathBuf,
     /// The branch checked out, without `refs/heads/`; `None` when detached or bare.
     pub branch: Option<String>,
+    /// Why it's locked. `git worktree add` locks a new worktree as `initializing` until its
+    /// checkout is done, so a killed add leaves that lock behind.
+    pub locked: Option<String>,
+    /// Its folder is gone.
+    pub prunable: bool,
 }
+
+impl Worktree {
+    /// Left half-made by a `git worktree add` that didn't finish, or gone.
+    pub fn unfinished(&self) -> bool {
+        self.prunable || self.locked.as_deref() == Some(INITIALIZING)
+    }
+}
+
+/// The lock reason `git worktree add` writes until its checkout is done (in the C locale,
+/// which [`RealGit`] runs git in).
+pub const INITIALIZING: &str = "initializing";
 
 /// Reads `git worktree list --porcelain`.
 pub fn parse_worktrees(porcelain: &str) -> Vec<Worktree> {
@@ -49,11 +69,19 @@ pub fn parse_worktrees(porcelain: &str) -> Vec<Worktree> {
             current = Some(Worktree {
                 path: PathBuf::from(path),
                 branch: None,
+                locked: None,
+                prunable: false,
             });
-        } else if let (Some(branch), Some(wt)) =
-            (line.strip_prefix("branch refs/heads/"), current.as_mut())
-        {
-            wt.branch = Some(branch.to_string());
+        } else if let Some(wt) = current.as_mut() {
+            if let Some(branch) = line.strip_prefix("branch refs/heads/") {
+                wt.branch = Some(branch.to_string());
+            } else if line == "locked" {
+                wt.locked = Some(String::new());
+            } else if let Some(reason) = line.strip_prefix("locked ") {
+                wt.locked = Some(reason.to_string());
+            } else if line == "prunable" || line.starts_with("prunable ") {
+                wt.prunable = true;
+            }
         }
     }
     out.extend(current);
@@ -77,7 +105,12 @@ impl RealGit {
             runner: ProcessRunner::new(
                 PathBuf::from("/usr/bin/git"),
                 home.to_path_buf(),
-                child_env(std::env::vars_os()),
+                // The C locale, so the lock reason `initializing` reads as it was written.
+                child_env(std::env::vars_os())
+                    .into_iter()
+                    .filter(|(k, _)| k != "LC_ALL")
+                    .chain([("LC_ALL".into(), "C".into())])
+                    .collect(),
             ),
         }
     }
@@ -173,6 +206,31 @@ impl Git for RealGit {
             )))
         }
     }
+
+    fn has_head(&mut self, worktree: &Path) -> io::Result<bool> {
+        let (status, _) = self.git(
+            Some(worktree),
+            &["rev-parse", "--verify", "--quiet", "HEAD"],
+        )?;
+        Ok(status == Some(0))
+    }
+
+    fn remove_worktree(&mut self, repo: &Path, path: &Path) -> io::Result<()> {
+        let path = path.display().to_string();
+        let out = self.run(
+            Some(repo),
+            &["worktree", "remove", "-f", "-f", &path],
+            WORKTREE_TIMEOUT,
+        )?;
+        if out.status == Some(0) {
+            Ok(())
+        } else {
+            Err(io::Error::other(first_line(
+                &out.stderr,
+                "git worktree remove failed",
+            )))
+        }
+    }
 }
 
 /// The first line of `text` that isn't empty, or `otherwise`.
@@ -188,28 +246,36 @@ fn first_line(text: &str, otherwise: &str) -> String {
 mod tests {
     use super::*;
 
+    fn wt(path: &str, branch: Option<&str>, locked: Option<&str>, prunable: bool) -> Worktree {
+        Worktree {
+            path: path.into(),
+            branch: branch.map(str::to_string),
+            locked: locked.map(str::to_string),
+            prunable,
+        }
+    }
+
     #[test]
-    fn porcelain_lists_paths_and_branches() {
+    fn porcelain_lists_paths_branches_and_unfinished_ones() {
         let text = "worktree /src/web\nHEAD 1234\nbranch refs/heads/main\n\n\
                     worktree /wt/web/task-1-x\nHEAD 5678\nbranch refs/heads/task-1/x\n\n\
-                    worktree /wt/web/old\nHEAD 9abc\ndetached\n";
+                    worktree /wt/web/old\nHEAD 9abc\ndetached\nlocked\n\n\
+                    worktree /wt/web/half\nHEAD 9abc\nbranch refs/heads/h\nlocked initializing\n\n\
+                    worktree /wt/web/gone\nHEAD 9abc\nbranch refs/heads/g\n\
+                    prunable gitdir file points to non-existent location\n";
+        let all = parse_worktrees(text);
         assert_eq!(
-            parse_worktrees(text),
+            all,
             [
-                Worktree {
-                    path: "/src/web".into(),
-                    branch: Some("main".into())
-                },
-                Worktree {
-                    path: "/wt/web/task-1-x".into(),
-                    branch: Some("task-1/x".into())
-                },
-                Worktree {
-                    path: "/wt/web/old".into(),
-                    branch: None
-                },
+                wt("/src/web", Some("main"), None, false),
+                wt("/wt/web/task-1-x", Some("task-1/x"), None, false),
+                wt("/wt/web/old", None, Some(""), false),
+                wt("/wt/web/half", Some("h"), Some("initializing"), false),
+                wt("/wt/web/gone", Some("g"), None, true),
             ]
         );
+        let unfinished: Vec<bool> = all.iter().map(Worktree::unfinished).collect();
+        assert_eq!(unfinished, [false, false, false, true, true]);
         assert!(parse_worktrees("").is_empty());
     }
 }
