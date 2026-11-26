@@ -3,6 +3,9 @@
 //! Only files named by digits and `.json` are opened; the `.key` files beside them never
 //! are. A session is alive when `ps` reports its pid with a start time equal to its
 //! `procStart`, so a reused pid isn't mistaken for it.
+//!
+//! Claude Code writes a new session's file before all its fields: a file missing one is
+//! skipped while it's fresh, and breaks Claude sync once it's older than [`FRESH`].
 
 use std::collections::{HashMap, HashSet};
 use std::io;
@@ -32,11 +35,25 @@ pub struct ClaudeSession {
     pub status_updated_at: Option<i64>,
 }
 
+/// One read of the sessions folder.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SessionFiles {
+    /// The files read, sorted by file name.
+    pub sessions: Vec<ClaudeSession>,
+    /// Files caught mid-write and skipped this round. They stay watched, so their next
+    /// write reads them again.
+    pub skipped: Vec<PathBuf>,
+}
+
+/// How long a session file may lack a required field before that breaks Claude sync. A
+/// new session's file lacks its `status` for about a second and a half.
+pub const FRESH: Duration = Duration::from_secs(10);
+
 /// Where Claude sessions come from.
 pub trait ClaudeSource: Send {
     /// Every session file. `NotFound` when the folder doesn't exist; `InvalidData` naming
-    /// the file and field when one lacks a required field.
-    fn sessions(&mut self) -> io::Result<Vec<ClaudeSession>>;
+    /// the file and field when one older than [`FRESH`] lacks a required field.
+    fn sessions(&mut self) -> io::Result<SessionFiles>;
     /// Whether each session's process is still the one that wrote the file.
     fn alive(&mut self, sessions: &[ClaudeSession]) -> io::Result<Vec<bool>>;
 }
@@ -54,16 +71,17 @@ pub fn is_session_file(path: &Path) -> bool {
             .is_some_and(|s| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()))
 }
 
-/// Reads every session file in `dir`, sorted by file name. A file that isn't valid JSON
-/// (caught mid-write) is skipped; the next event reads it again.
-pub fn read_sessions(dir: &Path) -> io::Result<Vec<ClaudeSession>> {
+/// Reads every session file in `dir`, sorted by file name. A file caught mid-write is
+/// skipped: one that isn't valid JSON, or one modified less than [`FRESH`] ago that lacks a
+/// required field. The next event reads it again.
+pub fn read_sessions(dir: &Path) -> io::Result<SessionFiles> {
     let mut files: Vec<PathBuf> = std::fs::read_dir(dir)?
         .filter_map(Result::ok)
         .map(|e| e.path())
         .filter(|p| is_session_file(p))
         .collect();
     files.sort();
-    let mut out = Vec::new();
+    let mut out = SessionFiles::default();
     for file in files {
         let text = match std::fs::read_to_string(&file) {
             Ok(text) => text,
@@ -72,11 +90,26 @@ pub fn read_sessions(dir: &Path) -> io::Result<Vec<ClaudeSession>> {
             Err(e) => return Err(e),
         };
         let Ok(value) = serde_json::from_str::<Value>(&text) else {
+            out.skipped.push(file);
             continue;
         };
-        out.push(parse_session(&file, &value)?);
+        match parse_session(&file, &value) {
+            Ok(session) => out.sessions.push(session),
+            Err(_) if is_fresh(&file) => out.skipped.push(file),
+            Err(e) => return Err(e),
+        }
     }
     Ok(out)
+}
+
+/// Modified less than [`FRESH`] ago, or gone. A future mtime counts as fresh.
+fn is_fresh(file: &Path) -> bool {
+    match std::fs::metadata(file).and_then(|m| m.modified()) {
+        Ok(at) => SystemTime::now()
+            .duration_since(at)
+            .map_or(true, |age| age < FRESH),
+        Err(e) => e.kind() == io::ErrorKind::NotFound,
+    }
 }
 
 fn parse_session(file: &Path, v: &Value) -> io::Result<ClaudeSession> {
@@ -108,12 +141,14 @@ fn parse_session(file: &Path, v: &Value) -> io::Result<ClaudeSession> {
     })
 }
 
-/// A session's state from its `status`: `busy` is running, `idle` is idle; anything else is
-/// an error naming the value, which marks Claude sync broken.
+/// A session's state from its `status`: `busy` is running, `idle` is idle, `waiting` (on me:
+/// a question or a permission, named by `waitingFor`) needs me; anything else is an error
+/// naming the value, which marks Claude sync broken.
 pub fn state_of(status: &str) -> Result<ThreadState, String> {
     match status {
         "busy" => Ok(ThreadState::Running),
         "idle" => Ok(ThreadState::Idle),
+        "waiting" => Ok(ThreadState::NeedsMe),
         other => Err(format!("unknown session status {other:?}")),
     }
 }
@@ -267,7 +302,7 @@ impl RealClaude {
 }
 
 impl ClaudeSource for RealClaude {
-    fn sessions(&mut self) -> io::Result<Vec<ClaudeSession>> {
+    fn sessions(&mut self) -> io::Result<SessionFiles> {
         read_sessions(&self.dir)
     }
 
