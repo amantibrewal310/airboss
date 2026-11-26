@@ -41,7 +41,15 @@ export interface PhraseContext {
   repoOf?: (thread: string) => string | null;
   /** A linked item's title (the link tag's label) by kind and ref, when the task still has it. */
   linkTitle?: (kind: LinkKind, ref: string) => string | null;
+  /** A T3 thread's title by ref (its link's thread view or stored title), when the task has it. */
+  threadTitle?: (ref: string) => string | null;
 }
+
+/**
+ * A thread ref that is an id ("mcp:9f5361a5-…", a bare UUID) rather than a name. Older and test
+ * refs can be names ("slot-picker"); those read fine as they are.
+ */
+const isRawThreadId = (ref: string) => ref.includes(':') || /^[0-9a-f]{8}-?[0-9a-f]{4}/i.test(ref);
 
 const LINK_KINDS = new Set<string>(['t3_thread', 'claude_session', 'pr', 'slack', 'doc', 'github_issue']);
 
@@ -92,10 +100,13 @@ function verb(e: HistoryEntry, self: boolean, ctx: PhraseContext): Segment[] {
       return [{ text: e.body ? `: ${e.body}` : 'left a note' }];
     case 'linked': {
       if (!isLaunchThread(e)) return [{ text: 'linked ' }, { text: linkText(e.body, ctx, 'a link'), strong: true }];
+      // The thread's title when anything knows it, else "a thread": never the raw id. The
+      // stored history keeps the ref.
       const ref = parseLinkBody(e.body)!.ref;
-      const thread = e.thread_title ?? ref;
-      const repo = ctx.repoOf?.(ref) ?? ctx.repoOf?.(thread) ?? null;
-      return [{ text: 'Started thread ' }, { text: thread, strong: true }, ...(repo ? [{ text: ' in ' }, { text: repo, strong: true }] : [])];
+      const thread = ctx.threadTitle?.(ref) ?? e.thread_title ?? (isRawThreadId(ref) ? null : ref);
+      const repo = ctx.repoOf?.(ref) ?? (thread ? ctx.repoOf?.(thread) : null) ?? null;
+      const where = repo ? [{ text: ' in ' }, { text: repo, strong: true }] : [];
+      return thread ? [{ text: 'Started thread ' }, { text: thread, strong: true }, ...where] : [{ text: 'Started a thread' }, ...where];
     }
     case 'unlinked':
       return [{ text: 'unlinked ' }, { text: linkText(e.body, ctx, 'a link'), strong: true }];

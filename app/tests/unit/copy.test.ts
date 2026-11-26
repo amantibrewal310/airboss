@@ -26,6 +26,22 @@ describe('copy', () => {
     expect(text(phrase({ ...e, task: 202 }, 200, { repoOf: () => 'booking-api' }))).toBe('202 · Started thread slot-picker in booking-api');
   });
 
+  it('names a launched thread by its title, never its raw id (hands-on QA #11)', () => {
+    const ref = 'mcp:9f5361a5-6809-48ba-9819-081f286d7495';
+    const e: HistoryEntry = { id: 1, task: 1, kind: 'linked', to_status: null, body: `t3_thread ${ref}`, actor: 'launch', at: '', thread_title: null };
+    const text = (segs: { text: string }[]) => segs.map((s) => s.text).join('');
+    const repoOf = (t: string) => (t === ref ? 'scratch' : null);
+    // The task's link knows the thread's title.
+    expect(text(phrase(e, 1, { repoOf, threadTitle: (r) => (r === ref ? '1 QA one' : null) }))).toBe('Started thread 1 QA one in scratch');
+    // Nothing knows it: "a thread", not the id.
+    expect(text(phrase(e, 1, { repoOf }))).toBe('Started a thread in scratch');
+    expect(text(phrase(e, 1))).toBe('Started a thread');
+    expect(text(phrase({ ...e, body: 't3_thread 9f5361a5-6809-48ba-9819-081f286d7495' }, 1))).toBe('Started a thread');
+    expect(text(phrase({ ...e, task: 2 }, 1))).toBe('2 · Started a thread');
+    // The history's own title still counts.
+    expect(text(phrase({ ...e, thread_title: 'slot-picker' }, 1))).toBe('Started thread slot-picker');
+  });
+
   it('reads core’s event bodies in plain words', () => {
     const e = (x: Partial<HistoryEntry>): HistoryEntry => ({ id: 1, task: 144, kind: 'created', to_status: null, body: null, actor: 'me', at: '', thread_title: null, ...x });
     const text = (h: HistoryEntry, ctx = {}) => phrase(h, 144, ctx).map((s) => s.text).join('');
