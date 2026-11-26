@@ -301,6 +301,8 @@ fn t3_row(t: &ThreadsPart) -> Connection {
         ),
         HealthState::Ok => match (&t.watch_error, &t.environment) {
             (Some(why), _) => row(false, "Not live".into(), Some(why.clone())),
+            // Ok from the last run, not read yet: `environment-id` is read with the first pass.
+            (None, None) if t.t3.stale => row(true, "Checking".into(), None),
             (None, None) => row(
                 false,
                 "Can't open threads".into(),
@@ -369,6 +371,25 @@ mod tests {
         hub.publish_threads(&threads);
         hub.publish_prs(&prs);
         assert_eq!(hub.changes().current(), before);
+    }
+
+    /// QA #8: at start-up the worker shows T3's health saved by the last run (ok, stale)
+    /// before its first pass has read `environment-id`. That's still checking, not
+    /// "Can't open threads", which the footer would show if the window asked then.
+    #[test]
+    fn saved_ok_health_before_the_first_pass_is_checking() {
+        let mut t = ThreadsPart::default();
+        t.t3.ok(UNIX_EPOCH);
+        t.t3.stale = true;
+        let row = t3_row(&t);
+        assert_eq!(
+            (row.ok, row.state.as_str(), row.fix),
+            (true, "Checking", None)
+        );
+        // A real read that finds no environment id still says so.
+        t.t3.ok(UNIX_EPOCH);
+        let row = t3_row(&t);
+        assert_eq!((row.ok, row.state.as_str()), (false, "Can't open threads"));
     }
 
     #[test]
