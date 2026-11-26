@@ -24,6 +24,7 @@ import type {
   TaskId,
   ThreadView,
   Timestamp,
+  UpdateStatus,
 } from '../types';
 
 /** A linked thread, with the tasks it's linked to and the URL `sync.thread_url` would give. */
@@ -32,6 +33,25 @@ export interface MockThread {
   tasks: TaskId[];
   url: string | null;
 }
+
+/** In-app updates (SPEC-updates): what this Airboss is, and what a check finds. */
+export interface MockUpdate {
+  /** The running version, for "You have the newest Airboss, …". */
+  current: string;
+  /** The newer release a check finds, or none. */
+  latest: { version: string; notes_url: string } | null;
+  /** The status at start (an automatic check already found `latest`); idle if unset. */
+  status?: UpdateStatus;
+  /** A check fails with this reason (offline, a bad manifest). */
+  checkError?: string;
+  /** Not an installed release build: updates work only in the installed app. */
+  unavailable?: boolean;
+  /** The install fails with this message once the download is done. */
+  installError?: string;
+}
+
+/** The version the mock says it is, when a fixture doesn't say. */
+export const MOCK_VERSION = '0.1.0-alpha.4';
 
 /** Everything a fixture provides. Generated Rust fixtures will produce the same shape. */
 export interface MockSeed {
@@ -72,6 +92,8 @@ export interface MockSeed {
   dbError?: { path: string; reason: string };
   /** What macOS says about notifications (granted if unset). */
   notificationPermission?: NotificationPermission;
+  /** In-app updates: nothing newer if unset. */
+  update?: MockUpdate;
 }
 
 export interface MockState extends Omit<MockSeed, 'tasks' | 'threads' | 'prs'> {
@@ -84,6 +106,8 @@ export interface MockState extends Omit<MockSeed, 'tasks' | 'threads' | 'prs'> {
   statusBefore: Map<TaskId, Status>;
   nextEventId: number;
   nextLinkId: number;
+  /** What `update_status` answers and `update:changed` last sent. */
+  updateStatus: UpdateStatus;
 }
 
 export function threadId(view: Pick<ThreadView, 'key'>): string {
@@ -102,6 +126,7 @@ export function stateFromSeed(seed: MockSeed): MockState {
     statusBefore: new Map(),
     nextEventId: Math.max(0, ...clone.events.map((e) => e.id)) + 1,
     nextLinkId: Math.max(0, ...clone.links.map((l) => l.id)) + 1,
+    updateStatus: clone.update?.status ?? { state: 'idle' },
   };
 }
 

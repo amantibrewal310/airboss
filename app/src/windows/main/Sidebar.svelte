@@ -6,6 +6,7 @@
   import ProgressRing from '../../lib/components/ProgressRing.svelte';
   import RepoDot from '../../lib/components/RepoDot.svelte';
   import Connections from './Connections.svelte';
+  import UpdateCard from './UpdateCard.svelte';
   import { useApp } from '../../lib/state/context';
   import { percent, shapeOf, type View } from '../../lib/logic/views';
 
@@ -97,6 +98,7 @@
     {/if}
   </nav>
 
+  <UpdateCard />
   <Connections />
 </aside>
 

@@ -8,7 +8,7 @@
   fixtures below are deleted. Nothing outside this folder imports a fixture directly.
 */
 
-import type { MockSeed } from '../model';
+import { MOCK_VERSION, type MockSeed } from '../model';
 import type { Recording } from '../replay';
 import recorded from './recorded.json';
 import { CONNECTED, designSeed, seedDefaults } from './design';
@@ -16,13 +16,17 @@ import { fullSeed } from './full';
 import { perfSeed } from './perf';
 import { SeedBuilder } from './build';
 
-export type FixtureName = 'design' | 'full' | 'perf' | 'empty' | 'welcome' | 't3missing' | 'herdr' | 'nothing' | 'dberror' | 'stopped';
+export type FixtureName = 'design' | 'full' | 'perf' | 'empty' | 'welcome' | 't3missing' | 'herdr' | 'nothing' | 'dberror' | 'stopped' | 'update';
 
-export const FIXTURES: readonly FixtureName[] = ['design', 'full', 'perf', 'empty', 'welcome', 't3missing', 'herdr', 'nothing', 'dberror', 'stopped'];
+export const FIXTURES: readonly FixtureName[] = ['design', 'full', 'perf', 'empty', 'welcome', 't3missing', 'herdr', 'nothing', 'dberror', 'stopped', 'update'];
 
 export function isFixtureName(name: string): name is FixtureName {
   return (FIXTURES as readonly string[]).includes(name);
 }
+
+/** The release the `update` fixture offers (SPEC-updates' example). */
+export const UPDATE_VERSION = '0.1.0-alpha.5';
+export const UPDATE_NOTES_URL = `https://github.com/amantibrewal310/airboss/releases/tag/v${UPDATE_VERSION}`;
 
 const T3_MISSING_REASON = 'Starting agents needs T3 Code. Install it, then choose Check again.';
 
@@ -113,6 +117,14 @@ export function loadFixture(name: FixtureName): MockSeed {
         proposed: [],
         stale: false,
       });
+      return seed;
+    }
+    case 'update': {
+      // SPEC-updates: an automatic check found 0.1.0-alpha.5, so the sidebar's card offers it.
+      const seed = designSeed();
+      seed.name = 'update';
+      const latest = { version: UPDATE_VERSION, notes_url: UPDATE_NOTES_URL };
+      seed.update = { current: MOCK_VERSION, latest, status: { state: 'available', ...latest } };
       return seed;
     }
     case 'dberror': {
