@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use airboss_core::Store;
-use airboss_services::{NeedsList, SystemClock};
+use airboss_services::{NeedsKey, NeedsList, SystemClock};
 use tauri::menu::MenuEvent;
 use tauri::tray::TrayIcon;
 use tauri::window::Color;
@@ -104,6 +104,12 @@ impl TauriNotifications {
 impl Notifications for TauriNotifications {
     fn post(&self, n: &Notice) -> Result<(), String> {
         macos::post_notification(&n.key.0, &n.title, &n.body, &n.group)
+    }
+
+    fn withdraw(&self, keys: &[NeedsKey]) -> Result<(), String> {
+        let ids: Vec<&str> = keys.iter().map(|k| k.0.as_str()).collect();
+        macos::withdraw_notifications(&ids);
+        Ok(())
     }
 
     fn permission(&self) -> Permission {

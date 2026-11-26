@@ -5,8 +5,8 @@
 //! - the Mac waking (`NSWorkspaceDidWakeNotification`)
 //! - the local time zone's offset, for the menu-bar menu's clock times
 //! - `QuickAddPanel`, an `NSPanel` subclass from `tauri-nspanel`
-//! - notifications through `UNUserNotificationCenter`: permission, posting, and the delegate
-//!   that hears a click
+//! - notifications through `UNUserNotificationCenter`: permission, posting, withdrawing, and
+//!   the delegate that hears a click
 //! - the app that opens a URL (`NSWorkspace`), and whether an app's code signature meets a
 //!   requirement (the Security framework's static code checks)
 
@@ -245,6 +245,21 @@ pub fn post_notification(id: &str, title: &str, body: &str, thread: &str) -> Res
     UNUserNotificationCenter::currentNotificationCenter()
         .addNotificationRequest_withCompletionHandler(&request, Some(&done));
     Ok(())
+}
+
+/// Removes the notifications with these identifiers (the ones [`post_notification`] used)
+/// from Notification Center, and any not delivered yet. An identifier with no notification is
+/// skipped. Nothing without a bundle identifier.
+pub fn withdraw_notifications(ids: &[&str]) {
+    use objc2_foundation::NSArray;
+    if !has_bundle_id() || ids.is_empty() {
+        return;
+    }
+    let ids: Vec<Retained<NSString>> = ids.iter().map(|id| NSString::from_str(id)).collect();
+    let ids = NSArray::from_retained_slice(&ids);
+    let center = UNUserNotificationCenter::currentNotificationCenter();
+    center.removeDeliveredNotificationsWithIdentifiers(&ids);
+    center.removePendingNotificationRequestsWithIdentifiers(&ids);
 }
 
 /// What the notification delegate calls with a clicked notification's identifier.
