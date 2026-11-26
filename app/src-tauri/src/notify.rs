@@ -8,7 +8,7 @@
 //! setting off. An item that arrives then is still remembered, so it doesn't notify later.
 //!
 //! **Delivery** goes through [`Notifications`], so the decisions are tested with
-//! [`RecordingNotifications`] and the app posts through `tauri-plugin-notification`.
+//! [`RecordingNotifications`] and the app posts through `UNUserNotificationCenter` (`macos.rs`).
 
 use std::collections::HashSet;
 use std::sync::Mutex;
