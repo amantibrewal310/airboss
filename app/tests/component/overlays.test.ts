@@ -9,6 +9,20 @@ import { startApp, wait } from './setup';
 import { loadFixture } from '../../src/lib/mock/fixtures';
 
 describe('StatusMenu', () => {
+  it('opens on the task’s current status, not Todo (hands-on QA #21)', async () => {
+    const { app } = await startApp();
+    await render(Harness, { app, component: Overlays });
+    expect(app.tasks.rows.get(142)!.status).toBe('doing');
+    app.open({ kind: 'status', task: 142, at: { x: 300, y: 200 } });
+    await wait(30);
+    const hl = document.querySelector<HTMLElement>('[role="menuitem"].hl')!;
+    expect(hl.textContent).toContain('In progress');
+    expect(document.activeElement).toBe(hl);
+    // ↓ moves on from there.
+    await userEvent.keyboard('{ArrowDown}');
+    expect(document.querySelector('[role="menuitem"].hl')!.textContent).toContain('In review');
+  });
+
   it('sets a status with 1–6', async () => {
     const { app } = await startApp();
     await render(Harness, { app, component: Overlays });
