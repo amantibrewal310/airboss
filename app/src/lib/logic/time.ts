@@ -25,6 +25,17 @@ export function relative(ts: Timestamp | null | undefined, now: number): string 
   return dayMonth(t);
 }
 
+/**
+ * A time in a sentence: "just now", "6m ago", "3w ago", then "on 4 Nov". Use this, never
+ * `relative()` + " ago", which reads "now ago".
+ */
+export function ago(ts: Timestamp | null | undefined, now: number): string {
+  const r = relative(ts, now);
+  if (!r) return '';
+  if (r === 'now') return 'just now';
+  return /^\d+[mhdw]$/.test(r) ? `${r} ago` : `on ${r}`;
+}
+
 /** Spoken form for screen readers: "6 minutes ago". */
 export function relativeLong(ts: Timestamp | null | undefined, now: number): string {
   const t = parse(ts);

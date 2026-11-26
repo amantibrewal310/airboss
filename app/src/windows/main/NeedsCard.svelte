@@ -6,8 +6,7 @@
   import StatusIcon from '../../lib/components/StatusIcon.svelte';
   import type { NeedsItem, TaskId } from '../../lib/types';
   import { useApp } from '../../lib/state/context';
-  import { headlineOf, KIND_ICON, KIND_LABEL, mainLabel } from '../../lib/logic/needs';
-  import { relative } from '../../lib/logic/time';
+  import { headlineOf, KIND_ICON, mainLabel, needsLead } from '../../lib/logic/needs';
   import Props from './detail/Props.svelte';
   import Notes from './detail/Notes.svelte';
   import Activity from './detail/Activity.svelte';
@@ -73,7 +72,7 @@
     <div class="k">
       <span class="kic"><Icon name={KIND_ICON[item.kind]} size={14} /></span>
       <span class="ln">
-        <span class="lead">{`${KIND_LABEL[item.kind]} · ${relative(item.since, app.now)} ago ·`}</span>
+        <span class="lead">{`${needsLead(item, app.now)} ·`}</span>
         <button type="button" class="task" use:fullTitle={`${item.task} ${item.task_title}`} onclick={() => app.reveal(item.task)}>{item.task} {item.task_title}</button>
         {#if item.stale}<span class="stale-note">{'· May be out of date'}</span>{/if}
       </span>

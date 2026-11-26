@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { applyPatch, type RowsState } from '../../src/lib/logic/patch';
-import { clockTime, feedTime, relative, relativeLong } from '../../src/lib/logic/time';
+import { ago as agoText, clockTime, feedTime, relative, relativeLong } from '../../src/lib/logic/time';
+import { needsLead } from '../../src/lib/logic/needs';
+import { threadSummary } from '../../src/lib/logic/copy';
+import type { ThreadDto } from '../../src/lib/types';
 import { footerText, mergeConnections } from '../../src/lib/logic/connections';
 import type { Connection, RowDto } from '../../src/lib/types';
+import { lastReport } from '../../src/lib/logic/connections';
 
 const row = (id: number, extra: Partial<RowDto> = {}): RowDto => ({
   id, parent: null, depth: 0, position: id, title: `T${id}`, status: 'todo', origin: 'me', blocked_reason: null,
@@ -59,6 +63,33 @@ describe('time', () => {
     expect(relative(ago(15 * 86_400_000), now)).toBe('2w');
     expect(relative(ago(90 * 86_400_000), now)).toBe('27 Aug');
     expect(relativeLong(ago(6 * 60_000), now)).toBe('6 minutes ago');
+  });
+  it('writes "ago" phrases that never read "now ago" (hands-on QA #17)', () => {
+    expect(agoText(ago(20_000), now)).toBe('just now');
+    expect(agoText(ago(6 * 60_000), now)).toBe('6m ago');
+    expect(agoText(ago(3 * 3_600_000), now)).toBe('3h ago');
+    expect(agoText(ago(2 * 86_400_000), now)).toBe('2d ago');
+    expect(agoText(ago(15 * 86_400_000), now)).toBe('2w ago');
+    expect(agoText(ago(90 * 86_400_000), now)).toBe('on 27 Aug');
+    expect(agoText(null, now)).toBe('');
+    // A clock a little ahead of the stamp is still "just now".
+    expect(agoText(new Date(now + 5_000).toISOString(), now)).toBe('just now');
+  });
+  it('builds the Needs card lead and thread lines from it', () => {
+    expect(needsLead({ kind: 'question', since: ago(20_000) }, now)).toBe('Question · just now');
+    expect(needsLead({ kind: 'agent_stopped', since: ago(12 * 60_000) }, now)).toBe('Agent stopped · 12m ago');
+    const t = (over: Partial<ThreadDto>): ThreadDto =>
+      ({ key: { source: 't3', id: 'x' }, state: 'idle', chip: null, title: null, request: null, error: null, project_path: null, url: null, last_activity_at: ago(20_000), ...over }) as ThreadDto;
+    expect(threadSummary(t({}), now)).toBe('stopped just now');
+    expect(threadSummary(t({ last_activity_at: ago(6 * 60_000) }), now)).toBe('stopped 6m ago');
+    expect(threadSummary(t({ state: 'running' }), now)).toBe('working · now');
+    expect(threadSummary(t({ state: 'needs_me', request: { kind: 'question', at: ago(20_000) } as ThreadDto['request'] }), now)).toBe('asked a question just now');
+    expect(threadSummary(t({ state: 'needs_me', request: { kind: 'approval', at: ago(3 * 3_600_000) } as ThreadDto['request'] }), now)).toBe('wants approval 3h ago');
+    expect(threadSummary(t({ state: 'errored', error: 'boom' }), now)).toBe('boom');
+    expect(threadSummary(t({ state: 'gone' }), now)).toBe('no longer in T3');
+    expect(lastReport(ago(20_000), now)).toBe('Last report just now');
+    expect(lastReport(ago(6 * 60_000), now)).toBe('Last report 6m ago');
+    expect(lastReport(ago(90 * 86_400_000), now)).toBe('Last report on 27 Aug');
   });
   it('writes feed times as relative today, the weekday this week, else the date', () => {
     expect(feedTime(ago(6 * 60_000), now)).toBe('6m');
