@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseLinkBody, phrase } from '../../src/lib/logic/activity';
-import { launcherMissingText, mergeConnections } from '../../src/lib/logic/connections';
+import { agentsStep, codexNeedsTerminalId, launcherMissingText, mergeConnections } from '../../src/lib/logic/connections';
 import { threadSummary } from '../../src/lib/logic/copy';
 import { linkLabel } from '../../src/lib/logic/links';
 import { MockBackend } from '../../src/lib/mock/backend';
@@ -81,5 +81,18 @@ describe('the mock picks the launcher as Rust does', () => {
     // The user picks T3 Code: that's the launcher, and its missing error comes back.
     await m.invoke('set_settings', { settings: { ...m.s.settings, start_agents_in: 't3' } });
     await expect(m.invoke('do_it', { id, place: 'no_repo', again: true })).rejects.toMatchObject({ code: 't3_missing' });
+  });
+});
+
+describe('an outdated Codex setup', () => {
+  it('matters only for Codex in Herdr with a table that lacks HC_TERMINAL_ID', () => {
+    const old = { claude: true, codex: true, codex_terminal_id: false };
+    expect(codexNeedsTerminalId(old, 'herdr', 'codex')).toBe(true);
+    expect(codexNeedsTerminalId(old, 'herdr', 'claude')).toBe(false);
+    expect(codexNeedsTerminalId(old, 't3', 'codex')).toBe(false);
+    expect(codexNeedsTerminalId({ ...old, codex_terminal_id: true }, 'herdr', 'codex')).toBe(false);
+    expect(codexNeedsTerminalId({ ...old, codex: false }, 'herdr', 'codex')).toBe(false);
+    expect(agentsStep(true, old, true)).toBe('codex');
+    expect(agentsStep(false, old, true)).toBe('install');
   });
 });

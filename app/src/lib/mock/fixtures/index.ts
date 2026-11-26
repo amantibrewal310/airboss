@@ -74,7 +74,7 @@ export function loadFixture(name: FixtureName): MockSeed {
       const seed = seedDefaults(b, name, []);
       seed.cli = { installed: false, path: '~/.local/bin/airboss', on_path: true };
       // #9: installing the CLI isn't enough; no agent tool has the server yet.
-      seed.agents = { claude: false, codex: false };
+      seed.agents = { claude: false, codex: false, codex_terminal_id: false };
       seed.settings.open_at_login = true;
       if (name === 'empty') {
         seed.availability = { missing: { reason: T3_MISSING_REASON } };

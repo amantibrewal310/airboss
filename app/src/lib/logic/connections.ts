@@ -1,4 +1,4 @@
-import type { AgentTools, Availability, Connection, LauncherKind, Timestamp } from '../types';
+import type { AgentTools, Availability, Connection, HerdrAgent, LauncherKind, Timestamp } from '../types';
 import { ago } from './time';
 
 const ORDER = ['T3 Code', 'Herdr', 'GitHub', 'Agents', 'Claude Code'];
@@ -82,13 +82,23 @@ export function anyConnected(a: AgentTools): boolean {
 }
 
 /**
- * The Agents row's one next step on first run: install the CLI (missing or broken), connect
- * Claude Code (no agent tool has the server), or copy the agent note (ready).
+ * Codex runs in Herdr with an airboss table from before Herdr: without `HC_TERMINAL_ID` its
+ * agents can't say which terminal they are (Rust turns the Agents row orange for it).
  */
-export type AgentsStep = 'install' | 'connect' | 'note';
+export function codexNeedsTerminalId(agents: AgentTools, launcher: LauncherKind, agent: HerdrAgent): boolean {
+  return launcher === 'herdr' && agent === 'codex' && agents.codex && !agents.codex_terminal_id;
+}
 
-export function agentsStep(cliInstalled: boolean, agents: AgentTools): AgentsStep {
+/**
+ * The Agents row's one next step on first run: install the CLI (missing or broken), connect
+ * Claude Code (no agent tool has the server), copy the Codex setup again (Codex in Herdr
+ * with a setup that lacks `HC_TERMINAL_ID`), or copy the agent note (ready).
+ */
+export type AgentsStep = 'install' | 'connect' | 'codex' | 'note';
+
+export function agentsStep(cliInstalled: boolean, agents: AgentTools, codexOutdated = false): AgentsStep {
   if (!cliInstalled) return 'install';
+  if (codexOutdated) return 'codex';
   return anyConnected(agents) ? 'note' : 'connect';
 }
 

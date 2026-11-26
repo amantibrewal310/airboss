@@ -29,6 +29,7 @@ import type {
   UndoEntry,
 } from '../types';
 import { classify } from '../logic/links';
+import { codexNeedsTerminalId } from '../logic/connections';
 import { recomputeNeeds, sortNeeds } from './attention';
 import { isOpen, stateFromSeed, ts, type MockSeed, type MockState } from './model';
 import {
@@ -269,6 +270,15 @@ export class MockBackend implements Transport {
     }
     if (!this.s.agents.claude && !this.s.agents.codex) {
       return { name: 'Agents', ok: false, state: 'Not connected', detail: "Agents can't report to Airboss yet.", fix: "Agents can't report to Airboss yet. Connect Claude Code in Settings › Agent setup." };
+    }
+    if (codexNeedsTerminalId(this.s.agents, this.launcher(), this.s.settings.herdr_agent)) {
+      return {
+        name: 'Agents',
+        ok: false,
+        state: 'Out of date',
+        detail: 'Codex setup needs HC_TERMINAL_ID',
+        fix: 'Codex setup needs HC_TERMINAL_ID. Copy the Codex setup and put it in place of [mcp_servers.airboss] in ~/.codex/config.toml.',
+      };
     }
     return { name: 'Agents', ok: true, state: 'Ready', detail: 'Agents report progress and ask questions through the airboss command.', fix: null };
   }
@@ -861,8 +871,12 @@ export class MockBackend implements Transport {
       }
       const before = this.launcher();
       const pickedBefore = this.s.settings.start_agents_in;
+      const agentBefore = this.s.settings.herdr_agent;
       this.s.settings = structuredClone(settings);
-      if (this.launcher() !== before || settings.start_agents_in !== pickedBefore) this.emitConnections();
+      if (this.launcher() !== before || settings.start_agents_in !== pickedBefore || settings.herdr_agent !== agentBefore) {
+        this.setAgentsRow();
+        this.emitConnections();
+      }
       return this.s.settings;
     },
 

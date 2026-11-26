@@ -220,7 +220,10 @@
         </li>
         <li>
           <span class="tool">Codex</span>
-          {#if app.conn.agents.codex}
+          {#if app.conn.codexOutdated}
+            <span class="off warn">Codex setup needs HC_TERMINAL_ID, to run in Herdr. Paste it again into <code>~/.codex/config.toml</code></span>
+            <Button size="sm" onclick={() => app.copy('codex_setup')}>Copy Codex setup</Button>
+          {:else if app.conn.agents.codex}
             <span class="on">Connected</span>
           {:else}
             <span class="off">Paste into <code>~/.codex/config.toml</code></span>
@@ -329,6 +332,9 @@
     flex: 1;
     min-width: 0;
     color: var(--text-2);
+  }
+  .tools .warn {
+    color: var(--warn-text);
   }
   .tools .on::before {
     content: '';

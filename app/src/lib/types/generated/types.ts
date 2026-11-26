@@ -28,7 +28,12 @@ claude: boolean,
 /**
  * `~/.codex/config.toml` has `[mcp_servers.airboss]`.
  */
-codex: boolean, };
+codex: boolean, 
+/**
+ * That table's `env_vars` passes `HC_TERMINAL_ID`, which Codex in Herdr needs to say
+ * which terminal it is. A setup copied before Herdr has only `T3CODE_THREAD_ID`.
+ */
+codex_terminal_id: boolean, };
 
 /**
  * Why a command failed: a code the UI may branch on, and one sentence to show.

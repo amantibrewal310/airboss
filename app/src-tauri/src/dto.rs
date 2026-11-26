@@ -10,8 +10,8 @@ use airboss_core::{
     EventId, EventKind, LinkId, LinkKind, Origin, PrState, Repo, RepoId, Status, Task, TaskId,
 };
 use airboss_services::{
-    Availability, Chip, Connection, LaunchReport, Launcher, NeedsItem, NeedsList, PrView, Prepared,
-    Request, ThreadKey, ThreadState, ThreadView,
+    Availability, Chip, Connection, HerdrAgent, LaunchReport, Launcher, NeedsItem, NeedsList,
+    PrView, Prepared, Request, ThreadKey, ThreadState, ThreadView,
 };
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -768,6 +768,20 @@ pub struct AgentTools {
     pub claude: bool,
     /// `~/.codex/config.toml` has `[mcp_servers.airboss]`.
     pub codex: bool,
+    /// That table's `env_vars` passes `HC_TERMINAL_ID`, which Codex in Herdr needs to say
+    /// which terminal it is. A setup copied before Herdr has only `T3CODE_THREAD_ID`.
+    pub codex_terminal_id: bool,
+}
+
+impl AgentTools {
+    /// Codex runs in Herdr (`launcher` is Herdr and its agent is Codex) with an `airboss`
+    /// table that doesn't pass `HC_TERMINAL_ID`, so its agents can't name their terminal.
+    pub fn codex_needs_terminal_id(&self, launcher: LauncherKind, agent: HerdrAgent) -> bool {
+        launcher == LauncherKind::Herdr
+            && agent == HerdrAgent::Codex
+            && self.codex
+            && !self.codex_terminal_id
+    }
 }
 
 /// Everything the main window draws first, read once before it shows.
