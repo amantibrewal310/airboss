@@ -8,6 +8,10 @@ What changed in each release of Airboss. The format follows [Keep a Changelog](h
 
 - Updates inside the app. When a new version is out, the foot of the sidebar says so, and **Update and restart** downloads it, checks its signature, puts it in place and restarts, with the window showing. **Airboss › Check for Updates…** looks right away, and **Settings › Check for updates automatically** (on by default) looks every 6 hours. Each check reads one small file from GitHub.
 
+### Fixed
+
+- Add repos with many T3 Code projects no longer runs past the bottom of the window: the list scrolls inside it, and **Add another folder…** and **Add repos** stay in view. A folder's path shows as a tooltip only when it's cut off, so it no longer covers the next row.
+
 ## [0.1.0-alpha.3] - 2026-11-26
 
 ### Fixed

@@ -20,6 +20,9 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
+    /* The modal sits at 14% from the top: it ends 16px above the window's bottom edge, and
+       the repo list scrolls inside it (many T3 projects). */
+    max-height: calc(86vh - 16px);
   }
   h2 {
     font-size: var(--fs-field);
