@@ -1205,3 +1205,45 @@ fn a_herdr_state_change_rechecks_held_finishes() {
     rig.herdr_line(&status_event(3, "t1", Some("done")), at(3));
     assert!(matches!(rig.gh.try_recv(), Ok(GhMsg::Holds)));
 }
+
+#[test]
+fn streams_that_deliver_their_snapshot_never_add_up_to_broken() {
+    let (mut rig, _) = Rig::new(&[]);
+    rig.start(t0());
+    rig.link_terminals(&["t1"], at(0));
+    let mut now = at(1);
+    for seq in 1..=6 {
+        rig.herdr_line(
+            &herdr_snapshot(seq, &[("t1", "live", Some("working"))]),
+            now,
+        );
+        rig.send(rig.herdr.ended("hc events stopped"), now + ms(10));
+        // Each end is a first failure again: restarted 1 s later.
+        now += Duration::from_secs(1) + ms(10);
+        rig.send(T3Msg::Tick, now);
+        assert!(rig.herdr.running(), "restarted after 1 s (round {seq})");
+    }
+    let row = rig.herdr_connection().unwrap();
+    assert_eq!((row.ok, row.state.as_str()), (true, "Live state"));
+}
+
+#[test]
+fn an_odd_terminal_in_the_snapshot_doesnt_stop_the_stream() {
+    let (mut rig, _) = Rig::new(&[]);
+    rig.start(t0());
+    rig.link_terminals(&["t1", "vps/t7"], at(0));
+    let line = r#"{"seq":1,"terminals":[{"address":"vps/t7","state":"lost","status":{"app":"x"}},{"address":"t1","state":"live","status":{"state":"working"}}]}"#;
+    let msg = rig.herdr.line(line).unwrap();
+    assert!(matches!(
+        msg,
+        T3Msg::Herdr {
+            feed: airboss_sync::herdr::HerdrFeed::Update(_),
+            ..
+        }
+    ));
+    rig.send(msg, at(1));
+    assert!(rig.herdr.running());
+    assert_eq!(rig.herdr_state("t1"), Some(ThreadState::Running));
+    assert_eq!(rig.herdr_state("vps/t7"), Some(ThreadState::Gone));
+    assert_eq!(rig.herdr_connection().map(|c| c.ok), Some(true));
+}

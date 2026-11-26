@@ -78,7 +78,7 @@ pub struct T3Worker {
     herdr_started: Option<SystemTime>,
     /// When to start the stream again, after it ended.
     herdr_restart_at: Option<SystemTime>,
-    /// Ends in a row, each within [`HERDR_STEADY`] of its start.
+    /// Ends in a row, each before its snapshot and within [`HERDR_STEADY`] of its start.
     herdr_failures: u32,
     /// Every terminal, from the latest snapshot on; `None` until one arrives.
     herdr_table: Option<HerdrTable>,
@@ -816,6 +816,8 @@ impl T3Worker {
             }
             self.part.herdr.ok(now);
             self.save_health("herdr");
+            // A stream that delivered its snapshot didn't fail to restart.
+            self.herdr_failures = 0;
         }
         if changed || snapshot {
             self.herdr_views(now);
@@ -824,8 +826,8 @@ impl T3Worker {
     }
 
     /// The stream stopped: its child is reaped, and it starts again after the backoff.
-    /// After [`HERDR_RESTARTS`] failed restarts in a row, Herdr is broken (and still
-    /// restarted, every minute).
+    /// After [`HERDR_RESTARTS`] failed restarts in a row (each ending before its snapshot,
+    /// and within [`HERDR_STEADY`]), Herdr is broken (and still restarted, every minute).
     fn herdr_ended(&mut self, why: String, now: SystemTime) {
         self.herdr.stop();
         let steady = self
