@@ -157,6 +157,7 @@ pub(crate) fn source_text(source: Source) -> &'static str {
     match source {
         Source::T3 => "t3",
         Source::Claude => "claude",
+        Source::Herdr => "herdr",
     }
 }
 

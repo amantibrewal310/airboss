@@ -234,6 +234,7 @@ mod settling {
             mode: Mode::DoIt,
             place: Place::NoRepo(h.cfg.research_dir.clone()),
             again: false,
+            launcher: airboss_services::Launcher::T3,
         };
         h.t3.push(Reply::Timeout);
         h.launch.start(&req).unwrap();

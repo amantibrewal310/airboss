@@ -7,10 +7,10 @@ use std::path::PathBuf;
 
 use airboss_core::{PrState, Repo, RepoId, TaskId};
 use airboss_services::{
-    Availability, Checks, Chip, Connection, ErrorCode, LaunchReport, Mode, NeedsGroup, NeedsItem,
-    NeedsKey, NeedsKind, NeedsList, Place, PrProblem, PrRef, PrView, Prepared, Refresh, Request,
-    RequestKind, Review, ServiceError, Source, StartRequest, StartedThread, T3Project, Target,
-    ThreadKey, ThreadState, ThreadView,
+    Availability, Checks, Chip, Connection, ErrorCode, HerdrAgent, LaunchReport, Launcher, Mode,
+    NeedsGroup, NeedsItem, NeedsKey, NeedsKind, NeedsList, Place, PrProblem, PrRef, PrView,
+    Prepared, Refresh, Request, RequestKind, Review, ServiceError, Source, StartRequest,
+    StartedThread, T3Project, Target, ThreadKey, ThreadState, ThreadView,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -311,13 +311,36 @@ fn launch_values_round_trip() {
         Place::TaskRepos,
         Place::NoRepo(PathBuf::from("/tmp/research")),
     ] {
-        round_trip(&StartRequest {
-            task: TaskId(142),
-            mode: Mode::PlanIt,
-            place,
-            again: true,
-        });
+        for launcher in [
+            Launcher::T3,
+            Launcher::Herdr {
+                agent: HerdrAgent::Claude,
+            },
+            Launcher::Herdr {
+                agent: HerdrAgent::Codex,
+            },
+        ] {
+            round_trip(&StartRequest {
+                task: TaskId(142),
+                mode: Mode::PlanIt,
+                place: place.clone(),
+                again: true,
+                launcher,
+            });
+        }
     }
+    // A request from before Herdr, with no launcher, starts in T3 Code.
+    let old: StartRequest =
+        serde_json::from_str(r#"{"task":142,"mode":"do_it","place":"task_repos","again":false}"#)
+            .unwrap();
+    assert_eq!(old.launcher, Launcher::T3);
+    assert_eq!(
+        serde_json::to_value(Launcher::Herdr {
+            agent: HerdrAgent::Codex
+        })
+        .unwrap(),
+        serde_json::json!({"herdr": {"agent": "codex"}})
+    );
     round_trip(&Prepared {
         repos: vec![repo()],
         from_subtasks: true,

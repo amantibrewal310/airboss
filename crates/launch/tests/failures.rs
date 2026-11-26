@@ -265,6 +265,7 @@ fn a_waiting_task_is_refused_for_do_it_but_can_be_planned() {
         mode: Mode::DoIt,
         place: Place::NoRepo(h.cfg.research_dir.clone()),
         again: false,
+        launcher: airboss_services::Launcher::T3,
     };
     assert_eq!(h.launch.start(&req).unwrap_err().code, ErrorCode::Waiting);
     assert!(h.t3.calls().is_empty());
@@ -344,6 +345,7 @@ fn a_research_folder_must_be_a_full_existing_path() {
             mode: Mode::DoIt,
             place: Place::NoRepo(dir.clone()),
             again: false,
+            launcher: airboss_services::Launcher::T3,
         };
         let report = h.launch.start(&req).unwrap();
         assert_eq!(report.failed.len(), 1, "{dir:?}");

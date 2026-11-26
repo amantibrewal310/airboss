@@ -167,6 +167,7 @@ pub fn do_it(task: TaskId) -> StartRequest {
         mode: Mode::DoIt,
         place: Place::TaskRepos,
         again: false,
+        launcher: airboss_services::Launcher::T3,
     }
 }
 
@@ -176,6 +177,7 @@ pub fn plan_it(task: TaskId) -> StartRequest {
         mode: Mode::PlanIt,
         place: Place::TaskRepos,
         again: false,
+        launcher: airboss_services::Launcher::T3,
     }
 }
 

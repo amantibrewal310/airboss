@@ -28,8 +28,9 @@ Set doing when you start, in_review when your PR is open, blocked with a `note` 
 Set done with a `note` saying what you did, but only on a task with no PR: a task with a PR \
 finishes by itself when the PR merges. A note alone records progress.";
 
-const LINK: &str = "Attach something to a task. With kind t3_thread or claude_session and no \
-`ref`, it links this thread: do that when you start on a task. Link every PR you open (kind \
+const LINK: &str = "Attach something to a task. With kind t3_thread, herdr_terminal or \
+claude_session and no `ref`, it links this thread: do that when you start on a task, with the \
+kind the server's instructions name. Link every PR you open (kind \
 pr, ref owner/repo#42, plus `url`). Linking the same thing twice returns the existing link.";
 
 const PROPOSE_TASKS: &str = "Propose 1 to 20 new tasks you spotted, at top level or under \
@@ -114,11 +115,16 @@ impl AirbossServer {
 
     /// The paragraph sent at `initialize`: how to use the tools, and who this process is.
     pub fn instructions(&self) -> String {
+        // Name the one kind that is this thread, so the agent's link is the one Do it made.
+        let kind = match self.who.own_kind() {
+            Some(kind) => format!("kind {kind}"),
+            None => "kind t3_thread, herdr_terminal or claude_session".to_string(),
+        };
         let mut text = format!(
             "Airboss is the user's to-do list, and these tools report on the tasks you work \
              on. You act as {}. When you start, find your task with list_tasks (`mine: true`, \
              or your repos), or use the task id in your brief, and read it with get_task. Link \
-             this thread to it (link, kind t3_thread or claude_session, no ref). Report status \
+             this thread to it (link, {kind}, no ref). Report status \
              changes with update_task as they happen, and link every PR you open. Propose new \
              work with propose_tasks; don't create it. Use import_plan only for a plan the user \
              settled in plan-review.",

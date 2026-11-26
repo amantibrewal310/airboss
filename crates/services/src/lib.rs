@@ -31,7 +31,8 @@ pub use attention::{
 };
 pub use changes::Changes;
 pub use launch::{
-    Availability, LaunchReport, LaunchService, Mode, Place, Prepared, StartRequest, StartedThread,
+    Availability, HerdrAgent, LaunchReport, LaunchService, Launcher, Mode, Place, Prepared,
+    StartRequest, StartedThread,
 };
 pub use pr_ref::PrRef;
 pub use sync::{

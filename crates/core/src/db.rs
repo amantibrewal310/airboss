@@ -55,6 +55,10 @@ const CORE_MIGRATIONS: &[Migration] = &[
         version: 4,
         sql: include_str!("migrations/004_repo_ids.sql"),
     },
+    Migration {
+        version: 5,
+        sql: include_str!("migrations/005_herdr_links.sql"),
+    },
 ];
 
 const CREATE_SCHEMA_MIGRATIONS: &str = "
@@ -258,7 +262,7 @@ mod tests {
     }
 
     /// `core`'s newest migration: every core migration, applied once.
-    const CORE_VERSION: i64 = 4;
+    const CORE_VERSION: i64 = 5;
 
     fn rows<T: rusqlite::types::FromSql>(conn: &Connection, sql: &str) -> Vec<Vec<Option<T>>> {
         let mut stmt = conn.prepare(sql).unwrap();
@@ -267,6 +271,75 @@ mod tests {
             .unwrap()
             .collect::<std::result::Result<_, _>>()
             .unwrap()
+    }
+
+    #[test]
+    fn migration_5_keeps_every_link_and_takes_herdr_terminals() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        migrate(&mut conn, "core", &CORE_MIGRATIONS[..4]).unwrap();
+        conn.execute_batch(
+            "INSERT INTO tasks (title, position, origin) VALUES ('one', 1, 'me'), ('two', 2, 'me');
+             INSERT INTO links (id, task_id, kind, ref, url, title, pr_state, linked_by, linked_at) VALUES
+               (1, 1, 't3_thread', 'th-1', 't3code://threads/e/th-1', 'Thread', NULL, 'launch', '2026-11-25T10:00:00.000Z'),
+               (2, 1, 'claude_session', 'cs-1', NULL, NULL, NULL, 'agent:claude/cs-1', '2026-11-25T10:00:01.000Z'),
+               (3, 1, 'pr', 'acme/web#1', 'https://github.com/acme/web/pull/1', NULL, 'open', 'me', '2026-11-25T10:00:02.000Z'),
+               (4, 2, 'slack', 'C1/p1', 'https://acme.slack.com/archives/C1/p1', NULL, NULL, 'me', '2026-11-25T10:00:03.000Z'),
+               (7, 2, 'doc', '/w/plan.md', NULL, 'Plan', NULL, 'me', '2026-11-25T10:00:04.000Z'),
+               (9, 2, 'github_issue', 'acme/web#9', 'https://github.com/acme/web/issues/9', NULL, NULL, 'me', '2026-11-25T10:00:05.000Z');",
+        )
+        .unwrap();
+        let sql = "SELECT id, task_id, kind, ref, url, title, pr_state, linked_by, linked_at FROM links ORDER BY id";
+        let before = rows::<rusqlite::types::Value>(&conn, sql);
+        assert!(
+            conn.execute(
+                "INSERT INTO links (task_id, kind, ref, linked_by) VALUES (1, 'herdr_terminal', 't4p', 'launch')",
+                [],
+            )
+            .is_err(),
+            "version 4 refuses the new kind"
+        );
+
+        migrate(&mut conn, "core", CORE_MIGRATIONS).unwrap();
+        assert_eq!(core_version(&conn), CORE_VERSION);
+        assert_eq!(rows(&conn, sql), before, "every link kept, ids and all");
+        conn.execute(
+            "INSERT INTO links (task_id, kind, ref, linked_by) VALUES (1, 'herdr_terminal', 't4p', 'launch')",
+            [],
+        )
+        .unwrap();
+        assert!(
+            conn.execute(
+                "INSERT INTO links (task_id, kind, ref, linked_by) VALUES (1, 'herdr_terminal', 't4p', 'agent:herdr/t4p')",
+                [],
+            )
+            .is_err(),
+            "one link per task, kind and ref"
+        );
+        assert!(
+            conn.execute(
+                "INSERT INTO links (task_id, kind, ref, linked_by) VALUES (1, 'nonsense', 'x', 'me')",
+                [],
+            )
+            .is_err(),
+            "other kinds are still refused"
+        );
+        let index: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type = 'index' AND name = 'links_kind_ref_idx'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(index, 1, "the kind and ref index is back");
+        // Deleting a task still takes its links with it.
+        conn.execute("DELETE FROM tasks WHERE id = 2", []).unwrap();
+        let left: i64 = conn
+            .query_row("SELECT count(*) FROM links WHERE task_id = 2", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(left, 0);
     }
 
     #[test]

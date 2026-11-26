@@ -157,6 +157,8 @@ impl Hub {
         let source_ok = |s: Source| match s {
             Source::T3 => t.t3.is_live(),
             Source::Claude => t.claude.is_live(),
+            // TODO(wave9/sync): Herdr's own health, once sync follows it.
+            Source::Herdr => false,
         };
         let threads = t
             .threads

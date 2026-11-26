@@ -135,6 +135,9 @@ pub enum LinkKindName {
     /// A Claude Code session. Leave `ref` out to link this session.
     #[value(help = "A Claude Code session, by its id")]
     ClaudeSession,
+    /// A terminal in Herdr, `ref` its address like t4p. Leave `ref` out to link this terminal.
+    #[value(help = "A Herdr terminal, by its address, like t4p")]
+    HerdrTerminal,
     /// A pull request, `ref` like owner/repo#42.
     #[value(help = "A pull request, like owner/repo#42")]
     Pr,
@@ -154,6 +157,7 @@ impl From<LinkKindName> for LinkKind {
         match k {
             LinkKindName::T3Thread => LinkKind::T3Thread,
             LinkKindName::ClaudeSession => LinkKind::ClaudeSession,
+            LinkKindName::HerdrTerminal => LinkKind::HerdrTerminal,
             LinkKindName::Pr => LinkKind::Pr,
             LinkKindName::Slack => LinkKind::Slack,
             LinkKindName::Doc => LinkKind::Doc,
@@ -189,8 +193,8 @@ pub struct Link {
     pub id: i64,
     /// What the link points at.
     pub kind: LinkKindName,
-    /// The thread id, owner/repo#n, permalink or file path. Leave it out for
-    /// `t3_thread` or `claude_session` to link this thread.
+    /// The thread id, terminal address, owner/repo#n, permalink or file path. Leave it out
+    /// for `t3_thread`, `herdr_terminal` or `claude_session` to link this thread.
     #[serde(default, rename = "ref")]
     pub r#ref: Option<String>,
     /// The web page it lives at, if any.
@@ -472,6 +476,9 @@ fn missing_ref(kind: LinkKind) -> ToolError {
         LinkKind::T3Thread => "This server doesn't know its T3 thread id, so give `ref`.",
         LinkKind::ClaudeSession => {
             "This server doesn't know its Claude Code session id, so give `ref`."
+        }
+        LinkKind::HerdrTerminal => {
+            "This server doesn't know its Herdr terminal, so give `ref`: its address, like t4p."
         }
         LinkKind::Pr => "Give `ref` for a pr link, e.g. owner/repo#42.",
         LinkKind::GithubIssue => "Give `ref` for a github_issue link, e.g. owner/repo#7.",

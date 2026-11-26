@@ -324,6 +324,13 @@ impl LaunchService for Launch {
         lock(&self.inner.availability).clone()
     }
 
+    // TODO(wave9/launch): check for hc and herdr-app, as the worker checks t3.
+    fn herdr_availability(&self) -> Availability {
+        Availability::Missing {
+            reason: "Herdr isn't supported yet.".into(),
+        }
+    }
+
     fn prepare(&self, task: TaskId, mode: Mode) -> Result<Prepared, ServiceError> {
         prepare::prepare(&self.inner, task, mode)
     }

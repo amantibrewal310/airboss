@@ -144,6 +144,8 @@ pub struct ThreadKey {
 pub enum Source {
     T3,
     Claude,
+    /// A terminal in Herdr, by its address.
+    Herdr,
 }
 
 /// One thread as `sync` last saw it.

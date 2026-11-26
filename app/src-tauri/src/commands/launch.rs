@@ -4,7 +4,7 @@
 
 use airboss_core::{Actor, RepoId, Status, TaskId};
 use airboss_services::{
-    ErrorCode as SvcCode, LaunchReport, Mode, Place, Prepared, StartRequest, ThreadKey,
+    ErrorCode as SvcCode, LaunchReport, Launcher, Mode, Place, Prepared, StartRequest, ThreadKey,
 };
 
 use crate::dto::{
@@ -95,6 +95,8 @@ fn start(
         mode,
         place,
         again,
+        // TODO(wave9/app): the launcher the "Start agents in" setting picks.
+        launcher: Launcher::T3,
     };
     let report = match s.services.launch.start(&req) {
         Ok(r) => r,

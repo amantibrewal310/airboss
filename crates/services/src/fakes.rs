@@ -181,7 +181,8 @@ impl SyncService for FakeSync {
     fn thread_url(&self, key: &ThreadKey) -> Option<String> {
         match key.source {
             Source::T3 => Some(format!("t3code://threads/{FAKE_ENVIRONMENT}/{}", key.r#ref)),
-            Source::Claude => None,
+            // Claude sessions have no link to open; Herdr terminals open through herdr-app.
+            Source::Claude | Source::Herdr => None,
         }
     }
 }
@@ -191,6 +192,7 @@ impl SyncService for FakeSync {
 pub struct FakeLaunch {
     base: Base,
     availability: Mutex<Availability>,
+    herdr_availability: Mutex<Availability>,
     prepare: Mutex<Result<Prepared, ServiceError>>,
     start: Mutex<Result<LaunchReport, ServiceError>>,
     starts: Mutex<Vec<StartRequest>>,
@@ -204,6 +206,9 @@ impl Default for FakeLaunch {
             base: Base::default(),
             availability: Mutex::new(Availability::Ready {
                 version: "fake".into(),
+            }),
+            herdr_availability: Mutex::new(Availability::Missing {
+                reason: "Herdr isn't installed.".into(),
             }),
             prepare: Mutex::new(Ok(Prepared {
                 repos: Vec::new(),
@@ -239,6 +244,12 @@ impl FakeLaunch {
         self.base.changes.bump();
     }
 
+    /// What `herdr_availability()` returns from now on (Missing at first); bumps `changes()`.
+    pub fn set_herdr_availability(&self, availability: Availability) {
+        *lock(&self.herdr_availability) = availability;
+        self.base.changes.bump();
+    }
+
     /// What every `prepare` answers from now on.
     pub fn set_prepare(&self, answer: Result<Prepared, ServiceError>) {
         *lock(&self.prepare) = answer;
@@ -258,6 +269,10 @@ impl FakeLaunch {
 impl LaunchService for FakeLaunch {
     fn availability(&self) -> Availability {
         lock(&self.availability).clone()
+    }
+
+    fn herdr_availability(&self) -> Availability {
+        lock(&self.herdr_availability).clone()
     }
 
     fn prepare(&self, task: TaskId, mode: Mode) -> Result<Prepared, ServiceError> {

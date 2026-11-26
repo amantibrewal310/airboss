@@ -165,6 +165,9 @@ impl LaunchService for Down {
             reason: format!("{} {}", self.what(), self.error.message),
         }
     }
+    fn herdr_availability(&self) -> Availability {
+        self.availability()
+    }
     fn prepare(&self, _task: TaskId, _mode: Mode) -> Result<Prepared, ServiceError> {
         self.refuse()
     }
