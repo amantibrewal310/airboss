@@ -4,6 +4,16 @@ What changed in each release of Airboss. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+## [0.1.0-alpha.7] - 2026-11-26
+
+### Added
+
+- **What's left for you, on the task.** Once an agent has finished its turn, its card under **Threads** shows what its last reply left for you: the part after "Next on your side:", "To bring to the meeting:", "For you to decide" and the like, or its closing paragraph. **Full reply** shows the whole reply, with its links. While the agent is working the card shows nothing, since its last reply is about the turn before. For T3 Code threads.
+
+### Changed
+
+- **Clearer briefs for Do it and Plan it.** A brief now opens with what to do and the task itself, then where to work, what done means (a pull request, the checks run, asking before a fix that needs your decision) and the few Airboss rules for that task. Agents are asked to end with **Next on your side:**, which is what the Threads card shows. The general rules, such as when to set In review and never marking done a task that has a PR, now come from the Airboss tools themselves, so agents you start yourself get them too.
+
 ## [0.1.0-alpha.6] - 2026-11-26
 
 ### Added
@@ -75,7 +85,8 @@ What changed in each release of Airboss. The format follows [Keep a Changelog](h
 - A one-line installer that checks the .dmg's SHA-256 and signature.
 - Help › Report a Problem…, and an alpha feedback form.
 
-[Unreleased]: https://github.com/amantibrewal310/airboss/compare/v0.1.0-alpha.6...HEAD
+[Unreleased]: https://github.com/amantibrewal310/airboss/compare/v0.1.0-alpha.7...HEAD
+[0.1.0-alpha.7]: https://github.com/amantibrewal310/airboss/compare/v0.1.0-alpha.6...v0.1.0-alpha.7
 [0.1.0-alpha.6]: https://github.com/amantibrewal310/airboss/compare/v0.1.0-alpha.5...v0.1.0-alpha.6
 [0.1.0-alpha.5]: https://github.com/amantibrewal310/airboss/compare/v0.1.0-alpha.4...v0.1.0-alpha.5
 [0.1.0-alpha.4]: https://github.com/amantibrewal310/airboss/compare/v0.1.0-alpha.3...v0.1.0-alpha.4
