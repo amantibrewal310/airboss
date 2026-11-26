@@ -69,7 +69,7 @@ fn argv_arrives_entry_by_entry_and_nothing_in_it_runs() {
 fn stdin_arrives_byte_for_byte_and_is_closed() {
     let dir = TempDir::new();
     let canary = dir.path().join("pwned");
-    let text = hostile(&canary).join("\n") + "\n----- END REFERENCE 0123 -----\n";
+    let text = hostile(&canary).join("\n") + "\n----- END TASK 0123 -----\n";
     // `cat` only returns once stdin is closed.
     let out = runner(&dir)
         .run(&args(&["stdin"]), Some(&text), SECS)

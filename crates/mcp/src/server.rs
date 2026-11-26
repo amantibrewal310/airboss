@@ -124,10 +124,13 @@ impl AirbossServer {
             "Airboss is the user's to-do list, and these tools report on the tasks you work \
              on. You act as {}. When you start, find your task with list_tasks (`mine: true`, \
              or your repos), or use the task id in your brief, and read it with get_task. Link \
-             this thread to it (link, {kind}, no ref). Report status \
-             changes with update_task as they happen, and link every PR you open. Propose new \
-             work with propose_tasks; don't create it. Use import_plan only for a plan the user \
-             settled in plan-review.",
+             this thread to it (link, {kind}, no ref). Report status changes with update_task \
+             as they happen: doing when you start, in_review once your PR is open, blocked with \
+             a note saying why. Link every PR you open; a task with a PR finishes by itself when \
+             it merges, so never set it done. Propose new work with propose_tasks; don't create \
+             it. Use import_plan only for a plan the user settled in plan-review. When you stop \
+             and something is left for the user, end your reply with \"Next on your side:\" and \
+             what they need to do; Airboss shows that part of your last reply on the task.",
             self.who.actor
         );
         if let Some(warning) = &self.who.warning {

@@ -115,7 +115,7 @@ impl Facts {
         self.repos.iter().map(|r| (r.id, r.name.as_str())).collect()
     }
 
-    /// What the reference block shows.
+    /// What the task block shows.
     pub fn reference(&self) -> Reference {
         let by_id: HashMap<TaskId, &Task> =
             self.tree.iter().map(|n| (n.task.id, &n.task)).collect();

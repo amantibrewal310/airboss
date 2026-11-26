@@ -141,7 +141,7 @@ fn do_it_in_one_repo_makes_the_worktree_and_opens_a_tab_in_a_new_space() {
     // The brief is the task: it names the worktree and Herdr's own link kind.
     assert!(
         tab.task.starts_with(&format!(
-            "You're working on Airboss task {}, in web ({})",
+            "Do Airboss task {} in web ({})",
             t.id.0,
             wt.display()
         )),
@@ -249,9 +249,10 @@ fn do_it_in_two_repos_uses_one_branch_and_a_worktree_each() {
             .contains("spans 2 repos: booking-api, booking-web")
     );
     assert!(tabs[1].task.contains(&format!(
-        "You're the booking-web thread ({})",
+        "in booking-web ({})",
         worktree(&h, &web, &branch).display()
     )));
+    assert!(tabs[1].task.contains("You're the booking-web thread."));
     // One space each, named after its repo.
     let names: Vec<_> = h.herdr.spaces().into_iter().map(|s| s.1.unwrap()).collect();
     assert_eq!(names, ["booking-api", "booking-web"]);
@@ -425,7 +426,10 @@ fn research_only_opens_one_tab_in_the_folder() {
     assert_eq!(report.started[0].repo, None);
     let tab = &agent_tabs(&h)[0];
     assert_eq!(tab.folder, dir.display().to_string());
-    assert!(tab.task.contains("No repo: this is research or writing."));
+    assert!(
+        tab.task
+            .contains("No repo is linked to it, so this is research or writing.")
+    );
     assert!(tab.task.contains("`kind: \"herdr_terminal\"`"));
     // Its space is named after the folder.
     assert_eq!(h.herdr.spaces()[0].1.as_deref(), Some("notes"));
