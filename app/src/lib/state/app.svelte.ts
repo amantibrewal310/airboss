@@ -92,8 +92,15 @@ export class App {
   plans = $state.raw<PlanCard[]>([]);
   plansLoaded = $state(false);
   runMap = $state.raw<RunMap | null>(null);
-  /** Native app (Tauri): real traffic lights and drag regions. */
-  native = false;
+  /**
+   * Native app (Tauri): real traffic lights and drag regions. Reactive, and given at construction,
+   * because the window is mounted before `start()` runs.
+   */
+  native = $state(false);
+
+  constructor(opts: { native?: boolean } = {}) {
+    this.native = opts.native ?? false;
+  }
 
   /** Rows the current view shows (locally hidden rows left out). */
   visible: VisibleItem[] = $derived.by(() => {
