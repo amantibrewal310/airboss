@@ -1158,6 +1158,8 @@ pub enum CopyWhat {
     TaskNumber(#[ts(as = "TaskIdTs")] TaskId),
     AgentNote,
     SetupCommand,
+    /// A link Airboss wouldn't open ("Copy link" on the refusal).
+    Link(String),
 }
 
 /// What to open: a URL, or a link by its id.

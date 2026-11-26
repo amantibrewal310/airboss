@@ -11,6 +11,7 @@ use crate::dto::{
     CliStatus, CopyWhat, InstallCliResult, NavOpen, OpenTarget, QuickaddReset, path_text,
 };
 use crate::errors::{AppError, AppResult, Ctx, ErrorCode, MSG_HOTKEY_IN_USE, MSG_LINK_GONE};
+use crate::handlers::{Kind, verified_app};
 use crate::menu::{FocusContext, WindowName};
 use crate::notify::Permission;
 use crate::opener::{self, Opening};
@@ -74,13 +75,23 @@ pub fn open_url(s: &AppState, _c: Caller, target: OpenTarget) -> AppResult<()> {
     open_checked(s, &url)
 }
 
-/// Opens a link that passes the allowlist (`opener::decide`): `https` in the browser, a T3
-/// thread in T3 Code, and a document in TextEdit or Preview. Any other file (an app, a script, a folder,
+/// Opens a link that passes the allowlist (`opener::decide`): `https` in the browser and a T3
+/// thread in T3 Code, each only once that app's signature checks out (`handlers.rs`), and a
+/// document in TextEdit or Preview. Any other file (an app, a script, a folder,
 /// anything without a known document type) is shown in Finder instead, because agents can add
 /// links and opening it could run it.
 fn open_checked(s: &AppState, url: &str) -> AppResult<()> {
+    let check = s.shell.app_check();
     let opened = match opener::decide(url)? {
-        Opening::Browser(u) | Opening::Thread(u) => s.shell.open_url(&u),
+        // Opened with exactly the app whose signature was checked (`handlers.rs`).
+        Opening::Browser(u) => {
+            let app = verified_app(Kind::Browser, &u, &*check, &s.config.home)?;
+            s.shell.open_url(&u, &app)
+        }
+        Opening::Thread(u) => {
+            let app = verified_app(Kind::Thread, &u, &*check, &s.config.home)?;
+            s.shell.open_url(&u, &app)
+        }
         Opening::Open(path, viewer) => s.shell.open_file(&path, viewer.app()),
         Opening::Reveal(path) => s.shell.reveal(&path),
     };
@@ -102,6 +113,7 @@ pub fn copy_text(s: &AppState, _c: Caller, what: CopyWhat) -> AppResult<()> {
         CopyWhat::TaskNumber(id) => id.0.to_string(),
         CopyWhat::AgentNote => AGENT_NOTE.to_string(),
         CopyWhat::SetupCommand => SETUP_COMMAND.to_string(),
+        CopyWhat::Link(url) => url,
     };
     s.shell
         .copy_text(&text)

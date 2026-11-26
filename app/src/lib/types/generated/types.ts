@@ -37,7 +37,7 @@ detail: string | null, };
  * The service codes mirror `airboss_services::ErrorCode` one for one, so a service's error
  * passes through with its own code and message.
  */
-export type AppErrorCode = "empty_title" | "not_found" | "invalid_target" | "loop" | "already_exists" | "not_allowed" | "invalid_transition" | "db" | "already_starting" | "undo_refused" | "not_a_link" | "url_not_allowed" | "db_unavailable" | "db_too_new" | "hotkey_in_use" | "hotkey_reserved" | "internal" | "t3_missing" | "t3_not_running" | "t3_unreachable" | "t3_too_old" | "timeout" | "not_a_project" | "repo_missing" | "no_base_branch" | "bad_branch" | "task_closed" | "task_proposed" | "needs_choice" | "waiting" | "bad_answer" | "t3_failed" | "gh_missing" | "signed_out" | "no_access" | "pr_not_found" | "bad_pr_ref" | "rate_limited" | "gh_failed" | "t3_unavailable" | "core" | "storage" | "shutting_down";
+export type AppErrorCode = "empty_title" | "not_found" | "invalid_target" | "loop" | "already_exists" | "not_allowed" | "invalid_transition" | "db" | "already_starting" | "undo_refused" | "not_a_link" | "url_not_allowed" | "app_unverified" | "db_unavailable" | "db_too_new" | "hotkey_in_use" | "hotkey_reserved" | "internal" | "t3_missing" | "t3_not_running" | "t3_unreachable" | "t3_too_old" | "timeout" | "not_a_project" | "repo_missing" | "no_base_branch" | "bad_branch" | "task_closed" | "task_proposed" | "needs_choice" | "waiting" | "bad_answer" | "t3_failed" | "gh_missing" | "signed_out" | "no_access" | "pr_not_found" | "bad_pr_ref" | "rate_limited" | "gh_failed" | "t3_unavailable" | "core" | "storage" | "shutting_down";
 
 /**
  * System, Dark or Light. System (the default) follows macOS.
@@ -113,7 +113,7 @@ cli: CliStatus, };
 /**
  * What to copy.
  */
-export type CopyWhat = { "task_number": TaskId } | "agent_note" | "setup_command";
+export type CopyWhat = { "task_number": TaskId } | "agent_note" | "setup_command" | { "link": string };
 
 /**
  * New task's fields.

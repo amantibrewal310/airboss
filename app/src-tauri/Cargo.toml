@@ -38,6 +38,9 @@ objc2-app-kit = "=0.3.2"
 # Notifications through UNUserNotificationCenter: permission, posting, and clicks.
 objc2-user-notifications = { version = "=0.3.2", default-features = false, features = ["std", "block2", "UNUserNotificationCenter", "UNNotificationSettings", "UNNotificationContent", "UNNotificationRequest", "UNNotificationResponse", "UNNotification", "UNNotificationSound", "UNNotificationTrigger"] }
 block2 = "=0.6.2"
+# Checking the code signature of the app that opens a link (`handlers.rs`).
+objc2-security = { version = "=0.3.2", default-features = false, features = ["std", "CSCommon", "SecStaticCode", "SecRequirement", "SecBase"] }
+objc2-core-foundation = "=0.3.2"
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.154"
 thiserror = "=2.0.21"

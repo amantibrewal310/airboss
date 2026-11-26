@@ -31,6 +31,9 @@ pub enum ErrorCode {
     UndoRefused,
     NotALink,
     UrlNotAllowed,
+    /// The app that would open a link isn't the one it should be (`handlers.rs`); the detail
+    /// is the link, for "Copy link".
+    AppUnverified,
     DbUnavailable,
     /// A newer Airboss migrated the database: "Update Airboss".
     DbTooNew,

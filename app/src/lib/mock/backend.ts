@@ -724,7 +724,9 @@ export class MockBackend implements Transport {
     copy_text: ({ what }) => {
       const text =
         typeof what === 'object'
-          ? String(what.task_number)
+          ? 'link' in what
+            ? what.link
+            : String(what.task_number)
           : what === 'agent_note'
             ? 'Airboss tracks this work. Use the airboss MCP tools to report progress.'
             : 'claude mcp add --scope user airboss -- ~/.local/bin/airboss mcp';
