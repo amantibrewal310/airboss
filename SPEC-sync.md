@@ -316,8 +316,9 @@ WHERE deleted_at IS NULL AND archived_at IS NULL ORDER BY updated_at DESC;
 ### Claude Code sessions
 
 - kqueue (same watcher) on `~/.claude/sessions` and on each `<pid>.json` in it (digits only; the `.key` files beside them are never opened). A folder event re-scans it and adjusts the file watches.
-- Each file has `pid`, `sessionId`, `cwd`, `entrypoint`, `name`, `status`, `procStart`, and `updatedAt`/`statusUpdatedAt` in epoch milliseconds. `sessionId` is a `claude_session` link's `ref`.
-- `busy` is `running`, `idle` is `idle`; any other `status` marks Claude sync `Broken` ("unknown session status <value>"), like T3. A missing file or a dead process is `gone`. `last_activity_at` is `max(updatedAt, statusUpdatedAt)`.
+- Each file has `pid`, `sessionId`, `cwd`, `entrypoint`, `name`, `status`, `procStart`, and `updatedAt`/`statusUpdatedAt` in epoch milliseconds (Claude Code 2.1 adds more keys, which are ignored). `sessionId` is a `claude_session` link's `ref`. `pid`, `sessionId`, `status` and `procStart` are required.
+- **Caught mid-write:** Claude Code writes a new session's file before its `status` (about 1.4 s). A file that isn't valid JSON, or that lacks a required field and was modified (mtime) less than 10 s ago, is skipped for that pass, and stays watched so its next write reads it again. One still lacking a field after 10 s marks Claude sync `Broken` ("Claude session file <path> has no <field>"), so nothing falls back silently.
+- `busy` is `running`, `idle` is `idle`, `waiting` is `needs_me` (on a question or a permission; `waitingFor` names which, and isn't read). No request is read for it, so it shows the Waiting on you chip and holds finishing, but makes no Needs me item. Any other `status` marks Claude sync `Broken` ("unknown session status <value>"), like T3. A missing file or a dead process is `gone`. `last_activity_at` is `max(updatedAt, statusUpdatedAt)`.
 - Liveness: `TZ=UTC LC_ALL=C ps -p <pid,…> -o pid=,lstart=` must print each pid with a start time equal to `procStart`. It runs when the set of files changes, on `woke()`, and on each GitHub tick.
 - Sessions with `entrypoint` `t3-code` are T3 threads: reported only when linked as `claude_session`, never untracked.
 
@@ -371,7 +372,7 @@ Tests never run the real `gh`, `t3` or `ps`, and never open T3's real database, 
 - **`tests/prs.rs`:** each mapping row; each finish trigger; a reopened task stays open; one merged and one open PR finish nothing; a hold while a thread runs, released when it stops; closed then reopened goes back to `in_review`; a pass repeated after a crash between steps; a T3-listed PR linked only after GitHub read it, with GitHub's state, and only if T3 linked it after our thread link; T3 saying merged while GitHub says open changes nothing; the second account used only after `NOT_FOUND`; one account rate-limited while the other keeps reading; no token in argv, tables, logs or `Debug` output.
 - **`tests/t3_db.rs`:** each state row on the fixture; question and approval text, including an approval without `prompt`; the root-thread rule; untracked filtering; Q7 and Q8; `Broken` for a missing column, an unknown run status, an unknown request kind, and a missing `$.settledAt` key; JSON `null` accepted.
 - **`tests/watch.rs` (the real watcher):** a child process (this test binary re-run with an env flag) opens a WAL database in a temp dir, keeps the connection open and writes 5 times; the kqueue watcher must report each within 1 s. The child then closes (the WAL is deleted) and reopens and writes again; the watcher must re-arm and report that too.
-- **`tests/claude.rs`:** states, a reused pid, an unknown status, `t3-code` sessions never untracked. **`tests/migrations.rs`:** each CHECK; opening twice applies once.
+- **`tests/claude.rs`:** states (`waiting` too), a reused pid, an unknown status, a file caught mid-write (skipped while fresh, `InvalidData` after 10 s), `t3-code` sessions never untracked. **`tests/migrations.rs`:** each CHECK; opening twice applies once.
 - **`tests/real_t3.rs`** (`#[ignore]`, run by hand): opens `~/.t3/userdata/statev2.sqlite` with `mode=ro`, runs the checks and every query Q0–Q8 for the 50 most recent threads, and fails on `Broken`. Run it after every T3 update.
 - **By hand:** `cargo run -p airboss-sync --example t3_check` compares `T3Db`'s view of recent threads with `t3 thread show --json` (state, branch, settled).
 - **Performance** (`#[ignore]`): a T3 pass on the fixture grown to 50 linked and 2,000 total threads.
@@ -427,7 +428,7 @@ crates/sync/
 - **Opening `t3code://threads/…` from outside T3** wasn't tried, so as not to change what T3 shows; the link format comes from T3's parser.
 - **Opening T3's database read-only while T3 is closed**, if `statev2.sqlite-shm` is missing.
 - **`notify` 9.0.0's kqueue backend** in our use (it's five days old); the kqueue behaviour itself was checked with Python's `select.kqueue`.
-- **Claude session files:** whether they're rewritten in place or replaced (both are watched), and status values beyond `busy` and `idle`.
+- **Claude session files:** whether they're rewritten in place or replaced (both are watched). `busy`, `idle` and `waiting` were seen with Claude Code 2.1.332 (26 Nov 2026); others may come.
 - **The secondary rate limit's wording**, which wasn't triggered.
 
 ## Changes in draft 2

@@ -601,8 +601,8 @@ impl T3Worker {
     // ---- Claude ----
 
     fn claude_pass(&mut self, now: SystemTime, check_alive: bool) {
-        let sessions = match self.claude.sessions() {
-            Ok(s) => s,
+        let read = match self.claude.sessions() {
+            Ok(read) => read,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 // No folder: no sessions, so every linked one is gone (and holds nothing).
                 self.part
@@ -624,7 +624,14 @@ impl T3Worker {
             }
             Err(e) => return self.claude_broken(e.to_string(), now),
         };
-        let files: BTreeSet<PathBuf> = sessions.iter().map(|s| s.file.clone()).collect();
+        // Skipped files are watched too: Claude Code may finish one in place.
+        let files: BTreeSet<PathBuf> = read
+            .sessions
+            .iter()
+            .map(|s| s.file.clone())
+            .chain(read.skipped)
+            .collect();
+        let sessions = read.sessions;
         let files_changed = files != self.claude_files;
         if files_changed {
             self.claude_files = files;

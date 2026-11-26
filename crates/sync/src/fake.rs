@@ -230,7 +230,7 @@ impl FakeClaude {
 }
 
 impl crate::claude::ClaudeSource for FakeClaude {
-    fn sessions(&mut self) -> std::io::Result<Vec<crate::claude::ClaudeSession>> {
+    fn sessions(&mut self) -> std::io::Result<crate::claude::SessionFiles> {
         let dir = self.state().dir.clone();
         crate::claude::read_sessions(&dir)
     }

@@ -555,6 +555,41 @@ fn watches_cover_t3_and_claude_and_are_re_armed() {
 }
 
 #[test]
+fn a_new_claude_session_file_without_its_status_is_watched_not_broken() {
+    let (mut rig, _) = Rig::new(&[]);
+    rig.start(t0());
+    let file = rig.claude_dir.path().join("67020.json");
+    std::fs::write(
+        &file,
+        r#"{"pid": 67020, "sessionId": "s-new", "procStart": "p"}"#,
+    )
+    .unwrap();
+    rig.send(T3Msg::ClaudeDir, at(1));
+    let claude_row = |rig: &Rig| {
+        rig.hub
+            .connections()
+            .iter()
+            .any(|c| c.name == "Claude Code")
+    };
+    assert!(
+        !claude_row(&rig),
+        "a file caught mid-write doesn't break Claude sync"
+    );
+    let last = rig.watch.calls().last().cloned().unwrap();
+    assert!(last.contains(&WatchTarget::ClaudeFile(file.clone())));
+
+    // Claude Code finishes the file in place; its watch reads it.
+    rig.claude.write(67020, "s-new", "waiting", "cli");
+    rig.send(T3Msg::ClaudeFile(file), at(2));
+    assert!(!claude_row(&rig));
+    let key = ThreadKey {
+        source: Source::Claude,
+        r#ref: "s-new".into(),
+    };
+    assert_eq!(rig.hub.snapshot().threads[&key].state, ThreadState::NeedsMe);
+}
+
+#[test]
 fn a_watch_failure_says_so() {
     let (mut rig, _) = Rig::new(&[]);
     rig.watch.fail_with("too many open files");
