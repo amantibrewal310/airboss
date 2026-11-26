@@ -58,6 +58,19 @@ cargo test -p airboss-sync --release --test real_t3 -- --ignored --nocapture
 
 That test reads your real T3 database, read-only.
 
+## Herdr
+
+Do it and Plan it run Herdr's `herdr-app` and `hc`, from `~/.local/bin`, then the app's `PATH`. Live state comes from `hc events`, which Airboss follows while it runs. Airboss never writes Herdr's settings, and touches no terminal it didn't start.
+
+| What you see | What to do |
+|---|---|
+| The Herdr row says Not installed | Install Herdr, open it once so it puts `hc` and `herdr-app` in `~/.local/bin`, then choose Check again. |
+| "Herdr didn't open. Open it and try again." | Open Herdr yourself, then press Do it again. Airboss waits 10 seconds for its window. |
+| The Herdr row says "Herdr's status can't be read" | `hc events` stopped three times in a row. Check that `hc ls` works in Terminal, then choose Check again. Chips show the last known state meanwhile. |
+| A Do it toast quotes git | Making the worktree failed: the message is git's. A branch checked out in another worktree is the usual cause. |
+| A thread's chip never moves past Stopped | The agent isn't reporting its status to Herdr. Claude Code does; for another agent, check its Herdr integration. |
+| Codex in Herdr shows up as `agent:unknown/<pid>` | Its config lacks `HC_TERMINAL_ID` in `env_vars`. Copy the Codex setup again from Settings › Agent setup. |
+
 ## The quick-add hotkey
 
 The default is ⌃⌥N. To change it, open Settings (⌘,), press the hotkey button and type a new one.
@@ -87,8 +100,8 @@ If the row stays "Not connected" after a successful connect, Claude Code may kee
 
 **An agent shows up as `agent:unknown/<pid>`,** or `list_tasks` with `mine: true` says "This server doesn't know which thread it serves". The `airboss mcp` process didn't get a thread id from its client.
 
-- **Codex** passes a server only a few variables. Add `env_vars = ["T3CODE_THREAD_ID"]` to `[mcp_servers.airboss]` in `~/.codex/config.toml`, then start a new thread. `codex mcp add` can't set this; it's a hand edit. See [Getting started](getting-started.md#codex).
-- **Codex outside T3 Code** has no thread id to pass. Set a name with `AIRBOSS_THREAD`, for example `--env AIRBOSS_THREAD=codex/<name>` on `codex mcp add`.
+- **Codex** passes a server only a few variables. Add `env_vars = ["T3CODE_THREAD_ID", "HC_TERMINAL_ID"]` to `[mcp_servers.airboss]` in `~/.codex/config.toml`, then start a new thread. `codex mcp add` can't set this; it's a hand edit. See [Getting started](getting-started.md#codex).
+- **Codex outside T3 Code and Herdr** has no thread id to pass. Set a name with `AIRBOSS_THREAD`, for example `--env AIRBOSS_THREAD=codex/<name>` on `codex mcp add`.
 - **Any other client:** set `AIRBOSS_THREAD` in the server's environment in its MCP config.
 
 The server's instructions name the actor it acts as, so asking the agent "who does Airboss say you are?" is a quick check.

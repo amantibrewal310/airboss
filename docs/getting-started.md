@@ -12,6 +12,7 @@ Optional, and each one turns on more:
 | Tool | What it turns on | Without it |
 |---|---|---|
 | T3 Code, with its `t3` CLI at `~/.t3/bin/t3` | Do it and Plan it, live thread state, the repo list on first run | Do it and Plan it are off and say why. Everything else works. |
+| Herdr, with `hc` and `herdr-app` in `~/.local/bin` | Do it and Plan it in Herdr tabs, and live state for its terminals, instead of T3 Code (Settings › Agent setup › Start agents in) | Without T3 Code too, Do it and Plan it are off and say why. |
 | GitHub CLI (`gh`), signed in | PR state, reviews and checks; a merged PR finishes its task | PRs stay as links. Everything else works. |
 | Claude Code, Codex, or any MCP client | Agents report on their tasks | You update tasks yourself, in the app or with the CLI. |
 
@@ -90,7 +91,7 @@ Copy `target/release/airboss` somewhere on your `PATH`. If you copy it to `~/.lo
 The first time it opens, Airboss turns on open at login. While there are no tasks, it opens on All tasks with the first-run screen:
 
 - **Open Airboss at login** is ticked. Untick it to turn it off at once. At login the app starts in the menu bar, without a window. Settings changes it later. (A development build from `pnpm tauri dev` never turns it on.)
-- **Repos** lists T3 Code's projects. Tick the ones you work in and choose **Add N repos**. Each repo is named after its folder, and its remote comes from the folder's `.git/config`. Folders that aren't git repos are greyed out with the reason. **Add another folder…** picks any folder. Repos you add stay in the list, ticked and greyed as "Added", so you can keep going. Without T3 Code, only the folder picker shows. The list is one stop for Tab: ↑↓ move, Space ticks, ⌘↩ adds.
+- **Repos** lists T3 Code's projects. Tick the ones you work in and choose **Add N repos**. Each repo is named after its folder, and its remote comes from the folder's `.git/config`. Folders that aren't git repos are greyed out with the reason. **Add another folder…** picks any folder. Repos you add stay in the list, ticked and greyed as "Added", so you can keep going. Without T3 Code, it lists Herdr's space folders and recent folders, under "From Herdr", when Herdr is installed; otherwise only the folder picker shows. The list is one stop for Tab: ↑↓ move, Space ticks, ⌘↩ adds.
 - **Connections** shows Agents, T3 Code and GitHub, with a button to fix each one that's off. The Agents row takes two clicks:
   1. **Install command-line tool** links `~/.local/bin/airboss`. The row then says "Not connected": agents can't report yet.
   2. **Connect Claude Code** registers the MCP server with Claude Code for you. It runs the command in [Claude Code](#claude-code) below, only when you click it. The row then says "Ready", and the button becomes **Copy agent note**.
@@ -112,6 +113,7 @@ Every agent thread starts its own `airboss mcp` process and talks to it over std
 | Variable | The agent shows up as |
 |---|---|
 | `T3CODE_THREAD_ID` (set by T3 Code) | `agent:t3/<id>` |
+| otherwise `HC_TERMINAL_ID` (set by Herdr in its terminals) | `agent:herdr/<address>` |
 | otherwise `CLAUDE_CODE_SESSION_ID` (set by Claude Code) | `agent:claude/<id>` |
 | otherwise `AIRBOSS_THREAD` (set by you, in the client's MCP config) | `agent:<value>` |
 | none of them | `agent:unknown/<parent pid>`, with a warning in the server's instructions |
@@ -132,13 +134,13 @@ The first-run screen's **Connect Claude Code** and **Settings › Agent setup �
 codex mcp add airboss -- ~/.local/bin/airboss mcp
 ```
 
-Codex passes a server only a few variables, so the T3 thread id doesn't reach it unless you ask. Open `~/.codex/config.toml` and add `env_vars` to the server that `codex mcp add` wrote:
+Codex passes a server only a few variables, so the T3 thread id and Herdr's terminal address don't reach it unless you ask. Open `~/.codex/config.toml` and add `env_vars` to the server that `codex mcp add` wrote:
 
 ```toml
 [mcp_servers.airboss]
 command = "/Users/you/.local/bin/airboss"
 args = ["mcp"]
-env_vars = ["T3CODE_THREAD_ID"]
+env_vars = ["T3CODE_THREAD_ID", "HC_TERMINAL_ID"]
 ```
 
 `codex mcp add` has no flag for `env_vars`, which is why it's a hand edit. **Settings › Agent setup › Codex › Copy Codex setup** copies that table, with your real path, ready to paste.
@@ -147,7 +149,7 @@ Codex outside T3 Code has no thread id to pass. Give it a name instead, with `--
 
 ### Any other MCP client
 
-Run `airboss mcp` as a stdio server. If the client doesn't pass `T3CODE_THREAD_ID` or `CLAUDE_CODE_SESSION_ID` through, set `AIRBOSS_THREAD` in its server config. The value may be `t3/<id>` or `claude/<id>`; then `mine` and linking this thread work too.
+Run `airboss mcp` as a stdio server. If the client doesn't pass `T3CODE_THREAD_ID`, `HC_TERMINAL_ID` or `CLAUDE_CODE_SESSION_ID` through, set `AIRBOSS_THREAD` in its server config. The value may be `t3/<id>` or `claude/<id>`; then `mine` and linking this thread work too.
 
 ### Check it
 

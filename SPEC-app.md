@@ -997,6 +997,7 @@ Writes return `Patch` (shown as → P). All `core` calls act as `me`, with one l
 | `plans` | `req` | `Vec<PlanCard>` | VM, `sync.snapshot` |
 | `quickadd_data` | | `{repos, parents}` | VM |
 | `t3_projects` | | `Vec<{path, name, is_git, added}>` | `sync.snapshot().projects`, a `.git` check per folder |
+| `herdr_folders` | | `Vec<{path, name, is_git, added}>` | `herdr-app ls`: its spaces' folders and recent folders (SPEC-herdr), a `.git` check per folder |
 | `create_task` | `{title, body?, parent?, repos[], links[], then: none / do_it / plan_it}` | `{id, patch, launch?}` | `add_task(NewTask { repos, … })`, `link` per link, then the `do_it` / `plan_it` flow |
 | `rename_task` / `edit_notes` | `id, title` / `id, body?` | → P | `edit_task` |
 | `set_status` | `id, status, note?` | → P, undo entry | `set_status` (blocked needs `note`) |

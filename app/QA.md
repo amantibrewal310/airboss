@@ -170,8 +170,22 @@ cargo run -p airboss-app --example seed -- --tasks 2000 --db /tmp/airboss-qa/big
 - [ ] Glance at Needs me, All tasks with the panel open, Settings and quick add (⌃⌥N): text is
       readable, nothing is clipped, red appears only for needs-me. Switch back to System.
 
+## 12. Herdr (if you use it)
+
+- [ ] With Herdr open, ⌘, › Agent setup › **Start agents in** › Herdr, and **Agent in Herdr** ›
+      Claude Code. The connections popover has a Herdr row reading "Ready".
+- [ ] Select "QA one", press **⌘↩**. A tab named "<id> QA one" appears in Herdr's `scratch` space
+      (Herdr doesn't switch to it), in `~/.herdr/worktrees/scratch/task-<id>-qa-one`, and Claude
+      gets the brief as its first message. The row's chip reads "Working" within a few seconds.
+- [ ] **Open thread** (⌘O) brings Herdr forward on that tab.
+- [ ] Ask the agent to ask you something and wait: the chip turns "Waiting on you" and Needs me
+      has the item. Answer it in Herdr; when the agent finishes, the chip reads "Stopped".
+- [ ] The task's links show one Herdr terminal, not a second link from the agent's own report.
+- [ ] Quit Herdr (⌘Q), then ⇧⌘↩ (Plan it) on "QA plan": Herdr opens and the planning tab starts.
+- [ ] Switch **Start agents in** back to Automatic.
+
 ## Done
 
 - Note the macOS version and Mac model here, with the date, and file anything that failed.
-- Remove the scratch data: `rm -rf /tmp/airboss-qa`, delete the QA thread and project in T3,
+- Remove the scratch data: `rm -rf /tmp/airboss-qa`, delete the QA thread and project in T3, close the `scratch` space in Herdr and remove its worktree,
   and turn off "Open at login" if a throwaway run turned it on (⌘,).

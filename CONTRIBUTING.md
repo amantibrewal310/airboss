@@ -60,6 +60,8 @@ cargo test -p airboss-core --release -- --ignored perf                # performa
 cargo test -p airboss-mcp --release -- --ignored perf                 # start-up and call times
 cargo test -p airboss-app --release --test perf -- --ignored          # rebuild, diff and write timings
 cargo test -p airboss-sync --release --test real_t3 -- --ignored      # T3 Code's real database, read-only
+cargo test -p airboss-sync --test real_herdr -- --ignored             # the real hc: a probe terminal it starts and removes
+cargo test -p airboss-launch --test real_herdr -- --ignored           # Herdr open: tabs in its own airboss-test space, then closed
 ```
 
 **Generated files.** The TypeScript types in `app/src/lib/types/generated/` and the mock's fixtures are written from Rust. After changing a DTO or a recorded command, regenerate them and commit the result:

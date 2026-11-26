@@ -11,15 +11,17 @@ The server works out who it's acting for once, at start-up, from its environment
 | Variable present | Actor | "This thread" means |
 |---|---|---|
 | `T3CODE_THREAD_ID` | `agent:t3/<id>` | that T3 thread, plus the Claude Code session if `CLAUDE_CODE_SESSION_ID` is set too |
+| otherwise `HC_TERMINAL_ID` (set by Herdr in its terminals) | `agent:herdr/<address>` | that Herdr terminal, plus the Claude Code session if `CLAUDE_CODE_SESSION_ID` is set too |
 | otherwise `CLAUDE_CODE_SESSION_ID` | `agent:claude/<id>` | that Claude Code session |
-| otherwise `AIRBOSS_THREAD` | `agent:<value>` | the T3 thread or session it names, if it's written `t3/<id>` or `claude/<id>`; otherwise nothing |
+| otherwise `AIRBOSS_THREAD` | `agent:<value>` | the thread it names, if it's written `t3/<id>`, `herdr/<address>` or `claude/<id>`; otherwise nothing |
 | none of these | `agent:unknown/<parent pid>` | nothing |
 
+- A thread host (T3 Code, Herdr) names the thread before the agent it runs, so an agent's own link is the one Do it made, and nothing shows twice. The server's instructions name the one kind to link with.
 - Values are trimmed, and a blank value counts as unset. A leading `agent:` in `AIRBOSS_THREAD` is ignored.
 - Over MCP, the caller is always an agent. Nothing an agent sends can make it act as you. The one exception is `import_plan`, which creates tasks as `plan`, the actor for a plan you settled.
 - When no thread can be identified, `mine: true` and linking "this thread" are refused, and the server's instructions end with a warning:
 
-  > This server couldn't tell which thread it serves: none of T3CODE_THREAD_ID, CLAUDE_CODE_SESSION_ID or AIRBOSS_THREAD is set. It acts as agent:unknown/73060, so `mine` and linking this thread without a `ref` won't work. Set AIRBOSS_THREAD in this client's MCP config to fix it.
+  > This server couldn't tell which thread it serves: none of T3CODE_THREAD_ID, HC_TERMINAL_ID, CLAUDE_CODE_SESSION_ID or AIRBOSS_THREAD is set. It acts as agent:unknown/73060, so `mine` and linking this thread without a `ref` won't work. Set AIRBOSS_THREAD in this client's MCP config to fix it.
 
 ### What the actor proves
 
@@ -109,15 +111,15 @@ Give `status`, `note`, or both. Returns the task after the change, in the same s
 
 ### `link`
 
-> Attach something to a task. With kind t3_thread or claude_session and no `ref`, it links this thread: do that when you start on a task. Link every PR you open (kind pr, ref owner/repo#42, plus `url`). Linking the same thing twice returns the existing link.
+> Attach something to a task. With kind t3_thread, herdr_terminal or claude_session and no `ref`, it links this thread: do that when you start on a task, with the kind the server's instructions name. Link every PR you open (kind pr, ref owner/repo#42, plus `url`). Linking the same thing twice returns the existing link.
 
 Idempotent.
 
 | Argument | Type | Meaning |
 |---|---|---|
 | `id` | number | The task |
-| `kind` | `t3_thread`, `claude_session`, `pr`, `slack`, `doc` or `github_issue` | What it points at |
-| `ref` | text | The thread id, `owner/repo#n`, permalink or file path. Leave it out for `t3_thread` or `claude_session` to link this thread. |
+| `kind` | `t3_thread`, `herdr_terminal`, `claude_session`, `pr`, `slack`, `doc` or `github_issue` | What it points at |
+| `ref` | text | The thread id, terminal address (`t4p`), `owner/repo#n`, permalink or file path. Leave it out for `t3_thread`, `herdr_terminal` or `claude_session` to link this thread. |
 | `url` | text | The web page it lives at, if any |
 | `pr_state` | `open`, `merged` or `closed` | For a `pr` link only: its state, if known. Left out, it starts open. |
 | `title` | text | A short name to show instead of the ref |
