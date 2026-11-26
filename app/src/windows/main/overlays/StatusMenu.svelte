@@ -37,4 +37,4 @@
   );
 </script>
 
-<Menu {items} {initial} x={at.x} y={at.y} width={220} label="Status of {task}" numbered onclose={() => app.close()} />
+<Menu {items} {initial} x={at.x} y={at.y} width={220} label="Status of #{task}" numbered onclose={() => app.close()} />

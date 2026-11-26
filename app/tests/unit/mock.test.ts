@@ -102,7 +102,7 @@ describe('MockBackend', () => {
     expect(res.patch!.upserts.map((r) => r.id)).toContain(146);
     // The parent's progress changes too.
     expect(res.patch!.upserts.map((r) => r.id)).toContain(142);
-    expect(res.undo!.label).toBe('Mark done 146');
+    expect(res.undo!.label).toBe('Mark done #146');
     await new Promise((r) => setTimeout(r, 5));
     expect(seen).toContain(res.patch!.seq);
   });
@@ -116,7 +116,7 @@ describe('MockBackend', () => {
   it('refuses a loop with the Appendix D message', async () => {
     await expect(m.invoke('add_dependency', { id: 144, waitsOn: 145 })).rejects.toMatchObject({
       code: 'loop',
-      message: 'That would make a loop: 145 already waits on 144.',
+      message: 'That would make a loop: #145 already waits on #144.',
     });
   });
 
@@ -156,7 +156,7 @@ describe('MockBackend', () => {
     expect(m.s.tasks.get(144)!.status).toBe('dropped');
     expect(m.s.tasks.get(143)!.status).toBe('done');
     const undone = await m.invoke('undo', { entry: res.undo!.id });
-    expect(undone.message).toBe('Undid drop 142');
+    expect(undone.message).toBe('Undid drop #142');
     expect(m.s.tasks.get(142)!.status).toBe('doing');
     expect(m.s.tasks.get(144)!.status).toBe('doing');
     expect(m.s.tasks.get(145)!.status).toBe('todo');

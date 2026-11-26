@@ -57,7 +57,7 @@ describe('TaskPanel', () => {
     await wait(400);
     expect(backend.calls.filter((c) => c.command === 'do_it')).toHaveLength(1);
     expect(btn.textContent).toContain('Do it');
-    expect(app.toasts.list.at(-1)!.text).toBe('Started a thread for 146 in booking-api');
+    expect(app.toasts.list.at(-1)!.text).toBe('Started a thread for #146 in booking-api');
   });
 
   it('switches Do it and Plan it off without T3 Code, with the line under the header', async () => {

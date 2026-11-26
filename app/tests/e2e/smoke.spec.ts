@@ -29,7 +29,7 @@ test('keyboard-only smoke test', async ({ page }) => {
   // A second press within 400 ms of an action is ignored (so it can't act on the next item).
   await page.waitForTimeout(450);
   await page.keyboard.press('Meta+Backspace');
-  await expect(toast).toContainText(/Dismissed \d+/);
+  await expect(toast).toContainText(/Dismissed #\d+/);
   await expect(page.locator('#app [role="listbox"] [role="option"]')).toHaveCount(before - 1);
   await page.keyboard.press('Meta+z');
   await expect(toast).toContainText('Undid dismiss');
@@ -45,15 +45,15 @@ test('keyboard-only smoke test', async ({ page }) => {
   const tree = page.getByRole('tree');
   await expect(tree).toHaveAttribute('aria-activedescendant', 'row-144');
   await page.keyboard.press(' ');
-  await expect(toast).toContainText('Marked 144 done');
+  await expect(toast).toContainText('Marked #144 done');
   await page.keyboard.press('s');
   await page.keyboard.press('4');
   await page.getByLabel('Why is it blocked?').fill('Waiting for test keys');
   await page.keyboard.press('Enter');
-  await expect(toast).toContainText('Marked 144 blocked');
+  await expect(toast).toContainText('Marked #144 blocked');
   await expect(page.locator('[data-row="144"]')).toContainText('Blocked');
   await page.keyboard.press('Alt+Meta+ArrowUp');
-  await expect(toast).toContainText('Moved 144 up');
+  await expect(toast).toContainText('Moved #144 up');
   await expect(page.locator('[data-row]').nth(1)).toHaveAttribute('data-row', '144');
 
   // 3. ⌘K, type an id, ↩, then ⌘↓ for the page and its map.

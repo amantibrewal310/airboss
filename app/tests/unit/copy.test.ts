@@ -9,12 +9,14 @@ import type { Connection, HistoryEntry } from '../../src/lib/types';
 /** P1-15: the words on screen. */
 describe('copy', () => {
   it('toasts lead with the verb', () => {
-    expect(statusToast(144, 'done')).toBe('Marked 144 done');
-    expect(statusToast(144, 'blocked')).toBe('Marked 144 blocked');
-    expect(statusToast(144, 'dropped')).toBe('Dropped 144');
-    expect(statusToast(146, 'doing')).toBe('Moved 146 to In progress');
-    expect(statusToast(146, 'todo')).toBe('Moved 146 to Todo');
-    expect(statusToast(146, 'in_review')).toBe('Moved 146 to In review');
+    expect(statusToast(144, 'done')).toBe('Marked #144 done');
+    expect(statusToast(144, 'blocked')).toBe('Marked #144 blocked');
+    expect(statusToast(144, 'dropped')).toBe('Dropped #144');
+    expect(statusToast(146, 'doing')).toBe('Moved #146 to In progress');
+    expect(statusToast(146, 'todo')).toBe('Moved #146 to Todo');
+    expect(statusToast(146, 'in_review')).toBe('Moved #146 to In review');
+    // A small id on its own reads as a number word without the # (hands-on QA #5).
+    expect(statusToast(1, 'done')).toBe('Marked #1 done');
   });
 
   it('a launch reads as the thread it started, and where', () => {

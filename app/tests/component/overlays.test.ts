@@ -32,7 +32,7 @@ describe('StatusMenu', () => {
     await userEvent.keyboard('2');
     await wait(30);
     expect(app.tasks.rows.get(146)!.status).toBe('doing');
-    expect(app.toasts.list.at(-1)!.text).toBe('Moved 146 to In progress');
+    expect(app.toasts.list.at(-1)!.text).toBe('Moved #146 to In progress');
   });
 
   it('asks why for Blocked and won’t save an empty reason', async () => {

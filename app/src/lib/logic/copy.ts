@@ -1,5 +1,7 @@
 /*
-  Toast wording, verb first: "Marked 144 done", "Moved 146 to In progress", "Dropped 144".
+  Toast wording, verb first: "Marked #144 done", "Moved #146 to In progress", "Dropped #144".
+  A task id on its own in a sentence is written "#144", as the CLI does, so "Marked #1 done"
+  doesn't read as "marked one done". Rows and lists keep the bare id.
   Also the short sentences beside a thread ("stopped 6m ago").
 */
 
@@ -8,9 +10,9 @@ import { ago, relative } from './time';
 import { SHAPE_LABEL } from './views';
 
 export function statusToast(id: TaskId, status: Status): string {
-  if (status === 'done' || status === 'blocked') return `Marked ${id} ${status}`;
-  if (status === 'dropped') return `Dropped ${id}`;
-  return `Moved ${id} to ${SHAPE_LABEL[status]}`;
+  if (status === 'done' || status === 'blocked') return `Marked #${id} ${status}`;
+  if (status === 'dropped') return `Dropped #${id}`;
+  return `Moved #${id} to ${SHAPE_LABEL[status]}`;
 }
 
 /** A linked thread's line in the panel: "asked a question just now", "working · 6m", "stopped 2h ago". */

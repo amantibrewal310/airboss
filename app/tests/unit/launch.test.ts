@@ -13,22 +13,22 @@ const report = (r: Partial<LaunchReport>): LaunchReport => ({ started: [], skipp
 describe('launch toasts', () => {
   it('one thread started', () => {
     expect(launchToast(142, 'do_it', report({ started: [thread(1)] }), repos)).toMatchObject({
-      text: 'Started a thread for 142 in booking-web',
+      text: 'Started a thread for #142 in booking-web',
       actions: [{ kind: 'open_thread' }],
     });
   });
   it('several, all started', () => {
     expect(launchToast(142, 'do_it', report({ started: [thread(1), thread(2)] }), repos)).toMatchObject({
-      text: 'Started 2 threads for 142 on task-142-booking-flow',
+      text: 'Started 2 threads for #142 on task-142-booking-flow',
       actions: [],
     });
   });
   it('research only', () => {
-    expect(launchToast(142, 'do_it', report({ started: [thread(null)] }), repos).text).toBe('Started a research thread for 142');
+    expect(launchToast(142, 'do_it', report({ started: [thread(null)] }), repos).text).toBe('Started a research thread for #142');
   });
   it('Plan it', () => {
     expect(launchToast(142, 'plan_it', report({ started: [thread(1)] }), repos).text).toBe(
-      'Started a planning thread for 142. Its steps become subtasks when you settle the plan.',
+      'Started a planning thread for #142. Its steps become subtasks when you settle the plan.',
     );
   });
   it('some started, some failed: Retry, or Add to T3 and retry for NotAProject', () => {
@@ -41,13 +41,13 @@ describe('launch toasts', () => {
   });
   it('none started, all skipped: Start again', () => {
     expect(launchToast(142, 'do_it', report({ skipped: [1, 2] }), repos)).toMatchObject({
-      text: '142 already has threads in booking-web and booking-api',
+      text: '#142 already has threads in booking-web and booking-api',
       actions: [{ kind: 'again' }],
     });
   });
   it('none started, failed: Retry', () => {
     expect(launchToast(142, 'do_it', report({ failed: [[null, { code: 't3_not_running', message: "T3 Code isn't open. Open it, then try again." }]] }), repos)).toMatchObject({
-      text: "Couldn't start 142: T3 Code isn't open. Open it, then try again.",
+      text: "Couldn't start #142: T3 Code isn't open. Open it, then try again.",
       tone: 'warn',
       actions: [{ kind: 'retry' }],
     });

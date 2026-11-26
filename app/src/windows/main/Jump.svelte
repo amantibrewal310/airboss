@@ -53,7 +53,7 @@
   });
 
   const placeholder = $derived(
-    mode === 'waits_on' ? `Choose what ${task} waits on…` : mode === 'move_under' ? `Move ${task} under…` : 'Jump to a task, or type a command…',
+    mode === 'waits_on' ? `Choose what #${task} waits on…` : mode === 'move_under' ? `Move #${task} under…` : 'Jump to a task, or type a command…',
   );
 
   function run(item: Item | undefined) {
