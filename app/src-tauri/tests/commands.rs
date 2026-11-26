@@ -1066,13 +1066,20 @@ fn open_thread_and_open_url_go_through_the_allowlist() {
         s.link(t, NewLink::new(LinkKind::Doc, "~/plan.md"), &Actor::Me)
             .unwrap()
     });
+    // A `~` path opens from the home folder, once it's there.
+    assert_eq!(
+        err_code(appcmd::open_url(&app.state, M, OpenTarget::Link(link.id))),
+        (ErrorCode::NotFound, "That file no longer exists.".into())
+    );
+    std::fs::write(app.home.join("plan.md"), "# plan").unwrap();
     appcmd::open_url(&app.state, M, OpenTarget::Link(link.id)).unwrap();
-    let home = app.home.to_string_lossy().to_string();
-    assert!(
-        app.shell
-            .calls()
-            .iter()
-            .any(|c| c.starts_with("open_url(file://") && c.contains(&home[1..]))
+    let plan = app.home.join("plan.md").canonicalize().unwrap();
+    assert_eq!(
+        app.shell.calls().last().unwrap(),
+        &format!(
+            "open_file({} in /System/Applications/TextEdit.app)",
+            plan.display()
+        )
     );
 }
 
@@ -1099,6 +1106,10 @@ fn recheck_copy_and_install_cli() {
     );
     let sidecar = temp_dir("bundle").join("airboss");
     std::fs::write(&sidecar, b"#!/bin/sh\n").unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&sidecar, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
     app.shell.set_sidecar(Some(sidecar.clone()));
     let out = appcmd::install_cli(&app.state, M).unwrap();
     let link = app.home.join(".local/bin/airboss");
@@ -1117,6 +1128,156 @@ fn recheck_copy_and_install_cli() {
     assert_eq!(
         err_code(appcmd::install_cli(&app.state, M)).0,
         ErrorCode::AlreadyExists
+    );
+}
+
+fn agents(app: &TestApp) -> Connection {
+    app.state.refresh_connections();
+    app.state
+        .connection_rows()
+        .into_iter()
+        .find(|c| c.name == "Agents")
+        .unwrap()
+}
+
+/// Audit should-fix 9: a dangling link (or one to a file that can't run) isn't Ready, and
+/// Ready says when an agent last reported, or that none has.
+#[test]
+fn agents_are_ready_only_with_a_working_cli_and_say_when_one_last_reported() {
+    use std::os::unix::fs::{PermissionsExt, symlink};
+    let app = TestApp::new();
+    let bin = app.home.join(".local/bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let link = bin.join("airboss");
+    symlink(app.home.join("Old.app/Contents/MacOS/airboss"), &link).unwrap();
+    let a = agents(&app);
+    assert_eq!((a.ok, a.state.as_str()), (false, "Link broken"), "{a:?}");
+    assert!(!detail::bootstrap(&app.state, M).unwrap().cli.installed);
+
+    let cli = temp_dir("cli").join("airboss");
+    std::fs::write(&cli, b"").unwrap();
+    std::fs::remove_file(&link).unwrap();
+    symlink(&cli, &link).unwrap();
+    assert!(
+        !agents(&app).ok,
+        "an empty, non-executable file isn't a CLI"
+    );
+
+    std::fs::write(&cli, b"#!/bin/sh\n").unwrap();
+    std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let a = agents(&app);
+    assert_eq!((a.ok, a.state.as_str()), (true, "Ready"), "{a:?}");
+    assert_eq!(a.detail, "No agent has reported yet.");
+    let b = detail::bootstrap(&app.state, M).unwrap();
+    assert!(b.cli.installed);
+    assert_eq!(b.agent_report, None);
+
+    // An agent reports: the time arrives with connections:changed.
+    let t = app.add("T", None);
+    app.core(|s| {
+        s.add_note(t, "started", &Actor::Agent("t3/thread-1".into()))
+            .unwrap()
+    });
+    app.sync_vm();
+    let at = app.core(|s| s.history(t).unwrap().last().unwrap().at.clone());
+    assert_eq!(
+        detail::bootstrap(&app.state, M).unwrap().agent_report,
+        Some(at.clone())
+    );
+    assert!(app.shell.events().iter().any(|e| matches!(
+        e,
+        UiEvent::ConnectionsChanged(c) if c.agent_report.as_deref() == Some(at.as_str())
+    )));
+    // My own later writes don't count as a report.
+    tasks::rename_task(&app.state, M, t, "Renamed".into()).unwrap();
+    assert_eq!(
+        detail::bootstrap(&app.state, M).unwrap().agent_report,
+        Some(at)
+    );
+}
+
+/// Settings' "~/.local/bin isn't on your PATH yet" follows the user's interactive login
+/// shell (so `~/.zshrc` counts), checked in the background at start and after an install, and
+/// sent with the connections.
+#[test]
+fn the_path_check_reads_zshrc_and_reaches_the_ui() {
+    use std::os::unix::fs::PermissionsExt;
+    let mut app = TestApp::new();
+    let zdot = temp_dir("zdot");
+    let bin = app.home.join(".local/bin");
+    std::fs::write(
+        zdot.join(".zshrc"),
+        format!("export PATH=\"$PATH:{}\"\n", bin.display()),
+    )
+    .unwrap();
+    // A shell that reads the throwaway ZDOTDIR, never the user's own startup files.
+    let shell = temp_dir("shell").join("zsh");
+    std::fs::write(
+        &shell,
+        format!(
+            "#!/bin/sh\nZDOTDIR='{}' exec /bin/zsh \"$@\"\n",
+            zdot.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&shell, std::fs::Permissions::from_mode(0o755)).unwrap();
+    app = app.with_shell(shell);
+    assert!(!detail::bootstrap(&app.state, M).unwrap().cli.on_path);
+    app.state.start_background();
+    let sent = app.shell.wait_for(
+        Duration::from_secs(10),
+        |e| matches!(e, UiEvent::ConnectionsChanged(c) if c.cli.on_path),
+    );
+    assert!(sent.is_some(), "{:?}", app.shell.events());
+    assert!(detail::bootstrap(&app.state, M).unwrap().cli.on_path);
+}
+
+/// attention's "Needs me · Didn't start" row (its table didn't open) reaches the footer.
+#[test]
+fn a_needs_me_that_didnt_start_shows_in_the_footer() {
+    let app = TestApp::new();
+    app.attention.set_connections(vec![Connection {
+        name: "Needs me".into(),
+        ok: false,
+        state: "Didn't start".into(),
+        detail: "Its table couldn't open: disk I/O error".into(),
+        fix: Some("Quit and reopen Airboss. If it happens again, see app.log.".into()),
+    }]);
+    app.state.catch_up_services();
+    let rows = app.state.connection_rows();
+    let row = rows.iter().find(|r| r.name == "Needs me").unwrap();
+    assert!(!row.ok && row.state == "Didn't start", "{row:?}");
+    assert!(app.shell.events().iter().any(|e| matches!(
+        e,
+        UiEvent::ConnectionsChanged(c) if c.connections.iter().any(|r| r.name == "Needs me")
+    )));
+}
+
+/// The newest agent report is found at start, behind later events of mine.
+#[test]
+fn the_last_agent_report_is_found_at_start() {
+    let mut store = airboss_core::Store::open_in_memory().unwrap();
+    let t = store
+        .add_task(airboss_core::NewTask::new("T"), &Actor::Me)
+        .unwrap()
+        .id;
+    store
+        .add_note(t, "working", &Actor::Agent("t3/x".into()))
+        .unwrap();
+    let at = store.history(t).unwrap().last().unwrap().at.clone();
+    for i in 0..300 {
+        store
+            .edit_task(
+                t,
+                airboss_core::TaskEdit::default().title(format!("T{i}")),
+                &Actor::Me,
+            )
+            .unwrap();
+    }
+    let app = TestApp::with_store(store);
+    assert_eq!(
+        detail::bootstrap(&app.state, M).unwrap().agent_report,
+        Some(at)
     );
 }
 
@@ -1423,20 +1584,78 @@ fn file_links_that_would_run_something_are_shown_in_finder() {
     let bundle = dir.join("Thing.app");
     std::fs::create_dir_all(&bundle).unwrap();
     let url = |p: &Path| airboss_app::classify::file_url(p);
+    let real = |p: &Path| p.canonicalize().unwrap();
     appcmd::open_url(&app.state, M, OpenTarget::Url(url(&doc))).unwrap();
     for p in [&script, &exe, &bundle, &dir] {
         appcmd::open_url(&app.state, M, OpenTarget::Url(url(p))).unwrap();
     }
     let calls = app.shell.calls();
-    assert!(calls.contains(&format!("open_url({})", url(&doc))));
+    assert!(
+        calls.contains(&format!(
+            "open_file({} in /System/Applications/TextEdit.app)",
+            real(&doc).display()
+        )),
+        "{calls:?}"
+    );
     for p in [&script, &exe, &bundle, &dir] {
         assert!(
-            calls.contains(&format!("reveal({})", p.display())),
+            calls.contains(&format!("reveal({})", real(p).display())),
             "{} should be revealed: {calls:?}",
             p.display()
         );
-        assert!(!calls.contains(&format!("open_url({})", url(p))));
     }
+    assert_eq!(
+        calls.iter().filter(|c| c.starts_with("open_")).count(),
+        1,
+        "only the document opens: {calls:?}"
+    );
+}
+
+/// The final audit's B1: an agent stores a link through MCP `link`, and ⌘O must never run it.
+#[test]
+fn agent_links_that_would_run_code_never_reach_open() {
+    use std::os::unix::fs::PermissionsExt;
+    let app = TestApp::new();
+    let dir = temp_dir("b1");
+    let script = dir.join("x.command");
+    std::fs::write(&script, "#!/bin/sh\nopen -a Calculator\n").unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let t = app.add("T", None);
+    let base = airboss_app::classify::file_url(&script);
+    for url in [
+        format!("{base}?a"),
+        "file:/System/Applications/Calculator.app?://".to_string(),
+        base.replacen("file://", "file://localhost", 1),
+        format!("{base}#x"),
+        "http://example.com/x.command".to_string(),
+    ] {
+        let agent = Actor::Agent("t3/thread-1".into());
+        let link = app.core(|s| {
+            s.link(
+                t,
+                NewLink::new(LinkKind::Doc, "x").with_url(url.as_str()),
+                &agent,
+            )
+            .unwrap()
+        });
+        let (code, message) = err_code(appcmd::open_url(&app.state, M, OpenTarget::Link(link.id)));
+        assert_eq!(code, ErrorCode::UrlNotAllowed, "{url}");
+        assert_eq!(
+            message, "Airboss only opens https links, files and T3 threads.",
+            "{url}"
+        );
+    }
+    assert!(
+        app.shell.calls().iter().all(|c| !c.starts_with("open_")),
+        "nothing reached the opener: {:?}",
+        app.shell.calls()
+    );
+    // The plain file URL is shown in Finder, never opened.
+    appcmd::open_url(&app.state, M, OpenTarget::Url(base)).unwrap();
+    assert_eq!(
+        app.shell.calls().last().unwrap(),
+        &format!("reveal({})", script.canonicalize().unwrap().display())
+    );
 }
 
 #[test]
@@ -1470,6 +1689,164 @@ fn add_repos_needs_an_absolute_path_to_a_folder() {
         real.canonicalize().unwrap().to_string_lossy()
     );
     assert_eq!(out.repos[0].name, "real");
+}
+
+/// Settings › Repos (audit should-fix 8): rename, change folder or remote, and remove.
+#[test]
+fn a_repo_can_be_renamed_moved_and_given_another_remote() {
+    let app = TestApp::new();
+    let web = repo(&app, "web");
+    repo(&app, "api");
+    app.sync_vm();
+    let moved = temp_dir("moved").join("booking-web");
+    std::fs::create_dir_all(&moved).unwrap();
+    let patch = repos::edit_repo(
+        &app.state,
+        M,
+        web,
+        "booking-web".into(),
+        moved.to_string_lossy().into(),
+        Some("git@github.com:acme/booking-web.git".into()),
+    )
+    .unwrap();
+    let r = app
+        .core(|s| s.repos().unwrap())
+        .into_iter()
+        .find(|r| r.id == web)
+        .unwrap();
+    assert_eq!(r.name, "booking-web");
+    assert_eq!(r.path, moved.canonicalize().unwrap().to_string_lossy());
+    assert_eq!(
+        r.remote_url.as_deref(),
+        Some("git@github.com:acme/booking-web.git")
+    );
+    assert!(patch.repos.is_some(), "the sidebar hears the new name");
+    assert_told(&app);
+    // A blank remote clears it; the rest stays.
+    repos::edit_repo(
+        &app.state,
+        M,
+        web,
+        r.name.clone(),
+        r.path.clone(),
+        Some("  ".into()),
+    )
+    .unwrap();
+    let r = app
+        .core(|s| s.repos().unwrap())
+        .into_iter()
+        .find(|r| r.id == web)
+        .unwrap();
+    assert_eq!((r.name.as_str(), r.remote_url), ("booking-web", None));
+}
+
+#[test]
+fn editing_a_repo_refuses_a_blank_name_a_missing_folder_and_a_taken_one() {
+    let app = TestApp::new();
+    let web = repo(&app, "web");
+    repo(&app, "api");
+    app.sync_vm();
+    let path = "/src/web".to_string();
+    assert_eq!(
+        err_code(repos::edit_repo(
+            &app.state,
+            M,
+            web,
+            " ".into(),
+            path.clone(),
+            None
+        )),
+        (ErrorCode::InvalidTarget, "A repo needs a name.".into())
+    );
+    assert_eq!(
+        err_code(repos::edit_repo(
+            &app.state,
+            M,
+            web,
+            "web".into(),
+            "/no/such/folder".into(),
+            None
+        ))
+        .0,
+        ErrorCode::InvalidTarget
+    );
+    assert_eq!(
+        err_code(repos::edit_repo(
+            &app.state,
+            M,
+            web,
+            "api".into(),
+            path.clone(),
+            None
+        )),
+        (
+            ErrorCode::AlreadyExists,
+            "A repo with that name or folder is already added.".into()
+        )
+    );
+    assert_eq!(
+        err_code(repos::edit_repo(
+            &app.state,
+            M,
+            RepoId(99),
+            "x".into(),
+            path,
+            None
+        )),
+        (ErrorCode::NotFound, "That repo no longer exists.".into())
+    );
+}
+
+#[test]
+fn removing_a_repo_unlinks_it_from_its_tasks_and_says_how_many() {
+    let app = TestApp::new();
+    let web = repo(&app, "web");
+    let a = app.add("A", None);
+    let b = app.add("B", None);
+    app.add("C", None);
+    app.core(|s| {
+        s.link_repo(a, web, &Actor::Me).unwrap();
+        s.link_repo(b, web, &Actor::Me).unwrap();
+        s.set_status(b, Status::Done, None, &Actor::Me).unwrap();
+    });
+    app.sync_vm();
+    let out = repos::remove_repo(&app.state, M, web).unwrap();
+    assert_eq!(out.unlinked, vec![a, b], "done tasks lose it too");
+    assert!(app.core(|s| s.repos().unwrap()).is_empty());
+    assert!(
+        out.patch
+            .upserts
+            .iter()
+            .any(|r| r.id == a && r.repos.is_empty())
+    );
+    assert_eq!(
+        err_code(repos::remove_repo(&app.state, M, web)),
+        (ErrorCode::NotFound, "That repo no longer exists.".into())
+    );
+}
+
+/// Settings › Database: "Back up…" through a save dialog and core's online backup.
+#[test]
+fn back_up_the_database_where_the_save_dialog_says() {
+    let db = temp_dir("backup-src").join("airboss.db");
+    let app = TestApp::with_store(airboss_core::Store::open(&db).unwrap());
+    app.add("Kept", None);
+    // Cancelled: nothing happens.
+    assert_eq!(repos::back_up_database(&app.state, M).unwrap(), None);
+    let to = temp_dir("backup-dst").join("Airboss backup.db");
+    app.shell.answer_save(Some(to.clone()));
+    let out = repos::back_up_database(&app.state, M).unwrap();
+    assert_eq!(out.as_deref(), Some(to.to_string_lossy().as_ref()));
+    let copy = airboss_core::Store::open(&to).unwrap();
+    assert_eq!(copy.tree().unwrap()[0].task.title, "Kept");
+    // The dialog already asked about replacing, so a second backup there overwrites.
+    repos::back_up_database(&app.state, M).unwrap();
+    assert!(
+        app.shell
+            .calls()
+            .iter()
+            .any(|c| c.starts_with("pick_save(Airboss backup "))
+    );
 }
 
 #[test]

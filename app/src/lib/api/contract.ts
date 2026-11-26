@@ -24,11 +24,13 @@ import type {
   NavOpen,
   NeedsChanged,
   NeedsKey,
+  NotificationPermission,
   OpenTarget,
   Patch,
   PlanCard,
   QuickaddData,
   QuickaddReset,
+  RemoveRepoResult,
   RepoId,
   RunMap,
   Settings,
@@ -65,6 +67,9 @@ export interface Commands {
   link_repo: C<{ id: TaskId; repo: RepoId }, Patch>;
   unlink_repo: C<{ id: TaskId; repo: RepoId }, Patch>;
   add_repos: C<{ paths: string[] }, AddReposResult>;
+  edit_repo: C<{ repo: RepoId; name: string; path: string; remote: string | null }, Patch>;
+  remove_repo: C<{ repo: RepoId }, RemoveRepoResult>;
+  back_up_database: C<None, string | null>;
   pick_folder: C<None, string | null>;
   set_branch: C<{ id: TaskId; branch: string }, Patch>;
   add_dependency: C<{ id: TaskId; waitsOn: TaskId }, Patch>;
@@ -87,6 +92,8 @@ export interface Commands {
   install_cli: C<None, InstallCliResult>;
   get_settings: C<None, Settings>;
   set_settings: C<{ settings: Settings }, Settings>;
+  notification_permission: C<None, NotificationPermission>;
+  open_notification_settings: C<None, null>;
   set_folded: C<{ ids: TaskId[]; folded: boolean }, null>;
   set_focus_context: C<{ context: FocusContext }, null>;
   ui_ready: C<{ window: 'main' | 'quickadd' }, null>;
@@ -119,11 +126,12 @@ export type ResultOf<K extends CommandName> = Commands[K]['result'];
 export const COMMAND_NAMES = [
   'bootstrap', 'task_detail', 'run_map', 'plans', 'quickadd_data', 't3_projects', 'create_task',
   'rename_task', 'edit_notes', 'set_status', 'toggle_done', 'accept_proposals', 'reject_proposals',
-  'move_task', 'reorder', 'link_repo', 'unlink_repo', 'add_repos', 'pick_folder', 'set_branch',
+  'move_task', 'reorder', 'link_repo', 'unlink_repo', 'add_repos', 'edit_repo', 'remove_repo',
+  'back_up_database', 'pick_folder', 'set_branch',
   'add_dependency', 'remove_dependency', 'add_link', 'remove_link', 'add_note', 'do_it', 'plan_it',
   'add_to_t3', 'reopen_and_start', 'open_thread', 'open_url', 'needs_dismiss', 'needs_snooze',
   'needs_restore', 'undo', 'recheck_connections', 'copy_text', 'install_cli', 'get_settings',
-  'set_settings', 'set_folded', 'set_focus_context', 'ui_ready', 'quickadd_shown', 'quickadd_hide',
+  'set_settings', 'notification_permission', 'open_notification_settings', 'set_folded', 'set_focus_context', 'ui_ready', 'quickadd_shown', 'quickadd_hide',
   'quickadd_resize', 'show_main',
 ] as const satisfies readonly CommandName[];
 

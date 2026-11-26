@@ -40,8 +40,29 @@ describe('the database problem state', () => {
     screen.container.querySelector<HTMLButtonElement>('[role="alert"] button')!.click();
     await wait(10);
     expect(backend.calls.filter((c) => c.command === 'open_url').map((c) => c.args)).toEqual([
-      { target: { url: 'file:///Users/me/Library/Application Support/Airboss' } },
+      { target: { url: 'file:///Users/me/Library/Application%20Support/Airboss' } },
     ]);
+  });
+
+  it('a database a newer Airboss updated says to update, whenever it’s found', async () => {
+    const TOO_NEW: AppError = {
+      code: 'db_too_new',
+      message: 'A newer Airboss has updated this database. Install it, then open Airboss again.',
+      detail: '/Users/me/Library/Application Support/Airboss/airboss.db: This database was created by a newer Airboss.',
+    };
+    const { app, backend } = await startApp('design');
+    const screen = await render(App, { app });
+    await wait(30);
+    backend.invoke = (async () => {
+      throw TOO_NEW;
+    }) as typeof backend.invoke;
+    await app.toggleDone(144);
+    await wait(30);
+    const alert = screen.container.querySelector<HTMLElement>('[role="alert"]')!;
+    expect(alert.querySelector('h1')!.textContent).toBe('Update Airboss');
+    expect(alert.querySelector('p')!.textContent).toBe(TOO_NEW.message);
+    expect([...alert.querySelectorAll('button')].map((b) => b.textContent!.trim())).toEqual(['Show in Finder']);
+    expect(app.toasts.list).toEqual([]);
   });
 
   it('a command answered with db_unavailable shows it too, instead of a toast', async () => {

@@ -5,6 +5,7 @@
 //! - the Mac waking (`NSWorkspaceDidWakeNotification`)
 //! - the local time zone's offset, for the menu-bar menu's clock times
 //! - `QuickAddPanel`, an `NSPanel` subclass from `tauri-nspanel`
+//! - asking for, and reading, permission to notify (`UNUserNotificationCenter`)
 
 #![allow(unsafe_code)]
 
@@ -131,4 +132,60 @@ pub fn observe(callbacks: Callbacks) {
     }
     // Lives as long as the app: the notification centres hold it weakly.
     std::mem::forget(observer);
+}
+
+/// What macOS answered about notifications.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotifyAuth {
+    Granted,
+    Denied,
+    NotAsked,
+}
+
+fn auth(status: objc2_user_notifications::UNAuthorizationStatus) -> NotifyAuth {
+    use objc2_user_notifications::UNAuthorizationStatus as S;
+    if status == S::Denied {
+        NotifyAuth::Denied
+    } else if status == S::NotDetermined {
+        NotifyAuth::NotAsked
+    } else {
+        NotifyAuth::Granted
+    }
+}
+
+/// Whether Airboss may notify, as System Settings › Notifications says; `None` if macOS
+/// didn't answer within `wait`. Only call it from inside an app bundle:
+/// `UNUserNotificationCenter` raises an exception in a process without one.
+pub fn notify_permission(wait: std::time::Duration) -> Option<NotifyAuth> {
+    use objc2_user_notifications::{UNNotificationSettings, UNUserNotificationCenter};
+    let (tx, rx) = std::sync::mpsc::channel();
+    let tx = std::sync::Mutex::new(Some(tx));
+    let block = block2::RcBlock::new(move |settings: std::ptr::NonNull<UNNotificationSettings>| {
+        // SAFETY: the centre calls this once with a valid settings object it keeps alive
+        // for the call.
+        let status = unsafe { settings.as_ref() }.authorizationStatus();
+        if let Some(tx) = tx.lock().ok().and_then(|mut t| t.take()) {
+            let _ = tx.send(auth(status));
+        }
+    });
+    UNUserNotificationCenter::currentNotificationCenter()
+        .getNotificationSettingsWithCompletionHandler(&block);
+    rx.recv_timeout(wait).ok()
+}
+
+/// Asks macOS for permission to notify (banners and sounds). macOS shows its prompt only
+/// the first time; after that it answers from the setting. Only call it from inside an app
+/// bundle (see [`notify_permission`]).
+pub fn request_notify_permission() {
+    use objc2::runtime::Bool;
+    use objc2_foundation::NSError;
+    use objc2_user_notifications::{UNAuthorizationOptions, UNUserNotificationCenter};
+    let block = block2::RcBlock::new(|granted: Bool, _error: *mut NSError| {
+        tauri_plugin_log::log::info!("notifications allowed: {}", granted.as_bool());
+    });
+    UNUserNotificationCenter::currentNotificationCenter()
+        .requestAuthorizationWithOptions_completionHandler(
+            UNAuthorizationOptions::Alert | UNAuthorizationOptions::Sound,
+            &block,
+        );
 }

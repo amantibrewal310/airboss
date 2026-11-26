@@ -13,7 +13,8 @@ const PR = /^https?:\/\/(?:www\.)?github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-
 const ISSUE = /^https?:\/\/(?:www\.)?github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)\/issues\/(\d+)(?:[/?#].*)?$/i;
 const SLACK = /^https?:\/\/[A-Za-z0-9-]+\.slack\.com\/archives\/([A-Za-z0-9]+)(?:\/[^\s]*)?$/i;
 const T3 = /^t3code:\/\/threads\/([^/\s]+)\/([^/\s?#]+)\/?$/i;
-const HTTP = /^https?:\/\/[^\s]+$/i;
+/** Any other web link: https only, since Airboss opens nothing else (SPEC-app "Opening links"). */
+const HTTP = /^https:\/\/[^\s]+$/i;
 const PATH = /^(?:~\/|\/)[^\s]*$/;
 
 /** Sorts one link or path by its form; null when it's neither. */

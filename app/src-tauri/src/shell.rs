@@ -6,7 +6,7 @@
 //! every command is a plain function that runs without Tauri.
 
 use std::path::PathBuf;
-use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use airboss_services::NeedsList;
@@ -18,6 +18,7 @@ use crate::dto::{
 };
 use crate::errors::AppError;
 use crate::menu::MenuState;
+use crate::notify::{Notifications, RecordingNotifications};
 use crate::settings::Appearance;
 
 /// An event for the web views (Appendix B).
@@ -89,14 +90,19 @@ pub trait Shell: Send + Sync {
     fn hide_quickadd(&self);
     /// Sets the quick-add panel's height to follow its content.
     fn resize_quickadd(&self, height: f64);
-    /// Opens a URL the allowlist has already passed.
+    /// Opens a URL the allowlist has already passed (`https` or `t3code`).
     fn open_url(&self, url: &str) -> Result<(), String>;
+    /// Opens a document the allowlist has already passed, by its resolved path, in `app`
+    /// (`open -a app -- path`), never in the app LaunchServices would pick.
+    fn open_file(&self, path: &std::path::Path, app: &std::path::Path) -> Result<(), String>;
     /// Shows a file or folder in Finder, without opening it.
     fn reveal(&self, path: &std::path::Path) -> Result<(), String>;
     /// Puts text on the clipboard.
     fn copy_text(&self, text: &str) -> Result<(), String>;
     /// The folder picker; `None` when cancelled.
     fn pick_folder(&self) -> Option<PathBuf>;
+    /// A save dialog offering `name`; `None` when cancelled. It asks before replacing a file.
+    fn pick_save(&self, name: &str) -> Option<PathBuf>;
     /// Turns open at login on or off.
     fn set_autostart(&self, on: bool) -> Result<(), String>;
     /// Swaps the global hotkey; on failure the old one stays registered. `old` is empty at
@@ -112,6 +118,8 @@ pub trait Shell: Send + Sync {
     fn accent(&self) -> Option<String>;
     /// The bundled `airboss` CLI, when running from the app bundle.
     fn sidecar(&self) -> Option<PathBuf>;
+    /// macOS notifications.
+    fn notifications(&self) -> Arc<dyn Notifications>;
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -125,9 +133,11 @@ pub struct RecordingShell {
     calls: Mutex<Vec<String>>,
     arrived: Condvar,
     folder: Mutex<Option<PathBuf>>,
+    save: Mutex<Option<PathBuf>>,
     refuse_hotkey: Mutex<bool>,
     sidecar: Mutex<Option<PathBuf>>,
     accent: Mutex<Option<String>>,
+    notifications: Arc<RecordingNotifications>,
 }
 
 impl RecordingShell {
@@ -173,6 +183,11 @@ impl RecordingShell {
         *lock(&self.folder) = folder;
     }
 
+    /// What `pick_save` answers.
+    pub fn answer_save(&self, to: Option<PathBuf>) {
+        *lock(&self.save) = to;
+    }
+
     /// Makes `register_hotkey` fail, as when another app holds the key.
     pub fn refuse_hotkeys(&self, refuse: bool) {
         *lock(&self.refuse_hotkey) = refuse;
@@ -181,6 +196,11 @@ impl RecordingShell {
     /// What `sidecar` answers.
     pub fn set_sidecar(&self, path: Option<PathBuf>) {
         *lock(&self.sidecar) = path;
+    }
+
+    /// The notifications fake: what was posted, and what permission answers.
+    pub fn notifications_fake(&self) -> Arc<RecordingNotifications> {
+        self.notifications.clone()
     }
 
     /// What `accent` answers.
@@ -211,6 +231,14 @@ impl Shell for RecordingShell {
         self.call(format!("open_url({url})"));
         Ok(())
     }
+    fn open_file(&self, path: &std::path::Path, app: &std::path::Path) -> Result<(), String> {
+        self.call(format!(
+            "open_file({} in {})",
+            path.display(),
+            app.display()
+        ));
+        Ok(())
+    }
     fn reveal(&self, path: &std::path::Path) -> Result<(), String> {
         self.call(format!("reveal({})", path.display()));
         Ok(())
@@ -222,6 +250,10 @@ impl Shell for RecordingShell {
     fn pick_folder(&self) -> Option<PathBuf> {
         self.call("pick_folder".into());
         lock(&self.folder).clone()
+    }
+    fn pick_save(&self, name: &str) -> Option<PathBuf> {
+        self.call(format!("pick_save({name})"));
+        lock(&self.save).clone()
     }
     fn set_autostart(&self, on: bool) -> Result<(), String> {
         self.call(format!("set_autostart({on})"));
@@ -249,5 +281,8 @@ impl Shell for RecordingShell {
     }
     fn sidecar(&self) -> Option<PathBuf> {
         lock(&self.sidecar).clone()
+    }
+    fn notifications(&self) -> Arc<dyn Notifications> {
+        self.notifications.clone()
     }
 }

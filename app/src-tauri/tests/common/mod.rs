@@ -201,7 +201,12 @@ impl TestApp {
 
     /// Any store, and a chosen home folder.
     pub fn with_home(store: Store, home: PathBuf) -> TestApp {
-        let store = share(store);
+        TestApp::build(share(store), home, None)
+    }
+
+    /// No login shell runs in tests unless one is given: the PATH check would read the
+    /// developer's own startup files.
+    fn build(store: SharedStore, home: PathBuf, login_shell: Option<PathBuf>) -> TestApp {
         let violations = Arc::new(AtomicUsize::new(0));
         let sync = Arc::new(FakeSync::new());
         let launch = Arc::new(FakeLaunch::new());
@@ -233,7 +238,9 @@ impl TestApp {
         let mut config = AppConfig::new(Default::default(), None);
         config.home = home.clone();
         config.reject_delay = Duration::from_millis(150);
+        config.reject_retry = vec![Duration::from_millis(50)];
         config.fold_save_delay = Duration::from_millis(30);
+        config.shell = login_shell;
         let state = AppState::new(
             store.clone(),
             services,
@@ -254,6 +261,11 @@ impl TestApp {
             home,
             gate,
         }
+    }
+
+    /// The same app, rebuilt with `shell` as the user's shell for the PATH check.
+    pub fn with_shell(self, shell: PathBuf) -> TestApp {
+        TestApp::build(self.store, self.home, Some(shell))
     }
 
     /// Adds a task as me, straight to `core` (no catch-up).

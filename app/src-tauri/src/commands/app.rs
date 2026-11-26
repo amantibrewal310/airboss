@@ -1,19 +1,19 @@
 //! App commands: the opener, the clipboard, the CLI, settings, focus, and the windows.
 
-use std::path::Path;
-use std::process::{Command, Stdio};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use airboss_core::{LinkKind, TaskId};
 use airboss_services::ThreadKey;
 use tauri_plugin_log::log;
 
-use crate::classify::{check_url, expand_home, file_path, file_url, runs_something};
+use crate::classify::{expand_home, file_url};
 use crate::dto::{
     CliStatus, CopyWhat, InstallCliResult, NavOpen, OpenTarget, QuickaddReset, path_text,
 };
 use crate::errors::{AppError, AppResult, Ctx, ErrorCode, MSG_HOTKEY_IN_USE, MSG_LINK_GONE};
 use crate::menu::{FocusContext, WindowName};
+use crate::notify::Permission;
+use crate::opener::{self, Opening};
 use crate::settings::{Settings, check_hotkey, hotkey_label};
 use crate::shell::UiEvent;
 use crate::state::{AppState, Caller, lock};
@@ -34,7 +34,7 @@ pub fn open_thread(s: &AppState, _c: Caller, key: ThreadKey) -> AppResult<()> {
     open_checked(s, &url)
 }
 
-/// Opens a URL, or a link by its id; only `http`, `https`, `file` and `t3code`.
+/// Opens a URL, or a link by its id, through the allowlist in `opener.rs`.
 pub fn open_url(s: &AppState, _c: Caller, target: OpenTarget) -> AppResult<()> {
     let url = match target {
         OpenTarget::Url(u) => u,
@@ -74,19 +74,17 @@ pub fn open_url(s: &AppState, _c: Caller, target: OpenTarget) -> AppResult<()> {
     open_checked(s, &url)
 }
 
-/// Opens an allowed URL. A file that would run something when opened (an app, a script, an
-/// installer, a folder) is shown in Finder instead.
+/// Opens a link that passes the allowlist (`opener::decide`): `https` in the browser, a T3
+/// thread in T3 Code, and a document in TextEdit or Preview. Any other file (an app, a script, a folder,
+/// anything without a known document type) is shown in Finder instead, because agents can add
+/// links and opening it could run it.
 fn open_checked(s: &AppState, url: &str) -> AppResult<()> {
-    check_url(url)?;
-    if let Some(path) = file_path(url).filter(|p| runs_something(p)) {
-        return s
-            .shell
-            .reveal(&path)
-            .map_err(|e| AppError::internal(format!("couldn't show {}: {e}", path.display())));
-    }
-    s.shell
-        .open_url(url)
-        .map_err(|e| AppError::internal(format!("couldn't open {url}: {e}")))
+    let opened = match opener::decide(url)? {
+        Opening::Browser(u) | Opening::Thread(u) => s.shell.open_url(&u),
+        Opening::Open(path, viewer) => s.shell.open_file(&path, viewer.app()),
+        Opening::Reveal(path) => s.shell.reveal(&path),
+    };
+    opened.map_err(|e| AppError::internal(format!("couldn't open a link: {e}")))
 }
 
 /// "Check again": every service rechecks its connections.
@@ -148,41 +146,12 @@ pub fn install_cli(s: &AppState, _c: Caller) -> AppResult<InstallCliResult> {
         Err(_) => {}
     }
     std::os::unix::fs::symlink(&sidecar, &link).map_err(fail)?;
+    let on_path = s.check_login_path();
     s.refresh_connections();
     Ok(InstallCliResult {
         path: path_text(&link),
-        on_path: on_login_path(&bin),
+        on_path,
     })
-}
-
-/// Whether `dir` is on the login shell's `PATH` (the app's own `PATH` is launchd's).
-fn on_login_path(dir: &Path) -> bool {
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
-    let child = Command::new(shell)
-        .args(["-lc", "printf %s \"$PATH\""])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn();
-    let Ok(mut child) = child else { return false };
-    // A login shell's startup files shouldn't take long; don't wait forever on one that does.
-    let deadline = Instant::now() + Duration::from_secs(3);
-    loop {
-        match child.try_wait() {
-            Ok(Some(_)) => break,
-            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(20)),
-            _ => {
-                let _ = child.kill();
-                return false;
-            }
-        }
-    }
-    let mut out = String::new();
-    if let Some(mut stdout) = child.stdout.take() {
-        use std::io::Read;
-        let _ = stdout.read_to_string(&mut out);
-    }
-    out.split(':').any(|p| Path::new(p) == dir)
 }
 
 /// The settings now.
@@ -215,8 +184,28 @@ pub fn set_settings(s: &AppState, _c: Caller, settings: Settings) -> AppResult<S
     if new.appearance != old.appearance {
         s.shell.apply_appearance(new.appearance);
     }
+    // Turning notifications on asks macOS, if it hasn't been asked yet.
+    if new.notifications && !old.notifications {
+        let n = s.shell.notifications();
+        if n.permission() == Permission::NotAsked {
+            n.request();
+        }
+    }
     s.store_settings(new.clone())?;
     Ok(new)
+}
+
+/// Whether macOS lets Airboss notify, for Settings' explanation when it doesn't.
+pub fn notification_permission(s: &AppState, _c: Caller) -> AppResult<Permission> {
+    Ok(s.shell.notifications().permission())
+}
+
+/// "Open System Settings": Notifications, at Airboss, to allow them.
+pub fn open_notification_settings(s: &AppState, _c: Caller) -> AppResult<()> {
+    s.shell
+        .notifications()
+        .open_settings()
+        .map_err(|e| AppError::internal(format!("couldn't open System Settings: {e}")))
 }
 
 /// Folds or unfolds parents; saved a second after the last change.
@@ -315,15 +304,19 @@ pub fn show_main(
     Ok(())
 }
 
-/// Where the CLI link lives, whether it's there, and whether its folder is on `PATH`.
+/// Where the CLI link lives, whether it works, and whether its folder is on the user's
+/// `PATH`: their shell's, once `check_login_path` has run, else the app's own (launchd's).
 pub fn cli_status(s: &AppState) -> CliStatus {
     let bin = s.config.home.join(".local/bin");
     let link = bin.join("airboss");
+    let on_path = (*lock(&s.login_path)).unwrap_or_else(|| {
+        std::env::var_os("PATH").is_some_and(|p| std::env::split_paths(&p).any(|d| d == bin))
+    });
     CliStatus {
-        installed: std::fs::symlink_metadata(&link).is_ok(),
+        // Through the link: a dangling one, or one to a file that can't run, isn't installed.
+        installed: crate::connections::cli_at(&link) == crate::connections::Cli::Ready,
         path: path_text(&link),
-        on_path: std::env::var_os("PATH")
-            .is_some_and(|p| std::env::split_paths(&p).any(|d| d == bin)),
+        on_path,
     }
 }
 

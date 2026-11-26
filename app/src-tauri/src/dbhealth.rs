@@ -113,27 +113,43 @@ impl AppState {
         }
     }
 
-    /// A `core` call failed; if SQLite says the file itself is broken, that's the problem state.
+    /// A `core` call failed. If SQLite says the file itself is broken, that's the problem
+    /// state; if a newer Airboss migrated it, the "Update Airboss" state, which works the same
+    /// way: every write would be refused, so the window says why once.
     pub(crate) fn saw_core_error(&self, e: &airboss_core::Error) {
-        if e.is_storage_failure() {
+        if e.is_newer_database() {
+            let err = {
+                let h = lock(&self.db);
+                let path = h.db.as_deref().map(|p| p.display().to_string());
+                let mut err = AppError::db_too_new(e);
+                if let Some(path) = path {
+                    err = err.with_detail(format!("{path}: {e}"));
+                }
+                err
+            };
+            self.enter_problem(err);
+        } else if e.is_storage_failure() {
             self.db_broke(&e.to_string());
         }
     }
 
     /// Enters the database problem state, once: logged, and `db:unavailable` sent.
     fn db_broke(&self, reason: &str) {
-        let err = {
+        let err = lock(&self.db).error(reason);
+        self.enter_problem(err);
+    }
+
+    fn enter_problem(&self, err: AppError) {
+        {
             let mut h = lock(&self.db);
             if h.broken.is_some() {
                 return;
             }
-            let err = h.error(reason);
             h.broken = Some(err.clone());
-            err
-        };
+        }
         log::error!(
             "database problem: {}",
-            err.detail.as_deref().unwrap_or(reason)
+            err.detail.as_deref().unwrap_or(&err.message)
         );
         self.shell.emit(UiEvent::DbUnavailable(err));
     }

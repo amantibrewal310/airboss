@@ -204,6 +204,13 @@ export class MockBackend implements Transport {
     return { items, count: items.length, checked_at: ts(this.seedNow), version: this.needsVersion.value };
   }
 
+  /** The newest agent event's time, as Rust's catch-up tracks it. */
+  private agentReport(): string | null {
+    let at: string | null = null;
+    for (const e of this.s.events) if (e.actor.startsWith('agent:') && (at === null || e.at > at)) at = e.at;
+    return at;
+  }
+
   private pushUndo(label: string, tasks: TaskId[], inverse: () => void): UndoRecord {
     const rec: UndoRecord = { id: this.nextUndo++, label, tasks, inverse };
     this.undoStack.push(rec);
@@ -331,6 +338,7 @@ export class MockBackend implements Transport {
         needs: this.needsList(),
         connections: this.s.connections,
         availability: this.s.availability,
+        agent_report: this.agentReport(),
         settings: this.s.settings,
         accent: null,
         cli: this.s.cli,
@@ -436,8 +444,9 @@ export class MockBackend implements Transport {
       if (t.status === status && status !== 'blocked') return { patch: null, undo: null };
       for (const k of touched) this.setStatusRaw(k, status, k === id ? note : null);
       const label = status === 'done' ? `Mark done ${id}` : status === 'dropped' ? `Drop ${id}` : status === 'blocked' ? `Mark blocked ${id}` : `Move ${id} to ${LABEL[status]}`;
+      // As in Rust: a dropped proposal stays dropped (me can't make a proposal again).
       const rec = this.pushUndo(label, touched, () => {
-        for (const [k, b] of before) this.setStatusRaw(k, b.status, b.reason);
+        for (const [k, b] of before) if (!(status === 'dropped' && b.status === 'proposed')) this.setStatusRaw(k, b.status, b.reason);
       });
       return { patch: this.commit(), undo: this.entry(rec) };
     },
@@ -505,7 +514,10 @@ export class MockBackend implements Transport {
 
     reorder: ({ id, direction }) => {
       const t = this.task(id);
-      const siblings = [...this.s.tasks.values()].filter((x) => x.parent === t.parent).sort((a, b) => a.position - b.position);
+      // As in Rust: past hidden siblings (dropped ones), to the visible neighbour.
+      const siblings = [...this.s.tasks.values()]
+        .filter((x) => x.parent === t.parent && (x.status !== 'dropped' || x.id === id))
+        .sort((a, b) => a.position - b.position);
       const i = siblings.findIndex((x) => x.id === id);
       const j = direction === 'up' ? i - 1 : i + 1;
       const other = siblings[j];
@@ -550,6 +562,31 @@ export class MockBackend implements Transport {
       }
       return { repos: added, patch: this.commit() };
     },
+
+    edit_repo: ({ repo, name, path, remote }) => {
+      const r = this.s.repos.find((x) => x.id === repo);
+      if (!r) throw fail('not_found', 'That repo no longer exists.');
+      if (!name.trim()) throw fail('invalid_target', 'A repo needs a name.');
+      if (this.s.repos.some((x) => x.id !== repo && (x.name === name.trim() || x.path === path))) {
+        throw fail('already_exists', 'A repo with that name or folder is already added.');
+      }
+      Object.assign(r, { name: name.trim(), path, remote_url: remote?.trim() || null });
+      return this.commit();
+    },
+
+    remove_repo: ({ repo }) => {
+      if (!this.s.repos.some((x) => x.id === repo)) throw fail('not_found', 'That repo no longer exists.');
+      const unlinked: TaskId[] = [];
+      for (const t of this.s.tasks.values()) {
+        if (!t.repos.includes(repo)) continue;
+        t.repos = t.repos.filter((x) => x !== repo);
+        unlinked.push(t.id);
+      }
+      this.s.repos = this.s.repos.filter((x) => x.id !== repo);
+      return { unlinked: unlinked.sort((a, b) => a - b), patch: this.commit() };
+    },
+
+    back_up_database: () => '/Users/me/Documents/Airboss backup.db',
 
     pick_folder: () => '~/Code/side-project',
 
@@ -644,7 +681,9 @@ export class MockBackend implements Transport {
 
     open_url: ({ target }) => {
       if ('url' in target) {
-        if (!/^(https?|file|t3code):/i.test(target.url)) throw fail('not_allowed', "That change isn't allowed.");
+        // Rust's opener.rs is the real allowlist; the mock keeps its outline.
+        if (!/^(https:\/\/|file:\/\/\/|t3code:\/\/threads\/)/i.test(target.url))
+          throw fail('url_not_allowed', 'Airboss only opens https links, files and T3 threads.');
         this.opened.push(target.url);
       } else {
         const l = this.s.links.find((x) => x.id === target.link);
@@ -678,7 +717,7 @@ export class MockBackend implements Transport {
     },
 
     recheck_connections: () => {
-      setTimeout(() => this.emit('connections:changed', { connections: this.s.connections, availability: this.s.availability }), 400);
+      setTimeout(() => this.emit('connections:changed', { connections: this.s.connections, availability: this.s.availability, agent_report: this.agentReport(), cli: this.s.cli }), 400);
       return null;
     },
 
@@ -699,7 +738,7 @@ export class MockBackend implements Transport {
       this.s.connections = this.s.connections.map((c) =>
         c.name === 'Agents' ? { ...c, ok: true, state: 'Ready', fix: null } : c,
       );
-      this.emit('connections:changed', { connections: this.s.connections, availability: this.s.availability });
+      this.emit('connections:changed', { connections: this.s.connections, availability: this.s.availability, agent_report: this.agentReport(), cli: this.s.cli });
       return { path: this.s.cli.path, on_path: this.s.cli.on_path };
     },
 
@@ -711,6 +750,13 @@ export class MockBackend implements Transport {
       }
       this.s.settings = structuredClone(settings);
       return this.s.settings;
+    },
+
+    notification_permission: () => this.s.notificationPermission ?? 'granted',
+
+    open_notification_settings: () => {
+      this.opened.push('system-settings:notifications');
+      return null;
     },
 
     set_folded: ({ ids, folded }) => {

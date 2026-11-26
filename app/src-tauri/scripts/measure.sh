@@ -7,7 +7,7 @@
 #
 #   app/src-tauri/scripts/measure.sh [path/to/Airboss.app] [path/to/.dmg]
 #
-# Build first: (cd app && CI=true pnpm tauri build --bundles app,dmg)
+# Build first: (cd app && CI=true pnpm tauri build --config src-tauri/tauri.bundle.conf.json --bundles app,dmg)
 set -eu
 
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"

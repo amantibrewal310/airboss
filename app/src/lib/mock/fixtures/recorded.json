@@ -2,6 +2,7 @@
   "reads": {
     "bootstrap": {
       "accent": null,
+      "agent_report": "2026-11-22T10:44:00.000Z",
       "availability": {
         "ready": {
           "version": "0.0.24"
@@ -1151,6 +1152,7 @@
         "appearance": "system",
         "folded": [],
         "hotkey": "Control+Alt+N",
+        "notifications": true,
         "open_at_login": true,
         "quickadd_release_after_min": null
       }
@@ -1159,9 +1161,11 @@
       "appearance": "system",
       "folded": [],
       "hotkey": "Control+Alt+N",
+      "notifications": true,
       "open_at_login": true,
       "quickadd_release_after_min": null
     },
+    "notification_permission": "granted",
     "plans": [
       {
         "blocked": 0,

@@ -12,6 +12,7 @@ import type {
   Event,
   Link,
   NeedsItem,
+  NotificationPermission,
   PrView,
   Repo,
   RepoId,
@@ -58,6 +59,8 @@ export interface MockSeed {
   notProjects: RepoId[];
   /** `bootstrap` fails as if the database won't open. */
   dbError?: { path: string; reason: string };
+  /** What macOS says about notifications (granted if unset). */
+  notificationPermission?: NotificationPermission;
 }
 
 export interface MockState extends Omit<MockSeed, 'tasks' | 'threads' | 'prs'> {

@@ -40,7 +40,19 @@ impl AppState {
         tasks: Vec<TaskId>,
         after: EventId,
     ) -> UndoEntry {
-        let info = lock(&self.undo).push(label, inverse, tasks, after);
+        self.push_undo_noted(label, inverse, tasks, after, None)
+    }
+
+    /// The same, with a note said after "Undid …".
+    pub(crate) fn push_undo_noted(
+        &self,
+        label: String,
+        inverse: Vec<Inverse>,
+        tasks: Vec<TaskId>,
+        after: EventId,
+        note: Option<String>,
+    ) -> UndoEntry {
+        let info = lock(&self.undo).push(label, inverse, tasks, after, note);
         self.refresh_menus();
         info
     }
@@ -182,7 +194,9 @@ fn undo_status(s: Status) -> Status {
 }
 
 /// Changes a task's status (blocked needs `note`), with an undo entry. Dropping takes every
-/// open subtask with it, and undo restores each one's previous status.
+/// open subtask with it, and undo restores each one's previous status, except an agent's
+/// proposals: rule 9 drops them too, but `me` can't make a proposal again (rule 6), so they
+/// stay dropped rather than come back accepted.
 pub fn set_status(
     s: &AppState,
     _c: Caller,
@@ -190,8 +204,10 @@ pub fn set_status(
     status: Status,
     note: Option<String>,
 ) -> AppResult<UndoableWrite> {
-    // Previous statuses come from the view model before the change.
-    let before: Vec<(TaskId, Status, Option<String>)> = s.vm(|vm| {
+    // Previous statuses come from the view model before the change, and the undo entry starts
+    // at the cursor that view model was built at, so an agent's write the app hasn't caught up
+    // with yet refuses the undo.
+    let (before, after): (Vec<(TaskId, Status, Option<String>)>, _) = s.vm_at(|vm| {
         let ids = if status == Status::Dropped {
             vm.index.subtree(id)
         } else {
@@ -206,7 +222,6 @@ pub fn set_status(
     let Some(&(_, from, _)) = before.first() else {
         return Err(AppError::task_gone(id));
     };
-    let after = s.latest_event();
     let note = note.filter(|n| !n.trim().is_empty());
     s.core_as(Ctx::Task(id), |st| {
         st.set_status(id, status, note.as_deref(), &Actor::Me)
@@ -218,9 +233,18 @@ pub fn set_status(
             undo: None,
         });
     }
+    // A dropped proposal stays dropped: putting it back as todo would accept it for me.
+    let dropped_proposals = |prev: Status| status == Status::Dropped && prev == Status::Proposed;
+    let kept = before
+        .iter()
+        .filter(|(t, prev, _)| *t != id && dropped_proposals(*prev))
+        .count();
+    let before: Vec<_> = before
+        .into_iter()
+        .filter(|(_, prev, _)| *prev != Status::Dropped && !dropped_proposals(*prev))
+        .collect();
     let inverse: Vec<Inverse> = before
         .iter()
-        .filter(|(_, prev, _)| *prev != Status::Dropped)
         .map(|(t, prev, reason)| Inverse::SetStatus {
             id: *t,
             status: undo_status(*prev),
@@ -239,7 +263,12 @@ pub fn set_status(
         });
     }
     let tasks = before.iter().map(|(t, _, _)| *t).collect();
-    let undo = s.push_undo(undo_label(id, from, status), inverse, tasks, after);
+    let kept = match kept {
+        0 => None,
+        1 => Some("Its proposal stays dropped.".to_string()),
+        n => Some(format!("Its {n} proposals stay dropped.")),
+    };
+    let undo = s.push_undo_noted(undo_label(id, from, status), inverse, tasks, after, kept);
     Ok(UndoableWrite {
         patch: Some(patch),
         undo: Some(undo),
@@ -339,8 +368,9 @@ pub fn move_task(
     parent: Option<TaskId>,
     position: Option<u32>,
 ) -> AppResult<UndoableWrite> {
-    let row = s.row(id).ok_or_else(|| AppError::task_gone(id))?;
-    let after = s.latest_event();
+    // From the view model, with the cursor it was built at (see `set_status`).
+    let (row, after) = s.vm_at(|vm| vm.rows.get(&id).cloned());
+    let row = row.ok_or_else(|| AppError::task_gone(id))?;
     let position = position.unwrap_or(u32::MAX);
     s.core(|st| st.move_task(id, parent, position, &Actor::Me))
         .map_err(|e| move_error(s, e, id, parent))?;
@@ -404,31 +434,45 @@ fn move_error(
     }
 }
 
-/// ⌥⌘↑ / ⌥⌘↓: one place among its siblings; at either end nothing happens.
+/// ⌥⌘↑ / ⌥⌘↓: one place among the siblings the tree shows; at either end nothing happens.
+///
+/// `core`'s positions count siblings the tree hides (rejected proposals, and dropped tasks in
+/// tree layouts), so the task takes its visible neighbour's position, which puts it just past
+/// that neighbour whatever is hidden between them.
 pub fn reorder(
     s: &AppState,
     c: Caller,
     id: TaskId,
     direction: Direction,
 ) -> AppResult<UndoableWrite> {
-    let (row, siblings) = s.vm(|vm| {
-        let row = vm.rows.get(&id).cloned();
-        let n = row
-            .as_ref()
-            .map(|r| vm.index.children.get(&r.parent).map_or(0, Vec::len))
-            .unwrap_or(0);
-        (row, n)
+    let (row, neighbour) = s.vm(|vm| {
+        let Some(row) = vm.rows.get(&id).cloned() else {
+            return (None, None);
+        };
+        let shown: Vec<&crate::dto::RowDto> = vm
+            .index
+            .children
+            .get(&row.parent)
+            .into_iter()
+            .flatten()
+            .filter_map(|t| vm.rows.get(t))
+            .filter(|r| r.status != Status::Dropped)
+            .collect();
+        let at = shown.iter().position(|r| r.id == id);
+        let next = match (direction, at) {
+            (Direction::Up, Some(i)) if i > 0 => shown.get(i - 1),
+            (Direction::Down, Some(i)) => shown.get(i + 1),
+            _ => None,
+        };
+        let to = next.map(|r| r.position);
+        (Some(row), to)
     });
     let row = row.ok_or_else(|| AppError::task_gone(id))?;
-    let to = match direction {
-        Direction::Up if row.position > 1 => row.position - 1,
-        Direction::Down if (row.position as usize) < siblings => row.position + 1,
-        _ => {
-            return Ok(UndoableWrite {
-                patch: None,
-                undo: None,
-            });
-        }
+    let Some(to) = neighbour else {
+        return Ok(UndoableWrite {
+            patch: None,
+            undo: None,
+        });
     };
     move_task(s, c, id, row.parent, Some(to))
 }
@@ -579,7 +623,10 @@ pub fn undo(s: &AppState, _c: Caller, entry: Option<u64>) -> AppResult<UndoResul
         }),
         None => Ok(UndoResult {
             patch,
-            message: format!("Undid “{}”", e.label),
+            message: match &e.note {
+                Some(note) => format!("Undid “{}”. {note}", e.label),
+                None => format!("Undid “{}”", e.label),
+            },
         }),
     }
 }

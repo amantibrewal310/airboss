@@ -16,6 +16,21 @@ pnpm dev:mock                           # the UI in a browser on the mock backen
 AIRBOSS_DB=$(mktemp -d)/a.db pnpm tauri dev   # the real app on a throwaway database
 ```
 
+## Build the app
+
+```
+pnpm bundle --bundles app        # the same as: pnpm tauri build --config src-tauri/tauri.bundle.conf.json --bundles app
+pnpm bundle --bundles app,dmg    # and the .dmg
+```
+
+Both land in `../target/release/bundle/`. `tauri.bundle.conf.json` adds the `airboss` CLI as
+the bundle's sidecar (`bundle.externalBin`), and `beforeBuildCommand` builds it in release first
+(`src-tauri/scripts/build-sidecar.sh`). It's kept out of `tauri.conf.json` on purpose:
+tauri-build copies a configured sidecar next to whatever it builds, so with it there every
+`cargo build` or `cargo test` of the app put an empty stand-in over `target/debug/airboss` and the
+CLI's tests failed. Don't rename it `tauri.macos.conf.json`, which tauri-build merges by itself.
+A plain `pnpm tauri build` makes an app with no CLI inside.
+
 `pnpm tauri dev` needs Rust (the toolchain in `../rust-toolchain.toml`). Without `AIRBOSS_DB` it
 uses your real database in `~/Library/Application Support/Airboss`. The webview's errors and
 warnings print in the same terminal.

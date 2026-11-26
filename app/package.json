@@ -17,7 +17,8 @@
     "test:unit": "vitest run --project unit",
     "test:component": "vitest run --project component",
     "test:e2e": "pnpm build:mock && playwright test",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "bundle": "tauri build --config src-tauri/tauri.bundle.conf.json"
   },
   "dependencies": {
     "@tauri-apps/api": "2.12.5",

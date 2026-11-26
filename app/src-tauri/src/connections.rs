@@ -2,7 +2,9 @@
 
 use airboss_services::{Availability, Connection};
 
-use crate::dto::ConnectionsChanged;
+use std::path::Path;
+
+use crate::dto::{CliStatus, ConnectionsChanged};
 use crate::services::Services;
 use crate::state::Problems;
 use crate::viewmodel::ViewModel;
@@ -40,13 +42,40 @@ pub fn merge(rows: Vec<Connection>) -> Vec<Connection> {
     out
 }
 
-/// Every row the footer shows, and T3's availability.
+/// What `~/.local/bin/airboss` is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Cli {
+    /// Nothing there.
+    Missing,
+    /// There, but it (or what it links to) is gone, empty or can't run.
+    Broken,
+    /// It runs: a non-empty, executable file, through the link.
+    Ready,
+}
+
+/// Follows the link and checks the file it ends at, so a dangling link to an Airboss.app
+/// that moved isn't "Ready" (final audit should-fix 9).
+pub fn cli_at(link: &std::path::Path) -> Cli {
+    use std::os::unix::fs::PermissionsExt;
+    if std::fs::symlink_metadata(link).is_err() {
+        return Cli::Missing;
+    }
+    match std::fs::metadata(link) {
+        Ok(m) if m.is_file() && m.len() > 0 && m.permissions().mode() & 0o111 != 0 => Cli::Ready,
+        _ => Cli::Broken,
+    }
+}
+
+/// Every row the footer shows, and T3's availability. `agent_report` is the time of the
+/// newest `agent:*` event, which the UI shows as "Last report 3m ago".
 pub(crate) fn merged(
     services: &Services,
     _vm: &ViewModel,
     problems: &Problems,
-    cli_installed: bool,
+    cli_status: CliStatus,
+    agent_report: Option<&str>,
 ) -> ConnectionsChanged {
+    let cli = cli_at(Path::new(&cli_status.path));
     let availability = services.launch.availability();
     let mut rows: Vec<Connection> = Vec::new();
     for s in services.all() {
@@ -73,16 +102,23 @@ pub(crate) fn merged(
         _ => {}
     }
     let detail = "Agents report progress and ask questions through the airboss command.";
-    rows.push(if cli_installed {
-        row("Agents", true, "Ready", detail, None)
-    } else {
-        row(
+    rows.push(match (cli, agent_report) {
+        (Cli::Ready, Some(_)) => row("Agents", true, "Ready", detail, None),
+        (Cli::Ready, None) => row("Agents", true, "Ready", "No agent has reported yet.", None),
+        (Cli::Broken, _) => row(
+            "Agents",
+            false,
+            "Link broken",
+            "~/.local/bin/airboss points at a file that's gone or can't run.",
+            Some("Install the command-line tool again in Settings, then copy the agent note."),
+        ),
+        (Cli::Missing, _) => row(
             "Agents",
             false,
             "Not set up",
             detail,
             Some("Install the command-line tool, then copy the agent note."),
-        )
+        ),
     });
     if problems.db_moved {
         rows.push(row(
@@ -128,6 +164,8 @@ pub(crate) fn merged(
     ConnectionsChanged {
         connections: merged,
         availability,
+        agent_report: agent_report.map(str::to_string),
+        cli: cli_status,
     }
 }
 

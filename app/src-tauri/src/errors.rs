@@ -32,6 +32,8 @@ pub enum ErrorCode {
     NotALink,
     UrlNotAllowed,
     DbUnavailable,
+    /// A newer Airboss migrated the database: "Update Airboss".
+    DbTooNew,
     HotkeyInUse,
     HotkeyReserved,
     Internal,
@@ -151,10 +153,14 @@ pub const MSG_NOT_ALLOWED: &str = "That change isn't allowed.";
 pub const MSG_DB: &str =
     "Couldn't save. The database is busy or unreadable; details are in the log.";
 pub const MSG_ALREADY_STARTING: &str = "Already starting — check T3 in a moment.";
+pub const MSG_DB_TOO_NEW: &str =
+    "A newer Airboss has updated this database. Install it, then open Airboss again.";
 pub const MSG_INTERNAL: &str = "Something went wrong inside Airboss; details are in the log.";
 pub const MSG_NOT_A_LINK: &str = "Paste a link or a file path.";
 pub const MSG_BAD_PR: &str = "That isn't a GitHub pull request.";
-pub const MSG_URL_NOT_ALLOWED: &str = "Airboss only opens web links, files and T3 threads.";
+pub const MSG_URL_NOT_ALLOWED: &str = "Airboss only opens https links, files and T3 threads.";
+pub const MSG_FILE_GONE: &str = "That file no longer exists.";
+pub const MSG_FILE_UNREADABLE: &str = "Airboss can't reach that file.";
 pub const MSG_HOTKEY_IN_USE: &str = "That key is in use by another app. Pick another.";
 pub const MSG_NEEDS_REASON: &str = "Say why it's blocked.";
 pub const MSG_MOVE_LOOP: &str = "A task can't go under itself or one of its subtasks.";
@@ -198,6 +204,11 @@ impl AppError {
         )
     }
 
+    /// "Update Airboss": a newer Airboss migrated the database, so this one writes nothing.
+    pub fn db_too_new(err: &airboss_core::Error) -> AppError {
+        AppError::new(ErrorCode::DbTooNew, MSG_DB_TOO_NEW).with_detail(err.to_string())
+    }
+
     /// The in-flight guard's answer to a second Do it for the same task.
     pub fn already_starting() -> AppError {
         AppError::new(ErrorCode::AlreadyStarting, MSG_ALREADY_STARTING)
@@ -206,6 +217,10 @@ impl AppError {
     /// A `core` error, in the words of what the call was doing (Appendix D).
     pub fn core(err: airboss_core::Error, ctx: Ctx) -> AppError {
         use airboss_core::Error as E;
+        // It arrives as `Error::Db`, so before the generic database message.
+        if err.is_newer_database() {
+            return AppError::db_too_new(&err);
+        }
         match err {
             E::EmptyTitle => AppError::new(ErrorCode::EmptyTitle, MSG_EMPTY_TITLE),
             E::NotFound => match ctx {

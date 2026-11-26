@@ -59,12 +59,18 @@ pub struct AppConfig {
     pub home: PathBuf,
     /// How long a reject waits before it's written (5 s).
     pub reject_delay: Duration,
+    /// The waits between attempts at a reject the database was too busy to take; each
+    /// attempt itself waits out `core`'s 2 s busy timeout first.
+    pub reject_retry: Vec<Duration>,
     /// How long folds wait before they're saved (1 s).
     pub fold_save_delay: Duration,
     /// Started by autostart with `--hidden`: don't show the main window.
     pub start_hidden: bool,
     /// When `main` started, for the cold-start log.
     pub started: Instant,
+    /// The user's shell, run as `-ilc` to see whether `~/.local/bin` is on their `PATH`.
+    /// `None` skips the check (tests, which mustn't read the developer's startup files).
+    pub shell: Option<PathBuf>,
 }
 
 impl AppConfig {
@@ -77,9 +83,11 @@ impl AppConfig {
                 .map(PathBuf::from)
                 .unwrap_or_else(|| PathBuf::from("/")),
             reject_delay: Duration::from_secs(5),
+            reject_retry: vec![Duration::from_millis(250), Duration::from_secs(1)],
             fold_save_delay: Duration::from_secs(1),
             start_hidden: false,
             started: Instant::now(),
+            shell: Some(crate::login_path::user_shell()),
         }
     }
 }
@@ -118,6 +126,12 @@ pub struct AppState {
     pub(crate) watch: Mutex<Option<Watch>>,
     /// Whether the database broke while the app runs (R2).
     pub(crate) db: Mutex<DbHealth>,
+    /// Whether `~/.local/bin` is on the user's shell `PATH`, once checked.
+    pub(crate) login_path: Mutex<Option<bool>>,
+    /// What the notification decisions remember (`notify.rs`).
+    pub(crate) notify: Mutex<crate::notify::Memory>,
+    /// The main window has focus: no notifications then.
+    pub(crate) main_focused: AtomicBool,
     pub(crate) config: AppConfig,
     pub(crate) stopping: AtomicBool,
     pub(crate) main_shown: AtomicBool,
@@ -139,6 +153,7 @@ impl AppState {
         // After the first reads, so the WAL exists and its identity is the one the app holds.
         let db = DbHealth::new(lock(&store).path());
         let settings = config.settings.clone();
+        let started = clock.now();
         let state = Arc::new_cyclic(|me| AppState {
             store,
             services,
@@ -155,6 +170,9 @@ impl AppState {
             timing: Mutex::new(Timing::default()),
             watch: Mutex::new(None),
             db: Mutex::new(db),
+            login_path: Mutex::new(None),
+            notify: Mutex::new(crate::notify::Memory::new(started)),
+            main_focused: AtomicBool::new(false),
             main_shown: AtomicBool::new(false),
             stopping: AtomicBool::new(false),
             fold_saver: Mutex::new(None),
@@ -164,8 +182,11 @@ impl AppState {
         });
         {
             let mut cu = lock(&state.catchup);
-            cu.connections = state.connections(&cu.vm);
+            cu.connections = state.connections(&cu.vm, cu.agent_report.as_deref());
             crate::catchup::log_connections(&cu.connections);
+            // What's waiting at launch never notifies.
+            let needs = cu.vm.needs.clone();
+            state.notify_new(&needs);
         }
         Ok(state)
     }
@@ -209,6 +230,14 @@ impl AppState {
     /// Reads the view model under the catch-up lock.
     pub fn vm<T>(&self, f: impl FnOnce(&ViewModel) -> T) -> T {
         f(&lock(&self.catchup).vm)
+    }
+
+    /// Reads the view model and the event cursor it was built at, under one lock. An undo
+    /// entry built from the view model must start at this cursor, not at the newest event:
+    /// an agent's write the app hasn't caught up with yet then counts as "changed since".
+    pub fn vm_at<T>(&self, f: impl FnOnce(&ViewModel) -> T) -> (T, airboss_core::EventId) {
+        let cu = lock(&self.catchup);
+        (f(&cu.vm), cu.cursor)
     }
 
     /// One row as the view model has it.
@@ -305,17 +334,31 @@ impl AppState {
     }
 
     /// The connection rows and T3's availability, merged as the footer shows them.
-    pub(crate) fn connections(&self, vm: &ViewModel) -> ConnectionsChanged {
+    pub(crate) fn connections(
+        &self,
+        vm: &ViewModel,
+        agent_report: Option<&str>,
+    ) -> ConnectionsChanged {
         let problems = lock(&self.problems).clone();
-        let cli = self.config.home.join(".local/bin/airboss");
-        let cli_installed = std::fs::symlink_metadata(&cli).is_ok();
-        crate::connections::merged(&self.services, vm, &problems, cli_installed)
+        let cli = crate::commands::app::cli_status(self);
+        crate::connections::merged(&self.services, vm, &problems, cli, agent_report)
+    }
+
+    /// Runs the user's shell to see whether `~/.local/bin` is on its `PATH` (up to 3 s), and
+    /// remembers the answer for Settings.
+    pub(crate) fn check_login_path(&self) -> bool {
+        let Some(shell) = &self.config.shell else {
+            return false;
+        };
+        let on = crate::login_path::on_login_path(shell, &self.config.home.join(".local/bin"));
+        *lock(&self.login_path) = Some(on);
+        on
     }
 
     /// Re-reads the connections and sends them if they changed.
-    pub(crate) fn refresh_connections(&self) {
+    pub fn refresh_connections(&self) {
         let mut cu = lock(&self.catchup);
-        let fresh = self.connections(&cu.vm);
+        let fresh = self.connections(&cu.vm, cu.agent_report.as_deref());
         if fresh != cu.connections {
             cu.connections = fresh.clone();
             drop(cu);
@@ -366,6 +409,31 @@ impl AppState {
         if changed {
             self.refresh_connections();
         }
+    }
+
+    /// Posts a notification for each new Needs me item that calls for one (`notify.rs`).
+    pub(crate) fn notify_new(&self, needs: &airboss_services::NeedsList) {
+        let at = crate::notify::Moment {
+            enabled: self.settings().notifications,
+            focused: self.main_focused.load(Ordering::SeqCst),
+            now: self.now(),
+        };
+        let notices = lock(&self.notify).decide(needs, at);
+        if notices.is_empty() {
+            return;
+        }
+        let n = self.shell.notifications();
+        for notice in &notices {
+            if let Err(e) = n.post(notice) {
+                log::warn!("couldn't post a notification for {}: {e}", notice.task.0);
+            }
+        }
+        log::info!("posted {} notification(s)", notices.len());
+    }
+
+    /// The main window gained or lost focus.
+    pub fn set_main_focused(&self, focused: bool) {
+        self.main_focused.store(focused, Ordering::SeqCst);
     }
 
     /// The rows `connections` would show, for tests.

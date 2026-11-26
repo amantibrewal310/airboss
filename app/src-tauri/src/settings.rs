@@ -34,6 +34,9 @@ pub struct Settings {
     pub hotkey: String,
     pub open_at_login: bool,
     pub appearance: Appearance,
+    /// macOS notifications for an agent's question or approval, a failed run and an agent
+    /// that stopped. On by default.
+    pub notifications: bool,
     /// Parents folded in the tree; saved a second after the last change.
     #[ts(as = "Vec<crate::dto::TaskIdTs>")]
     pub folded: Vec<TaskId>,
@@ -49,6 +52,7 @@ impl Default for Settings {
             hotkey: DEFAULT_HOTKEY.to_string(),
             open_at_login: true,
             appearance: Appearance::System,
+            notifications: true,
             folded: Vec::new(),
             quickadd_release_after_min: None,
         }
@@ -191,6 +195,7 @@ mod tests {
         assert_eq!(s.hotkey, "Control+Alt+N");
         assert!(s.open_at_login);
         assert_eq!(s.appearance, Appearance::System);
+        assert!(s.notifications, "notifications are on by default");
     }
 
     #[test]
@@ -203,6 +208,7 @@ mod tests {
             hotkey: "Control+Alt+K".into(),
             open_at_login: false,
             appearance: Appearance::Dark,
+            notifications: false,
             folded: vec![TaskId(3)],
             quickadd_release_after_min: Some(10),
         };
@@ -216,6 +222,10 @@ mod tests {
         let s: Settings = serde_json::from_str(r#"{"appearance":"light"}"#).unwrap();
         assert_eq!(s.appearance, Appearance::Light);
         assert_eq!(s.hotkey, DEFAULT_HOTKEY);
+        assert!(
+            s.notifications,
+            "a file from before notifications turns them on"
+        );
     }
 
     #[test]

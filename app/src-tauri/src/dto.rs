@@ -738,6 +738,9 @@ pub struct Bootstrap {
     pub connections: Vec<Connection>,
     #[ts(as = "AvailabilityTs")]
     pub availability: Availability,
+    /// When an agent last reported (the newest `agent:*` event), for the Agents row.
+    #[ts(as = "Option<TimestampTs>")]
+    pub agent_report: Option<Timestamp>,
     pub settings: Settings,
     /// The system accent as `#rrggbb`, or `null` for Multicolor (keep indigo).
     pub accent: Option<String>,
@@ -752,6 +755,12 @@ pub struct ConnectionsChanged {
     pub connections: Vec<Connection>,
     #[ts(as = "AvailabilityTs")]
     pub availability: Availability,
+    /// When an agent last reported (the newest `agent:*` event), for "Last report 3m ago".
+    #[ts(as = "Option<TimestampTs>")]
+    pub agent_report: Option<Timestamp>,
+    /// The command-line tool, which the Agents row needs; `on_path` arrives once the shell
+    /// check is done.
+    pub cli: CliStatus,
 }
 
 // ================================================================ task detail
@@ -1113,6 +1122,15 @@ pub struct CreateTaskResult {
     pub link_errors: Vec<LinkError>,
 }
 
+/// What `remove_repo` answers: the tasks that lost the link, and the patch.
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[ts(export_to = "types.ts")]
+pub struct RemoveRepoResult {
+    #[ts(as = "Vec<TaskIdTs>")]
+    pub unlinked: Vec<TaskId>,
+    pub patch: Patch,
+}
+
 /// `add_repos`' answer.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[ts(export_to = "types.ts")]
@@ -1200,6 +1218,11 @@ pub enum ToastArgs {
     Repo { repo: RepoId },
     /// `reopen_and_start(id)`.
     Task { id: TaskId },
+    /// `reject_proposals(ids, reason)`: Retry on a reject that couldn't be written.
+    Reject {
+        ids: Vec<TaskId>,
+        reason: Option<String>,
+    },
 }
 
 /// One button on a toast Rust sends.

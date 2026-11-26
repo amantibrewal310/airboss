@@ -19,6 +19,7 @@ use std::time::{Duration, SystemTime};
 use airboss_app::dto::*;
 use airboss_app::errors::{AppError, ErrorCode};
 use airboss_app::menu::{FocusContext, WindowName, Zone};
+use airboss_app::notify::Permission;
 use airboss_app::settings::{Appearance, Settings};
 use airboss_app::{Caller, UiEvent};
 use airboss_core::{Store, TaskId};
@@ -92,9 +93,9 @@ fn typescript_types() {
         HistoryEntry, DepDto, RunEdge, OutsideWait, RunMap, TaskDetail, NextUp, PlanCard,
         ParentOption, QuickaddData, T3ProjectRow, UndoEntry, UndoableWrite, UndoResult,
         NewLinkText, Then, CreateTaskInput, DoItPlace, DoItResult, LinkError, CreateTaskResult,
-        AddReposResult, InstallCliResult, CopyWhat, OpenTarget, MenuAction, NavOpen,
+        AddReposResult, RemoveRepoResult, InstallCliResult, CopyWhat, OpenTarget, MenuAction, NavOpen,
         QuickaddReset, ToastEventAction, ToastTone, ToastEvent, Theme, AppearanceChanged,
-        BackgroundError, AppError, ErrorCode, Settings, Appearance, FocusContext, Zone,
+        BackgroundError, AppError, ErrorCode, Settings, Appearance, FocusContext, Zone, Permission,
         WindowName,
     );
     let text = std::fs::read_to_string(tmp.join("types.ts")).unwrap();
@@ -497,6 +498,7 @@ fn recorded_reads_and_scripted_writes() {
         ("quickadd_data", json!({})),
         ("t3_projects", json!({})),
         ("get_settings", json!({})),
+        ("notification_permission", json!({})),
         ("plans", json!({ "req": 1 })),
         (
             "task_detail",

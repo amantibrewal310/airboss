@@ -244,7 +244,7 @@ export function seedDefaults(b: SeedBuilder, name: string, folded: number[]): Mo
     now: NOW,
     connections: CONNECTED,
     availability: { ready: { version: '0.9.4' } },
-    settings: { hotkey: 'Control+Alt+N', open_at_login: true, appearance: 'system', folded },
+    settings: { hotkey: 'Control+Alt+N', open_at_login: true, appearance: 'system', notifications: true, folded },
     cli: { installed: true, path: '~/.local/bin/airboss', on_path: true },
     t3Projects: [
       { id: 'p-airboss', name: 'airboss', path: '~/Code/airboss' },

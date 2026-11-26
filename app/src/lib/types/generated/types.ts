@@ -37,7 +37,7 @@ detail: string | null, };
  * The service codes mirror `airboss_services::ErrorCode` one for one, so a service's error
  * passes through with its own code and message.
  */
-export type AppErrorCode = "empty_title" | "not_found" | "invalid_target" | "loop" | "already_exists" | "not_allowed" | "invalid_transition" | "db" | "already_starting" | "undo_refused" | "not_a_link" | "url_not_allowed" | "db_unavailable" | "hotkey_in_use" | "hotkey_reserved" | "internal" | "t3_missing" | "t3_not_running" | "t3_unreachable" | "t3_too_old" | "timeout" | "not_a_project" | "repo_missing" | "no_base_branch" | "bad_branch" | "task_closed" | "task_proposed" | "needs_choice" | "waiting" | "bad_answer" | "t3_failed" | "gh_missing" | "signed_out" | "no_access" | "pr_not_found" | "bad_pr_ref" | "rate_limited" | "gh_failed" | "t3_unavailable" | "core" | "storage" | "shutting_down";
+export type AppErrorCode = "empty_title" | "not_found" | "invalid_target" | "loop" | "already_exists" | "not_allowed" | "invalid_transition" | "db" | "already_starting" | "undo_refused" | "not_a_link" | "url_not_allowed" | "db_unavailable" | "db_too_new" | "hotkey_in_use" | "hotkey_reserved" | "internal" | "t3_missing" | "t3_not_running" | "t3_unreachable" | "t3_too_old" | "timeout" | "not_a_project" | "repo_missing" | "no_base_branch" | "bad_branch" | "task_closed" | "task_proposed" | "needs_choice" | "waiting" | "bad_answer" | "t3_failed" | "gh_missing" | "signed_out" | "no_access" | "pr_not_found" | "bad_pr_ref" | "rate_limited" | "gh_failed" | "t3_unavailable" | "core" | "storage" | "shutting_down";
 
 /**
  * System, Dark or Light. System (the default) follows macOS.
@@ -66,7 +66,11 @@ export type Bootstrap = { seq: number,
 /**
  * In tree order.
  */
-rows: Array<RowDto>, order: Array<TaskId>, repos: Array<Repo>, needs: NeedsList, connections: Array<Connection>, availability: Availability, settings: Settings, 
+rows: Array<RowDto>, order: Array<TaskId>, repos: Array<Repo>, needs: NeedsList, connections: Array<Connection>, availability: Availability, 
+/**
+ * When an agent last reported (the newest `agent:*` event), for the Agents row.
+ */
+agent_report: Timestamp | null, settings: Settings, 
 /**
  * The system accent as `#rrggbb`, or `null` for Multicolor (keep indigo).
  */
@@ -95,7 +99,16 @@ export type Connection = { name: string, ok: boolean, state: string, detail: str
 /**
  * `connections:changed`'s payload.
  */
-export type ConnectionsChanged = { connections: Array<Connection>, availability: Availability, };
+export type ConnectionsChanged = { connections: Array<Connection>, availability: Availability, 
+/**
+ * When an agent last reported (the newest `agent:*` event), for "Last report 3m ago".
+ */
+agent_report: Timestamp | null, 
+/**
+ * The command-line tool, which the Agents row needs; `on_path` arrives once the shell
+ * check is done.
+ */
+cli: CliStatus, };
 
 /**
  * What to copy.
@@ -274,6 +287,11 @@ export type NewLinkText = { text: string, title: string | null, };
 export type NextUp = { id: TaskId, title: string, };
 
 /**
+ * Whether macOS lets Airboss notify.
+ */
+export type NotificationPermission = "granted" | "denied" | "not_asked" | "unknown";
+
+/**
  * What to open: a URL, or a link by its id.
  */
 export type OpenTarget = { "url": string } | { "link": LinkId };
@@ -387,6 +405,11 @@ hotkey: string,
  * Hidden by a click elsewhere: keep a non-empty title and notes.
  */
 keep_text?: boolean, };
+
+/**
+ * What `remove_repo` answers: the tasks that lost the link, and the patch.
+ */
+export type RemoveRepoResult = { unlinked: Array<TaskId>, patch: Patch, };
 
 /**
  * `core::Repo`.
@@ -509,6 +532,11 @@ export type Settings = {
  * The quick-add hotkey as an accelerator, e.g. `"Control+Alt+N"`.
  */
 hotkey: string, open_at_login: boolean, appearance: Appearance, 
+/**
+ * macOS notifications for an agent's question or approval, a failed run and an agent
+ * that stopped. On by default.
+ */
+notifications: boolean, 
 /**
  * Parents folded in the tree; saved a second after the last change.
  */

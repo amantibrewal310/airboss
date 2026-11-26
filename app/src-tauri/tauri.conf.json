@@ -76,9 +76,6 @@
       "icons/icon.icns",
       "icons/icon.png"
     ],
-    "externalBin": [
-      "binaries/airboss"
-    ],
     "macOS": {
       "minimumSystemVersion": "13.0",
       "signingIdentity": "-"

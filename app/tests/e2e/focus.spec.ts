@@ -21,7 +21,7 @@ test('Settings keeps Tab inside and Esc closes it', async ({ page }) => {
     seen.add(await page.evaluate(() => document.activeElement?.textContent?.trim().slice(0, 20) ?? ''));
   }
   // Buttons are reachable, not only fields.
-  expect([...seen].some((t) => /Done|Install|Reinstall|Copy agent note/.test(t))).toBe(true);
+  expect([...seen].some((t) => /Done|Install|Reinstall|Copy agent note|Add repos|Edit|Remove/.test(t))).toBe(true);
   await page.keyboard.press('Shift+Tab');
   expect(await activeIn(page, '[role="dialog"]')).toBe(true);
   await page.keyboard.press('Escape');

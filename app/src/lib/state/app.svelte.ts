@@ -18,6 +18,7 @@ import type {
   NeedsItem,
   Patch,
   PlanCard,
+  NotificationPermission,
   RepoId,
   RowDto,
   RunMap,
@@ -66,7 +67,7 @@ export type ViewKind = 'list' | 'needs' | 'plans' | 'page';
 /** Commands a quick repeat of the last key must not run on whatever is selected next. */
 const SETTLE_GUARDED = new Set<CommandId>(['rename', 'needs_main', 'needs_dismiss', 'needs_done', 'plans_open']);
 
-const DEFAULT_SETTINGS: Settings = { hotkey: 'Control+Alt+N', open_at_login: true, appearance: 'system', folded: [] };
+const DEFAULT_SETTINGS: Settings = { hotkey: 'Control+Alt+N', open_at_login: true, appearance: 'system', notifications: true, folded: [] };
 
 export function asAppError(e: unknown): AppError {
   if (e && typeof e === 'object' && 'code' in e && 'message' in e) return e as AppError;
@@ -144,7 +145,7 @@ export class App {
       const b = await api.bootstrap();
       this.tasks.load(b);
       this.needs.load(b.needs);
-      this.conn.set(b.connections, b.availability);
+      this.conn.set(b.connections, b.availability, b.agent_report);
       this.settings = b.settings;
       this.cli = b.cli;
       this.conn.cliInstalled = b.cli.installed;
@@ -173,7 +174,11 @@ export class App {
         const before = this.needs.visible.map((n) => n.key);
         if (this.needs.apply(c)) this.reconcileNeeds(before);
       }),
-      on('connections:changed', (c) => this.conn.set(c.connections, c.availability)),
+      on('connections:changed', (c) => {
+        this.conn.set(c.connections, c.availability, c.agent_report);
+        this.cli = c.cli;
+        this.conn.cliInstalled = c.cli.installed;
+      }),
       on('menu:action', ({ command }) => this.runCommand(command as CommandId)),
       on('nav:open', (n) => this.navOpen(n)),
       on('toast', (t) => this.toastEvent(t)),
@@ -181,7 +186,7 @@ export class App {
       on('error:background', (e) => (this.conn.background = e.message)),
       on('db:unavailable', (e) => this.lost(e)),
     ]);
-    const tick = () => (this.now = clockNow());
+    const tick = () => (this.now = this.conn.now = clockNow());
     setInterval(() => {
       if (document.visibilityState === 'visible') tick();
     }, 60_000);
@@ -550,7 +555,7 @@ export class App {
     const err = asAppError(e);
     // Appendix D: no toast; the button already says "Starting…".
     if (err.code === 'already_starting') return;
-    if (err.code === 'db_unavailable') return this.lost(err);
+    if (err.code === 'db_unavailable' || err.code === 'db_too_new') return this.lost(err);
     this.toast(err.message, 'warn');
   }
 
@@ -600,6 +605,8 @@ export class App {
         ...t.actions.map((a) => ({
           label: a.label,
           run: () => {
+            // Retry on a reject that couldn't be written: the same reject, with its undo window.
+            if (a.command === 'reject_proposals') return void this.rejectAgain(a.args.ids as TaskId[]);
             const fn = fns[camel(a.command)];
             if (!fn) return console.error(`toast action: no api function for ${a.command}`);
             fn(...Object.values(a.args)).catch((e: unknown) => this.fail(e));
@@ -1120,6 +1127,22 @@ export class App {
     }
   }
 
+  /** Retry on a reject Rust couldn't write: hide the rows again and reject them with Undo. */
+  async rejectAgain(ids: TaskId[]): Promise<void> {
+    if (ids.length === 1) return this.rejectOne(ids[0]!);
+    const item = this.needs.visible.find((n) => n.kind === 'proposed' && ids.every((id) => n.proposed.some(([p]) => p === id)));
+    if (item) return this.rejectProposals(item, ids);
+    this.tasks.hide(ids, true);
+    const deadline = Date.now() + App.rejectDelayMs;
+    try {
+      const w = await api.rejectProposals(ids, null);
+      this.undoToast(`Rejected ${ids.length} subtasks`, w, { rows: ids }, undefined, deadline);
+    } catch (e) {
+      this.tasks.hide(ids, false);
+      this.fail(e);
+    }
+  }
+
   async rejectOne(id: TaskId): Promise<void> {
     const item = this.needs.visible.find((n) => n.kind === 'proposed' && n.proposed.some(([p]) => p === id));
     if (item) return this.rejectProposals(item, [id]);
@@ -1237,6 +1260,66 @@ export class App {
       return null;
     } catch (e) {
       return asAppError(e).message;
+    }
+  }
+
+  /** Settings › Repos: the repo as it should be. Returns an error message to show inline, or null. */
+  async editRepo(repo: RepoId, name: string, path: string, remote: string | null): Promise<string | null> {
+    try {
+      this.applyWrite(await api.editRepo(repo, name, path, remote));
+      this.toast(`Saved ${name.trim()}`);
+      return null;
+    } catch (e) {
+      const err = asAppError(e);
+      if (err.code === 'db_unavailable' || err.code === 'db_too_new') this.lost(err);
+      return err.message;
+    }
+  }
+
+  /** Settings › Repos › Remove, once confirmed: says how many tasks lost the link. */
+  async removeRepo(repo: RepoId): Promise<boolean> {
+    const name = this.tasks.repos.find((r) => r.id === repo)?.name ?? 'the repo';
+    try {
+      const res = await api.removeRepo(repo);
+      this.applyWrite(res.patch);
+      const n = res.unlinked.length;
+      this.toast(n ? `Removed ${name}. ${n} ${n === 1 ? 'task' : 'tasks'} lost the link.` : `Removed ${name}`);
+      return true;
+    } catch (e) {
+      this.fail(e);
+      return false;
+    }
+  }
+
+  /** Settings › Database › Back up…: a save dialog, then a copy. */
+  async backUp(): Promise<void> {
+    try {
+      const to = await api.backUpDatabase();
+      if (to) this.toast(`Backed up to ${to.replace(/^\/Users\/[^/]+/, '~')}`);
+    } catch (e) {
+      this.fail(e);
+    }
+  }
+
+  /** Settings › Notifications. Turning it on asks macOS if it hasn't been asked (Rust). */
+  async setNotifications(on: boolean): Promise<void> {
+    await this.saveSettings({ ...this.settings, notifications: on });
+  }
+
+  /** Whether macOS lets Airboss notify, for Settings' explanation. */
+  async notificationPermission(): Promise<NotificationPermission> {
+    try {
+      return await api.notificationPermission();
+    } catch {
+      return 'unknown';
+    }
+  }
+
+  async openNotificationSettings(): Promise<void> {
+    try {
+      await api.openNotificationSettings();
+    } catch (e) {
+      this.fail(e);
     }
   }
 

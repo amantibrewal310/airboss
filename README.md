@@ -38,7 +38,7 @@ To-do apps don't know agent threads exist. Agent tools know threads, but not tas
 git clone https://github.com/amantibrewal310/airboss.git
 cd airboss/app
 pnpm install
-pnpm tauri build --bundles app
+pnpm tauri build --config src-tauri/tauri.bundle.conf.json --bundles app
 cp -R ../target/release/bundle/macos/Airboss.app /Applications/
 open /Applications/Airboss.app
 ```

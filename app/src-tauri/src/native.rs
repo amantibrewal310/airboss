@@ -1,12 +1,13 @@
 //! The native side: `TauriShell`, start-up, and the window, menu and run-loop handlers.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use airboss_core::Store;
-use airboss_services::{NeedsList, SystemClock};
+use airboss_services::{NeedsKey, NeedsList, SystemClock};
 use tauri::menu::MenuEvent;
 use tauri::tray::TrayIcon;
 use tauri::window::Color;
@@ -16,6 +17,7 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
 use tauri_plugin_log::log;
+use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::catchup::Trigger;
@@ -25,6 +27,7 @@ use crate::dto::{
 use crate::errors::{AppError, AppResult, ErrorCode};
 use crate::ipc::App;
 use crate::menu::{self, MenuHandles, MenuState, ids};
+use crate::notify::{Notice, Notifications, Permission};
 use crate::services::Services;
 use crate::settings::{self, Appearance, hotkey_label};
 use crate::shell::{Shell, UiEvent};
@@ -69,6 +72,106 @@ fn effective_theme(app: &AppHandle<Wry>, appearance: Appearance) -> ThemeDto {
     }
 }
 
+/// Notifications through `tauri-plugin-notification`; a click opens the main window on the
+/// item. Permission comes from `UNUserNotificationCenter` (the plugin's desktop side always
+/// answers "granted"), only inside the app bundle.
+pub struct TauriNotifications {
+    app: AppHandle<Wry>,
+    next: AtomicI32,
+    /// Each posted notification's id → its Needs me item, for the click.
+    keys: Mutex<HashMap<i32, NeedsKey>>,
+}
+
+impl TauriNotifications {
+    fn new(app: AppHandle<Wry>) -> Arc<TauriNotifications> {
+        let me = Arc::new(TauriNotifications {
+            app: app.clone(),
+            next: AtomicI32::new(1),
+            keys: Mutex::new(HashMap::new()),
+        });
+        // Before anything is posted: the plugin reports clicks only to handlers that existed.
+        let weak = Arc::downgrade(&me);
+        let registered = app.notification().on_action(move |action| {
+            if action.action_id() != "tap" {
+                return;
+            }
+            let Some(me) = weak.upgrade() else { return };
+            let key = action
+                .notification()
+                .and_then(|n| lock(&me.keys).get(&n.id()).cloned());
+            let app = me.app.clone();
+            let _ = me.app.run_on_main_thread(move || {
+                show_main_window(&app);
+                emit(
+                    &app,
+                    UiEvent::NavOpen(NavOpen {
+                        view: Some("needs".into()),
+                        task: None,
+                        needs_key: key.map(|k| k.0),
+                    }),
+                );
+            });
+        });
+        if let Err(e) = registered {
+            log::warn!("notification clicks won't open Airboss: {e}");
+        }
+        me
+    }
+}
+
+impl Notifications for TauriNotifications {
+    fn post(&self, n: &Notice) -> Result<(), String> {
+        let id = self.next.fetch_add(1, Ordering::SeqCst);
+        {
+            let mut keys = lock(&self.keys);
+            // Old ones were long since clicked or cleared.
+            if keys.len() >= 500 {
+                keys.clear();
+            }
+            keys.insert(id, n.key.clone());
+        }
+        self.app
+            .notification()
+            .builder()
+            .id(id)
+            .title(&n.title)
+            .body(&n.body)
+            .group(&n.group)
+            .show()
+            .map_err(|e| e.to_string())
+    }
+
+    fn permission(&self) -> Permission {
+        if !in_bundle() {
+            return Permission::Unknown;
+        }
+        match macos::notify_permission(Duration::from_secs(2)) {
+            Some(macos::NotifyAuth::Granted) => Permission::Granted,
+            Some(macos::NotifyAuth::Denied) => Permission::Denied,
+            Some(macos::NotifyAuth::NotAsked) => Permission::NotAsked,
+            None => Permission::Unknown,
+        }
+    }
+
+    fn request(&self) {
+        if in_bundle() {
+            macos::request_notify_permission();
+        }
+    }
+
+    fn open_settings(&self) -> Result<(), String> {
+        // An app constant, not a link anyone stored: it doesn't go through the link allowlist.
+        let url = format!(
+            "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id={}",
+            self.app.config().identifier
+        );
+        self.app
+            .opener()
+            .open_url(url, None::<&str>)
+            .map_err(|e| e.to_string())
+    }
+}
+
 /// The app's side of [`Shell`].
 pub struct TauriShell {
     app: AppHandle<Wry>,
@@ -78,11 +181,13 @@ pub struct TauriShell {
     tray_rebuild: Mutex<Option<Debounced>>,
     accent: Mutex<Option<String>>,
     hotkey: Mutex<String>,
+    notifications: Arc<TauriNotifications>,
 }
 
 impl TauriShell {
     fn new(app: AppHandle<Wry>, hotkey: String) -> Arc<TauriShell> {
         let shell = Arc::new(TauriShell {
+            notifications: TauriNotifications::new(app.clone()),
             app,
             menus: Mutex::new(None),
             tray: Mutex::new(None),
@@ -177,6 +282,16 @@ impl Shell for Arc<TauriShell> {
             .map_err(|e| e.to_string())
     }
 
+    fn open_file(&self, path: &Path, app: &Path) -> Result<(), String> {
+        // `open -a <app> -- <path>`: the allowlist checked `path` as UTF-8, so nothing changes
+        // on the way.
+        let path = path.to_str().ok_or("the path isn't UTF-8")?;
+        self.app
+            .opener()
+            .open_path(path, Some(app.to_string_lossy().into_owned()))
+            .map_err(|e| e.to_string())
+    }
+
     fn reveal(&self, path: &Path) -> Result<(), String> {
         self.app
             .opener()
@@ -197,6 +312,17 @@ impl Shell for Arc<TauriShell> {
             .file()
             .set_title("Add a repo")
             .blocking_pick_folder()
+            .and_then(|p| p.into_path().ok())
+    }
+
+    fn pick_save(&self, name: &str) -> Option<PathBuf> {
+        self.app
+            .dialog()
+            .file()
+            .set_title("Back up the Airboss database")
+            .set_file_name(name)
+            .add_filter("SQLite database", &["db"])
+            .blocking_save_file()
             .and_then(|p| p.into_path().ok())
     }
 
@@ -275,6 +401,10 @@ impl Shell for Arc<TauriShell> {
         lock(&self.accent).clone()
     }
 
+    fn notifications(&self) -> Arc<dyn Notifications> {
+        self.notifications.clone()
+    }
+
     fn sidecar(&self) -> Option<PathBuf> {
         let exe = std::env::current_exe().ok()?;
         let dir = exe.parent()?;
@@ -296,22 +426,38 @@ pub fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
-/// `AIRBOSS_DB`, when it names another database.
+/// `AIRBOSS_DB`, when it names another database (as core reads it: blank doesn't count).
 fn db_override() -> Option<PathBuf> {
-    std::env::var_os("AIRBOSS_DB")
-        .filter(|p| !p.is_empty())
+    std::env::var_os(airboss_core::DB_VAR)
+        .filter(|p| !p.to_string_lossy().trim().is_empty())
         .map(PathBuf::from)
 }
 
-/// Where the database lives: `AIRBOSS_DB`, or `~/Library/Application Support/Airboss`.
-pub fn db_path() -> PathBuf {
-    if let Some(p) = db_override() {
-        return p;
+/// Where the database lives, worked out once in core for the CLI and the app: `AIRBOSS_DB`,
+/// or `~/Library/Application Support/Airboss/airboss.db`. With neither `AIRBOSS_DB` nor
+/// `HOME` it's the "can't open its database" state with core's reason, never a relative path.
+pub fn db_location(found: airboss_core::Result<PathBuf>) -> AppResult<PathBuf> {
+    found.map_err(|e| {
+        AppError::new(ErrorCode::DbUnavailable, "Airboss can't open its database")
+            .with_detail(e.to_string())
+    })
+}
+
+/// [`db_location`] for this process.
+pub fn db_path() -> AppResult<PathBuf> {
+    db_location(airboss_core::default_db_path())
+}
+
+/// Why the database at `db` didn't open, as the full-window state shows it: "Update Airboss"
+/// for one a newer Airboss migrated, otherwise "Airboss can't open its database".
+pub fn open_error(db: &Path, e: airboss_core::Error) -> AppError {
+    let detail = format!("{}: {e}", db.display());
+    if e.is_newer_database() {
+        AppError::db_too_new(&e).with_detail(detail)
+    } else {
+        AppError::new(ErrorCode::DbUnavailable, "Airboss can't open its database")
+            .with_detail(detail)
     }
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_default();
-    home.join("Library/Application Support/Airboss/airboss.db")
 }
 
 /// Whether this process runs from an installed `.app` bundle.
@@ -325,10 +471,7 @@ fn open_state(db: &Path, shell: Arc<TauriShell>, config: AppConfig) -> AppResult
     if let Some(dir) = db.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
-    let store = Store::open(db).map_err(|e| {
-        AppError::new(ErrorCode::DbUnavailable, "Airboss can't open its database")
-            .with_detail(format!("{}: {e}", db.display()))
-    })?;
+    let store = Store::open(db).map_err(|e| open_error(db, e))?;
     let store = share(store);
     let services = Services::start(&store, &crate::services::home());
     let state = AppState::new(
@@ -351,9 +494,13 @@ pub fn setup(
     started: std::time::Instant,
 ) -> tauri::Result<()> {
     let handle = app.handle().clone();
+    // No place for the database (no HOME and no AIRBOSS_DB) is the full-window state with
+    // core's reason; the settings then aren't saved anywhere.
     let db = db_path();
-    let settings_path = settings::path_for(&db);
-    let (mut settings, first_run) = settings::load(&settings_path);
+    let settings_path = db.as_deref().ok().map(settings::path_for);
+    let (mut settings, first_run) = settings_path
+        .as_deref()
+        .map_or((settings::Settings::default(), false), settings::load);
 
     let shell = TauriShell::new(handle.clone(), settings.hotkey.clone());
     *lock(&shell.accent) = macos::accent_hex();
@@ -367,20 +514,32 @@ pub fn setup(
         {
             log::warn!("couldn't turn on open at login: {e}");
         }
-        if let Err(e) = settings::save(&settings_path, &settings) {
+        if let Some(path) = &settings_path
+            && let Err(e) = settings::save(path, &settings)
+        {
             log::warn!("couldn't save settings: {e}");
+        }
+        // Alongside open at login: macOS asks once whether Airboss may notify.
+        if settings.notifications {
+            shell.notifications.request();
         }
     }
 
-    let mut config = AppConfig::new(settings.clone(), Some(settings_path));
+    let mut config = AppConfig::new(settings.clone(), settings_path);
     config.start_hidden = hidden;
     config.started = started;
-    let app_state = match open_state(&db, shell.clone(), config.clone()) {
+    let opened = db
+        .clone()
+        .and_then(|db| open_state(&db, shell.clone(), config.clone()));
+    let app_state = match opened {
         Ok(state) => App::ready(state),
         Err(e) => {
             log::error!("{}: {}", e.message, e.detail.as_deref().unwrap_or(""));
             let shell = shell.clone();
-            App::new(move || open_state(&db, shell.clone(), config.clone()))
+            App::new(move || {
+                db.clone()
+                    .and_then(|db| open_state(&db, shell.clone(), config.clone()))
+            })
         }
     };
     handle.manage(app_state.clone());
@@ -497,9 +656,13 @@ pub fn on_window_event(window: &Window<Wry>, event: &WindowEvent) {
             api.prevent_close();
             let _ = window.hide();
         }
-        (MAIN, WindowEvent::Focused(true)) => {
+        (MAIN, WindowEvent::Focused(focused)) => {
             if let Some(s) = app.try_state::<App>().and_then(|a| a.current()) {
-                s.trigger(Trigger::Focus);
+                // No notifications while the window is in front.
+                s.set_main_focused(*focused);
+                if *focused {
+                    s.trigger(Trigger::Focus);
+                }
             }
         }
         (MAIN, WindowEvent::ThemeChanged(theme)) => {

@@ -31,6 +31,7 @@ pub fn bootstrap(s: &AppState, _c: Caller) -> AppResult<Bootstrap> {
         needs: (*cu.vm.needs).clone(),
         connections: cu.connections.connections.clone(),
         availability: cu.connections.availability.clone(),
+        agent_report: cu.connections.agent_report.clone(),
         settings,
         accent,
         cli,
