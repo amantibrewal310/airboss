@@ -2,7 +2,7 @@
   import Avatar from '../../../lib/components/Avatar.svelte';
   import type { HistoryEntry, LinkDto, TaskId } from '../../../lib/types';
   import { useApp } from '../../../lib/state/context';
-  import { phrase, type PhraseContext } from '../../../lib/logic/activity';
+  import { groupFeed, launchSources, phrase, type PhraseContext } from '../../../lib/logic/activity';
   import { linkLabel } from '../../../lib/logic/links';
   import { feedTime } from '../../../lib/logic/time';
 
@@ -22,7 +22,10 @@
     }
     return m;
   });
+  const launched = $derived(launchSources(history));
+  const lines = $derived(groupFeed(history, task));
   const ctx: PhraseContext = {
+    launchedIn: (e) => launched.get(e.id) ?? null,
     repoOf: (thread) => folders.get(thread) ?? null,
     linkTitle: (kind, ref) => {
       const l = links.find((x) => x.kind === kind && x.ref === ref);
@@ -61,11 +64,11 @@
 <section class="sec" aria-label="Activity">
   <h3>Activity</h3>
   <ol class="feed">
-    {#each history as e (e.id)}
-      <li class="ev">
-        <Avatar actor={e.actor} size={18} />
+    {#each lines as { entry: e, tasks } (e.id)}
+      <li class="ev" title={tasks.length > 3 ? [...tasks].sort((a, b) => a - b).join(', ') : undefined}>
+        <Avatar actor={e.actor} launchedIn={launched.get(e.id) ?? null} size={18} />
         <span class="tx">
-          {#each phrase(e, task, ctx) as s, i (i)}{#if s.strong}<b>{s.text}</b>{:else}{s.text}{/if}{/each}
+          {#each phrase(e, task, ctx, tasks) as s, i (i)}{#if s.strong}<b>{s.text}</b>{:else}{s.text}{/if}{/each}
         </span>
         <span class="tm">{feedTime(e.at, app.now)}</span>
       </li>

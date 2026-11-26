@@ -5,6 +5,7 @@
 
 import type {
   Chip,
+  Source,
   DepDto,
   HistoryEntry,
   LinkDto,
@@ -154,7 +155,7 @@ export function isReady(s: MockState, ix: TreeIndex, id: TaskId): boolean {
   return t.status === 'todo' && liveKids(s, ix, id).length === 0 && openBlockers(s, ix, id).length === 0;
 }
 
-const CHIP_RANK: Record<Chip, number> = { waiting_on_you: 3, working: 2, stopped: 1 };
+const CHIP_RANK: Record<Chip, number> = { waiting_on_you: 4, working: 3, your_turn: 2, stopped: 1 };
 
 export function chipOf(state: MockThread['view']['state']): Chip | null {
   switch (state) {
@@ -162,8 +163,9 @@ export function chipOf(state: MockThread['view']['state']): Chip | null {
       return 'working';
     case 'needs_me':
       return 'waiting_on_you';
-    case 'errored':
     case 'idle':
+      return 'your_turn';
+    case 'errored':
     case 'settled':
       return 'stopped';
     case 'gone':
@@ -173,6 +175,18 @@ export function chipOf(state: MockThread['view']['state']): Chip | null {
 
 export function threadsFor(s: MockState, id: TaskId): MockThread[] {
   return [...s.threads.values()].filter((t) => t.tasks.includes(id));
+}
+
+/** Where the task's most recently active T3 thread or Herdr terminal runs (Launch's avatar). */
+function launchedIn(s: MockState, id: TaskId): Source | null {
+  let best: { at: string; source: Source } | null = null;
+  for (const t of threadsFor(s, id)) {
+    const source = t.view.key.source;
+    if (source !== 't3' && source !== 'herdr') continue;
+    const at = t.view.last_activity_at ?? '';
+    if (!best || at > best.at) best = { at, source };
+  }
+  return best?.source ?? null;
 }
 
 function liveOf(s: MockState, id: TaskId): Chip | null {
@@ -237,6 +251,7 @@ export function buildRow(s: MockState, ix: TreeIndex, id: TaskId, needs: NeedsIt
     live: liveOf(s, id),
     last_at: last.at,
     last_actor: last.actor,
+    launched_in: last.actor === 'launch' ? launchedIn(s, id) : null,
   };
 }
 

@@ -910,7 +910,7 @@ fn import_plan_records_which_thread_sent_it_on_every_created_task() {
         assert_eq!(note.actor, Actor::Agent(format!("t3/{THREAD}")));
         assert_eq!(
             note.body.as_deref(),
-            Some(format!("Imported by agent:t3/{THREAD} from {}", file.path()).as_str())
+            Some("Imported from booking.md")
         );
     }
 }

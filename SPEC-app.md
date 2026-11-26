@@ -230,8 +230,9 @@ There is one process, `Airboss.app`, with a Dock icon (activation policy Regular
 | `branch` | `Task.branch`, or the nearest ancestor's (display only) |
 | `ready` | in `ready` and a leaf; `ready_since` from it |
 | `ready_pill`, `quiet_days`, `needs`, `needs_stale` | from `attention`: a Ready item, a Quiet item, any item, any stale item |
-| `live` | the strongest `chip()` of the task's threads in `sync.snapshot().threads_for(id)`: Waiting on you, then Working, then Stopped. Only while the task is open. |
+| `live` | the strongest `chip()` of the task's threads in `sync.snapshot().threads_for(id)`: Waiting on you, then Working, then Your turn, then Stopped. Only while the task is open. |
 | `last_at`, `last_actor` | `subtree_last_event_at` for a parent, `last_event_at` for a leaf, and `last_actor` |
+| `launched_in` | when `last_actor` is Launch: the `Source` (T3 or Herdr) of the task's most recently active linked T3 thread or Herdr terminal, so the avatar reads T (T3) or H (Herdr) in place of L. `null` otherwise |
 
 - **Plan cards, display waves and the dependency lists** in the panel are built from the same `tree` and `edges`.
 - **`diff(old, new)`** gives `Patch { seq, upserts, removed, order, repos, created }`:
@@ -484,9 +485,9 @@ Every screen keeps DESIGN.md's layout, sizes and motion. This section adds data,
   - A PR link is checked with `sync.lookup_pr` in the background. Its title and state fill in when the lookup answers.
 - **Notes:** the body in Notes type. Click to edit in an auto-growing textarea; ⌘↩ or blur saves, and Esc cancels.
 - **Subtasks:** the Waves list, when the task has subtasks.
-- **Threads:** one row per linked thread: live chip (Running, Waiting, Stopped), title, request or error summary, and "Open ↗" (`open_thread`). Open shows only when `sync.thread_url` returns a URL. Claude Code sessions have none, so they show their folder instead.
+- **Threads:** one row per linked thread: live chip (Running, Waiting, Your turn, Stopped), title, request or error summary, and "Open ↗" (`open_thread`). Open shows only when `sync.thread_url` returns a URL. Claude Code sessions have none, so they show their folder instead.
 - **Activity:**
-  - One line per event: the actor's avatar and name (You, Agent or "Agent in <thread title>", GitHub, T3, Plan, Launch), then a verb phrase per event kind.
+  - One line per event: the actor's avatar and name (You, Agent or "Agent in <thread title>", GitHub, T3, Plan, and Launch named by where its thread runs: T3 or Herdr, "Launch" only when the feed has no thread link to tell), then a verb phrase per event kind.
   - A subtask's events start with its id: "143 moved to Done".
   - "Show more" refetches with a limit of 200.
 - **Note input:** "Leave a note for the agent…". ↩ adds the note, ⇧↩ adds a line.
@@ -751,7 +752,7 @@ pub trait AttentionService: Service { fn needs_me(&self) -> Arc<NeedsList>; fn f
 | `ErrorCode` | variants `NeedsChoice`, `NotAProject`, `TaskClosed`, `T3Missing`, `T3NotRunning`; the rest only pass through |
 | `SyncSnapshot` | `threads_for(task) -> Vec<&ThreadView>`, `prs_for(task) -> Vec<&PrView>`, `suggested_prs(branch)`, `projects: Vec<T3Project { path, name }>`, `checked_at: Option<Timestamp>` |
 | `ThreadView` | `key: ThreadKey`, `state: ThreadState`, `title`, `request: Option<Request { kind, text, at }>`, `error`, `project_path`, `last_activity_at`, `stale` |
-| `ThreadState` | `Running, NeedsMe, Errored, Idle, Settled, Gone`, with `chip() -> Option<Chip>`: Running is Working; NeedsMe is WaitingOnYou; Errored, Idle and Settled are Stopped; Gone has no chip |
+| `ThreadState` | `Running, NeedsMe, Errored, Idle, Settled, Gone`, with `chip() -> Option<Chip>`: Running is Working; NeedsMe is WaitingOnYou; Idle is YourTurn (the agent finished its turn, the next message is mine); Errored and Settled are Stopped; Gone has no chip |
 | `PrRef` / `PrView` | `PrRef::parse(&str)` (`owner/repo#n` or a URL, canonical lowercase as in `core` v3); `ref`, `url`, `title`, `state`, `draft`, `review`, `checks`, `additions`, `deletions`, `stale` |
 | `Refresh` | `PrsOf(TaskId)` |
 | `Availability` | `Unknown`, `Ready { version }`, `Missing { reason }` |

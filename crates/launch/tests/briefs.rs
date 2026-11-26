@@ -138,6 +138,19 @@ fn do_it_with_a_slack_link() {
 }
 
 #[test]
+fn do_it_with_subtasks_reports_each_step() {
+    let mut r = booking();
+    r.subtasks = vec![SubtaskLine {
+        id: TaskId(143),
+        title: "Design the API".into(),
+        status: Status::Todo,
+        repos: vec!["booking-web".into()],
+    }];
+    let out = brief::do_it(&r, &web(), &[web()], "task-142-booking-flow", "main", NONCE);
+    golden("do-it-subtasks.txt", &out);
+}
+
+#[test]
 fn research_only() {
     let r = Reference {
         task: TaskId(77),

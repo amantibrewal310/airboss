@@ -306,8 +306,8 @@ pub struct ThreadView {
 }
 pub enum ThreadState { Running, NeedsMe, Errored, Idle, Settled, Gone }
 impl ThreadState { pub fn chip(self) -> Option<Chip>; }  // Running: Working; NeedsMe: WaitingOnYou;
-                                                         // Errored, Idle, Settled: Stopped; Gone: None
-pub enum Chip { Working, WaitingOnYou, Stopped }
+                                                         // Idle: YourTurn; Errored, Settled: Stopped; Gone: None
+pub enum Chip { Working, WaitingOnYou, YourTurn, Stopped }
 pub struct Request { pub id: String, pub kind: RequestKind, pub text: String, pub at: Timestamp }
 pub enum RequestKind { Question, Approval }
 /// A PR ref in core's canonical form, "owner/repo#n" in lowercase.

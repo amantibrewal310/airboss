@@ -3,13 +3,14 @@
 
   /**
    * A thread's live state after the title: Agent working (pulsing green), Waiting on you (red),
-   * Stopped (grey). `short` uses the Threads labels; `dotOnly` is for narrow widths (the label
+   * Your turn (accent: the agent finished its turn and waits for my next message), Stopped (grey:
+   * failed or settled). `short` uses the Threads labels; `dotOnly` is for narrow widths (the label
    * stays as the accessible name and tooltip). With neither, the chip carries both labels so a
    * container query can swap to the short one (`.full` / `.brief`) before going dot-only.
    */
   let { chip, short = false, dotOnly = false, text, decorative = false }: { chip: Chip; short?: boolean; dotOnly?: boolean; text?: string; decorative?: boolean } = $props();
-  const SHORT = { working: 'Running', waiting_on_you: 'Waiting', stopped: 'Stopped' } as const;
-  const LONG = { working: 'Agent working', waiting_on_you: 'Waiting on you', stopped: 'Stopped' } as const;
+  const SHORT = { working: 'Running', waiting_on_you: 'Waiting', your_turn: 'Your turn', stopped: 'Stopped' } as const;
+  const LONG = { working: 'Agent working', waiting_on_you: 'Waiting on you', your_turn: 'Your turn', stopped: 'Stopped' } as const;
   const label = $derived(text ?? (short ? SHORT : LONG)[chip]);
   const both = $derived(!text && !short && SHORT[chip] !== LONG[chip]);
 </script>
@@ -53,6 +54,9 @@
   }
   .waiting_on_you i {
     background: var(--needs);
+  }
+  .your_turn i {
+    background: var(--accent);
   }
   .working i::after {
     content: '';

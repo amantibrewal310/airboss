@@ -166,7 +166,7 @@ Each step:
 | `depends_on` | list | What it waits on: other steps' keys (text), or existing task ids (numbers) |
 | `children` | list of steps | Its own steps |
 
-The whole plan is checked before anything is written; if any step fails, nothing is created. The plan file is linked as a `doc` to each top-level task, and each new task gets a note saying which thread sent it, such as "Imported by agent:t3/97b5… from /path/plan.md". Sending the same plan again creates nothing and adds no notes.
+The whole plan is checked before anything is written; if any step fails, nothing is created. The plan file is linked as a `doc` to each top-level task, and each new task gets a note from the thread that sent it, such as "Imported from plan.md". Sending the same plan again creates nothing and adds no notes.
 
 Returns which tasks were created, which existed already, and the task each key became:
 

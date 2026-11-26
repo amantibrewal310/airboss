@@ -124,7 +124,7 @@ hc --version, herdr-app --version              # availability
 On this Mac, with Herdr open:
 
 1. Choose Herdr and Claude Code. Do it on a task linked to a scratch repo opens a tab named `<id> <title>` in that repo's Herdr space, in `~/.herdr/worktrees/<repo>/task-<id>-…`. Claude gets the brief as its first message, and the task shows "Working" within a few seconds.
-2. When the agent asks something, the chip turns to "Waiting on you" and Needs me has the item. When it finishes, the chip is "Stopped", and Agent stopped follows after 10 minutes with no PR.
+2. When the agent asks something, the chip turns to "Waiting on you" and Needs me has the item. When it finishes, the chip is "Your turn", and Agent stopped follows after 10 minutes with no PR.
 3. Open thread brings Herdr forward on that pane.
 4. The agent's own `link` (this thread) makes no second link.
 5. With Herdr quit, Do it opens it and still starts the tab.
