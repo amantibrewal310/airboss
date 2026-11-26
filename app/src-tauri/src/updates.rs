@@ -238,6 +238,58 @@ pub fn notes_url(version: &str) -> String {
     format!("{}/releases/tag/v{version}", env!("CARGO_PKG_REPOSITORY"))
 }
 
+/// The `.app` an executable runs from: `…/Airboss.app` for `…/Airboss.app/Contents/MacOS/x`.
+pub fn bundle_of(exe: &std::path::Path) -> Option<std::path::PathBuf> {
+    let macos = exe.parent()?;
+    let contents = macos.parent()?;
+    let bundle = contents.parent()?;
+    let named = |p: &std::path::Path, n: &str| p.file_name().is_some_and(|f| f == n);
+    (named(macos, "MacOS")
+        && named(contents, "Contents")
+        && bundle.extension().is_some_and(|e| e == "app"))
+    .then(|| bundle.to_path_buf())
+}
+
+/// `/usr/bin/open`'s arguments to start the updated app at `bundle`:
+///
+/// - `-n`, a new instance (this one is on its way out), brought to the front (no `-g`): you
+///   just chose Update and restart.
+/// - `--env` for each `AIRBOSS_*` variable: LaunchServices starts an app with launchd's
+///   environment, not ours, so without it a copy run on `AIRBOSS_DB` would come back on the
+///   default database.
+/// - This launch's arguments without `--hidden`, so an Airboss opened at login comes back with
+///   its window.
+pub fn relaunch_args(
+    bundle: &std::path::Path,
+    env: impl IntoIterator<Item = (std::ffi::OsString, std::ffi::OsString)>,
+    args: &[std::ffi::OsString],
+) -> Vec<std::ffi::OsString> {
+    let mut out: Vec<std::ffi::OsString> = vec!["-n".into(), bundle.as_os_str().to_owned()];
+    let mut vars: Vec<_> = env
+        .into_iter()
+        .filter(|(k, _)| k.to_string_lossy().starts_with("AIRBOSS_"))
+        .collect();
+    vars.sort();
+    for (k, v) in vars {
+        let mut kv = k;
+        kv.push("=");
+        kv.push(v);
+        out.push("--env".into());
+        out.push(kv);
+    }
+    let rest: Vec<_> = args
+        .iter()
+        .skip(1)
+        .filter(|a| *a != "--hidden")
+        .cloned()
+        .collect();
+    if !rest.is_empty() {
+        out.push("--args".into());
+        out.extend(rest);
+    }
+    out
+}
+
 /// Whether an install is under way: no second one, and no check, until it ends.
 pub fn busy(status: &UpdateStatus) -> bool {
     matches!(
@@ -408,6 +460,53 @@ mod tests {
 
     fn t(secs: u64) -> SystemTime {
         SystemTime::UNIX_EPOCH + Duration::from_secs(1_800_000_000 + secs)
+    }
+
+    #[test]
+    fn the_bundle_is_three_levels_up_from_an_app_executable() {
+        use std::path::{Path, PathBuf};
+        assert_eq!(
+            bundle_of(Path::new(
+                "/Applications/Airboss.app/Contents/MacOS/airboss-app"
+            )),
+            Some(PathBuf::from("/Applications/Airboss.app"))
+        );
+        assert_eq!(bundle_of(Path::new("/repo/target/debug/airboss-app")), None);
+        assert_eq!(bundle_of(Path::new("/x/Contents/MacOS/airboss-app")), None);
+    }
+
+    #[test]
+    fn the_relaunch_comes_forward_keeps_airboss_variables_and_drops_hidden() {
+        use std::ffi::OsString;
+        let os = |s: &str| OsString::from(s);
+        let args = relaunch_args(
+            std::path::Path::new("/Applications/Airboss.app"),
+            [
+                (os("HOME"), os("/Users/me")),
+                (os("AIRBOSS_DB"), os("/tmp/qa/airboss.db")),
+                (os("PATH"), os("/usr/bin")),
+            ],
+            &[
+                os("/Applications/Airboss.app/Contents/MacOS/airboss-app"),
+                os("--hidden"),
+            ],
+        );
+        assert_eq!(
+            args,
+            [
+                "-n",
+                "/Applications/Airboss.app",
+                "--env",
+                "AIRBOSS_DB=/tmp/qa/airboss.db"
+            ]
+            .map(os)
+        );
+        let with_more = relaunch_args(
+            std::path::Path::new("/A.app"),
+            [],
+            &[os("exe"), os("--hidden"), os("--other")],
+        );
+        assert_eq!(with_more, ["-n", "/A.app", "--args", "--other"].map(os));
     }
 
     #[test]

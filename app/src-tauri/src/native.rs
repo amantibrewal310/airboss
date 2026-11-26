@@ -491,10 +491,32 @@ impl Shell for Arc<TauriShell> {
                 log::warn!("couldn't save the window state before restarting: {e}");
             }
             app.cleanup_before_exit();
-            // Without `--hidden`: an Airboss opened at login comes back with its window.
+            log::info!("restarting into the new Airboss");
+            // Our own relaunch rather than `tauri::process::restart`, which passes `-g` and
+            // none of our environment (see `updates::relaunch_args`).
+            let bundle = std::env::current_exe()
+                .ok()
+                .and_then(|exe| crate::updates::bundle_of(&exe));
+            if let Some(bundle) = bundle {
+                let args =
+                    crate::updates::relaunch_args(&bundle, std::env::vars_os(), &app.env().args_os);
+                match std::process::Command::new("/usr/bin/open")
+                    .args(&args)
+                    .stdin(std::process::Stdio::null())
+                    .output()
+                {
+                    Ok(out) if out.status.success() => std::process::exit(0),
+                    Ok(out) => log::error!(
+                        "couldn't reopen Airboss ({}): {}",
+                        out.status,
+                        String::from_utf8_lossy(&out.stderr).trim()
+                    ),
+                    Err(e) => log::error!("couldn't reopen Airboss: {e}"),
+                }
+            }
+            // Not in a bundle, or `open` failed: Tauri's own restart, without `--hidden`.
             let mut env = app.env();
             env.args_os.retain(|a| a != "--hidden");
-            log::info!("restarting into the new Airboss");
             tauri::process::restart(&env);
         });
     }
