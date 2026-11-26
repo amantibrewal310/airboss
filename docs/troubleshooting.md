@@ -44,7 +44,7 @@ Do it and Plan it run T3 Code's CLI at `~/.t3/bin/t3`. Live thread state comes f
 
 | You see | What to do |
 |---|---|
-| The T3 Code row says Not found or Not installed, and the task panel says "Do it and Plan it need T3 Code. Install it, then choose Check again." | Install T3 Code. Check that `~/.t3/bin/t3 --version` prints a version, then choose Check again. |
+| The T3 Code row says Not found or Not installed, and the task panel says "Starting agents needs T3 Code. Install it, then choose Check again." | Install T3 Code. Check that `~/.t3/bin/t3 --version` prints a version, then choose Check again. |
 | "T3 Code isn't open. Open it, then try again." | Open T3 Code, then press Do it again. |
 | "&lt;repo&gt; isn't a T3 project yet." | Choose **Add to T3 and retry** on the toast. |
 | "&lt;repo&gt; is still starting. Check T3, or choose Start again." | A start didn't answer. Airboss links the thread when T3 shows it. If no thread appears, choose Start again. |
@@ -57,6 +57,10 @@ cargo test -p airboss-sync --release --test real_t3 -- --ignored --nocapture
 ```
 
 That test reads your real T3 database, read-only.
+
+## Claude Code sessions
+
+Airboss reads the sessions Claude Code runs outside T3 from `~/.claude/sessions`, read-only. **"Claude Code sessions can't be read"** in the footer means a session file has stayed incomplete for over 10 seconds, or `ps` failed; the row's reason says which. Choose Check again. A session status Airboss doesn't know yet (Claude Code adds them) never causes this: that session shows as idle and the log names the status once. Alpha 2 and earlier did break on Claude Code's `shell` status; update to fix it.
 
 ## Herdr
 

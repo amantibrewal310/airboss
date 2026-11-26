@@ -71,6 +71,8 @@ pub struct T3Worker {
     claude_files: BTreeSet<PathBuf>,
     /// Liveness by (pid, procStart), from the last `ps`.
     claude_alive: HashMap<(u32, String), bool>,
+    /// Session statuses Claude Code added that Airboss doesn't know, each logged once.
+    claude_unknown: BTreeSet<String>,
 
     /// The current `hc events` stream's number; lines from older ones are ignored.
     herdr_stream: u64,
@@ -173,6 +175,7 @@ impl T3Worker {
             noted,
             claude_files: BTreeSet::new(),
             claude_alive: HashMap::new(),
+            claude_unknown: BTreeSet::new(),
             herdr_stream: 0,
             herdr_started: None,
             herdr_restart_at: None,
@@ -697,7 +700,6 @@ impl T3Worker {
                 self.update_watches();
                 let views =
                     claude::views(&[], &[], &self.open_linked(Source::Claude), &HashSet::new())
-                        .unwrap_or_default()
                         .into_iter()
                         .map(|v| (v.key.clone(), v))
                         .collect();
@@ -747,15 +749,19 @@ impl T3Worker {
                     .unwrap_or(false)
             })
             .collect();
-        let views = match claude::views(
+        for status in claude::unknown_statuses(&sessions) {
+            if self.claude_unknown.insert(status.to_string()) {
+                log(&format!(
+                    "Claude session status {status:?} is new to Airboss; showing it as idle"
+                ));
+            }
+        }
+        let views = claude::views(
             &sessions,
             &alive,
             &self.open_linked(Source::Claude),
             &self.linked_anywhere(Source::Claude),
-        ) {
-            Ok(v) => v,
-            Err(why) => return self.claude_broken(why, now),
-        };
+        );
         let views = views.into_iter().map(|v| (v.key.clone(), v)).collect();
         let changed = self.replace(Source::Claude, views, now);
         self.part.claude.ok(now);

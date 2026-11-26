@@ -657,16 +657,27 @@ fn liveness_runs_only_when_the_files_change_or_on_ticks() {
 }
 
 #[test]
-fn an_unknown_claude_status_shows_the_claude_code_row() {
+fn an_unknown_claude_status_leaves_claude_sync_working() {
     let (mut rig, _) = Rig::new(&[]);
     rig.claude.write(10, "s", "dreaming", "cli");
+    rig.claude.write(11, "bg", "shell", "cli");
     rig.start(t0());
     let rows = rig.hub.connections();
-    let row = rows.iter().find(|c| c.name == "Claude Code").unwrap();
-    assert!(!row.ok);
-    assert!(row.fix.clone().unwrap().contains("dreaming"));
+    assert!(
+        rows.iter().all(|c| c.name != "Claude Code"),
+        "a status Claude Code added later doesn't break Claude sync: {rows:?}"
+    );
     // "Agents" is the app's row for the airboss command; sharing the name would merge them.
     assert!(rows.iter().all(|c| c.name != "Agents"));
+    let state = |r: &str| {
+        rig.hub.snapshot().threads[&ThreadKey {
+            source: Source::Claude,
+            r#ref: r.into(),
+        }]
+            .state
+    };
+    assert_eq!(state("s"), ThreadState::Idle);
+    assert_eq!(state("bg"), ThreadState::Running);
 }
 
 #[test]

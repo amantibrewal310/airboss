@@ -141,16 +141,35 @@ fn parse_session(file: &Path, v: &Value) -> io::Result<ClaudeSession> {
     })
 }
 
-/// A session's state from its `status`: `busy` is running, `idle` is idle, `waiting` (on me:
-/// a question or a permission, named by `waitingFor`) needs me; anything else is an error
-/// naming the value, which marks Claude sync broken.
-pub fn state_of(status: &str) -> Result<ThreadState, String> {
+/// A session's state from its `status`:
+///
+/// - `busy` is running, and so is `shell`: the turn has ended but a background shell task
+///   still runs, which Claude Code's own session list counts as busy.
+/// - `idle` is idle.
+/// - `waiting` (on me: a question or a permission, named by `waitingFor`) needs me.
+///
+/// Claude Code adds statuses over time. Any other is idle: the session is still shown, and
+/// neither it nor Claude sync breaks. [`unknown_statuses`] names those for the log.
+pub fn state_of(status: &str) -> ThreadState {
     match status {
-        "busy" => Ok(ThreadState::Running),
-        "idle" => Ok(ThreadState::Idle),
-        "waiting" => Ok(ThreadState::NeedsMe),
-        other => Err(format!("unknown session status {other:?}")),
+        "busy" | "shell" => ThreadState::Running,
+        "waiting" => ThreadState::NeedsMe,
+        _ => ThreadState::Idle,
     }
+}
+
+const KNOWN_STATUSES: [&str; 4] = ["busy", "shell", "idle", "waiting"];
+
+/// The statuses these sessions use that [`state_of`] doesn't know, sorted, each once.
+pub fn unknown_statuses(sessions: &[ClaudeSession]) -> Vec<&str> {
+    let mut out: Vec<&str> = sessions
+        .iter()
+        .map(|s| s.status.as_str())
+        .filter(|s| !KNOWN_STATUSES.contains(s))
+        .collect();
+    out.sort_unstable();
+    out.dedup();
+    out
 }
 
 /// `ps`'s arguments for these pids.
@@ -247,17 +266,15 @@ fn missing(id: &str) -> ThreadView {
 /// - `linked_anywhere`: every `claude_session` link's ref; the rest of the live sessions are
 ///   untracked, except those T3 runs.
 ///
-/// An unknown `status` on any session is an error naming it.
 pub fn views(
     sessions: &[ClaudeSession],
     alive: &[bool],
     open_linked: &[String],
     linked_anywhere: &HashSet<String>,
-) -> Result<Vec<ThreadView>, String> {
+) -> Vec<ThreadView> {
     // A session id written by two files (one stale): the newest wins.
     let mut by_id: HashMap<&str, (&ClaudeSession, bool)> = HashMap::new();
     for (s, &up) in sessions.iter().zip(alive) {
-        state_of(&s.status)?;
         let newer = by_id
             .get(s.session_id.as_str())
             .is_none_or(|(old, old_up)| (up, s.updated_at) > (*old_up, old.updated_at));
@@ -268,7 +285,7 @@ pub fn views(
     let mut out = Vec::new();
     for id in open_linked {
         match by_id.get(id.as_str()) {
-            Some((s, true)) => out.push(view(s, true, state_of(&s.status)?)),
+            Some((s, true)) => out.push(view(s, true, state_of(&s.status))),
             Some((s, false)) => out.push(view(s, true, ThreadState::Gone)),
             None => out.push(missing(id)),
         }
@@ -283,9 +300,9 @@ pub fn views(
         .collect();
     untracked.sort_by(|a, b| a.session_id.cmp(&b.session_id));
     for s in untracked {
-        out.push(view(s, false, state_of(&s.status)?));
+        out.push(view(s, false, state_of(&s.status)));
     }
-    Ok(out)
+    out
 }
 
 /// The real source: the session folder, and `/bin/ps` for liveness. Never used by tests.

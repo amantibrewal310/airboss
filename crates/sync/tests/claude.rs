@@ -47,8 +47,7 @@ fn states() {
         &alive,
         &ids(&["busy-one", "idle-one", "never-seen"]),
         &set(&["busy-one", "idle-one", "never-seen"]),
-    )
-    .unwrap();
+    );
     let state = |id: &str| v.iter().find(|t| t.key.r#ref == id).unwrap().state;
     assert_eq!(state("busy-one"), ThreadState::Running);
     assert_eq!(state("idle-one"), ThreadState::Idle);
@@ -71,7 +70,7 @@ fn a_dead_or_reused_pid_is_gone() {
     fake.kill(7);
     let s = fake.sessions().unwrap().sessions;
     let alive = fake.alive(&s).unwrap();
-    let v = claude::views(&s, &alive, &ids(&["s-7"]), &set(&["s-7"])).unwrap();
+    let v = claude::views(&s, &alive, &ids(&["s-7"]), &set(&["s-7"]));
     assert_eq!(v[0].state, ThreadState::Gone);
 }
 
@@ -97,14 +96,14 @@ fn ps_output_must_match_proc_start() {
 
 #[test]
 fn waiting_is_needs_me() {
-    assert_eq!(claude::state_of("waiting"), Ok(ThreadState::NeedsMe));
+    assert_eq!(claude::state_of("waiting"), ThreadState::NeedsMe);
     let dir = TempDir::new();
     let mut fake = FakeClaude::new(dir.path());
     fake.write(1, "asks", "waiting", "cli");
     fake.write(2, "untracked", "waiting", "cli");
     let s = fake.sessions().unwrap().sessions;
     let alive = fake.alive(&s).unwrap();
-    let v = claude::views(&s, &alive, &ids(&["asks"]), &set(&["asks"])).unwrap();
+    let v = claude::views(&s, &alive, &ids(&["asks"]), &set(&["asks"]));
     let state = |id: &str| v.iter().find(|t| t.key.r#ref == id).unwrap().state;
     assert_eq!(state("asks"), ThreadState::NeedsMe);
     assert_eq!(state("untracked"), ThreadState::NeedsMe);
@@ -116,13 +115,30 @@ fn waiting_is_needs_me() {
 }
 
 #[test]
-fn an_unknown_status_is_an_error_naming_it() {
+fn shell_is_working_and_an_unknown_status_is_idle() {
+    // Claude Code writes `shell` when its turn has ended but a background shell task still
+    // runs; its own session list counts that as busy.
+    assert_eq!(claude::state_of("shell"), ThreadState::Running);
+    // Claude Code adds statuses over time: a new one shows the session as idle and leaves
+    // every other session, and Claude sync, as they were.
+    assert_eq!(claude::state_of("thinking"), ThreadState::Idle);
     let dir = TempDir::new();
     let mut fake = FakeClaude::new(dir.path());
-    fake.write(1, "s", "thinking", "cli");
+    fake.write(1, "background", "shell", "cli");
+    fake.write(2, "newer", "thinking", "cli");
+    fake.write(3, "plain", "busy", "cli");
     let s = fake.sessions().unwrap().sessions;
-    let err = claude::views(&s, &[true], &[], &HashSet::new()).unwrap_err();
-    assert_eq!(err, "unknown session status \"thinking\"");
+    let alive = fake.alive(&s).unwrap();
+    let v = claude::views(&s, &alive, &ids(&["newer"]), &set(&["newer"]));
+    let state = |id: &str| v.iter().find(|t| t.key.r#ref == id).unwrap().state;
+    assert_eq!(state("background"), ThreadState::Running);
+    assert_eq!(state("newer"), ThreadState::Idle);
+    assert_eq!(state("plain"), ThreadState::Running);
+    assert_eq!(
+        claude::unknown_statuses(&s),
+        vec!["thinking"],
+        "named for the log"
+    );
 }
 
 #[test]
@@ -229,14 +245,14 @@ fn t3_code_sessions_are_never_untracked() {
     fake.write(3, "linked-elsewhere", "idle", "cli");
     let s = fake.sessions().unwrap().sessions;
     let alive = fake.alive(&s).unwrap();
-    let v = claude::views(&s, &alive, &[], &set(&["linked-elsewhere"])).unwrap();
+    let v = claude::views(&s, &alive, &[], &set(&["linked-elsewhere"]));
     let untracked: Vec<&str> = v.iter().map(|t| t.key.r#ref.as_str()).collect();
     assert_eq!(untracked, vec!["from-cli"]);
     assert!(!v[0].linked);
     assert_eq!(v[0].state, ThreadState::Idle);
 
     // Linked, a t3-code session is reported like any other.
-    let v = claude::views(&s, &alive, &ids(&["from-t3"]), &set(&["from-t3"])).unwrap();
+    let v = claude::views(&s, &alive, &ids(&["from-t3"]), &set(&["from-t3"]));
     assert_eq!(v[0].key.r#ref, "from-t3");
     assert_eq!(v[0].state, ThreadState::Running);
 }
