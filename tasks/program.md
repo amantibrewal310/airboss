@@ -34,7 +34,7 @@ Then, for the whole product:
 | 3 | UI polish pass from design QA (24 findings) + integration fixes | Done (merged; 173 unit/component + 135 Playwright incl. axe) |
 | 3 | Integration QA on the real app | Done (merged; 7 bugs fixed; real agent + real Do it verified; 958 Rust tests) |
 | 4 | Fixes from integration QA (R1, R2, R5) | Done |
-| 4 | Final full-repo audit | Done: ready with caveats; B1 + 12 should-fix being fixed |
+| 4 | Final full-repo audit | Done: ready with caveats; B1 and all should-fix items fixed in waves 5–6 |
 | 5 | Audit fixes: core/sync/mcp/CLI/docs | Done |
 | 5 | Audit fixes: app side + notifications | Done |
 | 6 | Last fixes: repo ids never reused, conditional reject, notifications via UNUserNotificationCenter, output-read window | Done |
@@ -42,7 +42,7 @@ Then, for the whole product:
 | 6 | Manual checklist by a person (`app/QA.md`) | Waiting for the user |
 | 3 | Integration: one app process hosts sync, launch and attention; the CLI and `airboss mcp` share the database | |
 | 3 | QA: real-user flows, performance targets, light and dark, keyboard-only | |
-| 4 | Polish and bug-fix iterations; README and install instructions | |
+| 4 | Polish and bug-fix iterations; README and install instructions | Done |
 
 ## Decisions made as EM (the user may revisit them)
 
