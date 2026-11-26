@@ -16,8 +16,8 @@ use airboss_services::{
     ThreadState,
 };
 use airboss_sync::fake::{
-    FIXTURE_ENVIRONMENT, FakeClaude, FakeFailure, FakeGh, FakePr, FakeT3, FakeT3Handle, FakeWatch,
-    T3Fixture, TempDir,
+    FIXTURE_ENVIRONMENT, FakeClaude, FakeFailure, FakeGh, FakeHerdr, FakePr, FakeT3, FakeT3Handle,
+    FakeWatch, T3Fixture, TempDir,
 };
 use airboss_sync::{Sync, Tools, run_once, start};
 use common::{Core, cfg, t0};
@@ -45,6 +45,7 @@ fn tools(
             gh: Box::new(gh.clone()),
             t3: Box::new(t3),
             claude: Box::new(FakeClaude::new(claude.path())),
+            herdr: Box::new(FakeHerdr::new()),
             watch: Box::new(FakeWatch::new()),
             clock: clock.clone(),
         },
@@ -395,4 +396,86 @@ fn an_in_memory_store_is_refused() {
         .unwrap();
     assert_eq!(err.code, ErrorCode::Storage);
     let _ = channel::<()>();
+}
+
+/// Polls `ok` for up to 3 s.
+fn eventually(ok: impl Fn() -> bool) -> bool {
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while Instant::now() < deadline {
+        if ok() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    ok()
+}
+
+#[test]
+fn herdr_lines_reach_the_snapshot_and_shutdown_stops_hc_events() {
+    let core = Core::new();
+    let t = core.task("Work");
+    core.link(t, LinkKind::HerdrTerminal, "t4p");
+    let f = T3Fixture::with_rows();
+    let claude = TempDir::new();
+    let clock = Arc::new(FakeClock::at(t0()));
+    let (mut tools, _) = tools(&f, &claude, &me(), &clock);
+    let herdr = FakeHerdr::new();
+    tools.herdr = Box::new(herdr.clone());
+    let sync = start(cfg(f.dir(), claude.path()), core.store.clone(), tools).unwrap();
+    assert!(eventually(|| herdr.running()), "hc events starts");
+    assert!(herdr.send(
+        r#"{"channel":null,"seq":3,"terminals":[{"address":"t4p","state":"live","status":{"app":"claude-code","state":"blocked"},"status_ms":1795600000000,"title":"Fix it","cwd":"/w"}]}"#
+    ));
+    let herdr_key = ThreadKey {
+        source: Source::Herdr,
+        r#ref: "t4p".into(),
+    };
+    assert!(eventually(|| {
+        sync.snapshot()
+            .threads
+            .get(&herdr_key)
+            .is_some_and(|v| v.state == ThreadState::NeedsMe && !v.stale)
+    }));
+    assert_eq!(sync.snapshot().threads_for(t).len(), 1);
+    let row = sync
+        .connections()
+        .into_iter()
+        .find(|c| c.name == "Herdr")
+        .unwrap();
+    assert_eq!((row.ok, row.state.as_str()), (true, "Live state"));
+    assert_eq!(sync.thread_url(&herdr_key), None);
+    sync.shutdown();
+    assert!(!herdr.running(), "no hc events child after shutdown");
+    assert!(herdr.stops() >= 1);
+}
+
+#[test]
+fn run_once_waits_for_herdr_s_snapshot() {
+    let core = Core::new();
+    let t = core.task("Work");
+    core.link(t, LinkKind::HerdrTerminal, "t4p");
+    let f = T3Fixture::with_rows();
+    let claude = TempDir::new();
+    let clock = Arc::new(FakeClock::at(t0()));
+    let (mut tools, _) = tools(&f, &claude, &me(), &clock);
+    let herdr = FakeHerdr::new();
+    tools.herdr = Box::new(herdr.clone());
+    // The stream's snapshot arrives a little after it starts, as hc's does.
+    let feeder = {
+        let herdr = herdr.clone();
+        std::thread::spawn(move || {
+            assert!(eventually(|| herdr.running()));
+            herdr.send(
+                r#"{"channel":null,"seq":3,"terminals":[{"address":"t4p","state":"live","status":{"state":"working"},"title":"","cwd":"/w"}]}"#,
+            )
+        })
+    };
+    let snap = run_once(cfg(f.dir(), claude.path()), core.store.clone(), tools).unwrap();
+    assert!(feeder.join().unwrap());
+    let key = ThreadKey {
+        source: Source::Herdr,
+        r#ref: "t4p".into(),
+    };
+    assert_eq!(snap.threads[&key].state, ThreadState::Running);
+    assert!(!herdr.running(), "run_once leaves no child behind");
 }

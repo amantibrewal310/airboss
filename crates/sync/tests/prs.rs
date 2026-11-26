@@ -12,8 +12,8 @@ use std::time::{Duration, SystemTime};
 use airboss_core::{Actor, LinkKind, PrState, Status, TaskId};
 use airboss_services::{Checks, PrRef, PrView, Refresh, Review};
 use airboss_sync::fake::{
-    FakeClaude, FakeFailure, FakeGh, FakePr, FakeT3, FakeWatch, T3Fixture, TempDir, capture_logs,
-    fake_token,
+    FakeClaude, FakeFailure, FakeGh, FakeHerdr, FakePr, FakeT3, FakeWatch, T3Fixture, TempDir,
+    capture_logs, fake_token,
 };
 use airboss_sync::gh::GhClient;
 use airboss_sync::{Env, GhMsg, GhWorker, Hub, Step, StoreSummary, T3Msg, T3Worker};
@@ -29,6 +29,8 @@ struct Rig {
     /// What the T3 worker sends the GitHub worker.
     from_t3: Receiver<GhMsg>,
     t3: Option<(T3Fixture, T3Worker, TempDir)>,
+    /// The T3 worker's Herdr.
+    herdr: FakeHerdr,
 }
 
 fn merged(author: &str) -> FakePr {
@@ -79,11 +81,13 @@ impl Rig {
         let mut worker =
             GhWorker::new(env.clone(), client, t3_tx.clone(), summary.clone(), t0()).unwrap();
         worker.start(t0());
+        let herdr = FakeHerdr::new();
         let t3 = fixture.map(|f| {
             let mut w = T3Worker::new(
                 env,
                 Box::new(FakeT3::new(f.dir())),
                 Box::new(FakeClaude::new(claude_dir.path())),
+                Box::new(herdr.clone()),
                 Box::new(FakeWatch::new()),
                 t3_tx,
                 gh_tx,
@@ -100,6 +104,7 @@ impl Rig {
             to_t3,
             from_t3,
             t3,
+            herdr,
         };
         rig.core.mark();
         rig
@@ -129,6 +134,15 @@ impl Rig {
     fn t3_wal(&mut self, now: SystemTime) {
         let (_, w, _) = self.t3.as_mut().unwrap();
         w.handle(T3Msg::Refresh, now);
+        self.pump(now);
+    }
+
+    /// The T3 worker reads one `hc events` line, and what it tells the GitHub worker is
+    /// delivered.
+    fn herdr_line(&mut self, line: &str, now: SystemTime) {
+        let msg = self.herdr.line(line).unwrap();
+        let (_, w, _) = self.t3.as_mut().unwrap();
+        w.handle(msg, now);
         self.pump(now);
     }
 
@@ -360,6 +374,36 @@ fn a_finish_is_held_while_a_thread_runs_and_released_when_it_stops() {
         Status::Done,
         "released when the thread stopped"
     );
+}
+
+#[test]
+fn a_herdr_agent_working_or_blocked_holds_a_finish_until_it_stops() {
+    let core = Core::new();
+    let t = task_with_pr(&core, "acme/web#1");
+    core.link(t, LinkKind::HerdrTerminal, "t4p");
+    let mut rig = Rig::with_t3(
+        core,
+        me_only().pr("acme/web#1", merged("me")),
+        T3Fixture::with_rows(),
+    );
+    let snapshot = r#"{"channel":null,"seq":1,"terminals":[{"address":"t4p","state":"live","status":{"app":"claude-code","state":"working"},"status_ms":1795600000000,"title":"","cwd":"/w"}]}"#;
+    rig.herdr_line(snapshot, at(1));
+    rig.first_pass();
+    assert_eq!(rig.core.status(t), Status::Todo, "held: working");
+    rig.herdr_line(&herdr_status(2, "blocked"), at(10));
+    assert_eq!(rig.core.status(t), Status::Todo, "held: waiting on me");
+    rig.herdr_line(&herdr_status(3, "done"), at(20));
+    assert_eq!(
+        rig.core.status(t),
+        Status::Done,
+        "released when the agent stopped"
+    );
+}
+
+fn herdr_status(seq: u64, word: &str) -> String {
+    format!(
+        r#"{{"jsonrpc":"2.0","method":"event","params":{{"data":{{"records":{{}},"reported":true,"status":{{"state":"{word}"}}}},"seq":{seq},"terminal":"t4p","type":"status"}}}}"#
+    )
 }
 
 #[test]

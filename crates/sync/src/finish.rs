@@ -103,6 +103,7 @@ pub(crate) fn check(
         let source = match l.kind {
             LinkKind::T3Thread => Source::T3,
             LinkKind::ClaudeSession => Source::Claude,
+            LinkKind::HerdrTerminal => Source::Herdr,
             _ => return false,
         };
         let key = ThreadKey {

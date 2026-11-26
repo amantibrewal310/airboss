@@ -109,6 +109,7 @@ impl StoreSummary {
                     [
                         LinkKind::T3Thread,
                         LinkKind::ClaudeSession,
+                        LinkKind::HerdrTerminal,
                         LinkKind::Pr,
                         LinkKind::Slack,
                         LinkKind::Doc,
@@ -141,6 +142,11 @@ pub enum T3Msg {
         project: PathBuf,
         branch: String,
         reply: Sender<Option<String>>,
+    },
+    /// A line from `hc events`, or its end, from stream number `stream`.
+    Herdr {
+        stream: u64,
+        feed: crate::herdr::HerdrFeed,
     },
     /// The Mac woke.
     Woke,

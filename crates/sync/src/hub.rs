@@ -24,6 +24,8 @@ pub(crate) struct ThreadsPart {
     pub projects: Vec<T3Project>,
     pub t3: Health,
     pub claude: Health,
+    /// `hc events`: off when `hc` isn't installed.
+    pub herdr: Health,
     /// T3's environment id, for `thread_url`.
     pub environment: Option<String>,
     /// Why T3's files can't be watched, if they can't.
@@ -38,6 +40,7 @@ impl Default for ThreadsPart {
             projects: Vec::new(),
             t3: Health::unknown(UNIX_EPOCH),
             claude: Health::unknown(UNIX_EPOCH),
+            herdr: Health::unknown(UNIX_EPOCH),
             environment: None,
             watch_error: None,
         }
@@ -157,8 +160,7 @@ impl Hub {
         let source_ok = |s: Source| match s {
             Source::T3 => t.t3.is_live(),
             Source::Claude => t.claude.is_live(),
-            // TODO(wave9/sync): Herdr's own health, once sync follows it.
-            Source::Herdr => false,
+            Source::Herdr => t.herdr.is_live(),
         };
         let threads = t
             .threads
@@ -181,7 +183,7 @@ impl Hub {
             })
             .collect();
         let mut oks: Vec<SystemTime> = Vec::new();
-        for h in [&t.t3, &t.claude] {
+        for h in [&t.t3, &t.claude, &t.herdr] {
             if h.is_live() {
                 oks.extend(h.last_ok_at);
             }
@@ -219,6 +221,7 @@ impl Hub {
 
 fn connection_rows(parts: &Parts) -> Vec<Connection> {
     let mut rows = vec![github_row(&parts.prs), t3_row(&parts.threads)];
+    rows.extend(herdr_row(&parts.threads.herdr));
     if parts.threads.claude.state == HealthState::Broken {
         // "Claude Code", as the app names it everywhere; its "Agents" row is the airboss
         // command, and rows with one name merge.
@@ -235,6 +238,35 @@ fn connection_rows(parts: &Parts) -> Vec<Connection> {
 
 const GITHUB_DETAIL: &str = "Pull requests sync every 5 minutes. A merged PR finishes its task.";
 const T3_DETAIL: &str = "Shows which agents are working or waiting on you.";
+const HERDR_DETAIL: &str = "Shows which agents in Herdr are working or waiting on you.";
+
+/// "Herdr": no row while `hc` isn't installed (or before the first try), "Live state" while
+/// `hc events` runs, and broken after its restarts keep failing.
+fn herdr_row(h: &Health) -> Option<Connection> {
+    let row = |ok: bool, state: &str, fix: Option<String>| Connection {
+        name: "Herdr".into(),
+        ok,
+        state: state.into(),
+        detail: HERDR_DETAIL.into(),
+        fix,
+    };
+    match h.state {
+        HealthState::Off => None,
+        HealthState::Ok if h.stale => Some(row(true, "Checking", None)),
+        HealthState::Ok => Some(row(true, "Live state", None)),
+        HealthState::Broken | HealthState::RateLimited => Some(row(
+            false,
+            "Herdr's status can't be read",
+            Some(format!(
+                "{} It's tried again every minute; Check again tries now.",
+                h.detail.as_deref().map_or_else(
+                    || "hc events keeps stopping.".to_string(),
+                    |d| format!("{}.", d.trim_end_matches('.'))
+                )
+            )),
+        )),
+    }
+}
 
 fn github_row(p: &PrsPart) -> Connection {
     let row = |ok: bool, state: &str, fix: Option<String>| Connection {
@@ -392,6 +424,30 @@ mod tests {
         t.t3.ok(UNIX_EPOCH);
         let row = t3_row(&t);
         assert_eq!((row.ok, row.state.as_str()), (false, "Can't open threads"));
+    }
+
+    #[test]
+    fn herdr_has_no_row_while_off_and_says_why_when_broken() {
+        let mut h = Health::unknown(UNIX_EPOCH);
+        assert_eq!(herdr_row(&h), None, "not tried yet");
+        h.set(HealthState::Off, "hc isn't installed", UNIX_EPOCH);
+        assert_eq!(herdr_row(&h), None, "not installed");
+        h.ok(UNIX_EPOCH);
+        let row = herdr_row(&h).unwrap();
+        assert_eq!(
+            (row.ok, row.state.as_str(), row.fix),
+            (true, "Live state", None)
+        );
+        h.set(HealthState::Broken, "hc events stopped", UNIX_EPOCH);
+        let row = herdr_row(&h).unwrap();
+        assert_eq!(
+            (row.ok, row.state.as_str()),
+            (false, "Herdr's status can't be read")
+        );
+        assert_eq!(
+            row.fix.as_deref(),
+            Some("hc events stopped. It's tried again every minute; Check again tries now.")
+        );
     }
 
     #[test]
