@@ -161,3 +161,12 @@ Then, for the whole product:
 - **Version `0.1.0-alpha.1`, build 1,** for the app, the CLI and the MCP server. Releases are GitHub pre-releases with the `.dmg` and its SHA-256 (CONTRIBUTING › Releasing).
 - **Install:** signed ad hoc, not notarized. The docs clear the quarantine flag with `xattr -dr`, which also covers the CLI inside the bundle that agents start. Notarizing needs an Apple Developer ID: the owner's call, before a wider release.
 - **Feedback:** Help › Report a Problem… opens the bug form with the app and macOS versions filled in. There are issue forms for bugs and alpha feedback, and SECURITY.md asks for private vulnerability reports.
+
+## Alpha 2: Herdr (26 Nov 2026)
+
+- **Why:** the first alpha tester runs agents in Herdr, not T3 Code. SPEC-herdr.md has the design. EM groundwork came first (the `herdr_terminal` link kind, core migration 5, the launcher types, agent identity T3 > Herdr > Claude, error codes); then three engineers in parallel on launch, sync and the app, plus a fresh code review whose three must-fixes and five cheap fixes all landed.
+- **Real QA on this Mac:** the app's `do_it` (`tests/real_herdr.rs`) opened a tab in Herdr in 215 ms: the repo's space, a worktree under `~/.herdr/worktrees`, a real Claude Code with the brief, labelled and linked, task to doing. The chip followed in under 0.5 s. Claude's first act in a new worktree is the "trust this folder" prompt, which Herdr reports as `blocked` with `kind`/`msg`. That found the one real gap (Needs me was empty), fixed by carrying Herdr's `kind`/`msg` into the request: a probe terminal then gave "Allow: trust this folder" and a notification. Agent stopped arrived after 10 minutes. Open thread's `agent.focus` showed the tab.
+- **Decisions:** Airboss never answers the trust prompt (that would write `~/.claude.json`); QA declined it instead. QA never quit the owner's Herdr, so "Do it opens Herdr when it's quit" is covered by fakes and `app/QA.md` section 12 only.
+- **Also fixed on the way:** a Claude session waiting on you wasn't saved (sync migration 1 required a request), test temp folders, the frame-time test, the one-line installer (no Gatekeeper warning).
+- **Released:** `v0.1.0-alpha.2`, build 2. The owner's own copy was updated with the one-line installer, which picked alpha 2 as newest.
+
