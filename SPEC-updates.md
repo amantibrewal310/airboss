@@ -28,6 +28,14 @@ Success means a tester on alpha 4 sees "Airboss 0.1.0-alpha.5 is available" and,
 6. **Update and restart:** downloads with progress, verifies, and replaces the app where it is, keeping the old one until the new one is in place (the plugin's swap). Then Airboss saves and stops its services as on quit, releases its single-instance lock, and opens the new app through LaunchServices **without `--hidden`**, so an Airboss opened at login comes back with its window showing. If anything fails before the swap, the old app is untouched and the card says why.
 7. **Privacy:** one HTTPS GET of the manifest from `raw.githubusercontent.com` per check, and the download from `github.com` when you update. Neither sends anything about you or your tasks. README, getting started and Settings say so.
 
+## Decisions made while building
+
+- **A failed check counts for the schedule**, so being offline doesn't mean a check every 5 minutes. A manual check also restarts the 6-hour wait. A clock set back before the last check triggers one check rather than a long wait.
+- **An automatic check leaves `failed` alone** for the same version and offers a newer one. If the manifest offers nothing any more, the card goes back to `idle`. A manual check that finds the version that failed offers it again.
+- **During an install, checks wait.** Check for Updates… returns the status without checking or toasting, and the automatic tick skips.
+- **The restart is Airboss's own**, not `tauri::process::restart`: `open -n` without `-g`, so the new window comes to the front; `--env` for each `AIRBOSS_*` variable, because LaunchServices starts an app with launchd's environment, and a copy run on `AIRBOSS_DB` must come back on the same database; and no `--hidden`. Tauri's restart remains the fallback outside a bundle.
+- **Plain reasons** for the card, with the raw error in the log: "Couldn't reach GitHub.", "GitHub didn't answer in time.", "The download didn't finish.", "The download's signature didn't match, so it wasn't installed.", "Couldn't read the list of releases.", "There's no download for this Mac yet.", "Couldn't replace Airboss where it's installed.", "The update failed, and the old Airboss was left at <path>.", "Airboss <v> isn't offered any more.", and "The updater stopped with an error." for anything else.
+
 ## Interfaces
 
 - `UpdateStatus` (Rust `dto.rs`, exported to TypeScript), tagged by `state`: `idle` · `available {version, notes_url}` · `downloading {version, percent: number | null}` · `installing {version}` · `restarting {version}` · `failed {version, message}`. `idle` means nothing to show: not checked yet, up to date, or checks off.

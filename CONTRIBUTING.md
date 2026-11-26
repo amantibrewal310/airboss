@@ -98,7 +98,7 @@ A small fix doesn't need a new spec, but it still starts with a failing test.
 - **Unsafe code** only in `app/src-tauri/src/macos.rs`, with a `SAFETY:` comment on each block. The rest of the workspace forbids it.
 - **SQL** only in `core`, and in each service crate for its own tables. Everything else goes through `Store`. Migrations are append-only, numbered files.
 - **No polling.** Threads block on channels, condvars or kqueue. The one timer is the GitHub pass.
-- **No network** from the app, and no port anywhere. External tools are `gh`, `t3` and `git`, each called from one module.
+- **No network** from the app, and no port anywhere, with one exception: the updater (`updates.rs`) reads `updates/latest.json` from GitHub and downloads a release, verifying its signature ([SPEC-updates](SPEC-updates.md)). External tools are `gh`, `t3` and `git`, each called from one module.
 - **The interface:** TypeScript in strict mode, Svelte 5 runes only, styles scoped per component, colours and sizes from `app/src/styles/tokens.css`. Every shortcut goes in the command registry, `app/src/lib/logic/commands.ts`.
 - **Dependencies:** ask before adding a crate or an npm package. Versions are pinned exactly.
 - **Design:** [DESIGN.md](DESIGN.md) is the rule for every pixel. Red means "needs you" and nothing else.
