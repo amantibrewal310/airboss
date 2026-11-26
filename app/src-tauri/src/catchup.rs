@@ -247,7 +247,7 @@ impl AppState {
     }
 
     /// Starts the app threads: the catch-up worker, the `subscribe()` forwarder, the WAL
-    /// watcher, one listener per service and the deferred-reject timer.
+    /// watcher, one listener per service, the deferred-reject timer and the update checker.
     pub fn start_background(self: &Arc<Self>) {
         let (tx, rx) = mpsc::channel::<Trigger>();
         *lock(&self.triggers) = Some(tx.clone());
@@ -322,6 +322,9 @@ impl AppState {
 
         let me = self.clone();
         guarded(self, "rejects", move |_| crate::undo::reject_timer(&me));
+
+        // In-app updates: a look at the clock every few minutes (SPEC-updates decision 4).
+        self.start_update_checker(self.config.update_first, self.config.update_tick);
 
         // The user's shell can take a moment to start, so the PATH check runs off the start-up
         // path, and Settings hears the answer with the connections.
