@@ -1161,6 +1161,7 @@
       "seq": 2,
       "settings": {
         "appearance": "system",
+        "check_for_updates": true,
         "folded": [],
         "herdr_agent": "claude",
         "hotkey": "Control+Alt+N",
@@ -1172,6 +1173,7 @@
     },
     "get_settings": {
       "appearance": "system",
+      "check_for_updates": true,
       "folded": [],
       "herdr_agent": "claude",
       "hotkey": "Control+Alt+N",

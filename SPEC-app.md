@@ -1038,6 +1038,9 @@ Writes return `Patch` (shown as → P). All `core` calls act as `me`, with one l
 | `ui_ready` | `window` | | shows the main window (2 s backstop) |
 | `quickadd_shown` / `quickadd_hide` / `quickadd_resize` | `height` | | timing, hide (then the UI resets), size |
 | `show_main` | `view?, task?, needs_key?` | | shows and focuses the main window, emits `nav:open` |
+| `update_status` | | `UpdateStatus` | the in-app update's status ([SPEC-updates](SPEC-updates.md)) |
+| `check_for_updates` | | `UpdateStatus` | checks for a newer release now, and toasts the outcome |
+| `install_update` | | | downloads, verifies and installs the update, then restarts; progress as `update:changed` |
 
 ## Appendix B: Events
 
@@ -1053,6 +1056,7 @@ Writes return `Patch` (shown as → P). All `core` calls act as `me`, with one l
 | `appearance:changed` | `{accent?, theme}` | the system accent or appearance changed |
 | `error:background` | `{source, message}` | the watcher or an app thread failed; also updates the footer |
 | `db:unavailable` | `AppError` (`db_unavailable`, message, detail `"<path>: <reason>"`) | the database broke while the app ran (once); the UI shows the database problem state |
+| `update:changed` | `UpdateStatus` | an update was found, or an install moved on ([SPEC-updates](SPEC-updates.md)) |
 
 ## Appendix C: Keyboard map and focus rules
 

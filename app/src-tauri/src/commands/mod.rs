@@ -7,3 +7,4 @@ pub mod launch;
 pub mod needs;
 pub mod repos;
 pub mod tasks;
+pub mod updates;

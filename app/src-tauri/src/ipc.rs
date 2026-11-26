@@ -12,11 +12,11 @@ use airboss_core::{LinkId, RepoId, Status, TaskId};
 use airboss_services::ThreadKey;
 
 use crate::commands::tasks::{self, Direction};
-use crate::commands::{app, detail, launch, needs, repos};
+use crate::commands::{app, detail, launch, needs, repos, updates};
 use crate::dto::{
     AddReposResult, Bootstrap, CopyWhat, CreateTaskInput, CreateTaskResult, DoItPlace, DoItResult,
     InstallCliResult, OpenTarget, Patch, PlanCard, QuickaddData, RemoveRepoResult, RunMap,
-    T3ProjectRow, TaskDetail, UndoResult, UndoableWrite,
+    T3ProjectRow, TaskDetail, UndoResult, UndoableWrite, UpdateStatus,
 };
 use crate::errors::{AppError, AppResult, ErrorCode};
 use crate::menu::{FocusContext, WindowName};
@@ -238,6 +238,9 @@ commands! {
     quickadd_resize(QuickaddResizeArgs) => app::quickadd_resize, [height: f64] -> ();
     show_main(ShowMainArgs) => app::show_main,
         [view: Option<String>, task: Option<TaskId>, needs_key: Option<String>] -> ();
+    update_status(UpdateStatusArgs) => updates::update_status, [] -> UpdateStatus;
+    check_for_updates(CheckForUpdatesArgs) => updates::check_for_updates, [] -> UpdateStatus;
+    install_update(InstallUpdateArgs) => updates::install_update, [] -> ();
 }
 
 include!("command_names.rs");

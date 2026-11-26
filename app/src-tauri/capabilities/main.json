@@ -59,6 +59,9 @@
     "allow-set-folded",
     "allow-set-focus-context",
     "allow-ui-ready",
-    "allow-show-main"
+    "allow-show-main",
+    "allow-update-status",
+    "allow-check-for-updates",
+    "allow-install-update"
   ]
 }

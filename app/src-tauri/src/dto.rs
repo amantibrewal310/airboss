@@ -1348,6 +1348,24 @@ pub enum Theme {
     Light,
 }
 
+/// In-app updates (SPEC-updates): what the sidebar's update card shows, and
+/// `update:changed`'s payload. `Idle` is nothing to show: not checked yet, up to date, or
+/// automatic checks off.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "state", rename_all = "snake_case")]
+#[ts(export_to = "types.ts")]
+pub enum UpdateStatus {
+    Idle,
+    /// A newer release; `notes_url` is its GitHub release page.
+    Available { version: String, notes_url: String },
+    /// `percent` once the download's size is known.
+    Downloading { version: String, percent: Option<u8> },
+    Installing { version: String },
+    Restarting { version: String },
+    /// The update stopped before the swap; the running app is untouched.
+    Failed { version: String, message: String },
+}
+
 /// `appearance:changed`'s payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export_to = "types.ts")]

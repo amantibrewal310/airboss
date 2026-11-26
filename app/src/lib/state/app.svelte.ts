@@ -76,6 +76,7 @@ const DEFAULT_SETTINGS: Settings = {
   folded: [],
   start_agents_in: 'auto',
   herdr_agent: 'claude',
+  check_for_updates: true,
 };
 
 export function asAppError(e: unknown): AppError {

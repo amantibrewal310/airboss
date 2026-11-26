@@ -85,6 +85,9 @@ export const api = {
   quickaddResize: (height: number) => call('quickadd_resize', { height }),
   showMain: (view: string | null, task: TaskId | null = null, needsKey: NeedsKey | null = null) =>
     call('show_main', { view, task, needsKey }),
+  updateStatus: () => call('update_status', none),
+  checkForUpdates: () => call('check_for_updates', none),
+  installUpdate: () => call('install_update', none),
 };
 
 export type Api = typeof api;

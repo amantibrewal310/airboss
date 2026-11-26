@@ -244,7 +244,7 @@ export function seedDefaults(b: SeedBuilder, name: string, folded: number[]): Mo
     now: NOW,
     connections: CONNECTED,
     availability: { ready: { version: '0.9.4' } },
-    settings: { hotkey: 'Control+Alt+N', open_at_login: true, appearance: 'system', notifications: true, folded, start_agents_in: 'auto', herdr_agent: 'claude' },
+    settings: { hotkey: 'Control+Alt+N', open_at_login: true, appearance: 'system', notifications: true, folded, start_agents_in: 'auto', herdr_agent: 'claude', check_for_updates: true },
     cli: { installed: true, path: '~/.local/bin/airboss', on_path: true },
     agents: { claude: true, codex: false, codex_terminal_id: false },
     t3Projects: [

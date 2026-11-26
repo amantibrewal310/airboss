@@ -14,7 +14,7 @@ use serde::Serialize;
 
 use crate::dto::{
     AppearanceChanged, BackgroundError, ConnectionsChanged, MenuAction, NavOpen, Patch,
-    QuickaddReset, ToastEvent,
+    QuickaddReset, ToastEvent, UpdateStatus,
 };
 use crate::errors::AppError;
 use crate::handlers::{AppCheck, FakeAppCheck};
@@ -37,6 +37,8 @@ pub enum UiEvent {
     ErrorBackground(BackgroundError),
     /// The database broke while the app ran: the full-window database problem state.
     DbUnavailable(AppError),
+    /// The in-app update's status changed (SPEC-updates).
+    UpdateChanged(UpdateStatus),
 }
 
 impl UiEvent {
@@ -53,6 +55,7 @@ impl UiEvent {
             UiEvent::AppearanceChanged(_) => "appearance:changed",
             UiEvent::ErrorBackground(_) => "error:background",
             UiEvent::DbUnavailable(_) => "db:unavailable",
+            UiEvent::UpdateChanged(_) => "update:changed",
         }
     }
 
@@ -72,6 +75,7 @@ impl UiEvent {
             UiEvent::AppearanceChanged(a) => json(a),
             UiEvent::ErrorBackground(e) => json(e),
             UiEvent::DbUnavailable(e) => json(e),
+            UiEvent::UpdateChanged(u) => json(u),
         }
     }
 

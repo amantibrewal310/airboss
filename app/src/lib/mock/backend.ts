@@ -910,6 +910,13 @@ export class MockBackend implements Transport {
       this.emit('nav:open', { view, task, needs_key: needsKey });
       return null;
     },
+
+    // In-app updates (SPEC-updates). Groundwork: nothing to update yet.
+    update_status: () => ({ state: 'idle' }),
+    check_for_updates: () => ({ state: 'idle' }),
+    install_update: () => {
+      throw fail('not_found', "There's no update to install.");
+    },
   };
 
   private place(id: TaskId, parent: TaskId | null, position: number | null) {
