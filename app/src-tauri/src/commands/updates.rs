@@ -6,14 +6,14 @@ use crate::dto::{ToastArgs, ToastEvent, ToastEventAction, ToastTone, UpdateStatu
 use crate::errors::{AppError, AppResult, ErrorCode};
 use crate::shell::UiEvent;
 use crate::state::{AppState, Caller};
-use crate::updates::{Progress, busy};
+use crate::updates::{InstallError, Progress, busy};
 
 /// What Check for Updates… says in a development build.
 pub const MSG_NOT_INSTALLED: &str = "Updates work only in the installed Airboss app.";
 /// `install_update` with nothing to install.
 pub const MSG_NOTHING_TO_INSTALL: &str = "There's no update to install.";
 /// The reason on the card when the updater itself panicked.
-const MSG_UPDATER_BROKE: &str = "The updater stopped with an error.";
+pub const MSG_UPDATER_BROKE: &str = "The updater stopped with an error.";
 
 /// What the update card shows now.
 pub fn update_status(s: &AppState, _c: Caller) -> AppResult<UpdateStatus> {
@@ -42,7 +42,29 @@ pub fn check_for_updates(s: &AppState, _c: Caller) -> AppResult<UpdateStatus> {
         return Ok(s.update_status());
     }
     s.checked_now();
-    match updater.check() {
+    let checked = updater.check();
+    // The outcome lands in one step under the status lock. An install that started while
+    // this check ran owns the card by now: no toast then, only the status.
+    let mut quiet = false;
+    s.update_if(|now| {
+        if busy(now) {
+            quiet = true;
+            return None;
+        }
+        match &checked {
+            Err(_) => None,
+            Ok(None) => Some(UpdateStatus::Idle),
+            // Asked for by hand: a failure for this version gives way to Update and restart.
+            Ok(Some(r)) => Some(UpdateStatus::Available {
+                version: r.version.clone(),
+                notes_url: crate::updates::notes_url(&r.version),
+            }),
+        }
+    });
+    if quiet {
+        return Ok(s.update_status());
+    }
+    match checked {
         Err(reason) => {
             log::warn!("update check failed: {reason}");
             toast(
@@ -52,39 +74,25 @@ pub fn check_for_updates(s: &AppState, _c: Caller) -> AppResult<UpdateStatus> {
                 Vec::new(),
             );
         }
-        Ok(None) => {
-            s.found_update(None);
-            toast(
-                s,
-                format!(
-                    "You have the newest Airboss, {}.",
-                    env!("CARGO_PKG_VERSION")
-                ),
-                ToastTone::Info,
-                Vec::new(),
-            );
-        }
-        Ok(Some(release)) => {
-            // Asked for by hand: a failure for this version gives way to Update and restart.
-            let offered = s.update_if(|now| {
-                (!busy(now)).then(|| UpdateStatus::Available {
-                    version: release.version.clone(),
-                    notes_url: crate::updates::notes_url(&release.version),
-                })
-            });
-            if offered.is_some() {
-                toast(
-                    s,
-                    format!("Airboss {} is available.", release.version),
-                    ToastTone::Info,
-                    vec![ToastEventAction {
-                        label: "Update and restart".into(),
-                        command: "install_update".into(),
-                        args: ToastArgs::Empty {},
-                    }],
-                );
-            }
-        }
+        Ok(None) => toast(
+            s,
+            format!(
+                "You have the newest Airboss, {}.",
+                env!("CARGO_PKG_VERSION")
+            ),
+            ToastTone::Info,
+            Vec::new(),
+        ),
+        Ok(Some(release)) => toast(
+            s,
+            format!("Airboss {} is available.", release.version),
+            ToastTone::Info,
+            vec![ToastEventAction {
+                label: "Update and restart".into(),
+                command: "install_update".into(),
+                args: ToastArgs::Empty {},
+            }],
+        ),
     }
     Ok(s.update_status())
 }
@@ -132,7 +140,7 @@ pub fn install_update(s: &AppState, _c: Caller) -> AppResult<()> {
             });
         })
     }))
-    .unwrap_or_else(|_| Err(MSG_UPDATER_BROKE.into()));
+    .unwrap_or_else(|_| Err(InstallError::Failed(MSG_UPDATER_BROKE.into())));
 
     match installed {
         Ok(()) => {
@@ -141,9 +149,28 @@ pub fn install_update(s: &AppState, _c: Caller) -> AppResult<()> {
             // No lock of the state is held here: restart stops the state as quit does.
             s.shell.restart();
         }
-        Err(message) => {
+        Err(InstallError::Failed(message)) => {
             log::warn!("couldn't update to Airboss {version}: {message}");
             s.set_update(UpdateStatus::Failed { version, message });
+        }
+        // The manifest moved on since the card was drawn: offer what it offers now, so the
+        // next Update and restart installs that.
+        Err(InstallError::NotOffered(Some(newer))) => {
+            log::info!(
+                "Airboss {version} is no longer offered; {} is",
+                newer.version
+            );
+            s.set_update(UpdateStatus::Available {
+                notes_url: crate::updates::notes_url(&newer.version),
+                version: newer.version,
+            });
+        }
+        Err(InstallError::NotOffered(None)) => {
+            log::info!("Airboss {version} is no longer offered");
+            s.set_update(UpdateStatus::Failed {
+                message: format!("Airboss {version} isn't offered any more."),
+                version,
+            });
         }
     }
     Ok(())

@@ -179,6 +179,9 @@ pub mod ids {
     pub const COPY_AGENT_NOTE: &str = "copy_agent_note";
     pub const COPY_SETUP: &str = "copy_setup_command";
     pub const REPORT_PROBLEM: &str = "report_problem";
+    /// Not answered by Rust: like the View and Task items it goes to the window as
+    /// `menu:action`, so the window runs its own "Check for updates", which also shows again
+    /// a card hidden with Later. The check toasts its outcome over the window.
     pub const CHECK_FOR_UPDATES: &str = "check_for_updates";
 }
 
