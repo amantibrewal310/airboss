@@ -44,7 +44,7 @@ pub enum Inverse {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry {
     pub id: u64,
-    /// e.g. "Mark done 144".
+    /// e.g. "Mark done #144".
     pub label: String,
     /// Applied in order.
     pub inverse: Vec<Inverse>,
@@ -192,9 +192,9 @@ fn is_busy(e: &airboss_core::Error) -> bool {
             || text.contains("database table is locked"))
 }
 
-/// "153", "153 and 154", "153, 154 and 155".
+/// "#153", "#153 and #154", "#153, #154 and #155".
 fn ids_text(ids: &[TaskId]) -> String {
-    let all: Vec<String> = ids.iter().map(|t| t.0.to_string()).collect();
+    let all: Vec<String> = ids.iter().map(|t| format!("#{}", t.0)).collect();
     match all.split_last() {
         Some((last, [])) => last.clone(),
         Some((last, rest)) => format!("{} and {last}", rest.join(", ")),
@@ -202,7 +202,7 @@ fn ids_text(ids: &[TaskId]) -> String {
     }
 }
 
-/// "153 was already accepted; left as is", "153 and 154 were already accepted and 155
+/// "#153 was already accepted; left as is", "#153 and #154 were already accepted and #155
 /// already dropped; left as is": the proposals a reject found no longer proposed. A proposal
 /// that's open or done was accepted; one that's dropped was rejected or dropped elsewhere.
 pub fn skipped_text(skipped: &[(TaskId, Status)]) -> Option<String> {
@@ -226,7 +226,7 @@ pub fn skipped_text(skipped: &[(TaskId, Status)]) -> Option<String> {
     Some(format!("{text}; left as is"))
 }
 
-/// "Couldn't reject 153: the database stayed busy.", with Retry (the same reject again).
+/// "Couldn't reject #153: the database stayed busy.", with Retry (the same reject again).
 fn reject_failed(ids: Vec<TaskId>, reason: Option<String>, why: &str) -> ToastEvent {
     ToastEvent {
         text: format!("Couldn't reject {}: {why}", ids_text(&ids)),
@@ -386,15 +386,15 @@ mod tests {
         assert_eq!(skipped_text(&[]), None);
         assert_eq!(
             skipped_text(&[(t(153), Status::Done)]).unwrap(),
-            "153 was already accepted; left as is"
+            "#153 was already accepted; left as is"
         );
         assert_eq!(
             skipped_text(&[(t(1), Status::Dropped), (t(2), Status::Dropped)]).unwrap(),
-            "1 and 2 were already dropped; left as is"
+            "#1 and #2 were already dropped; left as is"
         );
         assert_eq!(
             skipped_text(&[(t(1), Status::Todo), (t(2), Status::Dropped)]).unwrap(),
-            "1 was already accepted and 2 already dropped; left as is"
+            "#1 was already accepted and #2 already dropped; left as is"
         );
     }
 

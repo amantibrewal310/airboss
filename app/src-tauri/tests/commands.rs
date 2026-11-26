@@ -244,7 +244,7 @@ fn task_detail_skips_prepare_for_closed_tasks_and_says_a_gone_task_is_gone() {
     assert!(!app.launch.calls().iter().any(|c| c.starts_with("prepare")));
     assert_eq!(
         err_code(detail::task_detail(&app.state, M, TaskId(999), 1, 30)),
-        (ErrorCode::NotFound, "Task 999 no longer exists.".into())
+        (ErrorCode::NotFound, "Task #999 no longer exists.".into())
     );
     // T3 missing: no prepared, and no error either (the footer and availability say it).
     let open = app.add("Open", None);
@@ -380,7 +380,7 @@ fn create_task_from_quick_add_shows_the_main_window_when_a_link_fails() {
     });
     assert_eq!(
         toast.unwrap().text,
-        format!("Created {}, but couldn't link nope", out.id.0)
+        format!("Created #{}, but couldn't link nope", out.id.0)
     );
 }
 
@@ -475,7 +475,7 @@ fn rename_notes_note_and_branch_return_their_patches() {
     );
     assert_eq!(
         err_code(tasks::rename_task(&app.state, M, TaskId(404), "x".into())).1,
-        "Task 404 no longer exists."
+        "Task #404 no longer exists."
     );
 }
 
@@ -486,9 +486,12 @@ fn set_status_and_toggle_done_return_a_patch_and_an_undo_entry() {
     app.sync_vm();
     let r = tasks::set_status(&app.state, M, t, Status::Doing, None).unwrap();
     assert_eq!(r.patch.as_ref().unwrap().upserts[0].status, Status::Doing);
-    assert_eq!(r.undo.unwrap().label, format!("Set {} to In progress", t.0));
+    assert_eq!(
+        r.undo.unwrap().label,
+        format!("Set #{} to In progress", t.0)
+    );
     let r = tasks::toggle_done(&app.state, M, t).unwrap();
-    assert_eq!(r.undo.unwrap().label, format!("Mark done {}", t.0));
+    assert_eq!(r.undo.unwrap().label, format!("Mark done #{}", t.0));
     let r = tasks::toggle_done(&app.state, M, t).unwrap();
     assert_eq!(
         r.patch.as_ref().unwrap().upserts[0].status,
@@ -579,7 +582,7 @@ fn repos_link_and_unlink() {
     assert!(p.upserts[0].repos.is_empty());
     assert_eq!(
         err_code(tasks::unlink_repo(&app.state, M, t, web)).1,
-        format!("That repo isn't linked to {}.", t.0)
+        format!("That repo isn't linked to #{}.", t.0)
     );
 }
 
@@ -599,7 +602,10 @@ fn dependencies_and_their_errors() {
         err_code(tasks::add_dependency(&app.state, M, b, a)),
         (
             ErrorCode::Loop,
-            format!("That would make a loop: {} already waits on {}.", a.0, b.0)
+            format!(
+                "That would make a loop: #{} already waits on #{}.",
+                a.0, b.0
+            )
         )
     );
     assert_eq!(
@@ -899,21 +905,21 @@ fn the_toast_table_for_every_report() {
                 vec![]
             )
         ),
-        "Started 2 threads for 142 on task-142-booking-flow"
+        "Started 2 threads for #142 on task-142-booking-flow"
     );
     assert_eq!(
         text(
             Mode::DoIt,
             &rep(vec![started("a", None, Mode::DoIt)], vec![], vec![])
         ),
-        "Started a research thread for 142"
+        "Started a research thread for #142"
     );
     assert_eq!(
         text(
             Mode::PlanIt,
             &rep(vec![started("a", None, Mode::PlanIt)], vec![], vec![])
         ),
-        "Started a planning thread for 142. Its steps become subtasks when you settle the plan."
+        "Started a planning thread for #142. Its steps become subtasks when you settle the plan."
     );
     let skipped = launch::report_toast(
         t,
@@ -923,7 +929,7 @@ fn the_toast_table_for_every_report() {
     );
     assert_eq!(
         skipped.text,
-        "142 already has threads in booking-web and booking-api"
+        "#142 already has threads in booking-web and booking-api"
     );
     assert_eq!(skipped.actions[0].command, "do_it");
     assert_eq!(
@@ -947,7 +953,7 @@ fn the_toast_table_for_every_report() {
         ),
         &name,
     );
-    assert_eq!(failed.text, "Couldn't start 142: t3 said no");
+    assert_eq!(failed.text, "Couldn't start #142: t3 said no");
     assert_eq!(failed.actions[0].label, "Retry");
 }
 
@@ -1000,7 +1006,7 @@ fn dismiss_snooze_and_restore_go_through_attention() {
     app.state.catch_up_services();
     let w = needs::needs_dismiss(&app.state, M, "q".into()).unwrap();
     assert!(w.patch.is_none());
-    assert_eq!(w.undo.unwrap().label, format!("Dismiss {}", t.0));
+    assert_eq!(w.undo.unwrap().label, format!("Dismiss #{}", t.0));
     needs::needs_snooze(&app.state, M, "quiet".into(), None).unwrap();
     assert!(
         app.attention
@@ -1502,7 +1508,7 @@ fn commands_run_by_name_with_json_as_invoke_sends_them() {
         )
         .unwrap();
     assert_eq!(r["patch"]["upserts"][0]["status"], "in_review");
-    assert_eq!(r["undo"]["label"], format!("Set {id} to In review"));
+    assert_eq!(r["undo"]["label"], format!("Set #{id} to In review"));
     let other = app.add("Other", None);
     app.call(
         "add_dependency",

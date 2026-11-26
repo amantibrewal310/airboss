@@ -84,7 +84,7 @@ fn commands_go_through_invoke_and_each_window_only_gets_its_own() {
     )
     .unwrap_err();
     assert_eq!(err["code"], "not_found");
-    assert_eq!(err["message"], "Task 999 no longer exists.");
+    assert_eq!(err["message"], "Task #999 no longer exists.");
 
     // Quick add may create a task but not read the whole tree.
     let created: Value = get_ipc_response(

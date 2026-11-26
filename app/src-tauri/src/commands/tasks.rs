@@ -114,7 +114,7 @@ pub fn create_task(s: &AppState, c: Caller, task: CreateTaskInput) -> AppResult<
             c,
             id,
             warning(
-                format!("Created {}, but couldn't link {}", id.0, first.text),
+                format!("Created #{}, but couldn't link {}", id.0, first.text),
                 id,
             ),
         );
@@ -130,7 +130,7 @@ pub fn create_task(s: &AppState, c: Caller, task: CreateTaskInput) -> AppResult<
             // The task exists; say why it didn't start, wherever the user is.
             if c != Caller::QuickAdd && e.code != ErrorCode::AlreadyStarting {
                 s.shell.emit(UiEvent::Toast(warning(
-                    format!("Couldn't start {}: {}", id.0, e.message),
+                    format!("Couldn't start #{}: {}", id.0, e.message),
                     id,
                 )));
             }
@@ -174,14 +174,14 @@ pub fn edit_notes(s: &AppState, _c: Caller, id: TaskId, body: Option<String>) ->
     s.after_write()
 }
 
-/// The undo label for a status change: "Mark done 144", "Drop 144", "Reopen 144" …
+/// The undo label for a status change: "Mark done #144", "Drop #144", "Reopen #144" …
 fn undo_label(id: TaskId, from: Status, to: Status) -> String {
     match to {
-        Status::Done => format!("Mark done {}", id.0),
-        Status::Dropped => format!("Drop {}", id.0),
-        _ if !open(from) => format!("Reopen {}", id.0),
-        Status::Blocked => format!("Mark blocked {}", id.0),
-        to => format!("Set {} to {}", id.0, status_label(to)),
+        Status::Done => format!("Mark done #{}", id.0),
+        Status::Dropped => format!("Drop #{}", id.0),
+        _ if !open(from) => format!("Reopen #{}", id.0),
+        Status::Blocked => format!("Mark blocked #{}", id.0),
+        to => format!("Set #{} to {}", id.0, status_label(to)),
     }
 }
 
@@ -337,7 +337,7 @@ pub fn reject_proposals(
             Some(_) => {
                 return Err(AppError::new(
                     ErrorCode::NotAllowed,
-                    format!("{} isn't a proposal any more.", id.0),
+                    format!("#{} isn't a proposal any more.", id.0),
                 ));
             }
             None => return Err(AppError::task_gone(*id)),
@@ -349,7 +349,7 @@ pub fn reject_proposals(
         Instant::now() + s.config.reject_delay,
     );
     let label = match ids.as_slice() {
-        [one] => format!("Reject {}", one.0),
+        [one] => format!("Reject #{}", one.0),
         many => format!("Reject {} proposals", many.len()),
     };
     let after = s.latest_event();
@@ -385,7 +385,7 @@ pub fn move_task(
         });
     }
     let undo = s.push_undo(
-        format!("Move {}", id.0),
+        format!("Move #{}", id.0),
         vec![Inverse::Move {
             id,
             parent: row.parent,
@@ -673,7 +673,7 @@ mod tests {
         s.catch_up().unwrap();
         // The first inverse works; the second names a task that's gone.
         s.push_undo(
-            "Drop 1".into(),
+            "Drop #1".into(),
             vec![
                 Inverse::SetStatus {
                     id: t,
@@ -692,7 +692,7 @@ mod tests {
         let r = undo(&s, Caller::Main, None).unwrap();
         assert_eq!(
             r.message,
-            "Partly undid “Drop 1”: Task 999 no longer exists."
+            "Partly undid “Drop #1”: Task #999 no longer exists."
         );
         assert!(r.patch.unwrap().upserts.iter().any(|row| row.id == t));
         assert_eq!(store.lock().unwrap().task(t).unwrap().status, Status::Todo);
