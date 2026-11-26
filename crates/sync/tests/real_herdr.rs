@@ -16,7 +16,7 @@ use std::process::Command;
 use std::sync::mpsc::channel;
 use std::time::{Duration, Instant, SystemTime};
 
-use airboss_services::ThreadState;
+use airboss_services::{RequestKind, ThreadState};
 use airboss_sync::T3Msg;
 use airboss_sync::fake::TempDir;
 use airboss_sync::herdr::{self, HerdrFeed, HerdrSource, HerdrTable, HerdrUpdate, RealHerdr};
@@ -37,10 +37,12 @@ impl Drop for Probe {
 }
 
 const SCRIPT: &str = r#"#!/bin/sh
-# Reports each status Decision 6 maps, as a program does: OSC 7501, `key=value` pairs.
+# Reports each status Decision 6 maps, as a program does: OSC 7501, `key=value` pairs
+# separated by `:`.
 sleep 1
 printf '\033]7501;state=working\007'; sleep 1
-printf '\033]7501;state=blocked:kind=question\007'; sleep 1
+# msg is base64: "trust this folder".
+printf '\033]7501;state=blocked:kind=permission:msg=dHJ1c3QgdGhpcyBmb2xkZXI=\007'; sleep 1
 printf '\033]7501;state=error\007'; sleep 1
 printf '\033]7501;state=done\007'; sleep 1
 exit 0
@@ -89,6 +91,7 @@ fn the_real_hc_reports_each_state_of_a_probe_terminal() {
     let _probe = Probe(address.clone());
 
     let mut seen: Vec<ThreadState> = Vec::new();
+    let mut request = None;
     let deadline = Instant::now() + Duration::from_secs(20);
     while Instant::now() < deadline {
         let Ok(msg) = rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) else {
@@ -107,10 +110,22 @@ fn the_real_hc_reports_each_state_of_a_probe_terminal() {
         if seen.last() != Some(&state) {
             seen.push(state);
         }
+        if state == ThreadState::NeedsMe {
+            request = herdr::views(&table, std::slice::from_ref(&address))[0]
+                .request
+                .clone();
+        }
         if state == ThreadState::Gone && seen.len() > 1 {
             break;
         }
     }
+    let request = request.expect("a request while blocked");
+    assert_eq!(
+        (request.kind, request.text.as_str()),
+        (RequestKind::Approval, "trust this folder"),
+        "kind and msg from OSC 7501"
+    );
+    assert!(request.id.starts_with(&format!("herdr/{address}/")));
     let views = herdr::views(&table, std::slice::from_ref(&address));
     assert_eq!(
         views[0].title.as_deref(),

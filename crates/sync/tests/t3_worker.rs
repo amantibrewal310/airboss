@@ -809,9 +809,15 @@ fn each_herdr_state_maps_as_decision_6_says() {
         ]
     );
     let v = rig.herdr_view("t2").unwrap();
+    let request = v.request.clone().unwrap();
     assert_eq!(
-        v.request, None,
-        "Herdr says a person is needed, not what for"
+        (request.id.as_str(), request.kind, request.text.as_str()),
+        (
+            "herdr/t2/1795600000000",
+            RequestKind::Question,
+            "Waiting on you in Herdr."
+        ),
+        "no kind or message: a plain question"
     );
     assert_eq!(v.title.as_deref(), Some("title of t2"));
     assert_eq!(v.project_path.as_deref(), Some("/work/t2"));
