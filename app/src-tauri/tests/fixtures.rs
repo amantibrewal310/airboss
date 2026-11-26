@@ -505,6 +505,7 @@ fn recorded_reads_and_scripted_writes() {
             json!({ "id": 142, "req": 1, "historyLimit": 30 }),
         ),
         ("run_map", json!({ "id": 200, "req": 1 })),
+        ("update_status", json!({})),
     ] {
         let out = airboss_app::ipc::dispatch(&app.state, Caller::Main, command, args).unwrap();
         reads.insert(command.into(), out);

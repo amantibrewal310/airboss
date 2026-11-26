@@ -904,12 +904,11 @@ pub fn on_menu_event(app: &AppHandle<Wry>, event: MenuEvent) {
         ids::COPY_SETUP => menu_command(app, Some("Copied the setup command."), |s| {
             crate::commands::app::copy_text(s, Caller::Other, CopyWhat::SetupCommand)
         }),
-        // The check toasts its own outcome, over the window it shows.
+        // Forwarded, so the window runs its own "Check for updates": that also shows again a
+        // card hidden with Later. The check toasts its outcome over the window.
         ids::CHECK_FOR_UPDATES => {
             show_main_window(app);
-            menu_command(app, None, |s| {
-                crate::commands::updates::check_for_updates(s, Caller::Other).map(|_| ())
-            });
+            emit(app, UiEvent::MenuAction(MenuAction { command: id }));
         }
         // The browser coming forward with the form says it worked.
         ids::REPORT_PROBLEM => menu_command(app, None, |s| {
