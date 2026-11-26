@@ -47,6 +47,9 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --check
 
+# History, from the repo root
+sh scripts/check-no-ai-attribution.sh    # fails on an AI Co-Authored-By trailer or "Generated with" footer in any commit
+
 # The interface, from app/
 pnpm check             # svelte-check and tsc; warnings fail
 pnpm test              # Vitest: unit tests in Node, component tests in WebKit
@@ -108,7 +111,7 @@ A small fix doesn't need a new spec, but it still starts with a failing test.
 
 - Plain messages: a short summary line saying what the change does, such as "Watch T3's WAL with kqueue, and re-arm it". Add a body only when the why isn't obvious.
 - One logical change per commit, with its tests.
-- **No AI attribution.** No "Co-Authored-By" lines for tools or assistants, and no "Generated with" footers, in commits or pull requests.
+- **No AI attribution.** No "Co-Authored-By" lines for tools or assistants, and no "Generated with" footers, in commits or pull requests. `scripts/check-no-ai-attribution.sh` checks this; as a commit-msg hook it is `sh scripts/check-no-ai-attribution.sh --file "$1"`.
 - Work on a branch, and merge to `main` only when every check passes.
 
 ## Releasing
