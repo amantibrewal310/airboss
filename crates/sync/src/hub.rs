@@ -240,7 +240,7 @@ const GITHUB_DETAIL: &str = "Pull requests sync every 5 minutes. A merged PR fin
 const T3_DETAIL: &str = "Shows which agents are working or waiting on you.";
 const HERDR_DETAIL: &str = "Shows which agents in Herdr are working or waiting on you.";
 
-/// "Herdr": no row while `hc` isn't installed (or before the first try), "Live state" while
+/// "Herdr": no row while `hc` isn't installed (or before the first try), "Connected" while
 /// `hc events` runs, and broken after its restarts keep failing.
 fn herdr_row(h: &Health) -> Option<Connection> {
     let row = |ok: bool, state: &str, fix: Option<String>| Connection {
@@ -253,7 +253,7 @@ fn herdr_row(h: &Health) -> Option<Connection> {
     match h.state {
         HealthState::Off => None,
         HealthState::Ok if h.stale => Some(row(true, "Checking", None)),
-        HealthState::Ok => Some(row(true, "Live state", None)),
+        HealthState::Ok => Some(row(true, "Connected", None)),
         HealthState::Broken | HealthState::RateLimited => Some(row(
             false,
             "Herdr's status can't be read",
@@ -330,7 +330,7 @@ fn t3_row(t: &ThreadsPart) -> Connection {
         ),
         HealthState::Broken | HealthState::RateLimited => row(
             false,
-            format!("Live state broken since {}", clock_time(t.t3.since)),
+            format!("Not updating since {}", clock_time(t.t3.since)),
             t.t3.detail.clone(),
         ),
         HealthState::Ok => match (&t.watch_error, &t.environment) {
@@ -346,7 +346,7 @@ fn t3_row(t: &ThreadsPart) -> Connection {
                         .into(),
                 ),
             ),
-            (None, Some(_)) => row(true, "Live state".into(), None),
+            (None, Some(_)) => row(true, "Connected".into(), None),
         },
     }
 }
@@ -436,7 +436,7 @@ mod tests {
         let row = herdr_row(&h).unwrap();
         assert_eq!(
             (row.ok, row.state.as_str(), row.fix),
-            (true, "Live state", None)
+            (true, "Connected", None)
         );
         h.set(HealthState::Broken, "hc events stopped", UNIX_EPOCH);
         let row = herdr_row(&h).unwrap();

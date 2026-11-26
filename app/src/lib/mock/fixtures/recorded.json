@@ -24,7 +24,7 @@
           "fix": null,
           "name": "T3 Code",
           "ok": true,
-          "state": "Live state"
+          "state": "Connected"
         },
         {
           "detail": "Pull requests sync every 5 minutes. A merged PR finishes its task.",

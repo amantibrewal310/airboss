@@ -50,7 +50,7 @@ Do it and Plan it run T3 Code's CLI at `~/.t3/bin/t3`. Live thread state comes f
 | "&lt;repo&gt; is still starting. Check T3, or choose Start again." | A start didn't answer. Airboss links the thread when T3 shows it. If no thread appears, choose Start again. |
 | The T3 Code row says Can't open threads | T3's `environment-id` file is missing or isn't a UUID, so Open thread can't open T3. Opening T3 once writes it again. |
 
-**The T3 Code row says "Live state broken since 14:02".** T3 Code changed its database, and Airboss found something it doesn't know: a missing table or column, an unknown run status or request kind, or a missing JSON key. Rather than guess, it stops reading T3, keeps the last known thread state marked "May be out of date", and says what it found in the popover, for example `unknown T3 run status "paused"`. It tries again on T3's next write and every hour, so it recovers by itself if the change was temporary. If it doesn't, Airboss needs updating for the new T3 version. To see exactly which check fails, run from the repo:
+**The T3 Code row says "Not updating since 14:02".** T3 Code changed its database, and Airboss found something it doesn't know: a missing table or column, an unknown run status or request kind, or a missing JSON key. Rather than guess, it stops reading T3, keeps the last known thread state marked "May be out of date", and says what it found in the popover, for example `unknown T3 run status "paused"`. It tries again on T3's next write and every hour, so it recovers by itself if the change was temporary. If it doesn't, Airboss needs updating for the new T3 version. To see exactly which check fails, run from the repo:
 
 ```sh
 cargo test -p airboss-sync --release --test real_t3 -- --ignored --nocapture

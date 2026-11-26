@@ -94,7 +94,7 @@ hc --version, herdr-app --version              # availability
 - A `HerdrSource` trait, with a fake and a real one. The real one follows `hc events --json` as a child process and treats each line's `terminals` as upserts by address. A line can be a snapshot or a change; handle both. A terminal's `status` is `null` or `{app, state}`. If the child exits, it's restarted with backoff (1 s, doubling to 60 s), and the source reads again on wake.
 - The T3-and-Claude worker reports a `ThreadView` for every `herdr_terminal` link: the state as in Decision 6, its `title`, `project_path` (cwd) and `last_activity_at` (`status_ms`). A link whose terminal isn't listed is `Gone`. Untracked Herdr terminals aren't reported.
 - **Migration 2:** `observed_threads.source` and the health table's `source` allow `'herdr'`. SQLite can't widen a CHECK in place, so rebuild them as core's migration 5 rebuilt `links`.
-- **Health:** a "Herdr" connection. It's off with no row when `hc` isn't installed. It's ok as "Live state" while the stream runs, and broken as "Herdr's status can't be read" after three failed restarts.
+- **Health:** a "Herdr" connection. It's off with no row when `hc` isn't installed. It's ok as "Connected" while the stream runs, and broken as "Herdr's status can't be read" after three failed restarts.
 
 ### `app`
 

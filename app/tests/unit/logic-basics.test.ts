@@ -108,9 +108,9 @@ describe('time', () => {
 describe('connections', () => {
   const c = (name: string, ok: boolean, state: string): Connection => ({ name, ok, state, detail: `${name} detail`, fix: ok ? null : 'fix it' });
   it('merges rows with the same name, the worst state winning', () => {
-    const merged = mergeConnections([c('T3 Code', true, 'Connected'), c('GitHub', true, 'Signed in'), c('T3 Code', false, 'Live state broken since 14:02')], 'unknown');
+    const merged = mergeConnections([c('T3 Code', true, 'Connected'), c('GitHub', true, 'Signed in'), c('T3 Code', false, 'Not updating since 14:02')], 'unknown');
     expect(merged.map((m) => [m.name, m.ok, m.state])).toEqual([
-      ['T3 Code', false, 'Live state broken since 14:02'],
+      ['T3 Code', false, 'Not updating since 14:02'],
       ['GitHub', true, 'Signed in'],
     ]);
   });

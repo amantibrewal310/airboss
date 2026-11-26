@@ -476,7 +476,7 @@ fn recorded_reads_and_scripted_writes() {
         Connection {
             name: "T3 Code".into(),
             ok: true,
-            state: "Live state".into(),
+            state: "Connected".into(),
             detail: "Shows which agents are working or waiting on you.".into(),
             fix: None,
         },

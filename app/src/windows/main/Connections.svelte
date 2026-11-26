@@ -27,7 +27,11 @@
 
 <div class="conn" bind:this={root} onkeydown={keydown} role="presentation">
   {#if open}
-    <div class="pop" role="dialog" aria-label="Connections">
+    <div class="pop" role="dialog" aria-labelledby="conn-title" aria-describedby="conn-what">
+      <div class="head">
+        <b id="conn-title">Connections</b>
+        <span id="conn-what">The tools Airboss works with. Green ones work; orange ones need setting up.</span>
+      </div>
       {#each app.conn.merged as c (c.name)}
         <div class="ci" class:off={!c.ok}>
           <i aria-hidden="true"></i>
@@ -117,6 +121,24 @@
       opacity: 0;
       transform: translateY(4px);
     }
+  }
+  .head {
+    padding: 8px 8px 6px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 4px;
+  }
+  .head b {
+    display: block;
+    font-weight: 600;
+    font-size: var(--fs-control);
+    line-height: 18px;
+  }
+  .head span {
+    display: block;
+    font-size: var(--fs-meta);
+    line-height: 16px;
+    color: var(--text-3);
+    margin-top: 2px;
   }
   .ci {
     display: flex;

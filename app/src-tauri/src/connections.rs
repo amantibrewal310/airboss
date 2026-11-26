@@ -229,7 +229,7 @@ pub(crate) fn merged(
     let herdr = services.launch.herdr_availability();
     let launcher = LauncherKind::from(settings.launcher(&availability, &herdr));
     // Herdr's own row goes first, so its "Ready" and version win over another ok "Herdr" row
-    // (sync's "Live state"); a broken one still wins, as merging keeps the worst.
+    // (sync's "Connected"); a broken one still wins, as merging keeps the worst.
     let mut rows: Vec<Connection> = herdr_row(
         &herdr,
         settings.start_agents_in == StartAgentsIn::Herdr,

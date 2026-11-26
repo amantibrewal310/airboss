@@ -170,7 +170,7 @@ fn the_first_pass_reads_linked_threads_untracked_threads_and_projects() {
     assert_eq!(names, vec!["web", "ui", "api"]);
     assert!(snap.checked_at.is_some());
     assert!(rig.t3_connection().ok);
-    assert_eq!(rig.t3_connection().state, "Live state");
+    assert_eq!(rig.t3_connection().state, "Connected");
     assert!(rig.hub.environment().is_some());
 }
 
@@ -270,7 +270,7 @@ fn an_unknown_value_breaks_t3_sync_and_recovery_clears_it() {
     rig.send(T3Msg::Wal, at(5));
     let c = rig.t3_connection();
     assert!(!c.ok);
-    assert_eq!(c.state, "Live state broken since 12:00 UTC");
+    assert_eq!(c.state, "Not updating since 12:00 UTC");
     assert!(c.fix.unwrap().contains("paused"));
     let v = rig.view("t-run").unwrap();
     assert!(v.stale, "the last known state stays, marked stale");
@@ -843,7 +843,7 @@ fn each_herdr_state_maps_as_decision_6_says() {
     assert_eq!(tasks.len(), 1);
     assert_eq!(
         rig.herdr_connection().map(|c| (c.ok, c.state)),
-        Some((true, "Live state".to_string()))
+        Some((true, "Connected".to_string()))
     );
 }
 
@@ -1058,7 +1058,7 @@ fn hc_events_restarts_with_backoff_and_is_broken_after_three_failed_restarts() {
     // A snapshot from the restarted stream: live again.
     rig.herdr_line(&herdr_snapshot(2, &[("t1", "live", Some("done"))]), now);
     let row = rig.herdr_connection().unwrap();
-    assert_eq!((row.ok, row.state.as_str()), (true, "Live state"));
+    assert_eq!((row.ok, row.state.as_str()), (true, "Connected"));
     assert_eq!(rig.herdr_state("t1"), Some(ThreadState::Idle));
     assert!(!rig.herdr_view("t1").unwrap().stale);
 
@@ -1241,7 +1241,7 @@ fn streams_that_deliver_their_snapshot_never_add_up_to_broken() {
         assert!(rig.herdr.running(), "restarted after 1 s (round {seq})");
     }
     let row = rig.herdr_connection().unwrap();
-    assert_eq!((row.ok, row.state.as_str()), (true, "Live state"));
+    assert_eq!((row.ok, row.state.as_str()), (true, "Connected"));
 }
 
 #[test]

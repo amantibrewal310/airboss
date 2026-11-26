@@ -442,7 +442,7 @@ fn herdr_lines_reach_the_snapshot_and_shutdown_stops_hc_events() {
         .into_iter()
         .find(|c| c.name == "Herdr")
         .unwrap();
-    assert_eq!((row.ok, row.state.as_str()), (true, "Live state"));
+    assert_eq!((row.ok, row.state.as_str()), (true, "Connected"));
     assert_eq!(sync.thread_url(&herdr_key), None);
     sync.shutdown();
     assert!(!herdr.running(), "no hc events child after shutdown");

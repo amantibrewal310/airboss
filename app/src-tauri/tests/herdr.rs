@@ -288,7 +288,7 @@ fn the_herdr_row_shows_when_herdr_is_installed_or_chosen() {
     app.sync.set_connections(vec![Connection {
         name: "T3 Code".into(),
         ok: true,
-        state: "Live state".into(),
+        state: "Connected".into(),
         detail: "threads".into(),
         fix: None,
     }]);
