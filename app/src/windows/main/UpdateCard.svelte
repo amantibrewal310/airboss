@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import Button from '../../lib/components/Button.svelte';
   import Icon from '../../lib/components/Icon.svelte';
   import { focusables } from '../../lib/components/trap';
@@ -34,26 +34,33 @@
     void app.installUpdate();
   }
 
-  /** Later hides the card; focus moves on to the next control (the connections line), never to <body>. */
-  async function later() {
-    const had = !!box?.contains(document.activeElement);
-    const side = box?.closest('aside');
-    const next = side && box ? focusables(side).find((el) => !box!.contains(el) && !!(box!.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING)) : undefined;
-    app.updates.hide();
-    if (!had) return;
-    await tick();
-    if (next?.isConnected) next.focus({ preventScroll: true });
-    else app.focusHome();
-  }
+  /**
+   * The card goes (Later, or the status turns idle) while focus is in it: focus moves on to the
+   * next control after it (the connections line), never to <body>. Runs before the DOM updates,
+   * while the card is still there to measure from.
+   */
+  $effect.pre(() => {
+    if (card) return;
+    const el = untrack(() => box);
+    if (!el?.contains(document.activeElement)) return;
+    const side = el.closest('aside');
+    const next = side ? focusables(side).find((f) => !el.contains(f) && !!(el.compareDocumentPosition(f) & Node.DOCUMENT_POSITION_FOLLOWING)) : undefined;
+    void tick().then(() => {
+      if (next?.isConnected) next.focus({ preventScroll: true });
+      else app.focusHome();
+    });
+  });
 </script>
 
 <div class="live" aria-live="polite">
   {#if card}
     {@const [before, version, after] = parts(card.title, card.version)}
-    <div class="upd" class:failed={card.kind === 'failed'} role="group" aria-labelledby="update-title" tabindex="-1" bind:this={box} data-update={card.kind}>
+    <div class="upd" class:failed={card.kind === 'failed'} role="group" aria-label={card.title} tabindex="-1" bind:this={box} data-update={card.kind}>
       <div class="head">
         <span class="ic">{#if card.kind === 'failed'}<Icon name="warn" size={14} />{:else}<Icon name="spark" size={14} />{/if}</span>
-        <p class="t" id="update-title">{before}{#if version}<span class="v">{version}</span>{/if}{after}</p>
+        <!-- Shown with the version kept whole; read as one plain sentence (split text can lose its space in WebKit's accessibility tree). -->
+        <p class="t" id="update-title" aria-hidden="true">{before}{#if version}<span class="v">{version}</span>{/if}{after}</p>
+        <span class="sr">{card.title}</span>
       </div>
       {#if card.kind === 'downloading'}
         <div class="prog">
@@ -76,14 +83,18 @@
       {#if card.kind === 'available'}
         {@const notes = card.notesUrl}
         <div class="acts">
-          <Button variant="primary" size="sm" onkeydown={keys} onclick={install}>Update and restart</Button>
-          <Button variant="ghost" size="sm" onkeydown={keys} onclick={() => app.openReleaseNotes(notes)}>What's new</Button>
-          <Button variant="ghost" size="sm" onkeydown={keys} onclick={later}>Later</Button>
+          <div class="row"><Button variant="primary" size="sm" onkeydown={keys} onclick={install}>Update and restart</Button></div>
+          <div class="row">
+            <Button variant="ghost" size="sm" onkeydown={keys} onclick={() => app.openReleaseNotes(notes)}>What's new</Button>
+            <Button variant="ghost" size="sm" onkeydown={keys} onclick={() => app.updates.hide()}>Later</Button>
+          </div>
         </div>
       {:else if card.kind === 'failed'}
         <div class="acts">
-          <Button size="sm" onkeydown={keys} onclick={install}>Try again</Button>
-          <Button variant="ghost" size="sm" onkeydown={keys} onclick={later}>Later</Button>
+          <div class="row">
+            <Button size="sm" onkeydown={keys} onclick={install}>Try again</Button>
+            <Button variant="ghost" size="sm" onkeydown={keys} onclick={() => app.updates.hide()}>Later</Button>
+          </div>
         </div>
       {/if}
     </div>
@@ -96,6 +107,7 @@
     flex: none;
   }
   .upd {
+    position: relative;
     margin: 0 0 8px;
     padding: 9px 10px 10px;
     border-radius: var(--r-lg);
@@ -196,8 +208,17 @@
   }
   .acts {
     display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-left: 22px;
+  }
+  .row {
+    display: flex;
     flex-wrap: wrap;
     gap: 4px;
-    padding-left: 22px;
+  }
+  /* A ghost button that starts a row: its text lines up with the content edge, its hit area stays. */
+  .row > :global(.ghost:first-child) {
+    margin-left: -8px;
   }
 </style>
