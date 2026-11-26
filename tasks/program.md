@@ -39,7 +39,8 @@ Then, for the whole product:
 | 5 | Audit fixes: app side + notifications | Done |
 | 6 | Last fixes: repo ids never reused, conditional reject, notifications via UNUserNotificationCenter, output-read window | Done |
 | 6 | Final verification from a clean build | Done: 1,085 Rust + 199 Vitest + 140 Playwright tests; .dmg 5.85 MiB |
-| 6 | Manual checklist by a person (`app/QA.md`) | Waiting for the user |
+| 7 | Independent security check of the link opener, then hardening (signature-verified handler apps) | Done: 1,094 Rust + 200 Vitest + 140 Playwright tests |
+| 7 | Manual checklist by a person (`app/QA.md`) | Waiting for the user |
 | 3 | Integration: one app process hosts sync, launch and attention; the CLI and `airboss mcp` share the database | |
 | 3 | QA: real-user flows, performance targets, light and dark, keyboard-only | |
 | 4 | Polish and bug-fix iterations; README and install instructions | Done |
