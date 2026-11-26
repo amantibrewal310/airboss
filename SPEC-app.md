@@ -65,6 +65,7 @@ Versions are the latest stable on crates.io and npm on 25 Nov 2026, pinned exact
 | `objc2` 0.6.5, `objc2-foundation` 0.3.2, `objc2-app-kit` 0.3.2 | the versions Tauri already links | System accent colour and the wake notification, in one module, `src/macos.rs` |
 | `serde` 1.0.229, `serde_json` 1.0.154, `thiserror` 2.0.21 | | As in `core` |
 | `ts-rs` | 12.0.1 | TypeScript types from the DTOs |
+| `toml` | 1.2.3 (the version already in the lock), features `std`, `parse`, `serde` | Reading `~/.codex/config.toml`, read-only, to see whether Codex has the `airboss` MCP server |
 | `airboss-core`, `airboss-services`, `airboss-sync`, `airboss-launch`, `airboss-attention` | path | |
 
 | npm package | Version | Use |
@@ -424,7 +425,7 @@ Every screen keeps DESIGN.md's layout, sizes and motion. This section adds data,
   |---|---|
   | T3 Code | `launch.availability()` and the T3 connection from `sync`. OK only if both are OK; otherwise the first one that's off. |
   | GitHub | `sync`'s GitHub connection |
-  | Agents | the app: whether the CLI works, and the time of the newest `agent:*` event. "Ready" needs `~/.local/bin/airboss` to lead, through the link, to a non-empty executable file; a dangling link (an Airboss.app that moved) is "Link broken". Ready's line reads "Last report 3m ago", or "No agent has reported yet." The time is tracked from catch-up's events, starting from the newest agent event found at start (the last 256 events, then 4,096, then all), and sent as `agent_report` with `connections:changed` |
+  | Agents | the app: whether the CLI works, whether an agent tool has the `airboss` MCP server, and the time of the newest `agent:*` event. "Ready" needs `~/.local/bin/airboss` to lead, through the link, to a non-empty executable file; a dangling link (an Airboss.app that moved) is "Link broken". It also needs Claude Code or Codex to have the server (hands-on QA #9): with the CLI but neither, the row is "Not connected", "Agents can't report to Airboss yet." The app reads, read-only, `~/.claude.json` (a top-level `mcpServers` object with an `airboss` key; a project's own `mcpServers` doesn't count) and `~/.codex/config.toml` (an `airboss` table under `mcp_servers`, however it's written), both under the app's home folder. A missing, unreadable or malformed file is "not connected" for that tool, logged once per change of the file, never an error. Connections are recomputed on every catch-up, so each file is read again only when its modification time or size changes. Which tools have it is sent as `agents` with `connections:changed` and `bootstrap`. Ready's line reads "Last report 3m ago", or "No agent has reported yet." The time is tracked from catch-up's events, starting from the newest agent event found at start (the last 256 events, then 4,096, then all), and sent as `agent_report` with `connections:changed` |
   | Claude Code | `sync`'s Claude connection, shown only when it's broken |
   | Needs me | `attention`'s "Didn't start" row, only when its table couldn't open |
 
@@ -674,7 +675,9 @@ A modal in the main window, built from the design's components:
 - **Appearance:** System (the default), Dark or Light.
 - **Command-line tool:** Install, with its path, and whether `~/.local/bin` is on `PATH`.
   - "On `PATH`" means the user's own shell's `PATH`: `$SHELL -ilc` (interactive and login, so `~/.zprofile` **and** `~/.zshrc` count, as in Terminal), reading the `PATH` after a marker, with a 3 s deadline, after which the shell is killed; it's always reaped (`login_path.rs`). It runs in the background at start and after Install, and the answer reaches the UI as `cli` in `connections:changed`. The app's own `PATH` is launchd's and never has `~/.local/bin`.
-- **Agent setup:** "Copy agent note", and "Copy setup command" (`claude mcp add --scope user airboss -- ~/.local/bin/airboss mcp`).
+- **Agent setup:** "Copy agent note", and "Copy setup command" (`claude mcp add --scope user airboss -- ~/.local/bin/airboss mcp`). Below them, one line per agent tool:
+  - **Claude Code:** "Connected", or "Not connected" with **Connect** (`connect_claude`, as on first run).
+  - **Codex:** "Connected", or **Copy Codex setup**, which copies the `[mcp_servers.airboss]` table for `~/.codex/config.toml` with the CLI's absolute path and `env_vars = ["T3CODE_THREAD_ID"]` (`codex mcp add` can't set `env_vars`, which Codex needs to pass T3's thread id; SPEC-mcp). Codex isn't connected in one click.
 - **Repos** (final audit should-fix 8): each repo with its colour dot, name, folder (mono, `~` for home) and remote, plus "Add repos…".
   - **Edit** opens the row in place: Name, Folder (with "Choose…", the folder picker) and Remote (blank clears it). ↩ saves, Esc cancels and returns to the row's Edit button. A refusal (a blank name, a folder that isn't there, a name or folder already used) shows under the fields. Tasks keep a repo that's renamed or moved.
   - **Remove…** asks in place: "Remove booking-web? 12 tasks lose the link." (counting tasks linked to it themselves, not parents showing it from subtasks), with "Its folder and its threads stay as they are." Cancel has focus; Esc cancels before it closes Settings. The toast says how many tasks lost the link.
@@ -687,12 +690,14 @@ A modal in the main window, built from the design's components:
   - "Nothing here yet", with New task ⌘N and "Change hotkey…".
   - **"Open Airboss at login"**, a checkbox ticked by default. First run turns autostart on; unticking turns it off at once.
   - **"Notify me when an agent asks something or stops"**, ticked by default. First run asks macOS for permission to notify.
-  - **Repos:** the Add repos list (below), when no repo is added yet.
+  - **Repos:** the Add repos list (below), when the screen opens with no repo added. It then stays for as long as the screen does (hands-on QA #3): repos added from it, by "Add N repos" or "Add another folder…", show ticked and greyed as "Added" (a folder that isn't a T3 project is listed after them), the other ticks are kept, and focus goes back to the list, or to "Add another folder…" once the folder picker closes.
   - **Connections:**
 
     | Row | OK | Off | Button |
     |---|---|---|---|
-    | Agents | "Agents · Ready": the CLI is installed, and the time of the last agent report if any | "Agents · Not set up" | Install command-line tool, then Copy agent note |
+    | Agents | "Agents · Ready": the CLI is installed, Claude Code or Codex has the `airboss` server, and the time of the last agent report if any | "Agents · Not set up" (no CLI), then "Agents · Not connected": "Agents can't report to Airboss yet." | Install command-line tool, then Connect Claude Code, then Copy agent note: one button whose label follows the step, so focus stays on it |
+
+    **Connect Claude Code** runs `connect_claude` only when it's clicked: `claude mcp add --scope user airboss -- <home>/.local/bin/airboss mcp`, argv only (no shell, so the CLI's path is absolute), with a 20 s deadline. `claude` is found like `gh`: `~/.local/bin/claude`, `~/.claude/local/claude`, `/opt/homebrew/bin/claude`, `/usr/local/bin/claude`, then the app's `PATH`, then the login shell's (`login_path.rs`); the child gets the login shell's `PATH` with `claude`'s folder first, so a Node install finds `node`. A server already registered (in `~/.claude.json`, or `claude` saying it "already exists") is success. Success refreshes the connections and toasts "Connected Claude Code". A failure (no `claude`, a non-zero exit, the deadline) toasts the reason with the first line `claude` printed, and offers **Copy setup command**. Airboss changes an agent tool's config only on this click.
     | T3 Code | "T3 Code · Found" | "T3 Code · Not found": Do it and Plan it are off until T3 Code is installed | Check again |
     | GitHub | "GitHub · Signed in" | "GitHub · Not signed in": PRs won't sync. Run `gh auth login`. | Check again |
 
@@ -703,7 +708,7 @@ A modal in the main window, built from the design's components:
   - **"Add N repos"** runs `add_repos`. Each name is the folder's name, and each remote comes from the folder's `.git/config`.
   - **"Add another folder…"** opens the folder picker.
   - **Without T3,** only the folder picker shows, with "T3 Code's projects show here once it's installed."
-  - ↑↓ move, Space ticks and ⌘↩ adds.
+  - The list is one Tab stop (roving tabindex; hands-on QA #2): ↑↓ move, Home and End jump, Space ticks and ⌘↩ adds. Each row is named by its project and described by its path (and the reason it's greyed).
 - **T3 missing:** as in the panel above, with "T3 Code not found" in the footer.
 - **Nothing needs you:** as in Needs me. The menu bar shows no number.
 
@@ -944,7 +949,7 @@ applyPatch(p: Patch) {
 | Where | DESIGN / prototype says | Spec / rule says | Resolution |
 |---|---|---|---|
 | Quick-add hotkey | ⌃⌥Space | macOS uses ⌃⌥Space for "Select next source in Input menu"; idea.md rules out ⌥Space (Raycast), and ⌘Space, ⌃Space and ⌥⌘Space are taken too | **⌃⌥N**: N for New, the same letter as ⌘N and ⌥N in the app, and not a macOS default. It can be changed in Settings. |
-| Agents connection | "Agents · Listening" | SPEC-mcp: stdio per thread, nothing listens | "Agents · Ready" (CLI installed, last report time) or "Not set up" |
+| Agents connection | "Agents · Listening" | SPEC-mcp: stdio per thread, nothing listens | "Agents · Ready" (CLI installed, an agent tool has the server, last report time), "Not connected" or "Not set up" |
 | New task key | C or ⌥N; the first-run screen shows ⌘N | Mac convention | C, ⌘N and ⌥N all open it; menus show ⌘N |
 | Waves | Done subtasks shown in their wave; "4 waves" counts them | Rule 18: `run_order` leaves done out | The map, Waves list and Plans use display waves that include done (`runmap.rs`); `core` still decides what's ready |
 | Menu-bar dropdown | A 360px custom popover with relative times ("6m") | Native feel; the memory target | A native menu with the same content and clock times |
@@ -1021,8 +1026,9 @@ Writes return `Patch` (shown as → P). All `core` calls act as `me`, with one l
 | `needs_restore` | `key` | | `attention.restore` |
 | `undo` | `entry?` (none: the top) | `{patch?, message}` | the entry's inverse calls, after the `events_after` check |
 | `recheck_connections` | | | `recheck()` on every service |
-| `copy_text` | `task_number(id) / agent_note / setup_command / link(url)` | | clipboard plugin |
+| `copy_text` | `task_number(id) / agent_note / setup_command / codex_setup / link(url)` | | clipboard plugin |
 | `install_cli` | | `{path, on_path}` | symlink `~/.local/bin/airboss` to the sidecar |
+| `connect_claude` | | | `claude mcp add --scope user airboss -- <home>/.local/bin/airboss mcp` (argv only, 20 s), then the connections refresh; already registered is success |
 | `get_settings` / `set_settings` | `Settings` | `Settings` | `app-settings.json`; re-registers the hotkey; autostart plugin; window backgrounds; asks to notify when notifications are turned on and macOS hasn't been asked |
 | `notification_permission` | | `granted / denied / not_asked / unknown` | `UNUserNotificationCenter` settings (inside the bundle) |
 | `open_notification_settings` | | | opens System Settings › Notifications at Airboss |
@@ -1038,7 +1044,7 @@ Writes return `Patch` (shown as → P). All `core` calls act as `me`, with one l
 |---|---|---|
 | `tree:patch` | `Patch` | `catch_up()` produced a change from `core` or a service |
 | `needs:changed` | `{version, items, count, checked_at}` | `attention`'s `Changes` bumped |
-| `connections:changed` | `{connections, availability, agent_report, cli}` | a service's connections or `availability()` changed, an agent reported, or the CLI's state changed |
+| `connections:changed` | `{connections, availability, agent_report, cli, agents}` | a service's connections or `availability()` changed, an agent reported, or the CLI's state changed |
 | `menu:action` | `{command}` | a native menu item was chosen |
 | `nav:open` | `{view?, task?, needs_key?}` | the menu-bar menu, the Dock, a second launch, or a failed Do it from quick add |
 | `quickadd:reset` | `{hotkey}` | the panel was hidden; the UI resets and refetches |

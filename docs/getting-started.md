@@ -70,8 +70,12 @@ Copy `target/release/airboss` somewhere on your `PATH`. If you copy it to `~/.lo
 The first time it opens, Airboss turns on open at login. While there are no tasks, it opens on All tasks with the first-run screen:
 
 - **Open Airboss at login** is ticked. Untick it to turn it off at once. At login the app starts in the menu bar, without a window. Settings changes it later. (A development build from `pnpm tauri dev` never turns it on.)
-- **Repos** lists T3 Code's projects. Tick the ones you work in and choose **Add N repos**. Each repo is named after its folder, and its remote comes from the folder's `.git/config`. Folders that aren't git repos, or are already added, are greyed out with the reason. **Add another folder…** picks any folder. Without T3 Code, only the folder picker shows.
-- **Connections** shows Agents, T3 Code and GitHub, with a button to fix each one that's off.
+- **Repos** lists T3 Code's projects. Tick the ones you work in and choose **Add N repos**. Each repo is named after its folder, and its remote comes from the folder's `.git/config`. Folders that aren't git repos are greyed out with the reason. **Add another folder…** picks any folder. Repos you add stay in the list, ticked and greyed as "Added", so you can keep going. Without T3 Code, only the folder picker shows. The list is one stop for Tab: ↑↓ move, Space ticks, ⌘↩ adds.
+- **Connections** shows Agents, T3 Code and GitHub, with a button to fix each one that's off. The Agents row takes two clicks:
+  1. **Install command-line tool** links `~/.local/bin/airboss`. The row then says "Not connected": agents can't report yet.
+  2. **Connect Claude Code** registers the MCP server with Claude Code for you. It runs the command in [Claude Code](#claude-code) below, only when you click it. The row then says "Ready", and the button becomes **Copy agent note**.
+
+  Airboss counts an agent tool as connected when its own config has the `airboss` server: `mcpServers` in `~/.claude.json`, or `[mcp_servers.airboss]` in `~/.codex/config.toml`. It only reads those files. If you set up Codex instead (below), the row turns Ready too.
 
 You can add repos later from the **+** next to Repos in the sidebar, or from the terminal:
 
@@ -100,7 +104,7 @@ Once, for every project:
 claude mcp add --scope user airboss -- ~/.local/bin/airboss mcp
 ```
 
-**Settings › Agent setup › Copy setup command** copies this exact line. Claude Code passes its session id to the server, and T3 Code adds its thread id, so each thread is recognised as itself.
+The first-run screen's **Connect Claude Code** and **Settings › Agent setup › Claude Code › Connect** run it for you, with the full path to `airboss` in place of `~`. **Settings › Agent setup › Copy setup command** copies this exact line, to run it yourself. Claude Code passes its session id to the server, and T3 Code adds its thread id, so each thread is recognised as itself.
 
 ### Codex
 
@@ -117,7 +121,7 @@ args = ["mcp"]
 env_vars = ["T3CODE_THREAD_ID"]
 ```
 
-`codex mcp add` has no flag for `env_vars`, which is why it's a hand edit.
+`codex mcp add` has no flag for `env_vars`, which is why it's a hand edit. **Settings › Agent setup › Codex › Copy Codex setup** copies that table, with your real path, ready to paste.
 
 Codex outside T3 Code has no thread id to pass. Give it a name instead, with `--env AIRBOSS_THREAD=codex/<name>` on `codex mcp add`. Every Codex thread then shares that name. Without one, it shows up as `agent:unknown/<pid>`, and `mine` and linking "this thread" don't work.
 
@@ -200,7 +204,7 @@ Then, in this order:
 
    macOS may also keep the web view's caches in `~/Library/WebKit/io.github.amantibrewal310.airboss` and `~/Library/Caches/io.github.amantibrewal310.airboss`; remove them if they're there. A database you pointed `AIRBOSS_DB` at stays where you put it, with its own `app-settings.json` beside it.
 
-Airboss never writes to T3 Code's or Claude Code's files, so there's nothing to undo there.
+Airboss never writes to T3 Code's files. It changes Claude Code's only if you chose **Connect Claude Code**, and step 5 removes that.
 
 ## Next
 
