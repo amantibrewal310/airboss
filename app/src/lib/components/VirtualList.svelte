@@ -95,10 +95,15 @@
 </script>
 
 <div class="vl">
+<!--
+  The wrappers are presentation: WebKit only accepts a tree (or listbox) whose items sit under
+  group or presentation elements, and otherwise turns it and its items into plain groups, so
+  VoiceOver loses the outline, levels and positions.
+-->
 <div class="scroller" bind:this={scroller} {onscroll} {...rest}>
-  <div class="space" style:height="{total}px">
+  <div class="space" role="presentation" style:height="{total}px">
     {#each shown as i (items[i]!.key)}
-      <div class="slot" style:transform="translateY({offsets[i]}px)" style:height="{heightOf(items[i]!)}px">
+      <div class="slot" role="presentation" style:transform="translateY({offsets[i]}px)" style:height="{heightOf(items[i]!)}px">
         {@render item(items[i]!, i)}
       </div>
     {/each}
