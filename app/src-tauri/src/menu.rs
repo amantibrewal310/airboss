@@ -215,6 +215,9 @@ pub fn build<R: Runtime>(
 ) -> tauri::Result<(Menu<R>, MenuHandles<R>)> {
     let about = AboutMetadata {
         name: Some("Airboss".into()),
+        // The full version, alpha and all. Left out, the panel shows Info.plist's
+        // CFBundleShortVersionString, which Apple limits to three numbers ("0.1.0").
+        version: Some(env!("CARGO_PKG_VERSION").into()),
         comments: Some("A to-do list where agents do the work.".into()),
         copyright: Some("Copyright © 2026 Aman Tibrewal. MIT License.".into()),
         ..AboutMetadata::default()

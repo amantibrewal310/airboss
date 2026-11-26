@@ -113,12 +113,17 @@ A small fix doesn't need a new spec, but it still starts with a failing test.
 
 ## Releasing
 
-Alphas are `0.1.0-alpha.N`, with the macOS build number `N`.
+Versions follow [Semantic Versioning](https://semver.org). Alphas are `0.1.0-alpha.N`, with macOS build number `N`; the build number only ever goes up.
 
-1. Set the version in `app/src-tauri/tauri.conf.json` (`version`, and `bundle.macOS.bundleVersion`), `app/package.json`, and every crate's `Cargo.toml`. `airboss --version` and the MCP server report the crate version, and the About panel the app's, so keep them the same.
-2. Run every check above, then build: `cd app && CI=true pnpm bundle --bundles app,dmg`.
-3. Check the signature, from the repo root: `codesign --verify --deep --strict target/release/bundle/macos/Airboss.app`.
-4. Tag `vX.Y.Z-alpha.N`, push the tag, and publish a pre-release with the `.dmg` and its SHA-256: `gh release create vX.Y.Z-alpha.N --prerelease --notes-file … Airboss_….dmg Airboss_….dmg.sha256`.
+1. Set the version:
+   - `version` under `[workspace.package]` in the root `Cargo.toml`. Every crate inherits it, so `airboss --version`, the MCP server and Help › Report a Problem… report it.
+   - `version` in `app/src-tauri/tauri.conf.json` and `app/package.json`, the same string.
+   - `bundle.macOS.bundleVersion` in `tauri.conf.json`: the build number.
+   - `CFBundleShortVersionString` in `app/src-tauri/Info.plist`, only when the three numbers change. Apple allows only three numbers there, so it's `0.1.0` for every `0.1.0-alpha.N`. About Airboss shows the full version.
+2. Move [Unreleased] in `CHANGELOG.md` to a section for the new version, dated, and add its compare link at the bottom.
+3. Run every check above. `cargo test -p airboss-app --test version` fails if any of step 1 or 2 disagrees. Then build: `cd app && CI=true pnpm bundle --bundles app,dmg`.
+4. Check the signature and the versions, from the repo root: `codesign --verify --deep --strict target/release/bundle/macos/Airboss.app`, then `plutil -p target/release/bundle/macos/Airboss.app/Contents/Info.plist | grep Version`.
+5. Tag `vX.Y.Z-alpha.N` (annotated: `git tag -a`), push the tag, and publish a pre-release with the `.dmg` and its SHA-256: `gh release create vX.Y.Z-alpha.N --prerelease --notes-file … Airboss_….dmg Airboss_….dmg.sha256`. The notes start from the changelog's section.
 
 ## Reporting a problem
 

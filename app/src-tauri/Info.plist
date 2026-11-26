@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Tauri merges this into the bundle's Info.plist. Apple requires CFBundleShortVersionString
+	  to be three numbers, so it's the version without its pre-release ("0.1.0" for
+	  0.1.0-alpha.3); CFBundleVersion, the build number, is tauri.conf.json's bundleVersion.
+	  tests/version.rs checks this matches Cargo.toml.
+	-->
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+</dict>
+</plist>

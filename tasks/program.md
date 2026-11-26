@@ -170,3 +170,11 @@ Then, for the whole product:
 - **Also fixed on the way:** a Claude session waiting on you wasn't saved (sync migration 1 required a request), test temp folders, the frame-time test, the one-line installer (no Gatekeeper warning).
 - **Released:** `v0.1.0-alpha.2`, build 2. The owner's own copy was updated with the one-line installer, which picked alpha 2 as newest.
 
+
+## Alpha 3: Claude Code's `shell` status (26 Nov 2026)
+
+- **Found by the owner:** the footer said "Claude Code sessions can't be read: unknown session status \"shell\"". Claude Code 2.1.332 writes `shell` when a turn has ended but a background shell task still runs (its own session list counts it as busy). QA left one running past a turn, which is how it showed up.
+- **Fixed, and made tolerant:** `shell` is Working. Any status Airboss doesn't know is now idle and logged once, instead of breaking Claude sync. This was the second time a new status broke it (hands-on QA #10 was `waiting`), so failing loudly on unknown values was the wrong rule for a format Airboss doesn't own.
+- **Plainer wording (owner feedback):** "Do it and Plan it start agents here" assumed the reader knew the buttons. Connection rows, Settings hints, the missing-launcher line, the Plans empty state, the Repos hint and the New task footer now say what happens ("Agents you start on a task open here, each in its own tab"; "Starting agents needs T3 Code"). The buttons keep their names, and their tooltips now say what each does.
+- **Version conventions (owner asked):** SemVer pre-releases, annotated `v` tags and GitHub pre-releases were right. Three things weren't: Info.plist's `CFBundleShortVersionString` carried the pre-release (`0.1.0-alpha.2`; Apple allows three numbers only), the version was typed into nine files, and there was no changelog. Now: one `[workspace.package]` version that every crate inherits, an `Info.plist` merged by Tauri with `0.1.0`, About showing the full version, `CHANGELOG.md` (Keep a Changelog), and `app/src-tauri/tests/version.rs` failing when the copies disagree.
+- **Released:** `v0.1.0-alpha.3`, build 3.
