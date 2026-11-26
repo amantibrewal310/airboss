@@ -1,0 +1,24 @@
+name: Alpha feedback
+description: What worked, what got in the way, and what's missing.
+labels: [feedback]
+body:
+  - type: textarea
+    id: worked
+    attributes:
+      label: What worked
+  - type: textarea
+    id: friction
+    attributes:
+      label: What got in the way
+      description: Anything confusing, slow or surprising, however small.
+  - type: textarea
+    id: missing
+    attributes:
+      label: What's missing
+      description: What you reached for and didn't find.
+  - type: input
+    id: version
+    attributes:
+      label: Airboss version
+      description: Airboss › About Airboss.
+      placeholder: 0.1.0-alpha.1

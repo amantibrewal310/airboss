@@ -178,6 +178,7 @@ pub mod ids {
     pub const UNDO: &str = "undo";
     pub const COPY_AGENT_NOTE: &str = "copy_agent_note";
     pub const COPY_SETUP: &str = "copy_setup_command";
+    pub const REPORT_PROBLEM: &str = "report_problem";
 }
 
 /// The handles Rust keeps to enable, disable and relabel items.
@@ -325,6 +326,14 @@ pub fn build<R: Runtime>(
                 app,
                 ids::COPY_SETUP,
                 "Copy Setup Command",
+                true,
+                None::<&str>,
+            )?,
+            &PredefinedMenuItem::separator(app)?,
+            &MenuItem::with_id(
+                app,
+                ids::REPORT_PROBLEM,
+                "Report a Problem…",
                 true,
                 None::<&str>,
             )?,

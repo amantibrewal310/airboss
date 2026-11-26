@@ -110,6 +110,42 @@ fn open_checked(s: &AppState, url: &str) -> AppResult<()> {
     opened.map_err(|e| AppError::internal(format!("couldn't open a link: {e}")))
 }
 
+/// Help › Report a Problem…: opens the repo's bug form in the browser, with this version and
+/// the macOS version already filled in.
+pub fn report_problem(s: &AppState, c: Caller) -> AppResult<()> {
+    let macos = std::process::Command::new("/usr/bin/sw_vers")
+        .arg("-productVersion")
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|v| v.trim().to_string())
+        .unwrap_or_default();
+    let url = report_problem_url(env!("CARGO_PKG_VERSION"), &macos);
+    open_url(s, c, OpenTarget::Url(url))
+}
+
+/// The bug form's address. GitHub fills a form's fields from query parameters named by their
+/// ids (`.github/ISSUE_TEMPLATE/bug.yml`).
+pub fn report_problem_url(version: &str, macos: &str) -> String {
+    /// Keeps the characters a query value may hold as they are, and escapes the rest.
+    fn encode(v: &str) -> String {
+        v.bytes()
+            .map(|b| match b {
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                    (b as char).to_string()
+                }
+                _ => format!("%{b:02X}"),
+            })
+            .collect()
+    }
+    format!(
+        "{}/issues/new?template=bug.yml&version={}&macos={}",
+        env!("CARGO_PKG_REPOSITORY"),
+        encode(version),
+        encode(macos)
+    )
+}
+
 /// "Check again": every service rechecks its connections.
 pub fn recheck_connections(s: &AppState, _c: Caller) -> AppResult<()> {
     for svc in s.services.all() {

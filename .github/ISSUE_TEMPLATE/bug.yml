@@ -1,0 +1,54 @@
+name: Bug report
+description: Something in Airboss doesn't work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for trying Airboss. **Help › Report a Problem…** in the app fills in both versions for you.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you saw instead. A screenshot helps.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. …
+        2. …
+  - type: input
+    id: version
+    attributes:
+      label: Airboss version
+      description: Airboss › About Airboss.
+      placeholder: 0.1.0-alpha.1
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      description: Apple menu › About This Mac.
+      placeholder: "15.2"
+  - type: dropdown
+    id: setup
+    attributes:
+      label: What you use with it
+      multiple: true
+      options:
+        - T3 Code
+        - Claude Code
+        - Codex
+        - GitHub CLI (gh)
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: >-
+        The last lines of `~/Library/Logs/Airboss/app.log`, if they look related. The log can
+        name your tasks, repos and folders, so read it before you paste it.
+      render: text

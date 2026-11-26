@@ -684,7 +684,7 @@ fn toast(app: &AppHandle<Wry>, text: &str, tone: ToastTone) {
 /// Runs a command body for a menu item on a background thread, toasting its outcome.
 fn menu_command(
     app: &AppHandle<Wry>,
-    ok: &'static str,
+    ok: Option<&'static str>,
     f: impl FnOnce(&AppState) -> AppResult<()> + Send + 'static,
 ) {
     let Some(state) = app.try_state::<App>().and_then(|a| a.current()) else {
@@ -692,7 +692,11 @@ fn menu_command(
     };
     let app = app.clone();
     std::thread::spawn(move || match crate::ipc::guarded_call(|| f(&state)) {
-        Ok(()) => toast(&app, ok, ToastTone::Info),
+        Ok(()) => {
+            if let Some(ok) = ok {
+                toast(&app, ok, ToastTone::Info);
+            }
+        }
         Err(e) => toast(&app, &e.message, ToastTone::Warning),
     });
 }
@@ -748,14 +752,18 @@ pub fn on_menu_event(app: &AppHandle<Wry>, event: MenuEvent) {
                 let _ = w.hide();
             }
         }
-        ids::INSTALL_CLI => menu_command(app, "Installed the airboss command.", |s| {
+        ids::INSTALL_CLI => menu_command(app, Some("Installed the airboss command."), |s| {
             crate::commands::app::install_cli(s, Caller::Other).map(|_| ())
         }),
-        ids::COPY_AGENT_NOTE => menu_command(app, "Copied the agent note.", |s| {
+        ids::COPY_AGENT_NOTE => menu_command(app, Some("Copied the agent note."), |s| {
             crate::commands::app::copy_text(s, Caller::Other, CopyWhat::AgentNote)
         }),
-        ids::COPY_SETUP => menu_command(app, "Copied the setup command.", |s| {
+        ids::COPY_SETUP => menu_command(app, Some("Copied the setup command."), |s| {
             crate::commands::app::copy_text(s, Caller::Other, CopyWhat::SetupCommand)
+        }),
+        // The browser coming forward with the form says it worked.
+        ids::REPORT_PROBLEM => menu_command(app, None, |s| {
+            crate::commands::app::report_problem(s, Caller::Other)
         }),
         _ => {
             show_main_window(app);

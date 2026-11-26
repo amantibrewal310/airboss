@@ -2102,3 +2102,28 @@ fn install_cli_never_replaces_someone_elses_link() {
     appcmd::install_cli(&app.state, M).unwrap();
     assert_eq!(std::fs::read_link(bin.join("airboss")).unwrap(), sidecar);
 }
+
+#[test]
+fn report_a_problem_opens_the_bug_form_with_the_versions_filled_in() {
+    assert_eq!(
+        appcmd::report_problem_url("0.1.0-alpha.1", "15.2"),
+        "https://github.com/amantibrewal310/airboss/issues/new?template=bug.yml&version=0.1.0-alpha.1&macos=15.2"
+    );
+    // Anything outside a query value's plain characters is escaped.
+    assert_eq!(
+        appcmd::report_problem_url("1 & 2", ""),
+        "https://github.com/amantibrewal310/airboss/issues/new?template=bug.yml&version=1%20%26%202&macos="
+    );
+    // It goes through the link allowlist and the checked browser, like any https link.
+    let app = TestApp::new();
+    appcmd::report_problem(&app.state, M).unwrap();
+    let form = format!(
+        "open_url(https://github.com/amantibrewal310/airboss/issues/new?template=bug.yml&version={}&macos=",
+        env!("CARGO_PKG_VERSION")
+    );
+    assert!(
+        app.shell.calls().iter().any(|c| c.starts_with(&form)),
+        "{:?}",
+        app.shell.calls()
+    );
+}
