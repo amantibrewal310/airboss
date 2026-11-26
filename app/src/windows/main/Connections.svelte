@@ -34,6 +34,9 @@
           <div>
             <b>{c.name} · {c.state}</b>
             <span>{c.ok ? c.detail : (c.fix ?? c.detail)}</span>
+            {#if c.name === 'Agents' && app.conn.codexOutdated}
+              <Button size="sm" onclick={() => app.copy('codex_setup')}>Copy Codex setup</Button>
+            {/if}
           </div>
         </div>
       {/each}

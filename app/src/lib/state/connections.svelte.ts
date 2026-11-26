@@ -1,5 +1,5 @@
-import type { AgentTools, Availability, Connection, LauncherKind, Timestamp } from '../types';
-import { agentsStep, footerText, LAUNCHER_NAME, launcherMissingText, mergeConnections, t3Available, t3MissingReason } from '../logic/connections';
+import type { AgentTools, Availability, Connection, HerdrAgent, LauncherKind, Timestamp } from '../types';
+import { agentsStep, codexNeedsTerminalId, footerText, LAUNCHER_NAME, launcherMissingText, mergeConnections, t3Available, t3MissingReason } from '../logic/connections';
 import { now as clockNow } from '../logic/clock';
 
 export class ConnectionsStore {
@@ -14,7 +14,9 @@ export class ConnectionsStore {
   /** Whether the `airboss` command-line tool is installed; the Agents row needs it. */
   cliInstalled = $state(true);
   /** Which agent tools have the airboss MCP server; Agents are Ready only with one. */
-  agents = $state.raw<AgentTools>({ claude: false, codex: false });
+  agents = $state.raw<AgentTools>({ claude: false, codex: false, codex_terminal_id: false });
+  /** The agent a Herdr tab runs (Settings › Agent in Herdr), kept in step by the app. */
+  herdrAgent = $state<HerdrAgent>('claude');
   /** Connect Claude Code is running (it can take a few seconds). */
   connecting = $state(false);
   /** When an agent last reported, for the Agents row's "Last report 3m ago". */
@@ -32,8 +34,12 @@ export class ConnectionsStore {
     }),
   );
   /** First run's Agents button: Install command-line tool, Connect Claude Code, or Copy agent note. */
-  agentsStep = $derived(agentsStep(this.cliInstalled, this.agents));
+  agentsStep = $derived(agentsStep(this.cliInstalled, this.agents, this.codexOutdated));
   footer = $derived(footerText(this.merged, this.background));
+  /** Codex runs in Herdr with a setup that lacks HC_TERMINAL_ID: "Copy Codex setup" fixes it. */
+  get codexOutdated(): boolean {
+    return codexNeedsTerminalId(this.agents, this.launcher, this.herdrAgent);
+  }
   /** T3 Code can start threads (for its projects in Add repos). Unknown counts as on. */
   t3Ready = $derived(this.availability === 'unknown' || t3Available(this.availability));
   /** "T3 Code", "Herdr": where Do it and Plan it start agents, for copy. */

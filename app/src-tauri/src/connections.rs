@@ -16,6 +16,9 @@ use crate::settings::{Settings, StartAgentsIn};
 use crate::state::Problems;
 use crate::viewmodel::ViewModel;
 
+/// The Agents row's detail when Codex runs in Herdr with a setup that lacks `HC_TERMINAL_ID`.
+pub const CODEX_NEEDS_TERMINAL_ID: &str = "Codex setup needs HC_TERMINAL_ID";
+
 /// The footer's order: T3 Code, Herdr, GitHub, Agents, Claude Code, then anything else.
 const ORDER: [&str; 5] = ["T3 Code", "Herdr", "GitHub", "Agents", "Claude Code"];
 
@@ -97,20 +100,31 @@ pub fn codex_has_airboss(text: &str) -> Result<bool, String> {
         .is_some_and(toml::Value::is_table))
 }
 
+/// Whether `~/.codex/config.toml`'s `airboss` table passes `HC_TERMINAL_ID` in `env_vars`;
+/// `Err` when it isn't TOML.
+pub fn codex_passes_terminal_id(text: &str) -> Result<bool, String> {
+    let t: toml::Table = toml::from_str(text).map_err(|e| e.to_string())?;
+    Ok(t.get("mcp_servers")
+        .and_then(|m| m.get("airboss"))
+        .and_then(|a| a.get("env_vars"))
+        .and_then(toml::Value::as_array)
+        .is_some_and(|vars| vars.iter().any(|v| v.as_str() == Some("HC_TERMINAL_ID"))))
+}
+
 /// A file as last read: its modification time and size, and what it said.
 struct Seen {
     stamp: Option<(SystemTime, u64)>,
     found: bool,
 }
 
-/// What each agent config file said, by path. Connections are recomputed on every catch-up,
+/// What each agent config file said, by path and question. Connections are recomputed on every catch-up,
 /// so a file is read again only when its time or size changes; a problem is logged once each
 /// time the file changes, not on every pass.
-static SEEN: Mutex<Option<HashMap<PathBuf, Seen>>> = Mutex::new(None);
+static SEEN: Mutex<Option<HashMap<(PathBuf, &'static str), Seen>>> = Mutex::new(None);
 
-/// Whether the agent config at `path` registers `airboss`, by `parse`. Missing, unreadable
-/// or malformed is "no": never an error, never a crash.
-fn registered(path: &Path, parse: fn(&str) -> Result<bool, String>) -> bool {
+/// Whether the agent config at `path` says yes to `what` (e.g. "airboss"), by `parse`.
+/// Missing, unreadable or malformed is "no": never an error, never a crash.
+fn registered(path: &Path, what: &'static str, parse: fn(&str) -> Result<bool, String>) -> bool {
     let meta = std::fs::metadata(path);
     let stamp = meta
         .as_ref()
@@ -118,7 +132,8 @@ fn registered(path: &Path, parse: fn(&str) -> Result<bool, String>) -> bool {
         .map(|m| (m.modified().unwrap_or(SystemTime::UNIX_EPOCH), m.len()));
     let mut seen = crate::state::lock(&SEEN);
     let seen = seen.get_or_insert_with(HashMap::new);
-    if let Some(s) = seen.get(path)
+    let key = (path.to_path_buf(), what);
+    if let Some(s) = seen.get(&key)
         && s.stamp == stamp
     {
         return s.found;
@@ -138,7 +153,7 @@ fn registered(path: &Path, parse: fn(&str) -> Result<bool, String>) -> bool {
         {
             Ok(found) => {
                 log::info!(
-                    "{} {} airboss",
+                    "{} {} {what}",
                     path.display(),
                     if found { "has" } else { "doesn't have" }
                 );
@@ -150,15 +165,17 @@ fn registered(path: &Path, parse: fn(&str) -> Result<bool, String>) -> bool {
             }
         },
     };
-    seen.insert(path.to_path_buf(), Seen { stamp, found });
+    seen.insert(key, Seen { stamp, found });
     found
 }
 
 /// Which agent tools under `home` have the `airboss` MCP server.
 pub fn agent_tools(home: &Path) -> AgentTools {
+    let codex = home.join(".codex/config.toml");
     AgentTools {
-        claude: registered(&home.join(".claude.json"), claude_has_airboss),
-        codex: registered(&home.join(".codex/config.toml"), codex_has_airboss),
+        claude: registered(&home.join(".claude.json"), "airboss", claude_has_airboss),
+        codex: registered(&codex, "airboss", codex_has_airboss),
+        codex_terminal_id: registered(&codex, "HC_TERMINAL_ID", codex_passes_terminal_id),
     }
 }
 
@@ -243,6 +260,7 @@ pub(crate) fn merged(
     }
     let detail = "Agents report progress and ask questions through the airboss command.";
     let connected = agents.claude || agents.codex;
+    let codex_outdated = agents.codex_needs_terminal_id(launcher, settings.herdr_agent);
     rows.push(match (cli, agent_report) {
         (Cli::Ready, _) if !connected => row(
             "Agents",
@@ -250,6 +268,14 @@ pub(crate) fn merged(
             "Not connected",
             "Agents can't report to Airboss yet.",
             Some("Agents can't report to Airboss yet. Connect Claude Code in Settings › Agent setup."),
+        ),
+        // A Codex setup from before Herdr: Codex in Herdr can't say which terminal it is.
+        (Cli::Ready, _) if codex_outdated => row(
+            "Agents",
+            false,
+            "Out of date",
+            CODEX_NEEDS_TERMINAL_ID,
+            Some("Codex setup needs HC_TERMINAL_ID. Copy the Codex setup and put it in place of [mcp_servers.airboss] in ~/.codex/config.toml."),
         ),
         (Cli::Ready, Some(_)) => row("Agents", true, "Ready", detail, None),
         (Cli::Ready, None) => row("Agents", true, "Ready", "No agent has reported yet.", None),
@@ -367,6 +393,27 @@ mod tests {
     }
 
     #[test]
+    fn codex_passes_hc_terminal_id_only_when_its_env_vars_name_it() {
+        let old =
+            "[mcp_servers.airboss]\ncommand = \"airboss\"\nenv_vars = [\"T3CODE_THREAD_ID\"]\n";
+        assert_eq!(codex_passes_terminal_id(old), Ok(false));
+        let new = "[mcp_servers.airboss]\ncommand = \"airboss\"\nenv_vars = [\"T3CODE_THREAD_ID\", \"HC_TERMINAL_ID\"]\n";
+        assert_eq!(codex_passes_terminal_id(new), Ok(true));
+        assert_eq!(
+            codex_passes_terminal_id("[mcp_servers.airboss]\ncommand = \"airboss\"\n"),
+            Ok(false)
+        );
+        // Another server's env_vars don't count.
+        let other = "[mcp_servers.other]\nenv_vars = [\"HC_TERMINAL_ID\"]\n[mcp_servers.airboss]\ncommand = \"x\"\n";
+        assert_eq!(codex_passes_terminal_id(other), Ok(false));
+        assert!(codex_passes_terminal_id("[[[").is_err());
+        // The text Copy Codex setup gives passes it.
+        let copied = crate::commands::app::codex_setup(Path::new("/Users/x"));
+        assert_eq!(codex_passes_terminal_id(&copied), Ok(true));
+        assert_eq!(codex_has_airboss(&copied), Ok(true));
+    }
+
+    #[test]
     fn codex_counts_an_airboss_table_however_it_is_written() {
         let table = "model = \"o4\"\n[mcp_servers.airboss]\ncommand = \"/Users/x/.local/bin/airboss\"\nargs = [\"mcp\"]\nenv_vars = [\"T3CODE_THREAD_ID\"]\n";
         assert_eq!(codex_has_airboss(table), Ok(true));
@@ -402,7 +449,8 @@ mod tests {
             agent_tools(&both),
             AgentTools {
                 claude: true,
-                codex: true
+                codex: true,
+                codex_terminal_id: false,
             }
         );
         let broken = home(

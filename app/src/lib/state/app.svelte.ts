@@ -163,6 +163,7 @@ export class App {
       this.needs.load(b.needs);
       this.conn.set(b.connections, b.availability, b.agent_report, b);
       this.settings = b.settings;
+      this.conn.herdrAgent = b.settings.herdr_agent;
       this.cli = b.cli;
       this.conn.cliInstalled = b.cli.installed;
       this.conn.agents = b.agents;
@@ -1233,6 +1234,7 @@ export class App {
   async saveSettings(next: Settings): Promise<string | null> {
     try {
       this.settings = await api.setSettings(next);
+      this.conn.herdrAgent = this.settings.herdr_agent;
       this.applyAppearance();
       return null;
     } catch (e) {

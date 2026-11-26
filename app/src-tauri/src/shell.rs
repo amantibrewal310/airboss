@@ -100,8 +100,9 @@ pub trait Shell: Send + Sync {
     fn open_file(&self, path: &std::path::Path, app: &std::path::Path) -> Result<(), String>;
     /// Shows a file or folder in Finder, without opening it.
     fn reveal(&self, path: &std::path::Path) -> Result<(), String>;
-    /// Open thread on a Herdr terminal: `herdr-app do agent.focus '{"terminal":…}'`, then
-    /// `open -b dev.herdr.app`. An app constant, not a stored link, so no allowlist.
+    /// Open thread on a Herdr terminal: `open -b dev.herdr.app`, then `herdr-app do
+    /// agent.focus '{"terminal":…}'` (`herdr::show_terminal`, which waits for a Herdr that was
+    /// quit). An app constant, not a stored link, so no allowlist.
     fn show_herdr_terminal(&self, terminal: &str) -> Result<(), String>;
     /// The folders Herdr knows, for first run.
     fn herdr_folders(&self) -> Arc<dyn HerdrFolders>;
@@ -275,7 +276,7 @@ impl Shell for RecordingShell {
         // The commands it would run, as their argv.
         let args = crate::herdr::show_args(terminal).join(" ");
         self.call(format!(
-            "show_herdr_terminal(herdr-app {args}; open -b {})",
+            "show_herdr_terminal(open -b {}; herdr-app {args})",
             crate::herdr::BUNDLE_ID
         ));
         if *lock(&self.herdr_fails) {

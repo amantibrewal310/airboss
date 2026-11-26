@@ -5,7 +5,8 @@
       "agent_report": "2026-11-22T10:44:00.000Z",
       "agents": {
         "claude": false,
-        "codex": false
+        "codex": false,
+        "codex_terminal_id": false
       },
       "availability": {
         "ready": {

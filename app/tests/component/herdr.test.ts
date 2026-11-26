@@ -4,6 +4,7 @@ import Harness from './Harness.svelte';
 import FirstRun from '../../src/windows/main/FirstRun.svelte';
 import Overlays from '../../src/windows/main/Overlays.svelte';
 import TaskPanel from '../../src/windows/main/TaskPanel.svelte';
+import Connections from '../../src/windows/main/Connections.svelte';
 import { startApp, wait } from './setup';
 
 /** SPEC-herdr "app": Herdr as the second place agents start, from the window's side. */
@@ -154,5 +155,47 @@ describe('A Herdr thread on a task', () => {
     app.openThread({ source: 'herdr', ref: 't4p' });
     await wait(20);
     expect(app.toasts.list.at(-1)!.text).toBe("Couldn't show that terminal in Herdr.");
+  });
+});
+
+describe('Codex in Herdr with a setup from before Herdr', () => {
+  it('turns Agents orange, and Settings and the connections offer Copy Codex setup', async () => {
+    const { app, backend } = await startApp('design');
+    backend.s.herdr = { ready: { version: '0.1.18' } };
+    backend.s.agents = { claude: true, codex: true, codex_terminal_id: false };
+    // On Claude Code in Herdr, the old Codex setup doesn't matter.
+    await app.saveSettings({ ...app.settings, start_agents_in: 'herdr' });
+    await wait(10);
+    expect(app.conn.codexOutdated).toBe(false);
+    expect(app.conn.merged.find((c) => c.name === 'Agents')!.ok).toBe(true);
+    await app.saveSettings({ ...app.settings, herdr_agent: 'codex' });
+    await wait(10);
+    expect(app.conn.codexOutdated).toBe(true);
+    expect(app.conn.agentsStep).toBe('codex');
+    expect(app.conn.merged.find((c) => c.name === 'Agents')).toMatchObject({ ok: false, detail: 'Codex setup needs HC_TERMINAL_ID' });
+    await render(Harness, { app, component: Overlays });
+    app.open({ kind: 'settings' });
+    await wait(30);
+    const codex = [...document.querySelectorAll<HTMLElement>('.tools li')].find((li) => li.textContent!.includes('Codex'))!;
+    expect(codex.textContent).toContain('Codex setup needs HC_TERMINAL_ID');
+    codex.querySelector('button')!.click();
+    await wait(20);
+    expect(backend.opened.at(-1)).toContain('env_vars = ["T3CODE_THREAD_ID", "HC_TERMINAL_ID"]');
+  });
+
+  it('offers the copy in the connections popover', async () => {
+    const { app, backend } = await startApp('design');
+    backend.s.herdr = { ready: { version: '0.1.18' } };
+    backend.s.agents = { claude: false, codex: true, codex_terminal_id: false };
+    await app.saveSettings({ ...app.settings, start_agents_in: 'herdr', herdr_agent: 'codex' });
+    await render(Harness, { app, component: Connections });
+    app.open({ kind: 'connections' });
+    await wait(30);
+    const agents = [...document.querySelectorAll<HTMLElement>('.ci')].find((c) => c.textContent!.includes('Agents ·'))!;
+    expect(agents.textContent).toContain('Agents · Out of date');
+    const copy = [...agents.querySelectorAll('button')].find((b) => b.textContent === 'Copy Codex setup')!;
+    copy.click();
+    await wait(20);
+    expect(backend.opened.at(-1)).toContain('HC_TERMINAL_ID');
   });
 });

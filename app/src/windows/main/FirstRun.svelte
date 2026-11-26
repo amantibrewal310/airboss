@@ -21,13 +21,19 @@
   const order = (c: Connection) => SHOWN.indexOf(c.name);
 
   const agentsLabel = $derived(
-    { install: 'Install command-line tool', connect: app.conn.connecting ? 'Connecting…' : 'Connect Claude Code', note: 'Copy agent note' }[app.conn.agentsStep],
+    {
+      install: 'Install command-line tool',
+      connect: app.conn.connecting ? 'Connecting…' : 'Connect Claude Code',
+      codex: 'Copy Codex setup',
+      note: 'Copy agent note',
+    }[app.conn.agentsStep],
   );
 
   function agentsAction() {
     const step = app.conn.agentsStep;
     if (step === 'install') void app.installCli();
     else if (step === 'connect') void app.connectClaude();
+    else if (step === 'codex') void app.copy('codex_setup');
     else void app.copy('agent_note');
   }
 

@@ -224,12 +224,12 @@ fn herdr_errors_read_well_and_offer_retry_never_add_to_t3() {
 }
 
 #[test]
-fn open_thread_shows_a_herdr_terminal_through_herdr_app_then_brings_herdr_forward() {
+fn open_thread_brings_herdr_forward_then_shows_the_terminal_through_herdr_app() {
     let app = TestApp::new();
     appcmd::open_thread(&app.state, M, herdr_key("t4p")).unwrap();
     assert_eq!(
         app.shell.calls().last().unwrap(),
-        r#"show_herdr_terminal(herdr-app do agent.focus {"terminal":"t4p"}; open -b dev.herdr.app)"#
+        r#"show_herdr_terminal(open -b dev.herdr.app; herdr-app do agent.focus {"terminal":"t4p"})"#
     );
     // The link itself opens the same way: it has no URL, and never reaches the allowlist.
     let t = app.add("T", None);
@@ -244,7 +244,7 @@ fn open_thread_shows_a_herdr_terminal_through_herdr_app_then_brings_herdr_forwar
     appcmd::open_url(&app.state, M, OpenTarget::Link(link.id)).unwrap();
     assert_eq!(
         app.shell.calls().last().unwrap(),
-        r#"show_herdr_terminal(herdr-app do agent.focus {"terminal":"vps/t7"}; open -b dev.herdr.app)"#
+        r#"show_herdr_terminal(open -b dev.herdr.app; herdr-app do agent.focus {"terminal":"vps/t7"})"#
     );
     assert!(!app.shell.calls().iter().any(|c| c.starts_with("open_url")));
     // Herdr couldn't show it: the toast's sentence.
@@ -411,4 +411,61 @@ fn a_herdr_terminal_link_shows_its_thread_in_the_task_detail() {
     assert_eq!(th.key, herdr_key("t4p"));
     assert_eq!(th.chip, Some(airboss_services::Chip::WaitingOnYou));
     assert_eq!(th.url, None);
+}
+
+/// A working `~/.local/bin/airboss` under the test's home.
+fn install_fake_cli(app: &TestApp) {
+    use std::os::unix::fs::{PermissionsExt, symlink};
+    let cli = temp_dir("cli").join("airboss");
+    std::fs::write(&cli, b"#!/bin/sh\n").unwrap();
+    std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let bin = app.home.join(".local/bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    symlink(&cli, bin.join("airboss")).unwrap();
+}
+
+fn agents_row(app: &TestApp) -> Connection {
+    row(&app.state.connection_rows(), "Agents")
+        .cloned()
+        .unwrap()
+}
+
+#[test]
+fn codex_in_herdr_with_a_setup_from_before_herdr_turns_agents_orange_until_it_passes_hc_terminal_id()
+ {
+    let app = TestApp::new();
+    install_fake_cli(&app);
+    let config = app.home.join(".codex/config.toml");
+    std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+    let old = "[mcp_servers.airboss]\ncommand = \"/x/airboss\"\nargs = [\"mcp\"]\nenv_vars = [\"T3CODE_THREAD_ID\"]\n";
+    std::fs::write(&config, old).unwrap();
+    app.launch.set_herdr_availability(ready("0.1.18"));
+    // On T3 Code, or Claude Code in Herdr, the old setup is fine.
+    app.state.catch_up_services();
+    assert!(agents_row(&app).ok, "{:?}", agents_row(&app));
+    choose(&app, StartAgentsIn::Herdr, HerdrAgent::Claude);
+    assert!(agents_row(&app).ok);
+    // Codex in Herdr: it couldn't say which terminal it is.
+    choose(&app, StartAgentsIn::Herdr, HerdrAgent::Codex);
+    let a = agents_row(&app);
+    assert!(!a.ok);
+    assert_eq!(a.detail, "Codex setup needs HC_TERMINAL_ID");
+    assert!(
+        a.fix
+            .unwrap()
+            .starts_with("Codex setup needs HC_TERMINAL_ID.")
+    );
+    let b = detail::bootstrap(&app.state, M).unwrap();
+    assert!(b.agents.codex && !b.agents.codex_terminal_id);
+    // The fix is the current Codex setup.
+    appcmd::copy_text(&app.state, M, airboss_app::dto::CopyWhat::CodexSetup).unwrap();
+    let copied = app.shell.calls().last().unwrap().clone();
+    assert!(
+        copied.contains(r#"env_vars = ["T3CODE_THREAD_ID", "HC_TERMINAL_ID"]"#),
+        "{copied}"
+    );
+    // Pasted in: Ready again.
+    std::fs::write(&config, airboss_app::commands::app::codex_setup(&app.home)).unwrap();
+    app.state.catch_up_services();
+    assert!(agents_row(&app).ok, "{:?}", agents_row(&app));
 }
