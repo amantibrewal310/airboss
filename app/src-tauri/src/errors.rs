@@ -161,6 +161,7 @@ pub const MSG_BAD_PR: &str = "That isn't a GitHub pull request.";
 pub const MSG_URL_NOT_ALLOWED: &str = "Airboss only opens https links, files and T3 threads.";
 pub const MSG_FILE_GONE: &str = "That file no longer exists.";
 pub const MSG_FILE_UNREADABLE: &str = "Airboss can't reach that file.";
+pub const MSG_NOT_A_FILE: &str = "That isn't a file or folder Airboss can show.";
 pub const MSG_HOTKEY_IN_USE: &str = "That key is in use by another app. Pick another.";
 pub const MSG_NEEDS_REASON: &str = "Say why it's blocked.";
 pub const MSG_MOVE_LOOP: &str = "A task can't go under itself or one of its subtasks.";

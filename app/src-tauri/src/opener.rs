@@ -18,7 +18,9 @@ use std::ffi::OsStr;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
-use crate::errors::{AppError, ErrorCode, MSG_FILE_GONE, MSG_FILE_UNREADABLE, MSG_URL_NOT_ALLOWED};
+use crate::errors::{
+    AppError, ErrorCode, MSG_FILE_GONE, MSG_FILE_UNREADABLE, MSG_NOT_A_FILE, MSG_URL_NOT_ALLOWED,
+};
 
 /// What to do with a link that passed the allowlist.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -174,19 +176,35 @@ fn id_ok(s: &str, escapes: bool) -> bool {
     true
 }
 
+/// A thread id as T3 will read it, after percent-decoding: UTF-8, with no `/`, `?`, `#` or
+/// `\\` (which would make it a path, a query or a fragment), no control byte, and not `.` or
+/// `..`. Real ids, such as `mcp:launch:…` escaped by `sync` as `mcp%3Alaunch%3A…`, pass.
+fn decoded_id_ok(s: &str) -> bool {
+    let Some(bytes) = percent_decode(s) else {
+        return false;
+    };
+    let Ok(id) = std::str::from_utf8(&bytes) else {
+        return false;
+    };
+    !id.contains(['/', '?', '#', '\\']) && id != "." && id != ".."
+}
+
 /// `//threads/<environment>/<thread>` and nothing more. The environment is uuid-like
-/// (letters, digits and `-`); the thread id may carry `_` and `%XX` escapes.
+/// (letters, digits and `-`); the thread id may carry `_` and `%XX` escapes, judged again
+/// once decoded ([`decoded_id_ok`]).
 fn thread(rest: &str) -> Result<String, AppError> {
     let ids = rest.strip_prefix("//threads/").ok_or_else(refused)?;
     match ids.split('/').collect::<Vec<_>>().as_slice() {
-        [env, thread] if id_ok(env, false) && id_ok(thread, true) => {
+        [env, thread] if id_ok(env, false) && id_ok(thread, true) && decoded_id_ok(thread) => {
             Ok(format!("t3code://threads/{env}/{thread}"))
         }
         _ => Err(refused()),
     }
 }
 
-/// `%XX` escapes decoded; `None` for a broken escape or a NUL byte.
+/// `%XX` escapes decoded; `None` for a broken escape, or for a control byte (below 0x20, or
+/// 0x7F) whether it was escaped or not: a newline or an escape sequence has no place in a
+/// path or an id, and would reach `open` or T3 as a different string from the one checked.
 fn percent_decode(s: &str) -> Option<Vec<u8>> {
     let b = s.as_bytes();
     let mut out = Vec::with_capacity(b.len());
@@ -202,7 +220,7 @@ fn percent_decode(s: &str) -> Option<Vec<u8>> {
             i += 1;
         }
     }
-    (!out.contains(&0)).then_some(out)
+    (!out.iter().any(|b| *b < 0x20 || *b == 0x7F)).then_some(out)
 }
 
 /// `///absolute/path` (an empty host): decoded, resolved, and sorted into open or reveal.
@@ -219,6 +237,13 @@ fn file(rest: &str) -> Result<Opening, AppError> {
         std::io::ErrorKind::NotFound => AppError::new(ErrorCode::NotFound, MSG_FILE_GONE),
         _ => AppError::new(ErrorCode::NotFound, MSG_FILE_UNREADABLE),
     })?;
+    // A FIFO, a socket or a device (`/dev/stdin`) is neither opened nor shown.
+    let kind = std::fs::metadata(&real)
+        .map_err(|_| AppError::new(ErrorCode::NotFound, MSG_FILE_UNREADABLE))?
+        .file_type();
+    if !kind.is_file() && !kind.is_dir() {
+        return Err(AppError::new(ErrorCode::NotFound, MSG_NOT_A_FILE));
+    }
     Ok(match viewer(&real) {
         Some(v) => Opening::Open(real, v),
         None => Opening::Reveal(real),
@@ -286,8 +311,8 @@ mod tests {
                 "t3code://threads/0b8a1f9e-1d2c-4b3a/mcp%3Alaunch%3Aabc",
             ),
             (
-                "t3code://threads/e/a%2Fb%20c_d",
-                "t3code://threads/e/a%2Fb%20c_d",
+                "t3code://threads/e/a%3Ab%20c_d",
+                "t3code://threads/e/a%3Ab%20c_d",
             ),
         ] {
             assert_eq!(
@@ -553,6 +578,195 @@ mod tests {
             refused_code("file:///tmp/%C3%28.md"),
             ErrorCode::UrlNotAllowed
         );
+    }
+
+    /// The second audit, items 2 and 3: a `t3code` id is judged after percent-decoding, so
+    /// `%2F`, `%2E%2E`, `%3F`, `%23`, `%5C`, `%00` and control bytes can't smuggle a path, a
+    /// query or a fragment into T3; real ids, escaped by `sync`, still pass.
+    #[test]
+    fn t3_ids_are_judged_after_decoding() {
+        for url in [
+            "t3code://threads/env/%2E%2E%2F%2E%2E%2Fsettings",
+            "t3code://threads/env/a%2Fb",
+            "t3code://threads/env/a%00b",
+            "t3code://threads/env/a%3Fx%3D1%23y",
+            "t3code://threads/env/a%23b",
+            "t3code://threads/env/a%5Cb",
+            "t3code://threads/env/a%0Ab",
+            "t3code://threads/env/a%1Bb",
+            "t3code://threads/env/a%7Fb",
+            "t3code://threads/env/%2E%2E",
+            "t3code://threads/env/%2E",
+            "t3code://threads/env/%FF",
+            "t3code://threads/env/t/",
+        ] {
+            assert_eq!(refused_code(url), ErrorCode::UrlNotAllowed, "{url}");
+        }
+        for (url, opened) in [
+            (
+                "t3code://threads/0b8a1f9e-1d2c-4b3a-9f8e-7d6c5b4a3f21/mcp%3Alaunch%3A9f8e7d6c",
+                "t3code://threads/0b8a1f9e-1d2c-4b3a-9f8e-7d6c5b4a3f21/mcp%3Alaunch%3A9f8e7d6c",
+            ),
+            (
+                "t3code://threads/0b8a1f9e/thread_01HZX8Q2%2Eb",
+                "t3code://threads/0b8a1f9e/thread_01HZX8Q2%2Eb",
+            ),
+            ("T3CODE://threads/env/t", "t3code://threads/env/t"),
+        ] {
+            assert_eq!(
+                decide(url).unwrap(),
+                Opening::Thread(opened.into()),
+                "{url}"
+            );
+        }
+    }
+
+    /// The second audit's whole list, on files laid out as the auditor laid them out.
+    #[test]
+    fn the_second_audits_cases() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("airboss-audit2-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let fx = dir.join("fx");
+        std::fs::create_dir_all(fx.join("dir.md")).unwrap();
+        std::fs::create_dir_all(fx.join("Evil.app/Contents/MacOS")).unwrap();
+        for f in [
+            "plan.md",
+            "plan.md ",
+            "plan.md.",
+            "-rf.md",
+            "café.md",
+            "nl\nx.md",
+            "esc\u{1b}x.md",
+            "a.command",
+            "a.fileloc",
+            "a.html",
+            "a.inetloc",
+            "a.svg",
+            "a.terminal",
+            "a.textClipping",
+            "a.webloc",
+            "t.json",
+            "t.rtf",
+            "t.xml",
+            "t.yaml",
+            "exec.md",
+        ] {
+            std::fs::write(fx.join(f), "x").unwrap();
+        }
+        for f in ["a.command", "exec.md"] {
+            std::fs::set_permissions(fx.join(f), std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        std::fs::hard_link(fx.join("a.command"), fx.join("hard.md")).unwrap();
+        symlink(fx.join("a.command"), fx.join("link.md")).unwrap();
+        symlink("/System/Applications/Calculator.app", fx.join("calc.md")).unwrap();
+        symlink(fx.join("a.html"), fx.join("swap.md")).unwrap();
+        let fifo = std::process::Command::new("/usr/bin/mkfifo")
+            .arg(fx.join("fifo.md"))
+            .status()
+            .unwrap();
+        assert!(fifo.success());
+        let base = file_url(&fx);
+        let real = |n: &str| fx.join(n).canonicalize().unwrap();
+        let text = |o: Result<Opening, AppError>| match o {
+            Ok(Opening::Open(_, Viewer::TextEdit)) => "textedit".to_string(),
+            Ok(Opening::Open(_, Viewer::Preview)) => "preview".to_string(),
+            Ok(Opening::Reveal(p)) => {
+                format!("reveal {}", p.file_name().unwrap().to_string_lossy())
+            }
+            Ok(other) => format!("{other:?}"),
+            Err(e) => format!("{:?}", e.code),
+        };
+        let tail = base.trim_start_matches("file://");
+        for (url, want) in [
+            (format!("{base}/plan.md"), "textedit"),
+            (format!("{base}/PLAN.MD"), "textedit"),
+            (format!("file:///{tail}/plan.md"), "textedit"),
+            (format!("{base}/./plan.md"), "textedit"),
+            (format!("{base}/plan.md%3Fx"), "NotFound"),
+            (format!("{base}/plan.md%23"), "NotFound"),
+            (format!("file://%2F{tail}/plan.md"), "UrlNotAllowed"),
+            (format!("{}%2Fplan.md", base), "textedit"),
+            (format!("{base}/plan.md."), "reveal plan.md."),
+            (format!("{base}/plan.md%20"), "reveal plan.md "),
+            (format!("{base}/-rf.md"), "textedit"),
+            (format!("{base}/caf%C3%A9.md"), "textedit"),
+            (format!("{base}/cafe%CC%81.md"), "textedit"),
+            (format!("{base}/nl%0Ax.md"), "UrlNotAllowed"),
+            (format!("{base}/esc%1Bx.md"), "UrlNotAllowed"),
+            (format!("{base}/del%7Fx.md"), "UrlNotAllowed"),
+            (format!("{base}/exec.md"), "reveal exec.md"),
+            (format!("{base}/hard.md"), "reveal hard.md"),
+            (format!("{base}/link.md"), "reveal a.command"),
+            (format!("{base}/calc.md"), "reveal Calculator.app"),
+            (format!("{base}/swap.md"), "reveal a.html"),
+            (format!("{base}/dir.md"), "reveal dir.md"),
+            (format!("{base}/fifo.md"), "NotFound"),
+            (format!("{base}/Evil.app"), "reveal Evil.app"),
+            (format!("{base}/Evil.app/"), "reveal Evil.app"),
+            (format!("{base}/a.webloc"), "reveal a.webloc"),
+            (format!("{base}/a.fileloc"), "reveal a.fileloc"),
+            (format!("{base}/a.inetloc"), "reveal a.inetloc"),
+            (format!("{base}/a.terminal"), "reveal a.terminal"),
+            (format!("{base}/a.textClipping"), "reveal a.textClipping"),
+            (format!("{base}/a.html"), "reveal a.html"),
+            (format!("{base}/a.svg"), "reveal a.svg"),
+            (format!("{base}/t.json"), "textedit"),
+            (format!("{base}/t.rtf"), "textedit"),
+            (format!("{base}/t.xml"), "textedit"),
+            (format!("{base}/t.yaml"), "textedit"),
+            (format!("file://localhost{tail}/plan.md"), "UrlNotAllowed"),
+            (format!("file://[::1]{tail}/plan.md"), "UrlNotAllowed"),
+            (format!("{base}/plan.md;x"), "NotFound"),
+            (format!("file:{tail}/plan.md"), "UrlNotAllowed"),
+            ("file:///dev/stdin".to_string(), "NotFound"),
+            ("file:///dev/fd/0".to_string(), "NotFound"),
+            ("file:///dev/null".to_string(), "NotFound"),
+            (
+                "file:///System/Applications/Calculator.app".to_string(),
+                "reveal Calculator.app",
+            ),
+            (
+                "https://github.com/".to_string(),
+                "Browser(\"https://github.com/\")",
+            ),
+            ("https://github.com:/".to_string(), "UrlNotAllowed"),
+            (
+                "https://github.com:443@evil.com/".to_string(),
+                "UrlNotAllowed",
+            ),
+            (
+                "https://xn--gthub-n4a.com/".to_string(),
+                "Browser(\"https://xn--gthub-n4a.com/\")",
+            ),
+            (
+                "https://github.com%2F@evil.com".to_string(),
+                "UrlNotAllowed",
+            ),
+            (
+                "https://[::ffff:127.0.0.1]/".to_string(),
+                "Browser(\"https://[::ffff:127.0.0.1]/\")",
+            ),
+            (
+                "https://a.b/%0a".to_string(),
+                "Browser(\"https://a.b/%0a\")",
+            ),
+            (
+                "https://www.icloud.com/shortcuts/abc".to_string(),
+                "Browser(\"https://www.icloud.com/shortcuts/abc\")",
+            ),
+            (
+                "https://github.com./".to_string(),
+                "Browser(\"https://github.com./\")",
+            ),
+        ] {
+            assert_eq!(text(decide(&url)), want, "{url:?}");
+        }
+        // What's opened is the real file, not the spelling in the URL.
+        assert!(
+            matches!(decide(&format!("{base}/./plan.md")), Ok(Opening::Open(p, _)) if p == real("plan.md"))
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
