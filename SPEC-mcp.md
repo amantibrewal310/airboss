@@ -102,7 +102,7 @@ Six tools, kept few on purpose: fewer tools means agents pick the right one more
 | `propose_tasks` | `parent?`, `tasks: [{title, body?, repos?}]` (1–20) | `add_task` as the agent, once per item, so every one starts as `proposed` | The proposed tasks |
 | `import_plan` | `plan_file`, `parent?`, `plan` (a tree: `key`, `title`, `body?`, `repos?`, `depends_on?`, `children?`) | Checks that `plan_file` exists, then calls `add_tasks` as `plan` and links the file to the plan's top-level tasks | `{created, existing, keys}` |
 
-- **Repos are named, not numbered,** in tool arguments and results (`"repos": ["hub-ui", "booking-api"]`). A task can have several. An unknown repo name is an error that lists the registered repos.
+- **Repos are named, not numbered,** in tool arguments and results (`"repos": ["booking-web", "booking-api"]`). A task can have several. An unknown repo name is an error that lists the registered repos.
 - **There are no tools** to delete, move, edit titles, change a task's repos or branch, add dependencies outside a plan, accept proposals, or set PR state. Those are mine (the CLI, later the app) or belong to `sync`.
 - **Errors** come back as MCP tool errors with one sentence that tells the agent what to do next. For example:
   - `NotAllowed`: "Agents can't finish a task that has a PR; it finishes when the PR merges. Set it to in_review instead."
@@ -122,7 +122,7 @@ Six tools, kept few on purpose: fewer tools means agents pick the right one more
 ## CLI (acts as `me`)
 
 ```
-airboss add "Fix booking typo" [--under 12] [--repo hub-ui]… [--body "…"]   # --repo again for more
+airboss add "Fix booking typo" [--under 12] [--repo booking-web]… [--body "…"]   # --repo again for more
 airboss ls [--all] [--ready]          # the tree; --all includes done and dropped
 airboss show 12                       # task, repos, branch, links, history, dependencies both ways, run order
 airboss set 12 doing|in_review|blocked|todo [--note "…"]
@@ -130,14 +130,14 @@ airboss done 12 [--note "…"]
 airboss drop 12 [--note "…"]
 airboss accept 14 | airboss reject 15 [16 …] [--note "…"]   # reject skips any accepted meanwhile
 airboss edit 12 [--title "…"] [--body "…"]
-airboss repo link 12 hub-ui | airboss repo unlink 12 hub-ui
+airboss repo link 12 booking-web | airboss repo unlink 12 booking-web
 airboss branch 12 booking-flow | airboss branch 12 --clear
 airboss mv 12 [--under 9 | --top] [--pos 2]
 airboss wait 12 --on 9 | airboss unwait 12 --on 9
 airboss link 12 pr owner/repo#42 [--url …] [--title …]
-airboss repo add hub-ui ~/Workspace/…/hub-ui [--remote …] | airboss repo ls
-airboss repo edit hub-ui [--name …] [--path …] [--remote … | --no-remote]
-airboss repo rm hub-ui                # unlinks it from its tasks first
+airboss repo add booking-web ~/Workspace/…/booking-web [--remote …] | airboss repo ls
+airboss repo edit booking-web [--name …] [--path …] [--remote … | --no-remote]
+airboss repo rm booking-web                # unlinks it from its tasks first
 airboss log [--after <event id>]      # recent history, newest last
 airboss backup ~/Backups/airboss.db [--force]   # a consistent copy, while everything runs
 airboss mcp                           # the MCP server over stdio (agents only)

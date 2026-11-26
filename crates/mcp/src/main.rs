@@ -24,7 +24,7 @@ struct Cli {
 
 const AFTER_HELP: &str = "\
 Examples:
-  airboss add \"Fix booking typo\" --repo hub-ui
+  airboss add \"Fix booking typo\" --repo booking-web
   airboss ls
   airboss set 12 doing
   airboss accept 14
@@ -237,7 +237,7 @@ enum Command {
 enum RepoCommand {
     /// Register a repo tasks can be linked to.
     Add {
-        /// A short name, e.g. hub-ui.
+        /// A short name, e.g. booking-web.
         name: String,
         /// Where it's checked out.
         path: PathBuf,
