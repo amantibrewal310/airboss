@@ -707,6 +707,7 @@ A modal in the main window, built from the design's components:
   - **The list:** `t3_projects()` lists T3's projects from `sync.snapshot().projects`; `sync` reads them from T3's database on each pass.
     - Each row shows its folder name and path, and a checkbox, unticked.
     - Rows whose folder isn't a git repo, or is already added, are shown greyed with the reason.
+    - From 8 rows, a search field above the list filters by name or path (every word; name matches first, order kept), and keeps ticks. The modal opens on it; ↓ goes into the list and ↑ from the first row comes back; Esc clears a search before it closes; "No repo matches “…”" when nothing does. A path's tooltip shows only when it's cut off, and the modal's list scrolls inside it.
   - **"Add N repos"** runs `add_repos`. Each name is the folder's name, and each remote comes from the folder's `.git/config`.
   - **"Add another folder…"** opens the folder picker.
   - **Without T3,** only the folder picker shows, with "T3 Code's projects show here once it's installed."

@@ -4,6 +4,10 @@ What changed in each release of Airboss. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Added
+
+- **Search in Add repos.** With more than seven folders, a search field at the top filters them by name or path as you type. It opens with the cursor in it; ↓ goes into the list, ticks are kept while you search, and Esc clears it.
+
 ### Changed
 
 - The connections list (click the line at the foot of the sidebar) now says what it is: "Connections: the tools Airboss works with. Green ones work; orange ones need setting up." T3 Code and Herdr read "Connected" instead of "Live state", and a T3 Code problem reads "Not updating since 14:02".

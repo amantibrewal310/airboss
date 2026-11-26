@@ -18,7 +18,9 @@ The sidebar lists the views, then your parent tasks, then your repos:
 
 Select a task to see its panel on the right: what needs you, its status, repos, branch, parent, what it waits on and blocks, links, notes, subtasks, threads and activity. ⌘↓ opens it as a full page. ⌘W or the red button hides the window; ⌘Q quits.
 
-The footer at the bottom of the sidebar says "All connected", or names the first connection that's off. Click it for the details and a **Check again** button.
+The **+** beside Repos opens **Add repos**: tick folders from T3 Code's projects (or Herdr's), or **Add another folder…**. With more than seven, a search field at the top filters them by name or path; ↓ goes into the list, Space ticks, ⌘↩ adds, and Esc clears the search.
+
+The footer at the bottom of the sidebar says "All connected", or names the first connection that's off. Click it for the **Connections** list, which says what each tool is for and what to fix, with a **Check again** button.
 
 ## Capture
 
