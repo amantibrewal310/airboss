@@ -84,6 +84,8 @@ Both need T3 Code or Herdr. Without either, they read as disabled, and pressing 
 
 In Herdr, each repo gets a space named after it, and each thread is a tab, named like a T3 thread (`142 Booking flow`). Do it makes the tab's git worktree where Herdr keeps its own: `~/.herdr/worktrees/<repo>/<branch>`, or the folder `worktrees.directory` names in Herdr's settings. The agent gets the same brief as its first message. Tabs open without taking focus. **Open thread** brings Herdr forward on that tab. If Herdr isn't open, Do it opens it first.
 
+Claude Code asks whether you trust a folder the first time it runs there, and each Do it worktree is a new folder. Needs me shows the question as **Allow: trust this folder**, with Open thread to answer it in Herdr. Airboss never answers it for you.
+
 ## Where status comes from
 
 You rarely set a status by hand. It comes from four places, and the activity list shows which one each change came from.
@@ -91,7 +93,7 @@ You rarely set a status by hand. It comes from four places, and the activity lis
 - **Agents**, through the MCP tools: in progress when they start, in review when their PR is up, blocked with a reason, and notes along the way. An agent can mark a task done only if it has no PR, and must say what it did.
 - **GitHub**, through `gh`: every linked open PR is read about every 5 minutes, and again when you open its task. When all of a task's PRs have merged or closed, with at least one merged, the task is done. If an agent on it is still running or waiting on you, Airboss waits until it stops. A PR reopened on GitHub moves its done task back to in review. PRs that T3 Code lists on a linked thread are linked to the task too.
 - **T3 Code**, read from its database: each linked thread shows as Working, Waiting on you or Stopped, with its question or error. A failed run adds a note to the task. T3 state never changes a task's status by itself.
-- **Herdr**, from `hc events`: each linked terminal shows as Working, Waiting on you (Herdr says it's blocked on you) or Stopped. Herdr doesn't pass the question's text, so open the thread to read it.
+- **Herdr**, from `hc events`: each linked terminal shows as Working, Waiting on you (Herdr says it's blocked on you) or Stopped. When the agent asks for something, Needs me shows what Herdr reports, such as "Allow: trust this folder".
 - **Claude Code** sessions run outside T3 Code and Herdr: linked sessions show as working or stopped.
 
 The rest is yours: accepting proposals, dropping tasks, and finishing a task whose PR hasn't merged. Space marks the selected task done, or not done. S opens the status menu: 1 Todo, 2 In progress, 3 In review, 4 Blocked (asks why), 5 Done, 6 Dropped (asks first, because it drops every open subtask too).
