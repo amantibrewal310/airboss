@@ -138,7 +138,8 @@ impl Answer {
     }
 }
 
-/// Whether T3 can't start anything after this error, so the rest of the places fail too.
+/// Whether T3 (or Herdr) can't start anything after this error, so the rest of the places
+/// fail too.
 pub fn stops_the_loop(code: ErrorCode) -> bool {
     matches!(
         code,
@@ -147,6 +148,8 @@ pub fn stops_the_loop(code: ErrorCode) -> bool {
             | ErrorCode::T3Unreachable
             | ErrorCode::T3TooOld
             | ErrorCode::Timeout
+            | ErrorCode::HerdrMissing
+            | ErrorCode::HerdrNotRunning
     )
 }
 
@@ -449,6 +452,8 @@ mod tests {
             ErrorCode::T3Unreachable,
             ErrorCode::T3TooOld,
             ErrorCode::Timeout,
+            ErrorCode::HerdrMissing,
+            ErrorCode::HerdrNotRunning,
         ] {
             assert!(stops_the_loop(code));
         }
@@ -460,6 +465,8 @@ mod tests {
             ErrorCode::BadAnswer,
             ErrorCode::T3Failed,
             ErrorCode::AlreadyStarting,
+            ErrorCode::WorktreeFailed,
+            ErrorCode::HerdrFailed,
         ] {
             assert!(!stops_the_loop(code));
         }

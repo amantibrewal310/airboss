@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use airboss_core::{Actor, RepoId, Store};
-use airboss_launch::fake::{FakeGit, FakeT3Cli, Reply, Version};
+use airboss_launch::fake::{FakeGit, FakeHerdr, FakeT3Cli, Reply, Version};
 use airboss_launch::{CoreAccess, Launch, LaunchConfig, LaunchTools};
 use airboss_services::fakes::{FakeClock, FakeSync};
 use airboss_services::{Availability, ErrorCode, LaunchService, Service, SharedStore, StoreChange};
@@ -42,6 +42,7 @@ fn running(t3_installed: bool) -> Running {
         LaunchTools {
             t3: Box::new(t3.clone()),
             git: Box::new(FakeGit::new()),
+            herdr: Box::new(FakeHerdr::new()),
             clock: Arc::new(FakeClock::at(t0())),
         },
     )

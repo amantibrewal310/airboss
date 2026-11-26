@@ -1,15 +1,17 @@
-//! `start`: one thread per place, each behind a pending row committed before `t3` runs.
+//! `start`: one thread per place, each behind a pending row committed before `t3` or Herdr
+//! runs.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 
-use airboss_core::{LinkKind, NewLink, Repo, RepoId, TaskId};
+use airboss_core::{NewLink, Repo, RepoId, TaskId};
 use airboss_services::{
-    ErrorCode, LaunchReport, Mode, Place, ServiceError, StartRequest, StartedThread,
+    ErrorCode, LaunchReport, Launcher, Mode, Place, ServiceError, StartRequest, StartedThread,
 };
 
 use crate::brief::{self, RepoPlace};
-use crate::db::{Inserted, NewRow, State};
+use crate::db::{Inserted, NewRow, Runs, State};
+use crate::herdr::{self, AppRun, Tool};
 use crate::prepare::{Facts, core_error, started_thread};
 use crate::t3cli::{self, Answer};
 use crate::{Inner, LaunchMsg, PlaceKey, branch, errors, lock, log, settle};
@@ -22,7 +24,9 @@ const AGAIN_MAX: u32 = 999;
 pub struct Brief {
     /// `None` for a folder with no repo.
     pub repo: Option<RepoId>,
+    /// T3: `t3`'s argv. Herdr: the agent's argv (`["claude"]`), which the tab runs.
     pub argv: Vec<String>,
+    /// The brief: `t3`'s stdin, or the Herdr tab's `task`, the agent's first message.
     pub stdin: String,
 }
 
@@ -67,6 +71,48 @@ struct Go {
     title: String,
     /// The branch and its base, for Do it in a repo.
     branch: Option<(String, String)>,
+    runs: Runs,
+    /// Herdr: where the tab goes. `None` for T3.
+    herdr: Option<HerdrGo>,
+}
+
+/// Where a Herdr tab goes.
+struct HerdrGo {
+    /// The folder its terminal starts in: the worktree, or the place's folder.
+    folder: PathBuf,
+    /// Do it in a repo: the worktree to make (or reuse) first.
+    worktree: Option<PathBuf>,
+    /// The space it goes in: the one with this name, else this folder; made if neither.
+    space_name: String,
+    space_folder: PathBuf,
+}
+
+impl HerdrGo {
+    /// A tab in the place's folder itself (Plan it, research), or in `worktree`.
+    fn new(spot: &Spot, worktree: Option<PathBuf>) -> HerdrGo {
+        let space_name = match &spot.repo {
+            Some(r) => brief::one_line(&r.name),
+            None => spot
+                .folder
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| spot.folder.display().to_string()),
+        };
+        HerdrGo {
+            folder: worktree.clone().unwrap_or_else(|| spot.folder.clone()),
+            worktree,
+            space_name,
+            space_folder: spot.folder.clone(),
+        }
+    }
+}
+
+/// How messages name where a thread starts.
+fn app_name(runs: Runs) -> &'static str {
+    match runs {
+        Runs::T3 => "T3",
+        Runs::Herdr => "Herdr",
+    }
 }
 
 /// Step 1 of `start`: the checks, the places, and the branch (checked, not saved).
@@ -197,11 +243,14 @@ fn plan(
         if rows.iter().any(|row| row.state == State::Started) {
             return Ok(Planned::Skip);
         }
-        if rows.iter().any(|row| row.state == State::Pending) {
+        if let Some(pending) = rows.iter().find(|row| row.state == State::Pending) {
             let name = spot.repo.as_ref().map(|x| x.name.as_str());
-            return Ok(Planned::Fail(errors::already_starting(name)));
+            let app = app_name(pending.runs);
+            return Ok(Planned::Fail(errors::already_starting(name, app)));
         }
     }
+    let runs = Runs::from(req.launcher);
+    let own = runs.link_kind();
     let seen = rows.iter().map(|row| row.id).max().unwrap_or(0);
     let label = spot.label();
     if !spot.folder.is_absolute() {
@@ -240,28 +289,47 @@ fn plan(
                     path: x.path.clone(),
                 })
                 .collect();
+            // Herdr's worktree is made here, so the brief can say where the agent is.
+            let worktree = matches!(req.launcher, Launcher::Herdr { .. }).then(|| {
+                let dir = herdr::worktrees_dir(&inner.cfg.herdr_settings, &inner.cfg.home);
+                herdr::worktree_path(&dir, &spot.folder, &repo.name, &branch)
+            });
             let here = RepoPlace {
                 name: repo.name.clone(),
-                path: folder.clone(),
+                path: worktree
+                    .as_ref()
+                    .map_or_else(|| folder.clone(), |w| w.display().to_string()),
             };
             let title =
                 t3cli::thread_title(task.id, &task.title, several.then_some(repo.name.as_str()));
+            let stdin = brief::do_it_as(own, &reference, &here, &all, &branch, &base, &nonce);
+            let (argv, herdr) = match req.launcher {
+                Launcher::T3 => (t3cli::do_it_argv(&title, &base, &branch, &folder), None),
+                Launcher::Herdr { agent } => {
+                    (herdr::agent_argv(agent), Some(HerdrGo::new(spot, worktree)))
+                }
+            };
             Go {
                 seen,
-                argv: t3cli::do_it_argv(&title, &base, &branch, &folder),
-                stdin: brief::do_it(&reference, &here, &all, &branch, &base, &nonce),
+                argv,
+                stdin,
                 title,
                 branch: Some((branch, base)),
+                runs,
+                herdr,
             }
         }
         (Mode::DoIt, _, _) => {
             let title = t3cli::thread_title(task.id, &task.title, None);
+            let (argv, herdr) = folder_go(req.launcher, &title, spot);
             Go {
                 seen,
-                argv: t3cli::folder_argv(&title, &folder),
-                stdin: brief::research(&reference, &folder, &nonce),
+                argv,
+                stdin: brief::research_as(own, &reference, &folder, &nonce),
                 title,
                 branch: None,
+                runs,
+                herdr,
             }
         }
         (Mode::PlanIt, _, _) => {
@@ -276,16 +344,30 @@ fn plan(
                 })
                 .collect();
             let title = t3cli::plan_title(task.id, &task.title);
+            let (argv, herdr) = folder_go(req.launcher, &title, spot);
             Go {
                 seen,
-                argv: t3cli::folder_argv(&title, &folder),
-                stdin: brief::plan_it(&reference, &repos, &nonce),
+                argv,
+                stdin: brief::plan_it_as(own, &reference, &repos, &nonce),
                 title,
                 branch: None,
+                runs,
+                herdr,
             }
         }
     };
     Ok(Planned::Go(go))
+}
+
+/// The argv for a thread in the place's folder itself, and for Herdr where its tab goes.
+fn folder_go(launcher: Launcher, title: &str, spot: &Spot) -> (Vec<String>, Option<HerdrGo>) {
+    match launcher {
+        Launcher::T3 => (
+            t3cli::folder_argv(title, &spot.folder.display().to_string()),
+            None,
+        ),
+        Launcher::Herdr { agent } => (herdr::agent_argv(agent), Some(HerdrGo::new(spot, None))),
+    }
 }
 
 /// Exactly what `start` would send, place by place. Places that already started are left
@@ -356,7 +438,7 @@ pub(crate) fn start(inner: &Inner, req: &StartRequest) -> Result<LaunchReport, S
                 if t3cli::stops_the_loop(e.code) {
                     stopped = Some(e.clone());
                 }
-                if e.code == ErrorCode::T3Missing {
+                if matches!(e.code, ErrorCode::T3Missing | ErrorCode::HerdrMissing) {
                     inner.queue(LaunchMsg::CheckAvailability);
                 }
                 report.failed.push((repo, e));
@@ -370,7 +452,7 @@ pub(crate) fn start(inner: &Inner, req: &StartRequest) -> Result<LaunchReport, S
     Ok(report)
 }
 
-/// This call is running `t3` for a place; released when dropped.
+/// This call is starting a place; released when dropped.
 struct InFlight<'a> {
     inner: &'a Inner,
     key: PlaceKey,
@@ -403,7 +485,7 @@ enum Ran {
     Skipped,
 }
 
-/// Commits the pending row, runs `t3`, and settles the row by its answer.
+/// Commits the pending row, runs `t3` or Herdr, and settles the row by its answer.
 fn run(
     inner: &Inner,
     task: TaskId,
@@ -413,6 +495,12 @@ fn run(
 ) -> Result<Ran, ServiceError> {
     let repo = spot.repo.as_ref().map(|x| x.id);
     let folder = spot.folder.display().to_string();
+    let worktree = go
+        .herdr
+        .as_ref()
+        .and_then(|h| h.worktree.as_ref())
+        .map(|w| w.display().to_string());
+    let app = app_name(go.runs);
     let new = NewRow {
         task,
         repo,
@@ -423,10 +511,12 @@ fn run(
             .as_ref()
             .map(|(b, base)| (b.as_str(), base.as_str())),
         title: &go.title,
+        runs: go.runs,
+        worktree: worktree.as_deref(),
     };
     let Some(_flying) = InFlight::claim(inner, (task, repo, req.mode)) else {
         let name = spot.repo.as_ref().map(|x| x.name.as_str());
-        return Err(errors::starting_now(name));
+        return Err(errors::starting_now(name, app));
     };
     let inserted = lock(&inner.db).insert_pending(&new, req.again, go.seen, inner.clock.now())?;
     let id = match inserted {
@@ -435,11 +525,16 @@ fn run(
         Inserted::Started => return Ok(Ran::Skipped),
         Inserted::Pending => {
             let name = spot.repo.as_ref().map(|x| x.name.as_str());
-            return Err(errors::already_starting(name));
+            return Err(errors::already_starting(name, app));
         }
     };
-    let result = lock(&inner.t3).run(&go.argv, Some(&go.stdin), inner.cfg.timeout);
-    let answer = t3cli::read_start(result, &spot.label(), inner.cfg.timeout);
+    let answer = match &go.herdr {
+        None => {
+            let result = lock(&inner.t3).run(&go.argv, Some(&go.stdin), inner.cfg.timeout);
+            t3cli::read_start(result, &spot.label(), inner.cfg.timeout)
+        }
+        Some(place) => open_tab(inner, task, id, spot, go, place),
+    };
     let now = inner.clock.now();
     match answer {
         Answer::Started {
@@ -449,7 +544,7 @@ fn run(
             let started = lock(&inner.db).started(id, &thread_id, now);
             let Some(row) = started? else {
                 log(&format!(
-                    "t3 answered with thread {thread_id}, which another row already has"
+                    "{app} answered with thread {thread_id}, which another row already has"
                 ));
                 return Err(errors::bad_answer());
             };
@@ -467,11 +562,12 @@ fn run(
                 // Settling already bound this row to the thread sync found. Both exist, so
                 // link the one t3 named too rather than lose it.
                 log(&format!(
-                    "t3 answered with thread {thread_id}, but the row already has {:?}; \
+                    "{app} answered with thread {thread_id}, but the row already has {:?}; \
                      linking both",
                     row.thread_id
                 ));
-                if let Err(e) = inner.core.link(task, thread_link(&thread_id, &row.title)) {
+                let both = thread_link(row.runs, &thread_id, &row.title);
+                if let Err(e) = inner.core.link(task, both) {
                     log(&format!("couldn't link thread {thread_id}: {e}"));
                 }
             }
@@ -493,9 +589,98 @@ fn run(
     }
 }
 
-/// Keeps `NewLink` in one place: every thread link is a `t3_thread` with its title.
-pub(crate) fn thread_link(thread: &str, title: &str) -> NewLink {
-    NewLink::new(LinkKind::T3Thread, thread).with_title(title)
+/// Keeps `NewLink` in one place: every thread link is a `t3_thread` or a `herdr_terminal`,
+/// with its title.
+pub(crate) fn thread_link(runs: Runs, thread: &str, title: &str) -> NewLink {
+    NewLink::new(runs.link_kind(), thread).with_title(title)
+}
+
+/// Herdr: makes or reuses the worktree, opens the tab in the repo's space (making the space
+/// if there's none), and labels its terminal with the task and this row.
+fn open_tab(
+    inner: &Inner,
+    task: TaskId,
+    row: i64,
+    spot: &Spot,
+    go: &Go,
+    place: &HerdrGo,
+) -> Answer {
+    if let (Some(worktree), Some((branch, base))) = (&place.worktree, &go.branch)
+        && let Err(e) = ensure_worktree(inner, spot, worktree, branch, base)
+    {
+        return Answer::Failed(e);
+    }
+    let mut cli = lock(&inner.herdr);
+    let spaces = match herdr::run_app(cli.as_mut(), &herdr::ls_argv(), herdr::QUICK_TIMEOUT) {
+        AppRun::Ran(out) if out.status == Some(0) => match herdr::read_ls(&out.stdout) {
+            Some(spaces) => spaces,
+            None => {
+                return Answer::Failed(errors::herdr_failed("Herdr's spaces couldn't be read."));
+            }
+        },
+        AppRun::Ran(out) => return Answer::Failed(herdr::refusal(&out)),
+        // Listing makes nothing, so nothing can have appeared.
+        AppRun::Failed(e) => return Answer::Failed(e),
+        AppRun::Unsure(_) => return Answer::Failed(errors::herdr_slow(herdr::QUICK_TIMEOUT)),
+    };
+    let folder = place.folder.display().to_string();
+    let argv = match herdr::find_space(&spaces, &place.space_name, &place.space_folder) {
+        Some(space) => herdr::tab_new_argv(&space.id, &go.title, &folder, &go.argv, &go.stdin),
+        None => herdr::space_new_argv(&place.space_name, &folder, &go.title, &go.argv, &go.stdin),
+    };
+    let answer = herdr::read_opened(herdr::run_app(cli.as_mut(), &argv, inner.cfg.timeout));
+    if let Answer::Started { thread_id, .. } = &answer {
+        let labelled = cli.run(
+            Tool::Hc,
+            &herdr::label_argv(thread_id, task, row),
+            herdr::QUICK_TIMEOUT,
+        );
+        if !matches!(&labelled, Ok(out) if out.status == Some(0)) {
+            // The tab exists and the row will hold its address; only a restart mid-start
+            // needs the labels.
+            log(&format!(
+                "couldn't label Herdr terminal {thread_id}: {labelled:?}"
+            ));
+        }
+    }
+    answer
+}
+
+/// The worktree Herdr's Do it works in: reused when it's already this repo's worktree on
+/// `branch`; else `git worktree add`, on the branch if it exists, else a new branch from
+/// `base` (the local branch if the repo has it, else `origin/<base>`).
+fn ensure_worktree(
+    inner: &Inner,
+    spot: &Spot,
+    path: &Path,
+    branch: &str,
+    base: &str,
+) -> Result<(), ServiceError> {
+    let repo = &spot.folder;
+    let failed = |e: std::io::Error| errors::worktree_failed(&e.to_string());
+    let mut git = lock(&inner.git);
+    let git = &mut git.git;
+    let known = git.worktrees(repo).map_err(failed)?;
+    if let Some(wt) = known.iter().find(|w| herdr::same_path(&w.path, path)) {
+        return match wt.branch.as_deref() {
+            Some(b) if b == branch => Ok(()),
+            other => Err(errors::worktree_failed(&format!(
+                "{} is already a worktree of {}, on {}",
+                path.display(),
+                spot.label(),
+                other.unwrap_or("no branch")
+            ))),
+        };
+    }
+    let start = if git.has_branch(repo, branch).map_err(failed)? {
+        None
+    } else if git.has_branch(repo, base).map_err(failed)? {
+        Some(base.to_string())
+    } else {
+        Some(format!("origin/{base}"))
+    };
+    git.add_worktree(repo, path, branch, start.as_deref())
+        .map_err(failed)
 }
 
 /// `LaunchService::add_to_t3`: `<t3> project add --title <name> <path>`, only ever from the

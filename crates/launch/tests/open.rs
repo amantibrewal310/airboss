@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use airboss_core::Store;
-use airboss_launch::fake::{FakeGit, FakeT3Cli};
+use airboss_launch::fake::{FakeGit, FakeHerdr, FakeT3Cli};
 use airboss_launch::{CoreAccess, Git, LaunchConfig, LaunchMsg, LaunchTools, T3Cli};
 use airboss_services::ErrorCode;
 use airboss_services::fakes::{FakeClock, FakeSync};
@@ -18,6 +18,7 @@ fn tools() -> LaunchTools {
     LaunchTools {
         t3: Box::new(FakeT3Cli::new()),
         git: Box::new(FakeGit::new()),
+        herdr: Box::new(FakeHerdr::new()),
         clock: Arc::new(FakeClock::at(t0())),
     }
 }

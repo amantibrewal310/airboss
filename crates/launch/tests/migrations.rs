@@ -196,3 +196,51 @@ fn version_2_adds_the_repo_path_and_keeps_every_launch_repos_row() {
         "an empty path is refused"
     );
 }
+
+#[test]
+fn version_3_records_the_launcher_and_the_worktree() {
+    let dir = TempDir::new();
+    let path = dir.path().join("airboss.db");
+    let mut store = Store::open(&path).unwrap();
+    store.migrate_module("launch", &MIGRATIONS[..2]).unwrap();
+    let c = Connection::open(&path).unwrap();
+    insert(
+        &c,
+        1,
+        Some(1),
+        "do",
+        "started",
+        Some("t-old"),
+        Some("b"),
+        Some("main"),
+        1,
+        None,
+    )
+    .unwrap();
+    store.migrate_module("launch", MIGRATIONS).unwrap();
+    // Every row from before was a T3 one.
+    let old: (String, Option<String>) = c
+        .query_row(
+            "SELECT launcher, worktree_path FROM launch_threads WHERE thread_id = 't-old'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(old, ("t3".into(), None));
+    let add = |launcher: &str, worktree: Option<&str>| {
+        c.execute(
+            "INSERT INTO launch_threads (task_id, repo_id, mode, state, project_path, title,
+                                         launcher, worktree_path)
+             VALUES (2, NULL, 'plan', 'lost', '/r', 't', ?1, ?2)",
+            params![launcher, worktree],
+        )
+    };
+    add("herdr", Some("/w/web/task-2")).unwrap();
+    add("herdr", None).unwrap();
+    add("t3", None).unwrap();
+    assert!(add("tmux", None).is_err(), "an unknown launcher is refused");
+    assert!(
+        add("herdr", Some("")).is_err(),
+        "an empty worktree path is refused"
+    );
+}
