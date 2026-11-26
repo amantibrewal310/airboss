@@ -7,6 +7,8 @@
 //! - `QuickAddPanel`, an `NSPanel` subclass from `tauri-nspanel`
 //! - notifications through `UNUserNotificationCenter`: permission, posting, and the delegate
 //!   that hears a click
+//! - the app that opens a URL (`NSWorkspace`), and whether an app's code signature meets a
+//!   requirement (the Security framework's static code checks)
 
 #![allow(unsafe_code)]
 
@@ -305,4 +307,51 @@ pub fn set_notification_delegate(clicked: Clicked) {
     UNUserNotificationCenter::currentNotificationCenter().setDelegate(Some(as_delegate));
     // The centre holds its delegate weakly; this one lives as long as the app.
     std::mem::forget(delegate);
+}
+
+/// The app LaunchServices would open `url` with, as a path; `None` if there's none.
+pub fn handler_for_url(url: &str) -> Option<std::path::PathBuf> {
+    let url = objc2_foundation::NSURL::URLWithString(&NSString::from_str(url))?;
+    let app = NSWorkspace::sharedWorkspace().URLForApplicationToOpenURL(&url)?;
+    Some(std::path::PathBuf::from(app.path()?.to_string()))
+}
+
+/// Whether the code at `app` (a bundle) is validly signed, its resources sealed and unchanged,
+/// and meets the code requirement `requirement` (`codesign -R` syntax). False for unsigned,
+/// ad-hoc signed or modified code, or a requirement that doesn't parse.
+pub fn code_satisfies(app: &std::path::Path, requirement: &str) -> bool {
+    use std::ptr::{NonNull, null, null_mut};
+
+    use objc2_core_foundation::{CFRetained, CFString, CFURL};
+    use objc2_security::{SecCSFlags, SecRequirement, SecStaticCode};
+
+    const ERR_SEC_SUCCESS: i32 = 0;
+    // kSecCSStrictValidate | kSecCSCheckNestedCode: the stricter checks `codesign --verify`
+    // makes, and the frameworks inside the bundle too.
+    let validate = SecCSFlags(1 << 4 | 1 << 3);
+    let Some(url) = CFURL::from_directory_path(app) else {
+        return false;
+    };
+    let mut code: *const SecStaticCode = null();
+    // SAFETY: `url` is a valid CFURL and `code` a valid out-pointer for the call.
+    let made =
+        unsafe { SecStaticCode::create_with_path(&url, SecCSFlags(0), NonNull::from(&mut code)) };
+    let Some(code) = NonNull::new(code.cast_mut()).filter(|_| made == ERR_SEC_SUCCESS) else {
+        return false;
+    };
+    // SAFETY: a successful create returns a +1 reference, which `CFRetained` now owns.
+    let code: CFRetained<SecStaticCode> = unsafe { CFRetained::from_raw(code) };
+    let text = CFString::from_str(requirement);
+    let mut req: *mut SecRequirement = null_mut();
+    // SAFETY: `text` is a valid CFString and `req` a valid out-pointer for the call.
+    let parsed = unsafe {
+        SecRequirement::create_with_string(&text, SecCSFlags(0), NonNull::from(&mut req))
+    };
+    let Some(req) = NonNull::new(req).filter(|_| parsed == ERR_SEC_SUCCESS) else {
+        return false;
+    };
+    // SAFETY: as above, a +1 reference.
+    let req: CFRetained<SecRequirement> = unsafe { CFRetained::from_raw(req) };
+    // SAFETY: both are valid, owned references for the call.
+    unsafe { code.check_validity(validate, Some(&req)) == ERR_SEC_SUCCESS }
 }

@@ -556,6 +556,13 @@ export class App {
     // Appendix D: no toast; the button already says "Starting…".
     if (err.code === 'already_starting') return;
     if (err.code === 'db_unavailable' || err.code === 'db_too_new') return this.lost(err);
+    // The app that would open a link isn't verified (Rust's handlers.rs): offer the link.
+    if (err.code === 'app_unverified' && err.detail) {
+      const link = err.detail;
+      return this.toast(err.message, 'warn', [
+        { label: 'Copy link', run: () => void api.copyText({ link }).then(() => this.toast('Copied the link'), (e: unknown) => this.fail(e)) },
+      ]);
+    }
     this.toast(err.message, 'warn');
   }
 

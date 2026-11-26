@@ -22,6 +22,8 @@ cargo run -p airboss-app --example seed -- --tasks 2000 --db /tmp/airboss-qa/big
   ```
 
 - Put `~/.local/bin` on your `PATH` in `~/.zshrc` if it isn't, and open a new Terminal tab.
+- Check the link opener's signature checks on this Mac (T3 Code installed):
+  `cargo test -p airboss-app --test handlers_real -- --ignored` passes.
 - Do the whole list in **Dark** (System Settings › Appearance). At the end, switch to **Light**
   and do the last section.
 

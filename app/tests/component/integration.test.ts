@@ -90,3 +90,28 @@ describe('quickadd:reset', () => {
     expect(document.activeElement).toBe(title);
   });
 });
+
+describe('a link whose app Airboss couldn’t verify', () => {
+  it('says so, and offers to copy the link', async () => {
+    const { app, backend } = await startApp('design');
+    const url = 't3code://threads/env-local/slot-picker';
+    const invoke = backend.invoke.bind(backend);
+    const copied: unknown[] = [];
+    backend.invoke = (async (command: string, args: unknown) => {
+      if (command === 'open_thread') {
+        throw { code: 'app_unverified', message: "Couldn't verify the app that opens T3 links. Open the thread from T3 Code.", detail: url };
+      }
+      if (command === 'copy_text') copied.push(args);
+      return invoke(command as never, args as never);
+    }) as typeof backend.invoke;
+    await app.openThread({ source: 't3', ref: 'slot-picker' });
+    await wait(10);
+    const toast = app.toasts.list.at(-1)!;
+    expect(toast.tone).toBe('warn');
+    expect(toast.text).toBe("Couldn't verify the app that opens T3 links. Open the thread from T3 Code.");
+    expect(toast.actions.map((a) => a.label)).toEqual(['Copy link']);
+    toast.actions[0]!.run();
+    await wait(10);
+    expect(copied).toEqual([{ what: { link: url } }]);
+  });
+});

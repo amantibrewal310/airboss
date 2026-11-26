@@ -59,6 +59,7 @@ Versions are the latest stable on crates.io and npm on 25 Nov 2026, pinned exact
 | `tauri-plugin-dialog` | 2.8.4 | Folder picker for "Add another folder…" |
 | `tauri-plugin-log` | 2.10.2 | `~/Library/Logs/Airboss/app.log`, rotated at 1 MB, keeping 3 files. The services' lines (`airboss_services::log::line`) and panics on any thread go there too (`logs::install`), since stderr is `/dev/null` when the app opens from Finder. Nothing in the app process writes to stderr directly (`tests/logs.rs` checks the sources) |
 | `tauri-nspanel` | 2.1.1 | Quick add as a non-activating panel over full-screen apps |
+| `objc2-security` 0.3.2, `objc2-core-foundation` 0.3.2 | the versions already in the lock | Checking the code signature of the app that opens a link (`SecStaticCodeCreateWithPath`, `SecRequirementCreateWithString`, `SecStaticCodeCheckValidity`), in `src/macos.rs` |
 | `objc2-user-notifications` 0.3.2, `block2` 0.6.2 | the versions already in the lock | macOS notifications through `UNUserNotificationCenter`, in `src/macos.rs`: permission, posting, and the delegate that hears a click. (`tauri-plugin-notification` was dropped: on macOS it posts through the deprecated `NSUserNotificationCenter`.) |
 | `notify` | 9.0.0, `default-features = false`, feature `macos_kqueue` | kqueue on the WAL file and its folder. FSEvents is not used. |
 | `objc2` 0.6.5, `objc2-foundation` 0.3.2, `objc2-app-kit` 0.3.2 | the versions Tauri already links | System accent colour and the wake notification, in one module, `src/macos.rs` |
@@ -388,17 +389,22 @@ Agents can store any URL through MCP `link`, so every link the app opens (⌘O, 
 
 | Form | What happens |
 |---|---|
-| `https://host[:port]/…`, printable ASCII, no user info and no `\` | Opens in the browser |
-| `t3code://threads/<environment>/<thread>`: the environment is letters, digits and `-`; the thread id adds `_` and `%XX`; nothing after it | Opens in T3 Code |
-| `file:///absolute/path`: no host (not even `localhost`), no query, no fragment | Percent-decoded (it must be UTF-8), resolved (symlinks and `..`) and required to exist. A plain, non-executable file whose extension (any case) is on the list below opens in a **fixed system viewer**, `open -a /System/Applications/TextEdit.app` for text and code or `Preview.app` for PDFs and images, never in the app LaunchServices would pick. Everything else is **shown in Finder**: folders, bundles (`.app`, `.workflow`, `.rtfd`), `.command`, `.terminal`, `.sh`, `.py`, `.html`, `.svg`, executables, files without an extension, and lookalike extensions |
+| `https://host[:port]/…`, printable ASCII, no user info and no `\` | Opens in the browser, once the browser is verified (below) |
+| `t3code://threads/<environment>/<thread>`: the environment is letters, digits and `-`; the thread id adds `_` and `%XX`; nothing after it. The thread id is judged again once decoded: UTF-8, no `/`, `?`, `#` or `\`, no control byte, and not `.` or `..` (so `%2E%2E%2F…`, `%3F` and `%00` are refused; `mcp%3Alaunch%3A…` passes) | Opens in T3 Code, once it's verified (below) |
+| `file:///absolute/path`: no host (not even `localhost`), no query, no fragment | Percent-decoded (it must be UTF-8, with no control byte, escaped or not: `%0A` and `%1B` are refused), resolved (symlinks and `..`) and required to exist. A plain, non-executable file whose extension (any case) is on the list below opens in a **fixed system viewer**, `open -a /System/Applications/TextEdit.app` for text and code or `Preview.app` for PDFs and images, never in the app LaunchServices would pick. Everything else is **shown in Finder**: folders, bundles (`.app`, `.workflow`, `.rtfd`), `.command`, `.terminal`, `.sh`, `.py`, `.html`, `.svg`, executables, files without an extension, and lookalike extensions |
 | anything else, `http` included | Refused: "Airboss only opens https links, files and T3 threads." |
 
 - **Documents that open:** `md`, `markdown`, `txt`, `text`, `rtf`, `log`, `csv`, `tsv`, `json`, `jsonl`, `yaml`, `yml`, `toml`, `xml`, `ini`, `cfg`, `conf`, `diff`, `patch`, `pdf`, `png`, `jpg`, `jpeg`, `gif`, `webp`, `heic`, `heif`, `tif`, `tiff`, `bmp`, and the code files `rs`, `ts`, `tsx`, `js`, `jsx`, `mjs`, `cjs`, `svelte`, `vue`, `css`, `scss`, `go`, `java`, `kt`, `swift`, `c`, `h`, `cc`, `cpp`, `hpp`, `sql`, `graphql`, `proto`. Each one's default app shows it and runs nothing; HTML and SVG are left out because a browser would run their scripts, and `.py` because Python Launcher runs it.
 - **What's opened** is the resolved path, never the URL text, so a symlink is judged by what it points at.
 - **Why a fixed viewer** (found by a security review of this fix): a plain `open` lets LaunchServices choose the app, and an agent with a shell can steer that choice for a file that passes every check above: a Finder alias named `plan.md` (a regular file, so not resolved as a symlink) pointing at an app, a per-file `com.apple.LaunchServices.OpenWith` attribute, an app it registers as the default for a type, or a file swapped between the check and the open. With `open -a` and a system viewer named by path, each of those only ever reaches TextEdit or Preview, which show it and run nothing.
+- **Which app opens a web or T3 link** (`handlers.rs`, the second security audit): a plain `open <url>` lets LaunchServices pick the app, and an agent can register one. An `Evil.app` it writes next to a file Airboss reveals, claiming `com.t3tools.t3code`, version 999 and the `t3code` scheme, is registered the moment Finder shows its folder, and could then take Open thread. So the handler LaunchServices would use is looked up (`NSWorkspace.URLForApplicationToOpenURL`), resolved, and its signature checked with the Security framework (strict validation, nested code included) against a requirement, and the link is opened with exactly that app (`open -a <app> -- <url>`):
+  - **T3 links:** `identifier "com.t3tools.t3code" and anchor apple generic and certificate leaf[subject.OU] = "ARK85ZXQ4Z"` (T3 Tools, Inc.'s Developer ID). The app's name and folder don't matter: it's "T3 Code (Beta).app" today. Refused: "Couldn't verify the app that opens T3 links. Open the thread from T3 Code."
+  - **Web links:** `anchor apple generic` (Apple, the App Store or a Developer ID), and the browser can't live in the home folder except `~/Applications`. Refused: "Couldn't verify your browser. Copy the link instead."
+  - A refusal (`app_unverified`) carries the link as its detail, and its toast offers **Copy link** (`copy_text` with `link`).
+  - The lookup and the check sit behind the `AppCheck` trait: `FakeAppCheck` in tests (genuine T3 Code and Safari unless a test says otherwise), `MacAppCheck` in the app. `tests/handlers_real.rs` (`#[ignore]`) checks this Mac: the installed T3 Code passes, and a freshly made lookalike bundle fails, unsigned or signed ad hoc; the default browser passes.
 - **Left as it is:** a revealed item is selected in Finder, so pressing ⌘O in Finder next would open it. That's Finder's own behaviour, the same as for any file the user browses to.
-- A missing file says "That file no longer exists."; one Airboss can't resolve says "Airboss can't reach that file."
-- `opener.rs` has a table-driven test of every trick in the audit (`file:///tmp/x.command?a`, `file:/System/Applications/Calculator.app?://`), plus mixed case, `file://localhost`, `..` and `%2E%2E`, symlinks to executables, and Unicode lookalikes (a Cyrillic `і` in the scheme, a Cyrillic `ԁ` in an extension, a fullwidth dot, a right-to-left override).
+- A missing file says "That file no longer exists."; one Airboss can't resolve says "Airboss can't reach that file."; a FIFO, socket or device (`/dev/stdin`) says "That isn't a file or folder Airboss can show."
+- `opener.rs` has a table-driven test of every trick in the audit (`file:///tmp/x.command?a`, `file:/System/Applications/Calculator.app?://`), plus mixed case, `file://localhost`, `..` and `%2E%2E`, symlinks to executables, and Unicode lookalikes (a Cyrillic `і` in the scheme, a Cyrillic `ԁ` in an extension, a fullwidth dot, a right-to-left override). A second table runs the second security audit's list on files laid out as the auditor laid them out: `////`, `/./`, `%2F` in the path, escaped `?` and `#`, trailing dots and spaces, NFC and NFD names, `%0A` and `%1B`, hard links and symlinks to executables, a FIFO, `/dev/stdin`, `.webloc` and friends, hosts and `;`, plus its https and t3code strings.
 
 ## Screens
 
@@ -1015,7 +1021,7 @@ Writes return `Patch` (shown as → P). All `core` calls act as `me`, with one l
 | `needs_restore` | `key` | | `attention.restore` |
 | `undo` | `entry?` (none: the top) | `{patch?, message}` | the entry's inverse calls, after the `events_after` check |
 | `recheck_connections` | | | `recheck()` on every service |
-| `copy_text` | `task_number(id) / agent_note / setup_command` | | clipboard plugin |
+| `copy_text` | `task_number(id) / agent_note / setup_command / link(url)` | | clipboard plugin |
 | `install_cli` | | `{path, on_path}` | symlink `~/.local/bin/airboss` to the sidecar |
 | `get_settings` / `set_settings` | `Settings` | `Settings` | `app-settings.json`; re-registers the hotkey; autostart plugin; window backgrounds; asks to notify when notifications are turned on and macOS hasn't been asked |
 | `notification_permission` | | `granted / denied / not_asked / unknown` | `UNUserNotificationCenter` settings (inside the bundle) |
@@ -1094,5 +1100,8 @@ Global, from any app: the quick-add hotkey (⌃⌥N by default), on Pressed only
 | `DbTooNew` | "A newer Airboss has updated this database. Install it, then open Airboss again." (headed "Update Airboss") |
 | `DbUnavailable`, while running | "Quit Airboss (⌘Q) and open it again. Changes made since the problem began may not have been saved. Troubleshooting has more." |
 | `UrlNotAllowed` | "Airboss only opens https links, files and T3 threads." |
+| `AppUnverified`, a T3 link | "Couldn't verify the app that opens T3 links. Open the thread from T3 Code." (with Copy link) |
+| `AppUnverified`, a web link | "Couldn't verify your browser. Copy the link instead." (with Copy link) |
+| A FIFO, socket or device | "That isn't a file or folder Airboss can show." |
 | A file link whose file is gone | "That file no longer exists." (or "Airboss can't reach that file.") |
 | A `ServiceError` | its own `message`, from the service's spec |

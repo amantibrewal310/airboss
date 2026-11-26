@@ -1032,7 +1032,7 @@ fn open_thread_and_open_url_go_through_the_allowlist() {
     assert!(
         app.shell
             .calls()
-            .contains(&"open_url(t3code://threads/fake-environment/abc)".to_string())
+            .contains(&"open_url(t3code://threads/fake-environment/abc with /Applications/T3 Code (Beta).app)".to_string())
     );
     assert_eq!(
         err_code(appcmd::open_thread(
@@ -1608,6 +1608,72 @@ fn file_links_that_would_run_something_are_shown_in_finder() {
         calls.iter().filter(|c| c.starts_with("open_")).count(),
         1,
         "only the document opens: {calls:?}"
+    );
+}
+
+/// The second audit's medium finding: an agent's `Evil.app` claiming T3 Code's bundle id and
+/// the `t3code` scheme gets registered as soon as Finder reveals its folder. Open thread then
+/// checks the handler's signature and refuses an app that isn't T3 Code, offering the link.
+#[test]
+fn open_thread_refuses_a_handler_that_isnt_t3_code() {
+    let app = TestApp::new();
+    let check = app.shell.app_check_fake();
+    let key = ThreadKey {
+        source: Source::T3,
+        r#ref: "abc".into(),
+    };
+    appcmd::open_thread(&app.state, M, key.clone()).unwrap();
+    assert_eq!(
+        app.shell.calls().last().unwrap(),
+        "open_url(t3code://threads/fake-environment/abc with /Applications/T3 Code (Beta).app)"
+    );
+    check.set_handler("t3code", Some("/Users/me/Code/web/Evil.app".into()));
+    let e = appcmd::open_thread(&app.state, M, key).unwrap_err();
+    assert_eq!(e.code, ErrorCode::AppUnverified);
+    assert_eq!(
+        e.message,
+        "Couldn't verify the app that opens T3 links. Open the thread from T3 Code."
+    );
+    assert_eq!(
+        e.detail.as_deref(),
+        Some("t3code://threads/fake-environment/abc")
+    );
+    assert_eq!(
+        app.shell
+            .calls()
+            .iter()
+            .filter(|c| c.starts_with("open_url"))
+            .count(),
+        1
+    );
+    // "Copy link" copies it.
+    appcmd::copy_text(&app.state, M, CopyWhat::Link(e.detail.unwrap())).unwrap();
+    assert_eq!(
+        app.shell.calls().last().unwrap(),
+        "copy_text(t3code://threads/fake-environment/abc)"
+    );
+}
+
+#[test]
+fn a_web_link_opens_only_in_a_verified_browser_outside_the_home_folder() {
+    let app = TestApp::new();
+    let check = app.shell.app_check_fake();
+    let url = "https://github.com/acme/web/pull/1";
+    appcmd::open_url(&app.state, M, OpenTarget::Url(url.into())).unwrap();
+    assert_eq!(
+        app.shell.calls().last().unwrap(),
+        &format!("open_url({url} with /Applications/Safari.app)")
+    );
+    let fake = app.home.join("Downloads/Browser.app");
+    check.set_handler("https", Some(fake.clone()));
+    check.trust(fake, airboss_app::handlers::BROWSER_REQUIREMENT);
+    let e = appcmd::open_url(&app.state, M, OpenTarget::Url(url.into())).unwrap_err();
+    assert_eq!(
+        (e.code, e.message.as_str()),
+        (
+            ErrorCode::AppUnverified,
+            "Couldn't verify your browser. Copy the link instead."
+        )
     );
 }
 

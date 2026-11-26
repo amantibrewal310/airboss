@@ -235,10 +235,12 @@ impl Shell for Arc<TauriShell> {
         });
     }
 
-    fn open_url(&self, url: &str) -> Result<(), String> {
+    fn open_url(&self, url: &str, app: &Path) -> Result<(), String> {
+        // `open -a <app> -- <url>`: exactly the app whose signature was just checked, never
+        // whatever LaunchServices would pick by then.
         self.app
             .opener()
-            .open_url(url, None::<&str>)
+            .open_url(url, Some(app.to_string_lossy().into_owned()))
             .map_err(|e| e.to_string())
     }
 
@@ -363,6 +365,10 @@ impl Shell for Arc<TauriShell> {
 
     fn notifications(&self) -> Arc<dyn Notifications> {
         self.notifications.clone()
+    }
+
+    fn app_check(&self) -> Arc<dyn crate::handlers::AppCheck> {
+        Arc::new(crate::handlers::MacAppCheck)
     }
 
     fn sidecar(&self) -> Option<PathBuf> {

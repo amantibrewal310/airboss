@@ -17,6 +17,7 @@ use crate::dto::{
     QuickaddReset, ToastEvent,
 };
 use crate::errors::AppError;
+use crate::handlers::{AppCheck, FakeAppCheck};
 use crate::menu::MenuState;
 use crate::notify::{Notifications, RecordingNotifications};
 use crate::settings::Appearance;
@@ -90,8 +91,9 @@ pub trait Shell: Send + Sync {
     fn hide_quickadd(&self);
     /// Sets the quick-add panel's height to follow its content.
     fn resize_quickadd(&self, height: f64);
-    /// Opens a URL the allowlist has already passed (`https` or `t3code`).
-    fn open_url(&self, url: &str) -> Result<(), String>;
+    /// Opens a URL the allowlist has already passed (`https` or `t3code`) with `app`, the
+    /// handler whose signature was checked (`open -a app -- url`).
+    fn open_url(&self, url: &str, app: &std::path::Path) -> Result<(), String>;
     /// Opens a document the allowlist has already passed, by its resolved path, in `app`
     /// (`open -a app -- path`), never in the app LaunchServices would pick.
     fn open_file(&self, path: &std::path::Path, app: &std::path::Path) -> Result<(), String>;
@@ -120,6 +122,8 @@ pub trait Shell: Send + Sync {
     fn sidecar(&self) -> Option<PathBuf>;
     /// macOS notifications.
     fn notifications(&self) -> Arc<dyn Notifications>;
+    /// Which app opens a URL, and whether its signature meets a requirement.
+    fn app_check(&self) -> Arc<dyn AppCheck>;
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -138,6 +142,7 @@ pub struct RecordingShell {
     sidecar: Mutex<Option<PathBuf>>,
     accent: Mutex<Option<String>>,
     notifications: Arc<RecordingNotifications>,
+    app_check: Arc<FakeAppCheck>,
 }
 
 impl RecordingShell {
@@ -203,6 +208,11 @@ impl RecordingShell {
         self.notifications.clone()
     }
 
+    /// The handler and signature fake: genuine T3 Code and Safari until a test says otherwise.
+    pub fn app_check_fake(&self) -> Arc<FakeAppCheck> {
+        self.app_check.clone()
+    }
+
     /// What `accent` answers.
     pub fn set_accent(&self, accent: Option<String>) {
         *lock(&self.accent) = accent;
@@ -227,8 +237,8 @@ impl Shell for RecordingShell {
     fn resize_quickadd(&self, height: f64) {
         self.call(format!("resize_quickadd({height})"));
     }
-    fn open_url(&self, url: &str) -> Result<(), String> {
-        self.call(format!("open_url({url})"));
+    fn open_url(&self, url: &str, app: &std::path::Path) -> Result<(), String> {
+        self.call(format!("open_url({url} with {})", app.display()));
         Ok(())
     }
     fn open_file(&self, path: &std::path::Path, app: &std::path::Path) -> Result<(), String> {
@@ -284,5 +294,8 @@ impl Shell for RecordingShell {
     }
     fn notifications(&self) -> Arc<dyn Notifications> {
         self.notifications.clone()
+    }
+    fn app_check(&self) -> Arc<dyn AppCheck> {
+        self.app_check.clone()
     }
 }
