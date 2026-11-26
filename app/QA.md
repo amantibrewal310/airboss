@@ -30,8 +30,13 @@ cargo run -p airboss-app --example seed -- --tasks 2000 --db /tmp/airboss-qa/big
 - [ ] The window opens on "Nothing here yet" with no white flash. "Notify me when an agent asks
       something or stops" is ticked. ("Open Airboss at login" is unticked: a run on a throwaway
       database never registers a login item.)
-- [ ] macOS asks whether Airboss may send notifications. Choose **Allow**. (If you've answered
-      for this app before, macOS doesn't ask again; that's fine.)
+- [ ] Notifications need a bundle identifier and a signature. Check them once:
+      `codesign -dv ../target/release/bundle/macos/Airboss.app 2>&1 | grep -E 'Identifier|Signature'`
+      prints `Identifier=io.github.amantibrewal310.airboss` and `Signature=adhoc`.
+- [ ] macOS asks whether "Airboss" may send notifications (a banner with **Allow**, or with
+      **Options › Allow**). Allow it. Airboss now appears in System Settings › Notifications,
+      with Allow notifications on. macOS asks once per Mac: if Airboss was already listed
+      there, there's no prompt, and the switch there is what counts.
 - [ ] In the Repos step, Tab to **Add another folder…**, ↩, choose `/tmp/airboss-qa/scratch`.
       It's added.
 - [ ] Tab through the Connections rows: **Agents** reads "Not set up" with **Install
@@ -74,10 +79,16 @@ cargo run -p airboss-app --example seed -- --tasks 2000 --db /tmp/airboss-qa/big
 
 - [ ] In the "QA one" thread in T3, ask the agent: *"Before you change anything, ask me which
       colour to use, and wait."* Switch to Finder **before** it asks.
-- [ ] A notification appears titled "<id> QA one", with the agent's question as the text. It
-      appears **once**.
-- [ ] Click the notification (mouse allowed). Airboss comes forward on **Needs me** with that
-      question selected.
+- [ ] A banner appears titled "<id> QA one", with the agent's question as the text and the
+      default sound. It appears **once**. `grep 'notification' ~/Library/Logs/Airboss/app.log`
+      shows "posted 1 notification(s)" and no "macOS didn't take a notification".
+- [ ] Click the banner (mouse allowed). Airboss comes forward on **Needs me** with that question
+      selected.
+- [ ] Have the agent fail or stop on the same task too (or ask a second question): open
+      Notification Center (click the clock). That task's notifications sit together in one
+      stack, under Airboss.
+- [ ] Quit Airboss (⌘Q). In Notification Center, click one of its notifications: Airboss
+      starts and opens on Needs me.
 - [ ] Ask again in the thread with Airboss in front and focused: **no** notification this time.
 - [ ] ⌘, › Notifications: switch it off (Tab to it, Space). Answer the agent in T3 and have it
       ask a second question with Finder in front: no notification. Switch it back on.

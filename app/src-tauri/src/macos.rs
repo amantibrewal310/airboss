@@ -5,7 +5,8 @@
 //! - the Mac waking (`NSWorkspaceDidWakeNotification`)
 //! - the local time zone's offset, for the menu-bar menu's clock times
 //! - `QuickAddPanel`, an `NSPanel` subclass from `tauri-nspanel`
-//! - asking for, and reading, permission to notify (`UNUserNotificationCenter`)
+//! - notifications through `UNUserNotificationCenter`: permission, posting, and the delegate
+//!   that hears a click
 
 #![allow(unsafe_code)]
 
@@ -19,6 +20,10 @@ use objc2_app_kit::{
 use objc2_foundation::{
     NSDate, NSNotification, NSNotificationCenter, NSObjectProtocol, NSString, NSTimeZone,
     NSUserDefaults,
+};
+use objc2_user_notifications::{
+    UNNotification, UNNotificationPresentationOptions, UNNotificationResponse,
+    UNUserNotificationCenter, UNUserNotificationCenterDelegate,
 };
 
 /// The quick-add panel's class: a floating panel that can become key (to take typing) but
@@ -153,11 +158,22 @@ fn auth(status: objc2_user_notifications::UNAuthorizationStatus) -> NotifyAuth {
     }
 }
 
+/// Whether this process has a bundle identifier, which `UNUserNotificationCenter` needs: in a
+/// process without one (a dev build run from `target/`) it raises an exception, which would
+/// abort the app. Every notification call below checks this first.
+pub fn has_bundle_id() -> bool {
+    objc2_foundation::NSBundle::mainBundle()
+        .bundleIdentifier()
+        .is_some_and(|id| id.length() > 0)
+}
+
 /// Whether Airboss may notify, as System Settings › Notifications says; `None` if macOS
-/// didn't answer within `wait`. Only call it from inside an app bundle:
-/// `UNUserNotificationCenter` raises an exception in a process without one.
+/// didn't answer within `wait`, or there's no bundle identifier.
 pub fn notify_permission(wait: std::time::Duration) -> Option<NotifyAuth> {
-    use objc2_user_notifications::{UNNotificationSettings, UNUserNotificationCenter};
+    use objc2_user_notifications::UNNotificationSettings;
+    if !has_bundle_id() {
+        return None;
+    }
     let (tx, rx) = std::sync::mpsc::channel();
     let tx = std::sync::Mutex::new(Some(tx));
     let block = block2::RcBlock::new(move |settings: std::ptr::NonNull<UNNotificationSettings>| {
@@ -174,12 +190,15 @@ pub fn notify_permission(wait: std::time::Duration) -> Option<NotifyAuth> {
 }
 
 /// Asks macOS for permission to notify (banners and sounds). macOS shows its prompt only
-/// the first time; after that it answers from the setting. Only call it from inside an app
-/// bundle (see [`notify_permission`]).
+/// the first time; after that it answers from the setting. Nothing without a bundle
+/// identifier.
 pub fn request_notify_permission() {
     use objc2::runtime::Bool;
     use objc2_foundation::NSError;
-    use objc2_user_notifications::{UNAuthorizationOptions, UNUserNotificationCenter};
+    use objc2_user_notifications::UNAuthorizationOptions;
+    if !has_bundle_id() {
+        return;
+    }
     let block = block2::RcBlock::new(|granted: Bool, _error: *mut NSError| {
         tauri_plugin_log::log::info!("notifications allowed: {}", granted.as_bool());
     });
@@ -188,4 +207,102 @@ pub fn request_notify_permission() {
             UNAuthorizationOptions::Alert | UNAuthorizationOptions::Sound,
             &block,
         );
+}
+
+/// Posts one notification. `id` is stable for one Needs me item, so posting it again replaces
+/// it instead of adding another; `thread` groups a task's notifications together. Returns
+/// once the request is handed to macOS; a delivery error is logged. An error without a
+/// bundle identifier.
+pub fn post_notification(id: &str, title: &str, body: &str, thread: &str) -> Result<(), String> {
+    use objc2_foundation::NSError;
+    use objc2_user_notifications::{
+        UNMutableNotificationContent, UNNotificationRequest, UNNotificationSound,
+    };
+    if !has_bundle_id() {
+        return Err("there's no bundle identifier (a development build)".into());
+    }
+    let content = UNMutableNotificationContent::new();
+    content.setTitle(&NSString::from_str(title));
+    content.setBody(&NSString::from_str(body));
+    content.setThreadIdentifier(&NSString::from_str(thread));
+    content.setSound(Some(&UNNotificationSound::defaultSound()));
+    let request = UNNotificationRequest::requestWithIdentifier_content_trigger(
+        &NSString::from_str(id),
+        &content,
+        None,
+    );
+    let done = block2::RcBlock::new(|error: *mut NSError| {
+        // SAFETY: the centre passes either null or an error it keeps alive for the call.
+        if let Some(e) = unsafe { error.as_ref() } {
+            tauri_plugin_log::log::warn!(
+                "macOS didn't take a notification: {}",
+                e.localizedDescription()
+            );
+        }
+    });
+    UNUserNotificationCenter::currentNotificationCenter()
+        .addNotificationRequest_withCompletionHandler(&request, Some(&done));
+    Ok(())
+}
+
+/// What the notification delegate calls with a clicked notification's identifier.
+pub struct Clicked(pub Box<dyn Fn(String) + Send + Sync>);
+
+define_class!(
+    // SAFETY: NSObject has no subclassing requirements, and `NotifyDelegate` doesn't implement
+    // Drop.
+    #[unsafe(super(NSObject))]
+    #[name = "AirbossNotificationDelegate"]
+    #[ivars = Clicked]
+    struct NotifyDelegate;
+
+    unsafe impl NSObjectProtocol for NotifyDelegate {}
+
+    // SAFETY: both methods match the protocol's selectors and signatures, and each calls its
+    // completion handler exactly once.
+    unsafe impl UNUserNotificationCenterDelegate for NotifyDelegate {
+        #[unsafe(method(userNotificationCenter:didReceiveNotificationResponse:withCompletionHandler:))]
+        fn did_receive(
+            &self,
+            _center: &UNUserNotificationCenter,
+            response: &UNNotificationResponse,
+            completion: &block2::DynBlock<dyn Fn()>,
+        ) {
+            let id = response.notification().request().identifier().to_string();
+            (self.ivars().0)(id);
+            completion.call(());
+        }
+
+        // A notification that arrives while Airboss is the active app (with quick add or
+        // Settings in front) still shows: the main window's focus already kept it from being
+        // posted at all.
+        #[unsafe(method(userNotificationCenter:willPresentNotification:withCompletionHandler:))]
+        fn will_present(
+            &self,
+            _center: &UNUserNotificationCenter,
+            _notification: &UNNotification,
+            completion: &block2::DynBlock<dyn Fn(UNNotificationPresentationOptions)>,
+        ) {
+            use UNNotificationPresentationOptions as O;
+            completion.call((O::Banner | O::List | O::Sound,));
+        }
+    }
+);
+
+/// Makes Airboss the notification centre's delegate, so a click reaches `clicked`. Call it
+/// once, on the main thread, early at launch, so a click that launched the app is heard too.
+/// Nothing without a bundle identifier.
+pub fn set_notification_delegate(clicked: Clicked) {
+    use objc2::runtime::ProtocolObject;
+    if !has_bundle_id() {
+        return;
+    }
+    let this = NotifyDelegate::alloc().set_ivars(clicked);
+    // SAFETY: NSObject's designated initialiser, called once on a fresh allocation.
+    let delegate: Retained<NotifyDelegate> = unsafe { msg_send![super(this), init] };
+    let as_delegate: &ProtocolObject<dyn UNUserNotificationCenterDelegate> =
+        ProtocolObject::from_ref(&*delegate);
+    UNUserNotificationCenter::currentNotificationCenter().setDelegate(Some(as_delegate));
+    // The centre holds its delegate weakly; this one lives as long as the app.
+    std::mem::forget(delegate);
 }

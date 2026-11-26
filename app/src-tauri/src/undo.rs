@@ -7,7 +7,7 @@ use std::collections::{HashSet, VecDeque};
 use std::sync::{Condvar, Mutex};
 use std::time::Instant;
 
-use airboss_core::{Actor, EventId, Status, Store, TaskId};
+use airboss_core::{Actor, EventId, RejectOutcome, Status, TaskId};
 use airboss_services::NeedsKey;
 use tauri_plugin_log::log;
 
@@ -183,26 +183,6 @@ impl Rejects {
     }
 }
 
-/// Rejects `id` if it's still a proposal: `Ok(true)` when written, `Ok(false)` when it was
-/// accepted or changed since it was queued (from the CLI, say), which leaves it alone.
-///
-/// The check and the write must not be split by another write, or an `airboss accept` that
-/// lands between them would be dropped as a plain drop. `core` has no conditional reject yet,
-/// so this adapter runs both under the one store lock it's called with: that serialises them
-/// against every write in this process. When `core` grows a `reject` that checks inside its
-/// own transaction, this becomes that one call.
-pub(crate) fn reject_if_proposed(
-    store: &mut Store,
-    id: TaskId,
-    reason: Option<&str>,
-) -> airboss_core::Result<bool> {
-    if store.task(id)?.status != Status::Proposed {
-        return Ok(false);
-    }
-    store.set_status(id, Status::Dropped, reason, &Actor::Me)?;
-    Ok(true)
-}
-
 /// SQLite's busy or locked, by its own wording: the app depends on `core`, not rusqlite.
 fn is_busy(e: &airboss_core::Error) -> bool {
     let text = e.to_string();
@@ -220,6 +200,30 @@ fn ids_text(ids: &[TaskId]) -> String {
         Some((last, rest)) => format!("{} and {last}", rest.join(", ")),
         None => String::new(),
     }
+}
+
+/// "153 was already accepted; left as is", "153 and 154 were already accepted and 155
+/// already dropped; left as is": the proposals a reject found no longer proposed. A proposal
+/// that's open or done was accepted; one that's dropped was rejected or dropped elsewhere.
+pub fn skipped_text(skipped: &[(TaskId, Status)]) -> Option<String> {
+    let (dropped, accepted): (Vec<_>, Vec<_>) = skipped
+        .iter()
+        .filter(|(_, s)| *s != Status::Proposed)
+        .partition(|(_, s)| *s == Status::Dropped);
+    let ids = |v: &[&(TaskId, Status)]| ids_text(&v.iter().map(|(t, _)| *t).collect::<Vec<_>>());
+    let verb = |n: usize| if n == 1 { "was" } else { "were" };
+    let text = match (accepted.as_slice(), dropped.as_slice()) {
+        ([], []) => return None,
+        (a, []) => format!("{} {} already accepted", ids(a), verb(a.len())),
+        ([], d) => format!("{} {} already dropped", ids(d), verb(d.len())),
+        (a, d) => format!(
+            "{} {} already accepted and {} already dropped",
+            ids(a),
+            verb(a.len()),
+            ids(d)
+        ),
+    };
+    Some(format!("{text}; left as is"))
 }
 
 /// "Couldn't reject 153: the database stayed busy.", with Retry (the same reject again).
@@ -243,41 +247,51 @@ impl AppState {
         self.write_rejects(true);
     }
 
-    /// Writes rejects now: those due, or every one with `all` (at quit). A busy database is
-    /// retried (`reject_retry`); a reject that still can't be written says so in a toast with
-    /// Retry, instead of the proposal quietly coming back.
+    /// Writes rejects now: those due, or every one with `all` (at quit).
+    ///
+    /// Each pending reject is one `core` call, `reject_proposals`, which checks that each task
+    /// is still a proposal and writes in one transaction, so an `airboss accept` from another
+    /// process can't land in between. Ones accepted or dropped meanwhile are left as they are
+    /// and named in a toast. A busy database is retried (`reject_retry`); a reject that still
+    /// can't be written says so in a toast with Retry, instead of the proposal quietly coming
+    /// back.
     pub(crate) fn write_rejects(&self, all: bool) {
         let due = self.rejects.take_due((!all).then(Instant::now));
         if due.is_empty() {
             return;
         }
         for r in &due {
-            let mut failed = Vec::new();
-            let mut why = None;
-            for id in &r.ids {
-                if let Err(e) = self.reject_with_retry(*id, r.reason.as_deref()) {
-                    log::warn!("couldn't write the reject of {}: {e}", id.0);
+            match self.reject_with_retry(&r.ids, r.reason.as_deref()) {
+                Ok(outcome) => {
+                    if let Some(text) = skipped_text(&outcome.skipped) {
+                        self.shell.emit(UiEvent::Toast(ToastEvent {
+                            text,
+                            actions: Vec::new(),
+                            undo: None,
+                            tone: Some(ToastTone::Info),
+                            task: outcome.skipped.first().map(|(t, _)| *t),
+                        }));
+                    }
+                }
+                Err(e) => {
+                    log::warn!("couldn't write a reject of {} tasks: {e}", r.ids.len());
                     // A broken database shows its own full-window state instead.
                     if !e.is_storage_failure() {
-                        failed.push(*id);
-                        why.get_or_insert_with(|| {
-                            if is_busy(&e) {
-                                "the database stayed busy.".to_string()
-                            } else {
-                                AppError::core(e, Ctx::Task(*id)).message
-                            }
-                        });
+                        let why = if is_busy(&e) {
+                            "the database stayed busy.".to_string()
+                        } else {
+                            let first = r.ids.first().copied().unwrap_or(TaskId(0));
+                            AppError::core(e, Ctx::Task(first)).message
+                        };
+                        self.shell.emit(UiEvent::Toast(reject_failed(
+                            r.ids.clone(),
+                            r.reason.clone(),
+                            &why,
+                        )));
                     }
                 }
             }
             lock(&self.undo).forget_reject(r.id);
-            if let Some(why) = why {
-                self.shell.emit(UiEvent::Toast(reject_failed(
-                    failed,
-                    r.reason.clone(),
-                    &why,
-                )));
-            }
         }
         if let Err(e) = self.catch_up() {
             log::warn!("catch-up after rejects failed: {e}");
@@ -285,21 +299,23 @@ impl AppState {
         self.refresh_menus();
     }
 
-    /// One reject, tried again after each of `reject_retry`'s waits while SQLite is busy. A
-    /// task deleted since is done with.
-    fn reject_with_retry(&self, id: TaskId, reason: Option<&str>) -> airboss_core::Result<()> {
+    /// One reject, tried again after each of `reject_retry`'s waits while SQLite is busy.
+    fn reject_with_retry(
+        &self,
+        ids: &[TaskId],
+        reason: Option<&str>,
+    ) -> airboss_core::Result<RejectOutcome> {
         let mut waits = self.config.reject_retry.iter();
         loop {
-            match self.core(|st| reject_if_proposed(st, id, reason)) {
-                Ok(_) | Err(airboss_core::Error::NotFound) => return Ok(()),
+            match self.core(|st| st.reject_proposals(ids, reason, &Actor::Me)) {
                 Err(e) if is_busy(&e) => match waits.next() {
                     Some(wait) => {
-                        log::info!("the database is busy; retrying the reject of {}", id.0);
+                        log::info!("the database is busy; retrying a reject");
                         std::thread::sleep(*wait);
                     }
                     None => return Err(e),
                 },
-                Err(e) => return Err(e),
+                done => return done,
             }
         }
     }
@@ -362,6 +378,24 @@ mod tests {
         let oldest = s.take(Some(6));
         assert_eq!(oldest.unwrap().label, "e5");
         assert!(s.take(Some(1)).is_none(), "e0 dropped off");
+    }
+
+    #[test]
+    fn skipped_proposals_are_named_by_what_happened_to_them() {
+        let t = TaskId;
+        assert_eq!(skipped_text(&[]), None);
+        assert_eq!(
+            skipped_text(&[(t(153), Status::Done)]).unwrap(),
+            "153 was already accepted; left as is"
+        );
+        assert_eq!(
+            skipped_text(&[(t(1), Status::Dropped), (t(2), Status::Dropped)]).unwrap(),
+            "1 and 2 were already dropped; left as is"
+        );
+        assert_eq!(
+            skipped_text(&[(t(1), Status::Todo), (t(2), Status::Dropped)]).unwrap(),
+            "1 was already accepted and 2 already dropped; left as is"
+        );
     }
 
     #[test]
