@@ -155,6 +155,14 @@ pub enum ErrorCode {
     AlreadyStarting,
     BadAnswer,
     T3Failed,
+    /// Herdr's `hc` or `herdr-app` isn't installed.
+    HerdrMissing,
+    /// Herdr's window didn't answer, even after opening it.
+    HerdrNotRunning,
+    /// `git worktree add` failed for a Herdr Do it; the message is git's.
+    WorktreeFailed,
+    /// `herdr-app` or `hc` answered with an error.
+    HerdrFailed,
     // sync
     GhMissing,
     SignedOut,
