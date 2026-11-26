@@ -125,6 +125,18 @@ describe('NeedsInbox', () => {
     await render(Harness, { app, component: NeedsInbox });
     expect(document.querySelector('h2')!.textContent).toBe('Nothing needs you');
     expect(document.body.textContent!.replace(/\s+/g, ' ')).toMatch(/Checked \d\d:\d\d · 10 in progress · \d+ ready to start/);
+    expect(document.querySelector('.empty button')?.textContent).toContain('Show ready tasks');
+  });
+
+  it('offers no "Show ready tasks" when nothing is ready (hands-on QA #15)', async () => {
+    const { app } = await startApp('nothing');
+    await render(Harness, { app, component: NeedsInbox });
+    const upserts = [...app.tasks.rows.values()].filter((r) => r.ready).map((r) => ({ ...r, ready: false }));
+    app.onPatch({ seq: app.tasks.seq + 1, upserts, removed: [], order: null, repos: null, created: [] });
+    await wait(10);
+    expect(app.counts.ready).toBe(0);
+    expect(document.body.textContent!.replace(/\s+/g, ' ')).toContain('0 ready to start');
+    expect(document.querySelector('.empty button')).toBeNull();
   });
 });
 

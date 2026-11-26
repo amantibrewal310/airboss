@@ -27,7 +27,7 @@
         .filter(Boolean)
         .join(' · ')}
     </p>
-    <Button onclick={() => app.go('ready')}>Show ready tasks</Button>
+    {#if app.counts.ready}<Button onclick={() => app.go('ready')}>Show ready tasks</Button>{/if}
   </div>
 {:else}
   <div
