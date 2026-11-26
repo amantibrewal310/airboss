@@ -571,7 +571,8 @@ fn launch_rows_say_where_the_thread_runs() {
     let mut s = store();
     let a = add(&mut s, "A", None);
     let b = add(&mut s, "B", None);
-    s.set_status(a, Status::Doing, None, &Actor::Launch).unwrap();
+    s.set_status(a, Status::Doing, None, &Actor::Launch)
+        .unwrap();
     s.set_status(b, Status::Doing, None, &Actor::Me).unwrap();
     let thread = |source: Source, r: &str, at: &str| {
         let key = ThreadKey {

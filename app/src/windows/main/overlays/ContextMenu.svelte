@@ -37,7 +37,6 @@
       case 'do_it':
       case 'plan_it':
       case 'do_it_whole':
-        if (id === 'do_it_whole' && !row.has_children) return 'Only for a task with subtasks';
         if (!app.conn.launchReady) return app.conn.launchOff;
         if (row.status === 'proposed') return 'Accept the proposal first';
         if (id !== 'plan_it' && row.waiting) return `Waits on ${row.waits_on.join(', ')}`;
@@ -57,7 +56,8 @@
   }
 
   const items: MenuEntry[] = $derived(
-    CONTEXT_MENU.map((id): MenuEntry => {
+    // "Do it as one thread" only means something on a task with subtasks.
+    CONTEXT_MENU.filter((id) => id !== 'do_it_whole' || !!row?.has_children).map((id): MenuEntry => {
       if (id === '-') return 'separator';
       const cmd = BY_ID.get(id)!;
       const label =

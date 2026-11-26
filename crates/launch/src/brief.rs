@@ -254,7 +254,11 @@ pub fn do_it_as(
 
 /// The report section: per step when the task has subtasks.
 fn report(r: &Reference, id: &str, kind: &str) -> String {
-    let template = if r.subtasks.is_empty() { REPORT } else { REPORT_STEPS };
+    let template = if r.subtasks.is_empty() {
+        REPORT
+    } else {
+        REPORT_STEPS
+    };
     fill(template, &[("id", id), ("kind", kind)])
 }
 
