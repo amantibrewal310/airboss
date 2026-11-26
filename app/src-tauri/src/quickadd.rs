@@ -3,10 +3,15 @@
 //!
 //! It's created hidden at start-up and reset whenever it hides, so showing it does no I/O and
 //! no rendering: only a position and an order-front.
+//!
+//! The window is transparent and exactly as tall as what it shows: the card, and while a picker
+//! is open, the picker hanging below it (so the empty part never takes clicks meant for the app
+//! behind for longer than that).
 
 use std::time::Instant;
 
 use objc2_app_kit::NSWindowStyleMask;
+use objc2_foundation::{NSPoint, NSRect, NSSize};
 use tauri::{AppHandle, Manager, PhysicalPosition, Wry};
 use tauri_nspanel::{CollectionBehavior, ManagerExt, PanelLevel, WebviewWindowExt};
 use tauri_plugin_log::log;
@@ -24,6 +29,37 @@ pub const LABEL: &str = "quickadd";
 pub const WIDTH: f64 = 680.0;
 /// How far down the screen its top sits.
 pub const FROM_TOP: f64 = 0.22;
+/// The least height it's given, whatever the UI asks for.
+pub const MIN_HEIGHT: f64 = 80.0;
+
+/// A window frame in AppKit's coordinates: points, with y growing upwards.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Frame {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+/// The panel's frame at a new height: the top edge stays put, and the bottom stops at `floor`
+/// (the bottom of the screen's visible area, above the Dock) when there is one.
+pub fn fit_height(frame: Frame, height: f64, floor: Option<f64>) -> Frame {
+    let top = frame.y + frame.height;
+    let mut h = if height.is_finite() {
+        height.round()
+    } else {
+        frame.height
+    };
+    if let Some(floor) = floor {
+        h = h.min(top - floor);
+    }
+    let h = h.max(MIN_HEIGHT);
+    Frame {
+        height: h,
+        y: top - h,
+        ..frame
+    }
+}
 
 /// Turns the `quickadd` window into the panel. Call once, on the main thread, at start-up.
 pub fn setup(app: &AppHandle<Wry>) -> tauri::Result<()> {
@@ -47,6 +83,41 @@ pub fn setup(app: &AppHandle<Wry>) -> tauri::Result<()> {
     panel.set_opaque(false);
     panel.set_has_shadow(false);
     Ok(())
+}
+
+/// Sets the panel's height (logical points), keeping its top edge where it is, then has AppKit
+/// redraw the shadow around what's painted now. The UI calls this again once the new content
+/// has painted, so the shadow ends up matching it. Main thread only.
+pub fn resize(app: &AppHandle<Wry>, height: f64) {
+    match app.get_webview_panel(LABEL) {
+        Ok(panel) => {
+            let ns = panel.as_panel();
+            let f = ns.frame();
+            let now = Frame {
+                x: f.origin.x,
+                y: f.origin.y,
+                width: f.size.width,
+                height: f.size.height,
+            };
+            let floor = ns.screen().map(|s| s.visibleFrame().origin.y);
+            let next = fit_height(now, height, floor);
+            if next != now {
+                ns.setFrame_display(
+                    NSRect::new(
+                        NSPoint::new(next.x, next.y),
+                        NSSize::new(next.width, next.height),
+                    ),
+                    true,
+                );
+            }
+            ns.invalidateShadow();
+        }
+        Err(_) => {
+            if let Some(w) = app.get_webview_window(LABEL) {
+                let _ = w.set_size(tauri::LogicalSize::new(WIDTH, height.max(MIN_HEIGHT)));
+            }
+        }
+    }
 }
 
 /// Whether the panel is showing.
@@ -131,4 +202,42 @@ pub fn toggle(app: &AppHandle<Wry>) {
         lock(&state.timing).quickadd_pressed = Some(Instant::now());
     }
     show(app);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const PANEL: Frame = Frame {
+        x: 940.0,
+        y: 900.0,
+        width: WIDTH,
+        height: 221.0,
+    };
+
+    #[test]
+    fn growing_keeps_the_top_edge() {
+        let f = fit_height(PANEL, 520.0, Some(0.0));
+        assert_eq!(f.height, 520.0);
+        assert_eq!(f.y + f.height, PANEL.y + PANEL.height);
+        assert_eq!((f.x, f.width), (PANEL.x, PANEL.width));
+        // And shrinking back gives the same frame as before.
+        assert_eq!(fit_height(f, 221.0, Some(0.0)), PANEL);
+    }
+
+    #[test]
+    fn the_bottom_stops_above_the_dock() {
+        let f = fit_height(PANEL, 2000.0, Some(80.0));
+        assert_eq!(f.y, 80.0);
+        assert_eq!(f.y + f.height, PANEL.y + PANEL.height);
+        // With no screen known, the height is what was asked.
+        assert_eq!(fit_height(PANEL, 2000.0, None).height, 2000.0);
+    }
+
+    #[test]
+    fn odd_heights_are_rounded_or_ignored() {
+        assert_eq!(fit_height(PANEL, 300.4, None).height, 300.0);
+        assert_eq!(fit_height(PANEL, f64::NAN, None), PANEL);
+        assert_eq!(fit_height(PANEL, 3.0, None).height, MIN_HEIGHT);
+    }
 }

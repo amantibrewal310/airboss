@@ -24,7 +24,9 @@ async function main() {
   applyAppearance(document.documentElement, appearance);
   const target = document.getElementById('app');
   if (!target) throw new Error('missing #app');
-  mount(QuickAdd, { target, props: { native: !__MOCK__ } });
+  // In the browser, `?native` lays it out as in the app's panel (the window is the card).
+  const native = !__MOCK__ || new URLSearchParams(location.search).has('native');
+  mount(QuickAdd, { target, props: { native } });
 }
 
 void main();
