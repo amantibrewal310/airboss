@@ -39,7 +39,7 @@ use airboss_services::{
 pub use core_access::{CoreAccess, CoreWrite, FailWith};
 pub use db::MIGRATIONS;
 pub use errors::T3_MISSING;
-pub use git::{Git, RealGit};
+pub use git::{Git, RealGit, Worktree};
 pub use process::{CmdOutput, ProcessRunner, REMOVED_VARS, child_env};
 pub use start::Brief;
 pub use t3cli::T3Cli;

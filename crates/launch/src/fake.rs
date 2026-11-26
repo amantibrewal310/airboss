@@ -12,7 +12,7 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use crate::git::Git;
+use crate::git::{Git, Worktree};
 use crate::process::CmdOutput;
 use crate::t3cli::T3Cli;
 
@@ -239,6 +239,8 @@ struct GitState {
     invalid: HashSet<String>,
     broken: bool,
     calls: Vec<String>,
+    worktrees: HashMap<PathBuf, Vec<Worktree>>,
+    refuse_worktree: VecDeque<String>,
 }
 
 /// A scripted `git`. Every repo's default branch is `main` unless set; no branch exists
@@ -268,6 +270,32 @@ impl FakeGit {
     /// Makes `check-ref-format` refuse `name`.
     pub fn refuse_name(&self, name: &str) {
         lock(&self.0).invalid.insert(name.to_string());
+    }
+
+    /// Makes the next `worktree add` fail with git's `message`. Queued in order.
+    pub fn refuse_worktree(&self, message: &str) {
+        lock(&self.0).refuse_worktree.push_back(message.to_string());
+    }
+
+    /// Makes `path` a worktree of `repo` on `branch` (or detached).
+    pub fn add_worktree_at(&self, repo: impl Into<PathBuf>, path: &Path, branch: Option<&str>) {
+        lock(&self.0)
+            .worktrees
+            .entry(repo.into())
+            .or_default()
+            .push(Worktree {
+                path: path.to_path_buf(),
+                branch: branch.map(str::to_string),
+            });
+    }
+
+    /// The worktrees made or added for `repo` so far, in order.
+    pub fn worktrees_of(&self, repo: &Path) -> Vec<Worktree> {
+        lock(&self.0)
+            .worktrees
+            .get(repo)
+            .cloned()
+            .unwrap_or_default()
     }
 
     /// Makes every call fail with an I/O error.
@@ -309,5 +337,63 @@ impl Git for FakeGit {
         let s = self.call(format!("valid_branch_name({name})"))?;
         let gitish = !name.contains("@{") && !name.contains("//") && !name.ends_with('.');
         Ok(gitish && !s.invalid.contains(name))
+    }
+
+    fn worktrees(&mut self, repo: &Path) -> io::Result<Vec<Worktree>> {
+        let s = self.call(format!("worktrees({})", repo.display()))?;
+        Ok(s.worktrees.get(repo).cloned().unwrap_or_default())
+    }
+
+    /// Like git: refuses a branch checked out in another worktree, a new branch that
+    /// exists, or an existing branch that doesn't; makes the folder (in the test's temp dir).
+    fn add_worktree(
+        &mut self,
+        repo: &Path,
+        path: &Path,
+        branch: &str,
+        start: Option<&str>,
+    ) -> io::Result<()> {
+        let mut s = self.call(format!(
+            "add_worktree({}, {}, {branch}, {})",
+            repo.display(),
+            path.display(),
+            start.unwrap_or("-")
+        ))?;
+        if let Some(message) = s.refuse_worktree.pop_front() {
+            return Err(io::Error::other(message));
+        }
+        let key = (repo.to_path_buf(), branch.to_string());
+        let exists = s.branches.contains(&key);
+        if start.is_some() && exists {
+            return Err(io::Error::other(format!(
+                "fatal: a branch named '{branch}' already exists"
+            )));
+        }
+        if start.is_none() && !exists {
+            return Err(io::Error::other(format!(
+                "fatal: invalid reference: {branch}"
+            )));
+        }
+        let used = s
+            .worktrees
+            .get(repo)
+            .into_iter()
+            .flatten()
+            .any(|w| w.branch.as_deref() == Some(branch));
+        if used {
+            return Err(io::Error::other(format!(
+                "fatal: '{branch}' is already used by a worktree"
+            )));
+        }
+        std::fs::create_dir_all(path)?;
+        s.branches.insert(key);
+        s.worktrees
+            .entry(repo.to_path_buf())
+            .or_default()
+            .push(Worktree {
+                path: path.to_path_buf(),
+                branch: Some(branch.to_string()),
+            });
+        Ok(())
     }
 }
