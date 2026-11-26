@@ -24,7 +24,7 @@ In Terminal:
 curl -fsSL https://raw.githubusercontent.com/amantibrewal310/airboss/main/install.sh | sh
 ```
 
-[`install.sh`](../install.sh) finds the newest release (alphas included), downloads its `.dmg` and SHA-256, checks one against the other and the app's signature, copies `Airboss.app` to `/Applications` and opens it. To update, quit Airboss and run it again. `AIRBOSS_TAG=v0.1.0-alpha.1` before `sh` installs a given release.
+[`install.sh`](../install.sh) finds the newest release (alphas included), downloads its `.dmg` and SHA-256, checks one against the other and the app's signature, copies `Airboss.app` to `/Applications` and opens it. From 0.1.0-alpha.4 on, Airboss then updates itself ([Updates](using-airboss.md#updates)); for alpha 3 and earlier, quit Airboss and run the line again. `AIRBOSS_TAG=v0.1.0-alpha.1` before `sh` installs a given release.
 
 The alpha is signed ad hoc and not notarized. A `curl` download isn't flagged by macOS, so it opens without a warning. A copy downloaded in a browser is: macOS says "Apple could not verify Airboss…" and won't open it. Clear the flag on the whole bundle once:
 

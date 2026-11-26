@@ -51,7 +51,7 @@ Airboss works on its own, and each of these turns on more. Without them, those f
 - Claude Code or Codex: agents report on their tasks.
 - The GitHub CLI (`gh`), signed in: PR state, reviews and checks.
 
-To update, quit Airboss and run the same line again. Your tasks stay where they are.
+From 0.1.0-alpha.4 on, Airboss updates itself. When a new version is out, the foot of the sidebar says so, and **Update and restart** installs it. Your tasks and settings stay where they are. For alpha 3 and earlier, quit Airboss and run the same line again, once.
 
 ### Build from source
 
@@ -87,7 +87,6 @@ Alpha: 0.1.0-alpha.3 ([what changed](CHANGELOG.md)). Every module is built, test
 Known gaps:
 
 - It isn't notarized: install it with the line above, or clear the download flag. It's Apple silicon only.
-- There are no automatic updates yet. Watch the [releases](https://github.com/amantibrewal310/airboss/releases).
 - It's built around T3 Code or Herdr, Claude Code or Codex, and `gh`. Other agent tools can report through MCP, but Do it and Plan it start agents only in T3 Code or Herdr.
 - Plan it doesn't yet show that a planning thread is running until its plan comes back.
 - VoiceOver has been checked through the accessibility tree, not yet by listening.
@@ -105,7 +104,9 @@ Airboss is local only. There's no account, no server and no telemetry.
 
 - Tasks live in one SQLite file on your Mac, `~/Library/Application Support/Airboss/airboss.db`.
 - The app opens no network port, and its windows load nothing from the network.
-- The only network traffic is the `gh` CLI reading the PRs you've linked, and your own open PRs, from GitHub, about every 5 minutes, with your own `gh` sign-in.
+- The `gh` CLI reads the PRs you've linked, and your own open PRs, from GitHub, about every 5 minutes, with your own `gh` sign-in.
+- Every 6 hours Airboss reads one small file from GitHub, [`updates/latest.json`](updates/), to see whether there's a newer version. **Update and restart** downloads it from the GitHub release and checks its signature before installing. Neither sends anything about you or your tasks. Turn the check off in Settings.
+- That's all the network traffic.
 - It reads T3 Code's database read-only, and Claude Code's session files in `~/.claude/sessions`, to see what your agents are doing. It never writes to either.
 - Do it and Plan it run the `t3` CLI, which starts threads in T3 Code on your Mac, or Herdr's `herdr-app` and `hc`, which open tabs in Herdr. For Herdr, Airboss makes the task's git worktree itself, and follows its agents through `hc events`.
 - **Help › Report a Problem…** only opens a GitHub page in your browser. Nothing is sent unless you submit it there.

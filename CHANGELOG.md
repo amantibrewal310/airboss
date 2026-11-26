@@ -4,6 +4,10 @@ What changed in each release of Airboss. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Added
+
+- Updates inside the app. When a new version is out, the foot of the sidebar says so, and **Update and restart** downloads it, checks its signature, puts it in place and restarts, with the window showing. **Airboss › Check for Updates…** looks right away, and **Settings › Check for updates automatically** (on by default) looks every 6 hours. Each check reads one small file from GitHub.
+
 ## [0.1.0-alpha.3] - 2026-11-26
 
 ### Fixed

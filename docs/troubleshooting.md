@@ -158,6 +158,18 @@ What to do:
 
 Never delete `airboss.db-wal` or `airboss.db-shm` while Airboss, the CLI or an agent has the database open. With everything quit, SQLite removes them itself.
 
+## Updates
+
+Airboss reads [`updates/latest.json`](../updates/) from GitHub to find a new version, and downloads it from the GitHub release ([Updates](using-airboss.md#updates)).
+
+| What you see | What to do |
+|---|---|
+| "Couldn't check for updates: …" | Usually no network, or GitHub didn't answer. Try **Airboss › Check for Updates…** later. Automatic checks only log this. |
+| "Updates work only in the installed Airboss app." | You're running a development build. Install a release with the line in the README. |
+| "Couldn't update to …" on the card | The download, its signature check or the swap failed, and the app you're running is untouched. Choose **Try again**. If it keeps failing, quit Airboss and run the install line from the README: it installs the same release. |
+| "The download's signature didn't match, so it wasn't installed." | Something changed the file between GitHub and your Mac. Don't work around it: run the install line, which checks the release's SHA-256, and report it. |
+| No card on 0.1.0-alpha.3 or earlier | Those versions can't update themselves. Run the install line once; later versions update in the app. |
+
 ## Building the .dmg
 
 If `pnpm bundle` stops at the disk-image step with `AppleEvent timed out` or `Failed running AppleScript`, the bundler couldn't get Finder to lay out the disk-image window. That happens over SSH, in a terminal without automation permission, and in CI. Build without that step:

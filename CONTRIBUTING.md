@@ -121,9 +121,10 @@ Versions follow [Semantic Versioning](https://semver.org). Alphas are `0.1.0-alp
    - `bundle.macOS.bundleVersion` in `tauri.conf.json`: the build number.
    - `CFBundleShortVersionString` in `app/src-tauri/Info.plist`, only when the three numbers change. Apple allows only three numbers there, so it's `0.1.0` for every `0.1.0-alpha.N`. About Airboss shows the full version.
 2. Move [Unreleased] in `CHANGELOG.md` to a section for the new version, dated, and add its compare link at the bottom.
-3. Run every check above. `cargo test -p airboss-app --test version` fails if any of step 1 or 2 disagrees. Then build: `cd app && CI=true pnpm bundle --bundles app,dmg`.
-4. Check the signature and the versions, from the repo root: `codesign --verify --deep --strict target/release/bundle/macos/Airboss.app`, then `plutil -p target/release/bundle/macos/Airboss.app/Contents/Info.plist | grep Version`.
-5. Tag `vX.Y.Z-alpha.N` (annotated: `git tag -a`), push the tag, and publish a pre-release with the `.dmg` and its SHA-256: `gh release create vX.Y.Z-alpha.N --prerelease --notes-file … Airboss_….dmg Airboss_….dmg.sha256`. The notes start from the changelog's section.
+3. Run every check above. `cargo test -p airboss-app --test version` fails if any of step 1 or 2 disagrees.
+4. Build with `sh app/src-tauri/scripts/release-build.sh`. It needs the updater's private key, `~/.tauri/airboss-updater.key`, and its password in the login keychain item `airboss-updater-key` ([SPEC-updates](SPEC-updates.md)); neither is in the repo. It builds the `.dmg` and the signed update archive, checks the app's signature, its Info.plist versions and the bundled CLI's version, and leaves the four release files in `target/release/bundle/release/`.
+5. Tag `vX.Y.Z-alpha.N` (annotated: `git tag -a`), push the tag, and publish a pre-release with those four files: `gh release create vX.Y.Z-alpha.N --prerelease --notes-file … target/release/bundle/release/*`. The notes start from the changelog's section.
+6. Only then, publish the update: `node app/src-tauri/scripts/update-manifest.mjs X.Y.Z-alpha.N` writes `updates/latest.json` (it refuses until the release's archive downloads), and committing it to `main` is what tells installed apps. To hold an update back, don't commit it.
 
 ## Reporting a problem
 
