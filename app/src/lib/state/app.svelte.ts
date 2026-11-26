@@ -1425,9 +1425,11 @@ export class App {
     this.updates.unhide();
     if (this.updates.checking) return;
     this.updates.checking = true;
+    const seen = this.updateEvents;
     try {
       const s = await api.checkForUpdates();
-      this.updateChanged(s);
+      // An install it started may already have sent newer statuses: don't step the card back.
+      if (seen === this.updateEvents) this.updates.set(s);
     } catch (e) {
       this.fail(e);
     } finally {

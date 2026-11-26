@@ -14,6 +14,7 @@ test('available → Update and restart → the download’s progress → Install
   page.on('pageerror', (e) => problems.push(e.message));
   await page.goto('/?fixture=update');
   await expect(title(page)).toHaveText('Airboss 0.1.0-alpha.5 is available');
+  await expect(page.getByRole('group', { name: 'Airboss 0.1.0-alpha.5 is available', exact: true })).toBeVisible();
   // Every title and progress value the card shows, in order (some last only a moment).
   await page.evaluate(() => {
     const w = window as unknown as { __seen: { titles: string[]; values: string[] } };
@@ -30,6 +31,7 @@ test('available → Update and restart → the download’s progress → Install
   await expect(title(page)).toHaveText('Downloading Airboss 0.1.0-alpha.5…');
   await expect(bar).toHaveAttribute('aria-valuemax', '100');
   await expect(title(page)).toHaveText('Restarting…');
+  await expect(page.getByRole('group', { name: 'Restarting…', exact: true })).toBeVisible();
   await expect(card(page).getByRole('button')).toHaveCount(0);
   const seen = await page.evaluate(() => (window as unknown as { __seen: { titles: string[]; values: string[] } }).__seen);
   expect(seen.titles).toEqual(['Airboss 0.1.0-alpha.5 is available', 'Downloading Airboss 0.1.0-alpha.5…', 'Installing Airboss 0.1.0-alpha.5…', 'Restarting…']);
@@ -52,6 +54,7 @@ test('the card sits above the connections line, inside the sidebar, and never mo
     }),
   );
   await expect(card(page)).toBeVisible();
+  await expect(page.getByRole('group', { name: "Couldn't update to 0.1.0-alpha.5.", exact: true })).toBeVisible();
   expect(await nav.boundingBox()).toEqual(before);
   const side = page.locator('aside[data-zone="sidebar"]');
   const fits = await side.evaluate((el) => {

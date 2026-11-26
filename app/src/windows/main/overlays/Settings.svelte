@@ -148,7 +148,7 @@
       <div class="row">
         <div class="lab">
           <b>Check for updates automatically</b>
-          <span>Airboss looks on GitHub for a new version every 6 hours.</span>
+          <span>Airboss looks on GitHub for a new version every 6 hours. Nothing about you is sent.</span>
         </div>
         <Button size="sm" aria-disabled={app.updates.checking ? 'true' : undefined} onclick={() => app.checkForUpdates()}>
           {app.updates.checking ? 'Checking…' : 'Check now'}

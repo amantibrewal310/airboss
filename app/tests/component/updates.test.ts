@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { render } from 'vitest-browser-svelte';
-import { userEvent } from 'vitest/browser';
+import { page, userEvent } from 'vitest/browser';
 import App from '../../src/windows/main/App.svelte';
 import { fast, startApp, wait } from './setup';
 import { UPDATE_NOTES_URL } from '../../src/lib/mock/fixtures';
@@ -44,7 +44,6 @@ describe('the update card', () => {
     expect(c.querySelector('#update-title')!.textContent).toBe('Airboss 0.1.0-alpha.5 is available');
     expect([...c.querySelectorAll('button')].map((b) => b.textContent!.trim())).toEqual(['Update and restart', "What's new", 'Later']);
     expect(c.getAttribute('role')).toBe('group');
-    expect(c.getAttribute('aria-labelledby')).toBe('update-title');
     // Directly above the footer, in the sidebar's order, and never wider than the sidebar.
     const side = q('aside[data-zone="sidebar"]')!;
     const live = c.parentElement!;
@@ -139,6 +138,77 @@ describe('the update card', () => {
     expect(card()!.querySelector('.msg')!.textContent).toBe('There isn’t enough space on the disk.');
   });
 
+  it('names every state as one plain sentence, with its spaces', async () => {
+    const { backend } = await open();
+    const cases: [UpdateStatus, string][] = [
+      [{ state: 'available', version: '0.1.0-alpha.4.1', notes_url: UPDATE_NOTES_URL }, 'Airboss 0.1.0-alpha.4.1 is available'],
+      [{ state: 'downloading', version: '0.1.0-alpha.4.1', percent: 10 }, 'Downloading Airboss 0.1.0-alpha.4.1…'],
+      [{ state: 'installing', version: '0.1.0-alpha.4.1' }, 'Installing Airboss 0.1.0-alpha.4.1…'],
+      [{ state: 'restarting', version: '0.1.0-alpha.4.1' }, 'Restarting…'],
+      [{ state: 'failed', version: '0.1.0-alpha.4.1', message: 'The disk is full.' }, "Couldn't update to 0.1.0-alpha.4.1."],
+    ];
+    for (const [status, name] of cases) {
+      emit(backend, status);
+      await wait(30);
+      // The computed name, as assistive technology gets it.
+      await expect.element(page.getByRole('group', { name, exact: true })).toBeVisible();
+      expect(card()!.getAttribute('aria-label')).toBe(name);
+      // The live region reads the same sentence once: the split, visible title is hidden from it.
+      expect(card()!.querySelector('.sr')!.textContent).toBe(name);
+      expect(q('#update-title')!.getAttribute('aria-hidden')).toBe('true');
+    }
+  });
+
+  it('lines up the text of a row’s first ghost button with the content edge', async () => {
+    const { backend } = await open();
+    const textLeft = (b: HTMLElement) => b.getBoundingClientRect().left + parseFloat(getComputedStyle(b).paddingLeft);
+    const edge = q('#update-title')!.getBoundingClientRect().left;
+    expect(button('Update and restart')!.getBoundingClientRect().left).toBeCloseTo(edge, 0);
+    expect(textLeft(button("What's new")!)).toBeCloseTo(edge, 0);
+    // The hit area keeps its padding.
+    expect(parseFloat(getComputedStyle(button("What's new")!).paddingLeft)).toBe(8);
+    emit(backend, { state: 'failed', version: V, message: 'The disk is full.' });
+    await wait(30);
+    expect(button('Try again')!.getBoundingClientRect().left).toBeCloseTo(q('#update-title')!.getBoundingClientRect().left, 0);
+    expect(button('Later')!.getBoundingClientRect().left).toBeGreaterThan(button('Try again')!.getBoundingClientRect().right);
+  });
+
+  it('a check that returns after newer events never steps the card back', async () => {
+    const { app, backend } = await startApp('update', { ...fast, lookup: 120 });
+    await render(App, { app });
+    await wait(40);
+    const check = app.checkForUpdates();
+    await wait(30);
+    // An install started meanwhile reports progress before the check answers "available".
+    backend.emit('update:changed', { state: 'downloading', version: V, percent: 50 });
+    await check;
+    await wait(30);
+    expect(card()!.dataset.update).toBe('downloading');
+    expect(q('[role="progressbar"]')!.getAttribute('aria-valuenow')).toBe('50');
+  });
+
+  it('moves focus to the connections line when the card goes while focus is in it', async () => {
+    const { backend } = await open();
+    button("What's new")!.focus();
+    emit(backend, { state: 'idle' });
+    await wait(40);
+    expect(card()).toBeNull();
+    expect(document.activeElement).toBe(q('.conn button'));
+    expect(document.activeElement).not.toBe(document.body);
+  });
+
+  it('leaves focus alone when the card goes while focus is elsewhere', async () => {
+    const { backend } = await open();
+    const conn = q<HTMLButtonElement>('.conn button')!;
+    const search = q<HTMLButtonElement>('button[aria-label="Jump"]')!;
+    search.focus();
+    emit(backend, { state: 'idle' });
+    await wait(40);
+    expect(card()).toBeNull();
+    expect(document.activeElement).toBe(search);
+    expect(document.activeElement).not.toBe(conn);
+  });
+
   it('What’s new opens the release’s GitHub page through open_url', async () => {
     const { backend } = await open();
     button("What's new")!.click();
@@ -222,7 +292,7 @@ describe('Settings › Check for updates automatically', () => {
     await wait(40);
     const toggle = q<HTMLButtonElement>('[role="switch"][aria-label="Check for updates automatically"]')!;
     expect(toggle.getAttribute('aria-checked')).toBe('true');
-    expect(toggle.closest('.row')!.querySelector('.lab span')!.textContent).toBe('Airboss looks on GitHub for a new version every 6 hours.');
+    expect(toggle.closest('.row')!.querySelector('.lab span')!.textContent).toBe('Airboss looks on GitHub for a new version every 6 hours. Nothing about you is sent.');
     toggle.click();
     await wait(30);
     expect(app.settings.check_for_updates).toBe(false);

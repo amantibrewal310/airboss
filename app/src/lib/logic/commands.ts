@@ -114,7 +114,7 @@ export const COMMANDS: Command[] = [
   { id: 'undo', label: 'Undo', bind: [['mod+z', 'undo']], menu: 'task' },
   { id: 'toasts', label: 'Go to notifications', bind: [['f6', 'f6']] },
   { id: 'check_connections', label: 'Check connections again', bind: [], palette: true },
-  // Airboss › Check for Updates… is answered by Rust itself (native.rs); ⌘K runs it here.
+  // ⌘K, and Airboss › Check for Updates…, which Rust forwards as `menu:action`.
   { id: 'check_for_updates', label: 'Check for updates', bind: [], menu: 'app', palette: true },
   // The list
   { id: 'up', label: 'Move up', bind: [['up', 'nav']], views: LIST },
