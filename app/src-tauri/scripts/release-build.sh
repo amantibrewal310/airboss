@@ -26,13 +26,14 @@ password=$(security find-generic-password -s airboss-updater-key -w 2>/dev/null)
 version=$(cd "$root/app" && node -p "require('./package.json').version")
 echo "Building Airboss $version"
 
-# Tauri signs the update archive when it sees these. The key goes by path, so its bytes aren't
-# in the environment of every build script; the password has to be.
-TAURI_SIGNING_PRIVATE_KEY_PATH=$key
+# Tauri signs the update archive when it sees these. TAURI_SIGNING_PRIVATE_KEY takes the key's
+# path (tauri build ignores TAURI_SIGNING_PRIVATE_KEY_PATH), so the key's bytes aren't in the
+# environment of every build script; the password has to be.
+TAURI_SIGNING_PRIVATE_KEY=$key
 TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$password
-export TAURI_SIGNING_PRIVATE_KEY_PATH TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+export TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD
 (cd "$root/app" && CI=true pnpm bundle --bundles app,dmg)
-unset TAURI_SIGNING_PRIVATE_KEY_PATH TAURI_SIGNING_PRIVATE_KEY_PASSWORD password
+unset TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD password
 
 bundle=$root/target/release/bundle
 app=$bundle/macos/Airboss.app
