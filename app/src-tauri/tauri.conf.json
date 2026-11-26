@@ -50,7 +50,7 @@
         "focus": false,
         "decorations": false,
         "transparent": true,
-        "shadow": false,
+        "shadow": true,
         "resizable": false,
         "minimizable": false,
         "maximizable": false,

@@ -235,11 +235,7 @@ impl Shell for Arc<TauriShell> {
     }
 
     fn resize_quickadd(&self, height: f64) {
-        self.on_main(move |app| {
-            if let Some(w) = app.get_webview_window(quickadd::LABEL) {
-                let _ = w.set_size(tauri::LogicalSize::new(quickadd::WIDTH, height));
-            }
-        });
+        self.on_main(move |app| quickadd::resize(app, height));
     }
 
     fn open_url(&self, url: &str, app: &Path) -> Result<(), String> {

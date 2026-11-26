@@ -101,7 +101,6 @@
       {#each secondary as s (s.label)}
         <button type="button" class="sec" onclick={s.run}>{s.label} {#if s.keys}<Kbd keys={s.keys} />{/if}</button>
       {/each}
-      <span class="sp"></span>
       <button type="button" class="ghost" onclick={() => app.dismiss(item)}>
         {item.kind === 'finish_it' ? 'Keep open' : 'Dismiss'} <Kbd keys="mod+backspace" joined />
       </button>
@@ -214,14 +213,20 @@
     border-radius: var(--r-sm);
     outline: none;
   }
+  /* The main action first; when the card is too narrow for one line the actions wrap, and
+     Dismiss keeps to the right of whichever line it lands on. */
   .acts {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 8px;
     padding-top: 16px;
   }
-  .sp {
-    flex: 1;
+  .acts .ghost {
+    margin-left: auto;
+  }
+  .acts button {
+    max-width: 100%;
   }
   button.pri,
   button.sec,

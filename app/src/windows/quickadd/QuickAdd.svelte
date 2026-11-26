@@ -76,29 +76,80 @@
     await api.doIt(s.task, place, false).catch(() => {});
   }
 
+  /** What hangs below the card: a picker (Repos, Parent) or the Start in menu. */
+  const POPUPS = '.dd, [role="menu"]';
+  /** Room below a popup for its shadow. */
+  const POPUP_MARGIN = 24;
+  let stage: HTMLDivElement | undefined = $state();
+  let sent = 0;
+  let settleFrame = 0;
+
+  /** The window's height: the card, or down past an open popup so all of it shows. */
+  function measure(): number {
+    if (!wrap || !stage) return 0;
+    let bottom = wrap.getBoundingClientRect().bottom;
+    for (const el of stage.querySelectorAll(POPUPS)) bottom = Math.max(bottom, el.getBoundingClientRect().bottom + POPUP_MARGIN);
+    return Math.ceil(bottom);
+  }
+
+  /** Sizes the window to the content; Rust keeps its top edge where it is. */
+  function fit() {
+    const h = measure();
+    if (!h || h === sent) return;
+    sent = h;
+    void api.quickaddResize(h).catch(() => {});
+    settle();
+  }
+
+  /**
+   * Once the new content has painted, sizes the window again (the same height) so Rust redraws
+   * its shadow around what is now on screen.
+   */
+  function settle() {
+    cancelAnimationFrame(settleFrame);
+    settleFrame = requestAnimationFrame(() => {
+      settleFrame = requestAnimationFrame(() => {
+        settleFrame = 0;
+        const h = measure();
+        if (!h) return;
+        sent = h;
+        void api.quickaddResize(h).catch(() => {});
+      });
+    });
+  }
+
   onMount(() => {
     const unsub = [on('quickadd:reset', (r) => ((hotkey = r.hotkey), void resetForm(r.keep_text === true)))];
     void refresh().then(() => form?.focusTitle());
-    // Height follows the content (a dropdown included).
-    const ro = new ResizeObserver(() => {
-      if (!wrap) return;
-      const dd = wrap.querySelector('.dd, [role="menu"]')?.getBoundingClientRect();
-      const h = Math.ceil(Math.max(wrap.getBoundingClientRect().bottom, dd ? dd.bottom + 8 : 0));
-      void api.quickaddResize(h).catch(() => {});
-    });
-    if (wrap) ro.observe(wrap);
-    const onFocus = () => void api.quickaddShown().catch(() => {});
+    // The height follows the card, and grows while a picker hangs below it. A picker is
+    // positioned absolutely, so the card's own size doesn't change: watch for it coming and going.
+    const ro = new ResizeObserver(fit);
+    const watch = () => {
+      ro.disconnect();
+      if (wrap) ro.observe(wrap);
+      stage?.querySelectorAll(POPUPS).forEach((el) => ro.observe(el));
+      fit();
+    };
+    const mo = new MutationObserver(watch);
+    if (stage) mo.observe(stage, { childList: true, subtree: true });
+    watch();
+    const onFocus = () => {
+      settle();
+      void api.quickaddShown().catch(() => {});
+    };
     window.addEventListener('focus', onFocus);
     void api.uiReady('quickadd').catch(() => {});
     return () => {
       ro.disconnect();
+      mo.disconnect();
+      cancelAnimationFrame(settleFrame);
       window.removeEventListener('focus', onFocus);
       void Promise.all(unsub).then((fns) => fns.forEach((f) => f()));
     };
   });
 </script>
 
-<div class="stage" class:native>
+<div class="stage" class:native bind:this={stage} onanimationend={settle}>
   <div class="card" bind:this={wrap}>
     <NewTask
       bind:this={form}
@@ -136,8 +187,16 @@
     box-shadow: var(--shadow-float);
     align-self: flex-start;
   }
+  /* In the app, AppKit draws the panel's shadow around the card (a CSS one would need a
+     transparent margin around it, taking clicks meant for the app behind). */
   .native .card {
     box-shadow: none;
     border: 1px solid var(--line-2);
+  }
+  /* A picker's shadow fits in the room left below it. */
+  .native :global(.dd) {
+    box-shadow:
+      0 6px 18px rgb(0 0 0 / 0.22),
+      0 0 0 1px var(--line-2);
   }
 </style>

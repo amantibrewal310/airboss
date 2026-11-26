@@ -62,3 +62,28 @@ for (const scheme of ['dark', 'light'] as const) {
     expect(violations, violations.join('\n')).toEqual([]);
   });
 }
+
+// Its five actions wrap inside the card (the main one first) from the smallest window up.
+for (const width of [900, 1100, 1280]) {
+  test(`the Agent stopped actions stay inside the card at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 760 });
+    await toStopped(page);
+    const { card, actions } = await page.locator('.detail .big').evaluate((el) => {
+      const box = (e: Element) => {
+        const r = e.getBoundingClientRect();
+        return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, label: e.textContent?.trim() ?? '' };
+      };
+      return { card: box(el), actions: [...el.querySelectorAll('.acts button')].map(box) };
+    });
+    expect(actions).toHaveLength(5);
+    expect(actions[0]!.label).toMatch(/^Open thread/);
+    for (const a of actions) {
+      expect(a.left, a.label).toBeGreaterThanOrEqual(card.left);
+      expect(a.right, a.label).toBeLessThanOrEqual(card.right);
+      expect(a.bottom, a.label).toBeLessThanOrEqual(card.bottom);
+    }
+    // Nothing is clipped either: each button is as wide as its label.
+    const clipped = await page.locator('.detail .big .acts button').evaluateAll((els) => els.filter((e) => e.scrollWidth > e.clientWidth + 1).map((e) => e.textContent));
+    expect(clipped).toEqual([]);
+  });
+}
