@@ -5,6 +5,12 @@ human at the keyboard. About 15 minutes, **keyboard only** (no mouse or trackpad
 step says so), on a throwaway database. Tick each box as you go; anything that doesn't match
 the expected result is a bug to file.
 
+This list was driven on screen on 26 Nov 2026 (keystrokes, screenshots and the accessibility
+tree), and the bugs it found were fixed: see [tasks/hands-on-qa.md](../tasks/hands-on-qa.md).
+What that run couldn't do needs a person: a real sleep and wake (9), the Shortcuts-app
+hotkey clash (2), clicking a notification while Airboss is quit (5), notifications turned off
+in System Settings (5), and listening to VoiceOver (7).
+
 ## Before you start (2 minutes, once)
 
 ```sh
@@ -13,7 +19,8 @@ mkdir -p /tmp/airboss-qa/scratch && cd /tmp/airboss-qa/scratch && git init -q &&
 cargo run -p airboss-app --example seed -- --tasks 2000 --db /tmp/airboss-qa/big.db
 ```
 
-- Turn on **System Settings › Keyboard › Keyboard navigation**, so Tab reaches buttons.
+- Tab reaches every button with **Keyboard navigation** off (the macOS default); no setting to
+  change.
 - Start the app on an empty throwaway database, with the trace on (for the sleep check):
 
   ```sh
@@ -39,11 +46,15 @@ cargo run -p airboss-app --example seed -- --tasks 2000 --db /tmp/airboss-qa/big
       **Options › Allow**). Allow it. Airboss now appears in System Settings › Notifications,
       with Allow notifications on. macOS asks once per Mac: if Airboss was already listed
       there, there's no prompt, and the switch there is what counts.
-- [ ] In the Repos step, Tab to **Add another folder…**, ↩, choose `/tmp/airboss-qa/scratch`.
-      It's added.
+- [ ] In the Repos step, T3 Code's project list is one Tab stop (↑↓ move, Space ticks). Tab to
+      **Add another folder…**, ↩, choose `/tmp/airboss-qa/scratch`. It's listed as "Added", the
+      Repos step stays, and focus is back on **Add another folder…**.
 - [ ] Tab through the Connections rows: **Agents** reads "Not set up" with **Install
-      command-line tool**. Press it (↩). The row then reads "Agents · Ready" and "No agent has
-      reported yet."
+      command-line tool**. Press it (↩). The row then reads "Agents · Not connected" with
+      **Connect Claude Code**. Press it: within a few seconds a toast says "Connected Claude
+      Code" and the row reads "Agents · Ready", "No agent has reported yet." (This registers
+      Airboss in your real `~/.claude.json`, at user scope, which is what using it needs; to
+      undo it: `claude mcp remove --scope user airboss`.)
 
 ## 2. Quick add from another app (⌃⌥N)
 

@@ -88,3 +88,38 @@ Severity: **B** = bug a user hits, **U** = UX/polish, **A** = accessibility, **N
 - **#9:** the Agents row checks whether an agent tool actually has the `airboss` MCP server. It reads `~/.claude.json` (top-level `mcpServers.airboss`) and `~/.codex/config.toml` (`[mcp_servers.airboss]`) **read-only**. "Ready" needs the CLI **and** at least one tool. With the CLI but no tool, the state is "Not connected", with a one-click **Connect Claude Code**: on the user's click it runs `claude mcp add --scope user airboss -- ~/.local/bin/airboss mcp`. "Copy setup command" stays as the fallback. A change to the user's agent config happens only on that explicit click.
 - **#5 and #14:** kept as they are.
 - **#22:** do it if the data is already there (launch knows which starts were Plan it). Otherwise defer, with a note.
+
+## After the fixes (wave 8, same day)
+
+Five engineers fixed the findings on branches `wave8/*`, merged into `main`. The rebuilt app was then driven on screen again. Re-checked there:
+
+- **#1:** there's one set of traffic lights.
+- **#2 and #3:** the project list is one Tab stop (↑↓, Space), with names as labels and paths as help. After adding a folder, the Repos step stays and focus returns to "Add another folder…".
+- **#9:**
+  - The rows go "Not set up" → "Not connected" → **Connect Claude Code** → "Ready" with the toast "Connected Claude Code".
+  - The connect check ran with a throwaway HOME: it wrote `mcpServers.airboss` with the absolute CLI path to that HOME's `.claude.json`, in about 2 s.
+  - With the real HOME, the row reads "Not connected", which is correct. The user's real config wasn't touched.
+- **#7 and #10:** with an agent waiting on an AskUserQuestion, Claude sync never broke ("Claude sync broken" 0 times), and no Claude Code row appeared.
+- **#12:** answering the question logged "withdrew 1 notification(s)".
+- **#16:** All tasks is an AXOutline with AXOutlineRow rows, read as "1, QA one, In progress, agent stopped, needs you, scratch, 50 minutes ago".
+- **#18:** focus follows ←/→ in Tree/By status.
+- **#21:** the status menu opens on "In progress".
+- **#5 and #6:** "Couldn't start #4: scratch2 isn't a T3 project yet." stays after 10 s with **Close**. F6 then Esc closes it and returns focus to the list.
+- **#11:** "Started thread Plan 2 QA plan in scratch".
+- **#17:** "Agent stopped · 42m ago".
+- **#24:** the actions wrap, with Dismiss on its own line.
+- **#13:** the menu-bar menu reads "Quick Add… ⌃⌥N", and the hotkey still works.
+- **#20:** the menu-bar item's AX description is "Airboss, 2 waiting on you".
+- **#19 and #4:** both pickers show in full, and quick add has a visible shadow in Light.
+
+Found during the re-check and fixed by the EM:
+
+- **Quick add stale data:** quick add loaded its repos and parents only at start and after hiding, so the first open after adding a repo or task showed old lists. It now reloads whenever it gains focus. A test covers it.
+- **Ghost outline under quick add's pickers:** AppKit's window shadow traced the picker's blurred CSS shadow. In quick add, pickers and the Start in menu now get a ring, like the card.
+- **Wording:** the install toast now shows `~/.local/bin/airboss`, and the Agents hint says "then connect Claude Code".
+
+Not done:
+
+- **#22 (Plans "Planning…" cards):** no field tells the UI that a Plan it thread is running. It needs a small backend addition, so it's left for v1.1.
+- **#5's menu item names and #14:** kept as they are.
+- **Bare ids in launch errors:** the launch crate's own messages ("Task 1 waits on 2.") still use them.

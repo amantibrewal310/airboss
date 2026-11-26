@@ -195,10 +195,11 @@
     box-shadow: none;
     border: 1px solid var(--line-2);
   }
-  /* A picker's shadow fits in the room left below it. */
-  .native :global(.dd) {
-    box-shadow:
-      0 6px 18px rgb(0 0 0 / 0.22),
-      0 0 0 1px var(--line-2);
+  /* Like the card, a picker gets a ring and AppKit's window shadow, never a blurred CSS one:
+     the window shadow follows the page's alpha, so it would outline the blur's faint edge as
+     a ghost border below the picker. */
+  .native :global(.dd),
+  .native :global(.pop) {
+    box-shadow: 0 0 0 1px var(--line-2);
   }
 </style>
