@@ -755,7 +755,7 @@ export class MockBackend implements Transport {
           : what === 'agent_note'
             ? 'Airboss tracks this work. Use the airboss MCP tools to report progress.'
             : what === 'codex_setup'
-              ? '[mcp_servers.airboss]\ncommand = "/Users/you/.local/bin/airboss"\nargs = ["mcp"]\nenv_vars = ["T3CODE_THREAD_ID"]\n'
+              ? '[mcp_servers.airboss]\ncommand = "/Users/you/.local/bin/airboss"\nargs = ["mcp"]\nenv_vars = ["T3CODE_THREAD_ID", "HC_TERMINAL_ID"]\n'
               : 'claude mcp add --scope user airboss -- ~/.local/bin/airboss mcp';
       this.opened.push(`clipboard:${text}`);
       void globalThis.navigator?.clipboard?.writeText(text).catch(() => {});

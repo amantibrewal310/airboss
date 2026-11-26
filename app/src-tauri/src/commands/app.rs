@@ -26,9 +26,9 @@ pub const AGENT_NOTE: &str = include_str!("../../resources/agent-note.md");
 /// The command "Copy setup command" copies.
 pub const SETUP_COMMAND: &str = "claude mcp add --scope user airboss -- ~/.local/bin/airboss mcp";
 /// What "Copy Codex setup" copies: `codex mcp add` can't set `env_vars`, which Codex needs to
-/// pass T3's thread id to the server, so it's a table for `~/.codex/config.toml` (`{bin}` is
-/// the CLI's absolute path).
-pub const CODEX_SETUP: &str = "[mcp_servers.airboss]\ncommand = \"{bin}\"\nargs = [\"mcp\"]\nenv_vars = [\"T3CODE_THREAD_ID\"]\n";
+/// pass T3's thread id and Herdr's terminal id to the server, so it's a table for
+/// `~/.codex/config.toml` (`{bin}` is the CLI's absolute path).
+pub const CODEX_SETUP: &str = "[mcp_servers.airboss]\ncommand = \"{bin}\"\nargs = [\"mcp\"]\nenv_vars = [\"T3CODE_THREAD_ID\", \"HC_TERMINAL_ID\"]\n";
 /// How long Connect Claude Code waits for `claude mcp add`.
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
 /// Where Claude Code's `claude` usually is, under the home folder and then the system's,
