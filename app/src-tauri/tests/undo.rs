@@ -293,11 +293,73 @@ fn only_proposals_can_be_rejected_and_an_accepted_one_is_left_alone() {
         ErrorCode::NotAllowed
     );
     tasks::reject_proposals(&app.state, M, vec![x], None).unwrap();
-    // Accepted in the meantime (from the CLI, say): the reject isn't written.
+    // Accepted in the meantime (from the CLI, say): the reject isn't written, and says so.
     app.core(|s| s.set_status(x, Status::Todo, None, &Actor::Me).unwrap());
     app.sync_vm();
     app.state.shutdown(Duration::from_secs(1));
     assert_eq!(status(&app, x), Status::Todo);
+    assert_eq!(
+        toasts(&app),
+        vec![format!("{} was already accepted; left as is", x.0)]
+    );
+}
+
+fn toasts(app: &TestApp) -> Vec<String> {
+    app.shell
+        .events()
+        .into_iter()
+        .filter_map(|e| match e {
+            airboss_app::UiEvent::Toast(t) => Some(t.text),
+            _ => None,
+        })
+        .collect()
+}
+
+/// One reject of several, written through core's `reject_proposals` in one transaction:
+/// what's still proposed is rejected, the rest is left as is and named in one toast.
+#[test]
+fn a_reject_all_writes_what_is_still_proposed_and_names_the_rest() {
+    let app = TestApp::new();
+    let p = app.add("P", None);
+    let [a, b, c, d] = ["a", "b", "c", "d"].map(|t| proposal(&app, p, t));
+    app.sync_vm();
+    tasks::reject_proposals(&app.state, M, vec![a, b, c, d], None).unwrap();
+    app.core(|s| {
+        s.set_status(b, Status::Todo, None, &Actor::Me).unwrap();
+        s.set_status(c, Status::Doing, None, &Actor::Me).unwrap();
+        // Rejected elsewhere already (`airboss reject`).
+        s.set_status(d, Status::Dropped, None, &Actor::Me).unwrap();
+    });
+    app.sync_vm();
+    app.state.shutdown(Duration::from_secs(1));
+    assert_eq!(status(&app, a), Status::Dropped);
+    assert_eq!(
+        (status(&app, b), status(&app, c)),
+        (Status::Todo, Status::Doing)
+    );
+    assert_eq!(
+        toasts(&app),
+        vec![format!(
+            "{} and {} were already accepted and {} already dropped; left as is",
+            b.0, c.0, d.0
+        )]
+    );
+}
+
+#[test]
+fn a_proposal_dropped_meanwhile_says_already_dropped() {
+    let app = TestApp::new();
+    let p = app.add("P", None);
+    let x = proposal(&app, p, "x");
+    app.sync_vm();
+    tasks::reject_proposals(&app.state, M, vec![x], None).unwrap();
+    app.core(|s| s.set_status(x, Status::Dropped, None, &Actor::Me).unwrap());
+    app.sync_vm();
+    app.state.shutdown(Duration::from_secs(1));
+    assert_eq!(
+        toasts(&app),
+        vec![format!("{} was already dropped; left as is", x.0)]
+    );
 }
 
 #[test]
