@@ -4,6 +4,7 @@
 //! - the system accent colour, and when it changes (`NSSystemColorsDidChangeNotification`)
 //! - the Mac waking (`NSWorkspaceDidWakeNotification`)
 //! - the local time zone's offset, for the menu-bar menu's clock times
+//! - the menu-bar item's accessibility label
 //! - `QuickAddPanel`, an `NSPanel` subclass from `tauri-nspanel`
 //! - notifications through `UNUserNotificationCenter`: permission, posting, withdrawing, and
 //!   the delegate that hears a click
@@ -67,6 +68,18 @@ pub fn accent_hex() -> Option<String> {
 pub fn disable_state_restoration() {
     NSUserDefaults::standardUserDefaults()
         .setBool_forKey(true, &NSString::from_str("ApplePersistenceIgnoreState"));
+}
+
+/// Sets the menu-bar item's accessibility label (what VoiceOver reads for its button). On
+/// the main thread only; elsewhere it does nothing.
+pub fn set_status_item_label(item: &objc2_app_kit::NSStatusItem, label: &str) {
+    use objc2_app_kit::NSAccessibility;
+    let Some(mtm) = objc2::MainThreadMarker::new() else {
+        return;
+    };
+    if let Some(button) = item.button(mtm) {
+        button.setAccessibilityLabel(Some(&NSString::from_str(label)));
+    }
 }
 
 /// The local time zone's offset from UTC at `secs` since the epoch, in seconds.
