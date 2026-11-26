@@ -6,10 +6,11 @@
 //! `herdr-app do` gets its arguments as one JSON object, so the brief is never parsed by a
 //! shell or read as a flag.
 
+use std::collections::HashMap;
 use std::ffi::OsString;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use airboss_core::TaskId;
 use airboss_services::{Availability, HerdrAgent, ServiceError};
@@ -163,6 +164,27 @@ pub fn space_new_argv(
         "focus": false,
     });
     vec!["do".to_string(), "space.new".to_string(), args.to_string()]
+}
+
+/// `herdr-app do space.new {…}` with no agent: a space for a repo, in the repo's folder, whose
+/// first tab is a plain shell named `tab`. The thread's tab then goes in with `tab.new`.
+pub fn space_shell_argv(name: &str, folder: &str, tab: &str) -> Vec<String> {
+    let args = json!({
+        "name": name,
+        "folder": folder,
+        "tab": tab,
+        "focus": false,
+    });
+    vec!["do".to_string(), "space.new".to_string(), args.to_string()]
+}
+
+/// Reads the space id from `space.new`'s answer.
+pub fn read_space_id(out: &CmdOutput) -> Option<String> {
+    if out.status != Some(0) {
+        return None;
+    }
+    let v: Value = serde_json::from_str(out.stdout.trim()).ok()?;
+    v.get("space")?.as_str().map(str::to_string)
 }
 
 /// The labels every terminal Airboss starts carries, as `key=value`.
@@ -464,6 +486,85 @@ struct HcTerminal {
     address: String,
     #[serde(default)]
     state: Option<String>,
+    #[serde(default)]
+    cwd: Option<String>,
+}
+
+/// `hc ls --json`: every live terminal.
+pub fn ls_live_argv() -> Vec<String> {
+    vec!["ls".to_string(), "--json".to_string()]
+}
+
+/// `hc get <address> --json`.
+pub fn get_argv(address: &str) -> Vec<String> {
+    vec!["get".to_string(), address.to_string(), "--json".to_string()]
+}
+
+/// Reads `hc ls --json`: each live terminal's address and launch folder (`cwd`).
+pub fn read_live(out: &CmdOutput) -> Option<Vec<(String, String)>> {
+    if out.status != Some(0) {
+        return None;
+    }
+    let ls: HcLs = serde_json::from_str(out.stdout.trim()).ok()?;
+    Some(
+        ls.terminals
+            .into_iter()
+            .filter(|t| t.state.as_deref().is_none_or(|s| s == "live"))
+            .filter(|t| valid_address(&t.address))
+            .filter_map(|t| Some((t.address, t.cwd?)))
+            .collect(),
+    )
+}
+
+/// What `hc get --json` says about one terminal.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Terminal {
+    #[serde(default)]
+    pub state: Option<String>,
+    #[serde(default)]
+    pub created_ms: Option<u64>,
+    #[serde(default)]
+    pub labels: HashMap<String, String>,
+}
+
+/// Reads `hc get --json`.
+pub fn read_get(out: &CmdOutput) -> Option<Terminal> {
+    if out.status != Some(0) {
+        return None;
+    }
+    serde_json::from_str(out.stdout.trim()).ok()
+}
+
+/// Milliseconds since 1970, as `hc` gives `created_ms`.
+fn millis(t: SystemTime) -> u64 {
+    t.duration_since(UNIX_EPOCH)
+        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
+}
+
+/// The live terminals that could be a tab whose answer was lost: started in `folder`, at or
+/// after `since` (when its launch row was made), and carrying no `airboss.launch` label, so
+/// no other launch claims them. `None` when `hc` can't answer.
+pub fn unlabelled_in(
+    cli: &mut dyn HerdrCli,
+    folder: &Path,
+    since: SystemTime,
+) -> Option<Vec<String>> {
+    let out = cli.run(Tool::Hc, &ls_live_argv(), QUICK_TIMEOUT).ok()?;
+    let since = millis(since);
+    let mut found = Vec::new();
+    for (address, cwd) in read_live(&out)? {
+        if !same_path(Path::new(&cwd), folder) {
+            continue;
+        }
+        let out = cli.run(Tool::Hc, &get_argv(&address), QUICK_TIMEOUT).ok()?;
+        let t = read_get(&out)?;
+        let live = t.state.as_deref().is_none_or(|s| s == "live");
+        let new = t.created_ms.is_some_and(|ms| ms >= since);
+        if live && new && !t.labels.contains_key("airboss.launch") {
+            found.push(address);
+        }
+    }
+    Some(found)
 }
 
 /// Reads `hc ls --json`: the first live terminal's address. `None` when it isn't JSON.
@@ -616,6 +717,30 @@ mod tests {
                 "{odd:?}"
             );
         }
+    }
+
+    #[test]
+    fn live_terminals_and_one_terminal() {
+        let o = out(
+            0,
+            r#"{"terminals":[{"address":"t57","cwd":"/r","state":"live"},
+                {"address":"t58","cwd":"/w","state":"finished"},{"address":"-x","cwd":"/r"}]}"#,
+            "",
+        );
+        assert_eq!(read_live(&o), Some(vec![("t57".into(), "/r".into())]));
+        let g = out(
+            0,
+            r#"{"address":"t57","created_ms":1795674084291,"state":"live",
+                "labels":{"herdr.tab":"tb1","airboss.launch":"4"}}"#,
+            "",
+        );
+        let t = read_get(&g).unwrap();
+        assert_eq!(t.created_ms, Some(1_795_674_084_291));
+        assert_eq!(
+            t.labels.get("airboss.launch").map(String::as_str),
+            Some("4")
+        );
+        assert_eq!(read_get(&out(3, "", "")), None);
     }
 
     #[test]

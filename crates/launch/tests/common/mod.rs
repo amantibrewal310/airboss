@@ -48,6 +48,8 @@ impl H {
         let t3 = FakeT3Cli::new();
         let git = FakeGit::new();
         let herdr = FakeHerdr::new();
+        // New fake terminals are made at t0, as the launch rows are.
+        herdr.set_now_ms(t0().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64);
         let sync = Arc::new(FakeSync::new());
         let clock = Arc::new(FakeClock::at(t0()));
         let home = dir.dir("home");

@@ -244,6 +244,7 @@ struct GitState {
     calls: Vec<String>,
     worktrees: HashMap<PathBuf, Vec<Worktree>>,
     refuse_worktree: VecDeque<String>,
+    no_head: HashSet<PathBuf>,
 }
 
 /// A scripted `git`. Every repo's default branch is `main` unless set; no branch exists
@@ -282,13 +283,34 @@ impl FakeGit {
 
     /// Makes `path` a worktree of `repo` on `branch` (or detached).
     pub fn add_worktree_at(&self, repo: impl Into<PathBuf>, path: &Path, branch: Option<&str>) {
+        self.add(repo.into(), path, branch, None);
+    }
+
+    /// Makes `path` a worktree of `repo` on `branch` that a killed `git worktree add` left:
+    /// still locked as `initializing`.
+    pub fn half_made_worktree_at(&self, repo: impl Into<PathBuf>, path: &Path, branch: &str) {
+        let repo = repo.into();
+        lock(&self.0)
+            .branches
+            .insert((repo.clone(), branch.to_string()));
+        self.add(repo, path, Some(branch), Some(crate::git::INITIALIZING));
+    }
+
+    /// Makes `rev-parse HEAD` fail in the worktree at `path`.
+    pub fn no_head_in(&self, path: &Path) {
+        lock(&self.0).no_head.insert(path.to_path_buf());
+    }
+
+    fn add(&self, repo: PathBuf, path: &Path, branch: Option<&str>, locked: Option<&str>) {
         lock(&self.0)
             .worktrees
-            .entry(repo.into())
+            .entry(repo)
             .or_default()
             .push(Worktree {
                 path: path.to_path_buf(),
                 branch: branch.map(str::to_string),
+                locked: locked.map(str::to_string),
+                prunable: false,
             });
     }
 
@@ -396,7 +418,27 @@ impl Git for FakeGit {
             .push(Worktree {
                 path: path.to_path_buf(),
                 branch: Some(branch.to_string()),
+                locked: None,
+                prunable: false,
             });
+        Ok(())
+    }
+
+    fn has_head(&mut self, worktree: &Path) -> io::Result<bool> {
+        let s = self.call(format!("has_head({})", worktree.display()))?;
+        Ok(!s.no_head.contains(worktree))
+    }
+
+    fn remove_worktree(&mut self, repo: &Path, path: &Path) -> io::Result<()> {
+        let mut s = self.call(format!(
+            "remove_worktree({}, {})",
+            repo.display(),
+            path.display()
+        ))?;
+        s.no_head.remove(path);
+        if let Some(list) = s.worktrees.get_mut(repo) {
+            list.retain(|w| w.path != path);
+        }
         Ok(())
     }
 }
@@ -447,6 +489,8 @@ pub enum HerdrReply {
     Stdout(String),
     /// No answer in time.
     Timeout,
+    /// Opens the tab, then gives no answer in time: a tab Airboss never hears of.
+    OpensThenTimeout,
 }
 
 #[derive(Default)]
@@ -470,6 +514,9 @@ struct HerdrState {
     tabs: Vec<FakeTab>,
     replies: VecDeque<HerdrReply>,
     labels: HashMap<String, Vec<(String, String)>>,
+    /// Each terminal's launch folder and `created_ms`.
+    started: HashMap<String, (String, u64)>,
+    now_ms: u64,
     finished: HashSet<String>,
     hc_broken: bool,
     label_fails: bool,
@@ -491,6 +538,8 @@ impl Default for HerdrState {
             tabs: Vec::new(),
             replies: VecDeque::new(),
             labels: HashMap::new(),
+            started: HashMap::new(),
+            now_ms: 0,
             finished: HashSet::new(),
             hc_broken: false,
             label_fails: false,
@@ -546,7 +595,8 @@ impl FakeHerdr {
         });
     }
 
-    /// How the next `tab.new` or `space.new` answers instead of opening a tab. Queued.
+    /// How the next `tab.new` or `space.new` with an agent answers instead of opening its
+    /// tab. Queued.
     pub fn push(&self, reply: HerdrReply) {
         lock(&self.0).replies.push_back(reply);
     }
@@ -560,6 +610,26 @@ impl FakeHerdr {
                 .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect(),
         );
+    }
+
+    /// A terminal Airboss didn't start, in `folder`, made at `created_ms`, with these labels.
+    pub fn add_terminal_in(
+        &self,
+        address: &str,
+        folder: &Path,
+        created_ms: u64,
+        labels: &[(&str, &str)],
+    ) {
+        self.add_terminal(address, labels);
+        lock(&self.0).started.insert(
+            address.to_string(),
+            (folder.display().to_string(), created_ms),
+        );
+    }
+
+    /// The `created_ms` new terminals get from now on.
+    pub fn set_now_ms(&self, ms: u64) {
+        lock(&self.0).now_ms = ms;
     }
 
     /// The terminal's program ended: `hc ls` no longer lists it.
@@ -682,12 +752,19 @@ impl HerdrState {
         let Ok(args) = serde_json::from_str::<Value>(json) else {
             return refuse("fake herdr-app: not one JSON object".into());
         };
-        match self.replies.pop_front() {
+        // Scripted replies are for tabs that start an agent, not a space's shell tab.
+        let reply = if args.get("argv").is_some() {
+            self.replies.pop_front()
+        } else {
+            None
+        };
+        let lost_answer = match reply {
             Some(HerdrReply::Error(m)) => return refuse(m),
             Some(HerdrReply::Stdout(text)) => return exit(0, text, ""),
             Some(HerdrReply::Timeout) => return Err(io::Error::from(io::ErrorKind::TimedOut)),
-            None => {}
-        }
+            Some(HerdrReply::OpensThenTimeout) => true,
+            None => false,
+        };
         let text = |k: &str| args.get(k).and_then(Value::as_str).map(str::to_string);
         let folder = text("folder").unwrap_or_default();
         if !Path::new(&folder).is_dir() {
@@ -731,6 +808,11 @@ impl HerdrState {
             new_space: cmd == "space.new",
         });
         self.labels.entry(terminal.clone()).or_default();
+        let made = (folder_of_last(&self.tabs), self.now_ms);
+        self.started.insert(terminal.clone(), made);
+        if lost_answer {
+            return Err(io::Error::from(io::ErrorKind::TimedOut));
+        }
         let out = json!({"space": space, "tab": format!("tb{}", self.next), "terminal": terminal});
         exit(0, format!("{out:#}\n"), "")
     }
@@ -760,6 +842,24 @@ impl HerdrState {
                 }
                 exit(0, json!({"address": address}).to_string(), "")
             }
+            ["get", address, "--json"] => {
+                let Some(labels) = self.labels.get(*address) else {
+                    return exit(3, json!({"error": {"kind": "not_found"}}).to_string(), "");
+                };
+                let (cwd, created) = self.started.get(*address).cloned().unwrap_or_default();
+                let labels: serde_json::Map<String, Value> = labels
+                    .iter()
+                    .map(|(k, v)| (k.clone(), Value::from(v.as_str())))
+                    .collect();
+                let state = if self.finished.contains(*address) {
+                    "finished"
+                } else {
+                    "live"
+                };
+                let out = json!({"address": address, "cwd": cwd, "created_ms": created,
+                                 "state": state, "labels": labels});
+                exit(0, out.to_string(), "")
+            }
             ["ls", "--json", rest @ ..] => {
                 let wanted: Vec<(&str, &str)> = rest
                     .chunks(2)
@@ -782,7 +882,10 @@ impl HerdrState {
                 found.sort();
                 let terminals: Vec<Value> = found
                     .into_iter()
-                    .map(|a| json!({"address": a, "state": "live"}))
+                    .map(|a| {
+                        let cwd = self.started.get(a).map(|(c, _)| c.as_str()).unwrap_or("/");
+                        json!({"address": a, "cwd": cwd, "state": "live"})
+                    })
                     .collect();
                 exit(0, json!({"terminals": terminals}).to_string(), "")
             }
@@ -830,4 +933,9 @@ impl HerdrCli for FakeHerdr {
     fn pause(&mut self, d: Duration) {
         lock(&self.0).pauses.push(d);
     }
+}
+
+/// The folder of the tab just opened.
+fn folder_of_last(tabs: &[FakeTab]) -> String {
+    tabs.last().map(|t| t.folder.clone()).unwrap_or_default()
 }

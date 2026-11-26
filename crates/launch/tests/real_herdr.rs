@@ -51,11 +51,6 @@ impl Drop for CloseSpace<'_> {
     }
 }
 
-fn space_id(stdout: &str) -> Option<String> {
-    let v: Value = serde_json::from_str(stdout.trim()).ok()?;
-    v.get("space")?.as_str().map(str::to_string)
-}
-
 #[test]
 #[ignore = "needs Herdr open; opens and closes its own airboss-test space"]
 fn real_herdr_spaces_tabs_and_labels() {
@@ -78,27 +73,45 @@ fn real_herdr_spaces_tabs_and_labels() {
     let program = vec!["sh".to_string(), "-c".to_string(), "sleep 60".to_string()];
     let task = "line 1\n\"quoted\" $HOME `x` --flag";
 
-    // A new space with the first tab, as Do it makes for a repo with no space yet.
-    let argv = herdr::space_new_argv(
-        SPACE,
-        &folder.display().to_string(),
-        "probe 1",
-        &program,
-        task,
-    );
+    // A new space as Do it makes it for a repo with none: in the repo's folder, with a
+    // shell tab named after it.
+    let made = std::time::SystemTime::now();
+    let argv = herdr::space_shell_argv(SPACE, &folder.display().to_string(), SPACE);
     let out = match herdr::run_app(&mut cli, &argv, T) {
         AppRun::Ran(out) => out,
         other => panic!("{other:?}"),
     };
     let guard = CloseSpace {
-        id: space_id(&out.stdout),
+        id: herdr::read_space_id(&out),
         cli: &mut cli,
     };
     assert!(guard.id.is_some(), "{out:?}");
-    let first = match herdr::read_opened(AppRun::Ran(out)) {
+    let shell = match herdr::read_opened(AppRun::Ran(out)) {
         Answer::Started { thread_id, .. } => thread_id,
         other => panic!("{other:?}"),
     };
+    // Then the agent's tab, in another folder, as if its answer was lost: it's the one
+    // unlabelled terminal started there since.
+    let space = guard.id.clone().unwrap();
+    let argv = herdr::tab_new_argv(
+        &space,
+        "probe 1",
+        &other.display().to_string(),
+        &program,
+        task,
+    );
+    let first = match herdr::read_opened(herdr::run_app(guard.cli, &argv, T)) {
+        Answer::Started { thread_id, .. } => thread_id,
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(
+        herdr::unlabelled_in(guard.cli, &other, made),
+        Some(vec![first.clone()])
+    );
+    assert_eq!(
+        herdr::unlabelled_in(guard.cli, &folder, made),
+        Some(vec![shell.clone()])
+    );
 
     // The space is found by name, and a second tab goes in it.
     let spaces = match herdr::run_app(guard.cli, &herdr::ls_argv(), T) {
@@ -107,6 +120,10 @@ fn real_herdr_spaces_tabs_and_labels() {
     };
     let space = herdr::find_space(&spaces, SPACE, Path::new("/nowhere")).unwrap();
     assert_eq!(Some(&space.id), guard.id.as_ref());
+    assert!(herdr::same_path(
+        Path::new(space.folder.as_deref().unwrap()),
+        &folder
+    ));
     let argv = herdr::tab_new_argv(
         &space.id,
         "probe 2",
@@ -144,6 +161,11 @@ fn real_herdr_spaces_tabs_and_labels() {
         .run(Tool::Hc, &herdr::find_argv(TaskId(0), 0), T)
         .unwrap();
     assert_eq!(herdr::read_found(&found), Some(Some(second.clone())));
+    // Labelled, it's no longer a candidate.
+    assert_eq!(
+        herdr::unlabelled_in(guard.cli, &other, made),
+        Some(vec![first.clone()])
+    );
 
     // The task reached the program as its last argument, byte for byte.
     let got = guard
@@ -178,7 +200,7 @@ fn real_herdr_spaces_tabs_and_labels() {
     }
     assert_eq!(found, Some(None));
     // Remove the two finished records this test made.
-    for t in [&first, &second] {
+    for t in [&shell, &first, &second] {
         let rm = cli.run(Tool::Hc, &["rm".into(), t.clone()], T).unwrap();
         assert_eq!(rm.status, Some(0), "{rm:?}");
     }
@@ -219,6 +241,25 @@ fn real_git_worktrees() {
         .add_worktree(&repo, &dir.path().join("wt/web/again"), "task-1/x", None)
         .unwrap_err();
     assert!(e.to_string().contains("task-1/x"), "{e}");
+    // A killed add leaves the lock `initializing`; such a worktree is removed with -f -f.
+    let name = list[1]
+        .path
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    std::fs::write(
+        repo.join(".git/worktrees").join(&name).join("locked"),
+        "initializing",
+    )
+    .unwrap();
+    let half = &g.worktrees(&repo).unwrap()[1];
+    assert!(half.unfinished(), "{half:?}");
+    assert!(g.has_head(&wt).unwrap());
+    g.remove_worktree(&repo, &wt).unwrap();
+    assert_eq!(g.worktrees(&repo).unwrap().len(), 1);
+    assert!(!g.has_head(&wt).unwrap_or(false));
+    g.add_worktree(&repo, &wt, "task-1/x", None).unwrap();
     // A missing base is refused too.
     let e = g
         .add_worktree(
