@@ -14,6 +14,7 @@ use std::ffi::OsStr;
 use std::io::{self, BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -48,8 +49,10 @@ pub enum HerdrUpdate {
         seq: u64,
         terminals: Vec<HerdrTerminal>,
     },
-    /// A new terminal.
+    /// A new terminal, or one whose lost program was replaced (`restarted`).
     Created { seq: u64, terminal: HerdrTerminal },
+    /// Its program was lost (killed by a signal); a kept terminal is restarted after it.
+    Lost { seq: u64, address: String },
     /// Its program reported a status word, or its status cleared.
     Status {
         seq: u64,
@@ -72,6 +75,7 @@ impl HerdrUpdate {
         match self {
             HerdrUpdate::Snapshot { seq, .. }
             | HerdrUpdate::Created { seq, .. }
+            | HerdrUpdate::Lost { seq, .. }
             | HerdrUpdate::Status { seq, .. }
             | HerdrUpdate::Title { seq, .. }
             | HerdrUpdate::Finished { seq, .. }
@@ -84,32 +88,48 @@ fn text(v: &Value, k: &str) -> Option<String> {
     v.get(k).and_then(Value::as_str).map(str::to_string)
 }
 
-/// A status object's word: `null` is none, `{state, …}` is its `state`.
-fn status_word(v: Option<&Value>) -> Result<Option<String>, String> {
-    match v {
-        None | Some(Value::Null) => Ok(None),
-        Some(s) => s
-            .get("state")
-            .and_then(Value::as_str)
-            .map(|w| Some(w.to_string()))
-            .ok_or_else(|| format!("a status without a state: {s}")),
+/// A status object's word: `{state: "…", …}` is its `state`; `null`, or anything else, is
+/// none (which maps to idle).
+fn status_word(v: Option<&Value>) -> Option<String> {
+    v.and_then(|s| s.get("state"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
+/// Logs, once per process, that Herdr sent a terminal `sync` reads only in part.
+fn odd_terminal(what: &str) {
+    static SAID: AtomicBool = AtomicBool::new(false);
+    if !SAID.swap(true, Ordering::Relaxed) {
+        crate::worker::log(&format!(
+            "Herdr sent a terminal sync reads only in part ({what}); later ones aren't logged"
+        ));
     }
 }
 
-fn terminal(v: &Value) -> Result<HerdrTerminal, String> {
-    let address = text(v, "address")
+/// One terminal, read tolerantly: a state other than `live` counts as not live, a status
+/// without a word as none, and a missing field as unknown. Only a terminal with no address
+/// (from the object, else `fallback`) is skipped. A bad terminal never fails its line.
+fn terminal(v: &Value, fallback: Option<&str>) -> Option<HerdrTerminal> {
+    let Some(address) = text(v, "address")
+        .or_else(|| fallback.map(str::to_string))
         .filter(|a| !a.is_empty())
-        .ok_or("a terminal without an address")?;
+    else {
+        odd_terminal("no address");
+        return None;
+    };
     let live = match v.get("state").and_then(Value::as_str) {
         Some("live") => true,
         Some("finished") => false,
-        other => return Err(format!("terminal {address} has state {other:?}")),
+        other => {
+            odd_terminal(&format!("{address} has state {other:?}"));
+            false
+        }
     };
     let title = text(v, "title")
         .filter(|t| !t.is_empty())
         .or_else(|| text(v, "name").filter(|n| !n.is_empty()));
-    Ok(HerdrTerminal {
-        status: status_word(v.get("status")).map_err(|e| format!("terminal {address}: {e}"))?,
+    Some(HerdrTerminal {
+        status: status_word(v.get("status")),
         status_ms: v.get("status_ms").and_then(Value::as_u64),
         title,
         cwd: text(v, "cwd"),
@@ -125,13 +145,13 @@ fn snapshot(v: &Value) -> Result<HerdrUpdate, String> {
         .ok_or("a snapshot without terminals")?;
     Ok(HerdrUpdate::Snapshot {
         seq: v.get("seq").and_then(Value::as_u64).unwrap_or(0),
-        terminals: list.iter().map(terminal).collect::<Result<_, _>>()?,
+        terminals: list.iter().filter_map(|t| terminal(t, None)).collect(),
     })
 }
 
 /// Reads one line of `hc events --json`. `Ok(None)` for a line that changes nothing `sync`
 /// follows (a heartbeat, a document, a terminal's size, foreground or labels); an error for
-/// a line that isn't JSON, or a snapshot or event missing what it must have.
+/// a line that isn't JSON or that isn't a snapshot or notification at all.
 pub fn parse_line(line: &str) -> Result<Option<HerdrUpdate>, String> {
     let line = line.trim();
     if line.is_empty() {
@@ -150,43 +170,48 @@ pub fn parse_line(line: &str) -> Result<Option<HerdrUpdate>, String> {
         Some(_) => return Ok(None),
         None => return Err(format!("a line sync can't place: {line:.200}")),
     }
-    let kind = params
-        .get("type")
-        .and_then(Value::as_str)
-        .ok_or("an event without a type")?;
+    // An event without what it names changes nothing sync can place: skipped, not fatal.
+    let Some(kind) = params.get("type").and_then(Value::as_str) else {
+        return Ok(None);
+    };
     let seq = params.get("seq").and_then(Value::as_u64).unwrap_or(0);
     let data = params.get("data").unwrap_or(&Value::Null);
-    let address = || {
-        text(params, "terminal")
-            .filter(|a| !a.is_empty())
-            .ok_or_else(|| format!("a {kind} event without a terminal"))
-    };
-    Ok(Some(match kind {
-        "created" => HerdrUpdate::Created {
-            seq,
-            terminal: terminal(data)?,
-        },
-        "status" => HerdrUpdate::Status {
-            seq,
-            address: address()?,
-            status: status_word(data.get("status"))?,
-        },
-        "title" => HerdrUpdate::Title {
-            seq,
-            address: address()?,
-            title: text(data, "title").unwrap_or_default(),
-        },
-        "finished" => HerdrUpdate::Finished {
-            seq,
-            address: address()?,
-        },
-        "removed" => HerdrUpdate::Removed {
-            seq,
-            address: address()?,
-        },
-        // lost, restarted, keep, turn, foreground, size, labels, doc, and any new kind.
-        _ => return Ok(None),
-    }))
+    let target = text(params, "terminal").filter(|a| !a.is_empty());
+    let address = || target.clone().ok_or(());
+    let update = (|| -> Result<HerdrUpdate, ()> {
+        Ok(match kind {
+            // `restarted` carries the whole terminal again, live with its new program.
+            "created" | "restarted" => match terminal(data, target.as_deref()) {
+                Some(terminal) => HerdrUpdate::Created { seq, terminal },
+                None => return Err(()),
+            },
+            "lost" => HerdrUpdate::Lost {
+                seq,
+                address: address()?,
+            },
+            "status" => HerdrUpdate::Status {
+                seq,
+                address: address()?,
+                status: status_word(data.get("status")),
+            },
+            "title" => HerdrUpdate::Title {
+                seq,
+                address: address()?,
+                title: text(data, "title").unwrap_or_default(),
+            },
+            "finished" => HerdrUpdate::Finished {
+                seq,
+                address: address()?,
+            },
+            "removed" => HerdrUpdate::Removed {
+                seq,
+                address: address()?,
+            },
+            // keep, turn, foreground, size, labels, doc, and any new kind.
+            _ => return Err(()),
+        })
+    })();
+    Ok(update.ok())
 }
 
 /// What's known about every terminal: the last snapshot, with each event since applied.
@@ -219,6 +244,8 @@ impl HerdrTable {
                 address, status, ..
             } => {
                 if let Some(t) = self.terminals.get_mut(&address) {
+                    // Only a running program reports a word.
+                    t.live |= status.is_some();
                     if t.status != status {
                         // The event doesn't carry `status_ms`; it's now, give or take the
                         // line's trip through the pipe.
@@ -232,6 +259,15 @@ impl HerdrTable {
                     && !title.is_empty()
                 {
                     t.title = Some(title);
+                }
+            }
+            HerdrUpdate::Lost { address, .. } => {
+                // Its program is gone, so is its word; the terminal itself stays.
+                if let Some(t) = self.terminals.get_mut(&address)
+                    && t.status.is_some()
+                {
+                    t.status = None;
+                    t.status_ms = Some(epoch_ms(now));
                 }
             }
             HerdrUpdate::Finished { address, .. } => {
