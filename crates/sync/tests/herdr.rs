@@ -126,19 +126,98 @@ fn event_lines_become_changes_and_the_rest_are_dropped() {
 }
 
 #[test]
-fn lines_sync_cant_read_are_errors() {
+fn only_lines_that_arent_snapshots_or_notifications_are_errors() {
     for bad in [
         "not json",
-        r#"{"seq":1,"terminals":[{"state":"live"}]}"#,
-        r#"{"seq":1,"terminals":[{"address":"t1","state":"asleep"}]}"#,
-        r#"{"seq":1,"terminals":[{"address":"t1","state":"live","status":{"app":"x"}}]}"#,
         r#"{"seq":1,"terminals":{}}"#,
-        r#"{"jsonrpc":"2.0","method":"event","params":{"data":{},"seq":2,"type":"status"}}"#,
-        r#"{"jsonrpc":"2.0","method":"event","params":{"data":{}}}"#,
         r#"{"something":"else"}"#,
     ] {
         assert!(parse_line(bad).is_err(), "{bad}");
     }
+    // Events without what they name are skipped.
+    for skipped in [
+        r#"{"jsonrpc":"2.0","method":"event","params":{"data":{},"seq":2,"type":"status"}}"#,
+        r#"{"jsonrpc":"2.0","method":"event","params":{"data":{}}}"#,
+        r#"{"jsonrpc":"2.0","method":"event","params":{"data":{"state":"live"},"seq":2,"type":"created"}}"#,
+    ] {
+        assert_eq!(parse_line(skipped), Ok(None), "{skipped}");
+    }
+}
+
+/// One terminal Herdr reports oddly (a remote one in a state sync doesn't know, a status
+/// with no word, fields missing) never fails its line, so it can't break Herdr for good.
+#[test]
+fn an_odd_terminal_is_read_tolerantly_and_never_fails_its_line() {
+    let line = r#"{"seq":1,"terminals":[
+        {"state":"live"},
+        {"address":"vps/t7","state":"lost","status":{"app":"x"}},
+        {"address":"t2","status":"working"},
+        {"address":"t3","state":"live","status":{"state":"working"},"status_ms":"soon","title":7},
+        {"address":"t4p","state":"live","status":{"state":"blocked"}}]}"#
+        .replace('\n', "");
+    let HerdrUpdate::Snapshot { terminals, .. } = update(&line) else {
+        panic!("not a snapshot");
+    };
+    let by: std::collections::HashMap<&str, &HerdrTerminal> =
+        terminals.iter().map(|t| (t.address.as_str(), t)).collect();
+    assert_eq!(
+        terminals.len(),
+        4,
+        "only the one without an address is skipped"
+    );
+    assert!(!by["vps/t7"].live, "an unknown state isn't live");
+    assert_eq!(by["vps/t7"].status, None, "a status without a word is none");
+    assert!(!by["t2"].live && by["t2"].status.is_none());
+    assert_eq!(by["t3"].status.as_deref(), Some("working"));
+    assert_eq!((by["t3"].status_ms, &by["t3"].title), (None, &None));
+    let mut t = HerdrTable::default();
+    t.apply(update(&line), now());
+    assert_eq!(
+        herdr::state_of(t.terminals.get("vps/t7")),
+        ThreadState::Gone
+    );
+    assert_eq!(herdr::state_of(t.terminals.get("t3")), ThreadState::Running);
+    assert_eq!(
+        herdr::state_of(t.terminals.get("t4p")),
+        ThreadState::NeedsMe
+    );
+    // An odd created event is read the same way.
+    let created = r#"{"jsonrpc":"2.0","method":"event","params":{"data":{"state":"pending","status":[]},"seq":2,"terminal":"t9","type":"created"}}"#;
+    assert!(
+        matches!(update(created), HerdrUpdate::Created { ref terminal, .. }
+        if terminal.address == "t9" && !terminal.live && terminal.status.is_none())
+    );
+}
+
+/// A kept terminal whose program died: `lost`, then `restarted` with a new program (as hc
+/// 0.1.22 sent them for a probe killed by SIGKILL).
+#[test]
+fn a_lost_terminal_that_restarts_is_live_again() {
+    let mut t = HerdrTable::default();
+    t.apply(update(SNAPSHOT), now());
+    t.apply(update(CREATED), now());
+    t.apply(update(WORKING), now());
+    let lost = r#"{"jsonrpc":"2.0","method":"event","params":{"data":{"exit_code":null,"finished_ms":null,"reason":"signaled","signal":9},"seq":1240,"terminal":"t4x","type":"lost"}}"#;
+    t.apply(update(lost), now());
+    assert_eq!(
+        herdr::state_of(t.terminals.get("t4x")),
+        ThreadState::Idle,
+        "its word went with it"
+    );
+    // Seen as gone meanwhile (a missed finished, say): restarted makes it live again.
+    t.terminals.get_mut("t4x").unwrap().live = false;
+    let restarted = r#"{"jsonrpc":"2.0","method":"event","params":{"data":{"address":"t4x","argv":["/bin/zsh","-l"],"cwd":"/tmp","state":"live","status":null,"status_ms":null,"title":"","name":"airboss-probe-k"},"seq":1241,"terminal":"t4x","type":"restarted"}}"#;
+    t.apply(update(restarted), now());
+    assert_eq!(herdr::state_of(t.terminals.get("t4x")), ThreadState::Idle);
+    assert!(t.terminals["t4x"].live);
+    // A status word means a program runs there, so it's live too.
+    t.terminals.get_mut("t4x").unwrap().live = false;
+    let working = WORKING.replace("1230", "1242");
+    t.apply(update(&working), now());
+    assert_eq!(
+        herdr::state_of(t.terminals.get("t4x")),
+        ThreadState::Running
+    );
 }
 
 #[test]
