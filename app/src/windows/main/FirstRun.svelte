@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import Button from '../../lib/components/Button.svelte';
   import Icon from '../../lib/components/Icon.svelte';
   import Kbd from '../../lib/components/Kbd.svelte';
@@ -9,10 +10,12 @@
 
   /**
    * First run (any start with no tasks): "Nothing here yet", New task and Change hotkey…, the
-   * ticked "Open Airboss at login" box, the Add repos step while no repo is added, and the
-   * connections with what each needs.
+   * ticked "Open Airboss at login" box, the Add repos step, and the connections with what each
+   * needs. The Repos step shows when the screen opens with no repo, and then stays for as long
+   * as the screen does, so adding one folder doesn't take the list (and its ticks) away.
    */
   const app = useApp();
+  const showRepos = untrack(() => !app.tasks.repos.length);
   const rows = $derived(app.conn.merged.filter((c) => ['Agents', 'T3 Code', 'GitHub'].includes(c.name)));
   const order = (c: Connection) => ['Agents', 'T3 Code', 'GitHub'].indexOf(c.name);
 
@@ -56,7 +59,7 @@
       </div>
     </div>
 
-    {#if !app.tasks.repos.length}
+    {#if showRepos}
       <section>
         <h2>Repos</h2>
         <AddRepos embedded />

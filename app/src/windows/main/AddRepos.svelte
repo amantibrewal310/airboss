@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import Button from '../../lib/components/Button.svelte';
   import Icon from '../../lib/components/Icon.svelte';
   import type { T3ProjectRow } from '../../lib/types';
@@ -7,27 +7,56 @@
 
   /**
    * Add repos from T3's projects (each unticked; folders that aren't git repos or are already
-   * added are greyed with the reason), or another folder. ↑↓ move, Space ticks, ⌘↩ adds.
+   * added are greyed with the reason), or another folder. The list is one Tab stop (roving
+   * tabindex): ↑↓ move, Home/End jump, Space ticks, ⌘↩ adds. Embedded in first run, it stays
+   * after an add: added repos show ticked and greyed, and other ticks are kept.
    */
   let { embedded = false, ondone }: { embedded?: boolean; ondone?: () => void } = $props();
   const app = useApp();
+  const uid = $props.id();
   let rows = $state<T3ProjectRow[]>([]);
   let loaded = $state(false);
   let ticked = $state<string[]>([]);
   let error = $state<string | null>(null);
   let list: HTMLElement | undefined = $state();
+  let acts: HTMLElement | undefined = $state();
+  /** The row that holds the list's one Tab stop. */
+  let active = $state<string | null>(null);
 
   onMount(async () => {
     rows = await app.t3Projects();
     loaded = true;
   });
 
-  const reason = (r: T3ProjectRow) => (r.added ? 'Already added' : !r.is_git ? 'Not a git repository' : null);
+  // First run lists repos added from other folders too, so every add stays visible.
+  const items = $derived.by((): T3ProjectRow[] => {
+    if (!embedded) return rows;
+    const extra = app.tasks.repos
+      .filter((r) => !rows.some((x) => x.path === r.path))
+      .map((r) => ({ path: r.path, name: r.name, is_git: true, added: true }));
+    return [...rows, ...extra];
+  });
+  const reason = (r: T3ProjectRow) => (r.added ? (embedded ? 'Added' : 'Already added') : !r.is_git ? 'Not a git repository' : null);
   const t3 = $derived(app.conn.t3Ready && (rows.length > 0 || !loaded));
+  const current = $derived(items.some((r) => r.path === active) ? active : (items[0]?.path ?? null));
+  const id = (i: number, part: string) => `${uid}-${i}-${part}`;
 
   function toggle(r: T3ProjectRow) {
+    active = r.path;
     if (reason(r)) return;
     ticked = ticked.includes(r.path) ? ticked.filter((p) => p !== r.path) : [...ticked, r.path];
+  }
+
+  /** Reads T3's projects again and keeps only the ticks that can still be added. */
+  async function reload() {
+    rows = await app.t3Projects();
+    const addable = new Set(rows.filter((r) => !reason(r)).map((r) => r.path));
+    ticked = ticked.filter((p) => addable.has(p));
+  }
+
+  function focusRow(path: string | null) {
+    active = path;
+    void tick().then(() => list?.querySelector<HTMLElement>('[tabindex="0"][role="checkbox"]')?.focus());
   }
 
   async function add() {
@@ -35,68 +64,86 @@
     error = await app.addRepos(ticked);
     if (!error) {
       ticked = [];
-      rows = await app.t3Projects();
+      await reload();
       ondone?.();
+      // "Add N repos" is disabled now; the list keeps focus.
+      if (embedded) focusRow(current);
     }
   }
 
   async function another() {
     const path = await app.pickFolder();
-    if (!path) return;
-    error = await app.addRepos([path]);
-    if (!error) ondone?.();
+    if (path) {
+      error = await app.addRepos([path]);
+      if (!error) {
+        await reload();
+        ondone?.();
+      }
+    }
+    // The folder picker took focus; give it back to the button that opened it.
+    await tick();
+    acts?.querySelector<HTMLElement>('button')?.focus();
   }
 
   function key(e: KeyboardEvent) {
-    const items = [...(list?.querySelectorAll<HTMLElement>('[role="checkbox"]') ?? [])];
-    const i = items.indexOf(document.activeElement as HTMLElement);
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    const at = items.findIndex((r) => r.path === current);
+    let to: number | null = null;
+    if (e.key === 'ArrowDown') to = Math.min(items.length - 1, at + 1);
+    else if (e.key === 'ArrowUp') to = Math.max(0, at - 1);
+    else if (e.key === 'Home') to = 0;
+    else if (e.key === 'End') to = items.length - 1;
+    else if (e.key === ' ' && at >= 0) {
       e.preventDefault();
       e.stopPropagation();
-      items[Math.max(0, Math.min(items.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))]?.focus();
+      toggle(items[at]!);
+      return;
     } else if (e.key === 'Enter' && e.metaKey) {
       e.preventDefault();
       e.stopPropagation();
       void add();
+      return;
     }
+    if (to === null) return;
+    e.preventDefault();
+    e.stopPropagation();
+    focusRow(items[to]?.path ?? null);
   }
 </script>
 
 <div class="ar" class:embedded>
-  {#if t3 && rows.length}
+  {#if items.length && (t3 || embedded)}
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-    <div class="list" bind:this={list} role="group" aria-label="T3 Code projects" tabindex="-1" onkeydown={key}>
-      {#each rows as r (r.path)}
+    <div class="list" bind:this={list} role="group" aria-label={rows.length ? 'T3 Code projects' : 'Repos'} onkeydown={key}>
+      {#each items as r, i (r.path)}
         {@const why = reason(r)}
+        <!-- Space and the arrows are the list's (roving tabindex), so the row needs no handler of its own. -->
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
         <div
           class="r"
           class:off={!!why}
           role="checkbox"
-          aria-checked={ticked.includes(r.path)}
+          aria-checked={r.added || ticked.includes(r.path)}
           aria-disabled={why ? 'true' : undefined}
-          tabindex="0"
+          aria-label={r.name}
+          aria-describedby="{id(i, 'path')}{why ? ` ${id(i, 'why')}` : ''}"
+          tabindex={r.path === current ? 0 : -1}
           title={why ?? r.path}
           onclick={() => toggle(r)}
-          onkeydown={(e) => {
-            if (e.key === ' ') {
-              e.preventDefault();
-              e.stopPropagation();
-              toggle(r);
-            }
-          }}
+          onfocus={() => (active = r.path)}
         >
-          <span class="box" aria-hidden="true">{#if ticked.includes(r.path)}<Icon name="check" size={12} stroke={2} />{/if}</span>
+          <span class="box" aria-hidden="true">{#if r.added || ticked.includes(r.path)}<Icon name="check" size={12} stroke={2} />{/if}</span>
           <span class="name">{r.name}</span>
-          <span class="path">{r.path}</span>
-          {#if why}<span class="why">{why}</span>{/if}
+          <span class="path" id={id(i, 'path')}>{r.path}</span>
+          {#if why}<span class="why" id={id(i, 'why')}>{why}</span>{/if}
         </div>
       {/each}
     </div>
-  {:else if loaded}
+  {/if}
+  {#if loaded && !t3}
     <p class="none">T3 Code's projects show here once it's installed.</p>
   {/if}
   {#if error}<p class="err" role="alert">{error}</p>{/if}
-  <div class="acts">
+  <div class="acts" bind:this={acts}>
     <Button variant="ghost" onclick={another}><Icon name="folder" size={14} />Add another folder…</Button>
     <span class="sp"></span>
     {#if t3 && rows.length}
@@ -155,6 +202,9 @@
   [aria-checked='true'] .box {
     background: var(--accent-fill);
     border-color: transparent;
+  }
+  .off[aria-checked='true'] .box {
+    opacity: 0.55;
   }
   .name {
     font-weight: 500;

@@ -1,8 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
 
 /**
- * First run on the mock (hands-on QA #9): the Agents row goes Not set up → Not connected →
- * Ready, and Settings › Agent setup shows each tool.
+ * First run on the mock (hands-on QA #9, #3, #2): the Agents row goes Not set up → Not
+ * connected → Ready, Settings › Agent setup shows each tool, and the Repos step survives an
+ * added folder and is one Tab stop.
  */
 
 function watchErrors(page: Page): string[] {
@@ -57,4 +58,43 @@ test('Settings connects Claude Code from its line', async ({ page }) => {
   await expect(claude).toContainText('Connected');
   await expect(claude.getByRole('button')).toHaveCount(0);
   expect(errors).toEqual([]);
+});
+
+test('the Repos step stays after Add another folder…, with ticks and focus kept', async ({ page }) => {
+  const errors = watchErrors(page);
+  await page.goto('/?fixture=welcome');
+  const projects = page.getByRole('group', { name: 'T3 Code projects' });
+  await projects.getByRole('checkbox', { name: 'booking-web' }).click();
+  const another = page.getByRole('button', { name: 'Add another folder…' });
+  await another.click();
+
+  await expect(page.locator('[data-toast]').last()).toContainText('Added side-project');
+  await expect(page.getByRole('heading', { name: 'Repos' })).toBeVisible();
+  await expect(projects.getByRole('checkbox', { name: 'booking-web' })).toHaveAttribute('aria-checked', 'true');
+  const added = projects.getByRole('checkbox', { name: 'side-project' });
+  await expect(added).toHaveAttribute('aria-checked', 'true');
+  await expect(added).toHaveAttribute('aria-disabled', 'true');
+  await expect(another).toBeFocused();
+  expect(errors).toEqual([]);
+});
+
+test('the project list is one Tab stop with ↑↓, Home, End and Space', async ({ page }) => {
+  await page.goto('/?fixture=welcome');
+  await page.getByRole('checkbox', { name: 'Notify me when an agent asks something or stops' }).focus();
+  await page.keyboard.press('Tab');
+  const first = page.getByRole('checkbox', { name: 'airboss', exact: true });
+  await expect(first).toBeFocused();
+  await page.keyboard.press('End');
+  await expect(page.getByRole('checkbox', { name: 'personal-site', exact: true })).toBeFocused();
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('Space');
+  await expect(page.getByRole('checkbox', { name: 'notes', exact: true })).toHaveAttribute('aria-checked', 'false');
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('Space');
+  await expect(page.getByRole('checkbox', { name: 'booking-api', exact: true })).toHaveAttribute('aria-checked', 'true');
+  await page.keyboard.press('Home');
+  await expect(first).toBeFocused();
+  // One more Tab leaves the list, however many projects there are.
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: 'Add another folder…' })).toBeFocused();
 });
