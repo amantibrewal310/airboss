@@ -6,7 +6,8 @@
 //!
 //! The window is transparent and exactly as tall as what it shows: the card, and while a picker
 //! is open, the picker hanging below it (so the empty part never takes clicks meant for the app
-//! behind for longer than that).
+//! behind for longer than that). Its elevation is AppKit's own window shadow, which follows the
+//! card's painted pixels in both appearances; it's recomputed whenever the content changes.
 
 use std::time::Instant;
 
@@ -81,7 +82,7 @@ pub fn setup(app: &AppHandle<Wry>) -> tauri::Result<()> {
     }
     panel.set_hides_on_deactivate(false);
     panel.set_opaque(false);
-    panel.set_has_shadow(false);
+    panel.set_has_shadow(true);
     Ok(())
 }
 
@@ -151,7 +152,10 @@ pub fn show(app: &AppHandle<Wry>) {
         }
     }
     match app.get_webview_panel(LABEL) {
-        Ok(panel) => panel.show_and_make_key(),
+        Ok(panel) => {
+            panel.show_and_make_key();
+            panel.as_panel().invalidateShadow();
+        }
         Err(_) => {
             // Not a panel (setup failed): an always-on-top window is the fallback.
             if let Some(w) = app.get_webview_window(LABEL) {

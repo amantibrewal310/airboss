@@ -187,6 +187,8 @@
     box-shadow: var(--shadow-float);
     align-self: flex-start;
   }
+  /* In the app, AppKit draws the panel's shadow around the card (a CSS one would need a
+     transparent margin around it, taking clicks meant for the app behind). */
   .native .card {
     box-shadow: none;
     border: 1px solid var(--line-2);
