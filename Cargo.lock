@@ -19,7 +19,7 @@ dependencies = [
 
 [[package]]
 name = "airboss-app"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "airboss-attention",
  "airboss-core",
@@ -55,7 +55,7 @@ dependencies = [
 
 [[package]]
 name = "airboss-attention"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "airboss-core",
  "airboss-services",
@@ -64,7 +64,7 @@ dependencies = [
 
 [[package]]
 name = "airboss-core"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "rusqlite",
  "serde",
@@ -73,7 +73,7 @@ dependencies = [
 
 [[package]]
 name = "airboss-launch"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "airboss-core",
  "airboss-launch",
@@ -85,7 +85,7 @@ dependencies = [
 
 [[package]]
 name = "airboss-mcp"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "airboss-core",
  "clap",
@@ -98,7 +98,7 @@ dependencies = [
 
 [[package]]
 name = "airboss-services"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "airboss-core",
  "airboss-services",
@@ -108,7 +108,7 @@ dependencies = [
 
 [[package]]
 name = "airboss-sync"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "airboss-core",
  "airboss-services",
