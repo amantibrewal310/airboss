@@ -19,11 +19,17 @@ use serde::{Deserialize, Serialize};
 
 use crate::health::{Health, HealthState};
 
-/// `sync`'s migrations, oldest first. Version 1 hasn't shipped, so it may still be edited.
-pub const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    sql: include_str!("migrations/001_sync.sql"),
-}];
+/// `sync`'s migrations, oldest first. Never edit a shipped one; add a new version.
+pub const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        sql: include_str!("migrations/001_sync.sql"),
+    },
+    Migration {
+        version: 2,
+        sql: include_str!("migrations/002_herdr.sql"),
+    },
+];
 
 /// The module name the migrations are recorded under.
 pub const MODULE: &str = "sync";
@@ -193,6 +199,7 @@ fn thread_row(r: &Row<'_>) -> rusqlite::Result<Option<StoredThread>> {
     let source = match r.get::<_, String>(0)?.as_str() {
         "t3" => Source::T3,
         "claude" => Source::Claude,
+        "herdr" => Source::Herdr,
         _ => return Ok(None),
     };
     let Some(state) = parse_state(&r.get::<_, String>(3)?) else {
@@ -638,7 +645,9 @@ mod tests {
 
     fn db() -> SyncDb {
         let conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch(MIGRATIONS[0].sql).unwrap();
+        for m in MIGRATIONS {
+            conn.execute_batch(m.sql).unwrap();
+        }
         SyncDb { conn }
     }
 
@@ -692,6 +701,22 @@ mod tests {
         assert_eq!(db.load_threads().unwrap()[0].view, v);
         db.delete_thread(&v.key).unwrap();
         assert!(db.load_threads().unwrap().is_empty());
+    }
+
+    /// A blocked Herdr terminal needs me without saying what for, as a waiting Claude
+    /// session does: its row is kept, so the finish check sees it.
+    #[test]
+    fn a_herdr_thread_needing_me_without_a_request_round_trips() {
+        let db = db();
+        let mut v = view("vps/t7");
+        v.key.source = Source::Herdr;
+        v.request = None;
+        v.run_id = None;
+        db.save_thread(&v, SystemTime::UNIX_EPOCH).unwrap();
+        let rows = db.load_threads().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].view, v);
+        assert_eq!(db.thread_state(&v.key).unwrap(), Some(ThreadState::NeedsMe));
     }
 
     #[test]

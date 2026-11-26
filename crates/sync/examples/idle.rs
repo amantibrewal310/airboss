@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 use airboss_core::{Actor, LinkKind, NewLink, NewTask, Store};
 use airboss_services::{Service, SyncService, SystemClock};
 use airboss_sync::claude::RealClaude;
-use airboss_sync::fake::{FakeGh, FakePr, T3Fixture, TempDir};
+use airboss_sync::fake::{FakeGh, FakeHerdr, FakePr, T3Fixture, TempDir};
 use airboss_sync::t3::T3Db;
 use airboss_sync::watch::KqueueWatch;
 use airboss_sync::{SyncConfig, Tools, start};
@@ -58,6 +58,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         gh: Box::new(gh.clone()),
         t3: Box::new(T3Db::new(t3.dir())),
         claude: Box::new(RealClaude::new(claude.path())),
+        herdr: Box::new(FakeHerdr::new()),
         watch: Box::new(KqueueWatch::new()),
         clock: Arc::new(SystemClock),
     };
