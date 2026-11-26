@@ -23,7 +23,7 @@ test('keyboard-only smoke test', async ({ page }) => {
   for (let i = 0; i < 12 && !/proposed subtasks/.test(await selectedNeed(page)); i++) await page.keyboard.press('ArrowDown');
   expect(await selectedNeed(page)).toMatch(/Worktree cleanup research/);
   await page.keyboard.press('Enter');
-  await expect(toast).toContainText('Added 3 subtasks to 150');
+  await expect(toast).toContainText('Added 3 subtasks to #150');
   await expect(page.getByRole('option', { name: /Worktree cleanup research/ })).toHaveCount(0);
   const before = await page.locator('#app [role="listbox"] [role="option"]').count();
   // A second press within 400 ms of an action is ignored (so it can't act on the next item).
