@@ -95,15 +95,20 @@ fn start(
         mode,
         place,
         again,
-        // TODO(wave9/app): the launcher the "Start agents in" setting picks.
-        launcher: Launcher::T3,
+        launcher: launcher(s),
     };
     let report = match s.services.launch.start(&req) {
         Ok(r) => r,
         Err(e) => {
             let e = AppError::from(e);
             s.surface(c, id, error_toast(id, &e, mode));
-            if matches!(e.code, ErrorCode::T3Missing | ErrorCode::T3NotRunning) {
+            if matches!(
+                e.code,
+                ErrorCode::T3Missing
+                    | ErrorCode::T3NotRunning
+                    | ErrorCode::HerdrMissing
+                    | ErrorCode::HerdrNotRunning
+            ) {
                 s.refresh_connections();
             }
             return Err(e);
@@ -129,14 +134,25 @@ fn start(
         };
         s.surface(c, id, report_toast(id, mode, &report, &name));
     }
-    if report
-        .failed
-        .iter()
-        .any(|(_, e)| matches!(e.code, SvcCode::T3Missing | SvcCode::T3NotRunning))
-    {
+    if report.failed.iter().any(|(_, e)| {
+        matches!(
+            e.code,
+            SvcCode::T3Missing
+                | SvcCode::T3NotRunning
+                | SvcCode::HerdrMissing
+                | SvcCode::HerdrNotRunning
+        )
+    }) {
         s.refresh_connections();
     }
     Ok(DoItResult::Started { report, patch })
+}
+
+/// The launcher "Start agents in" picks now, from what's Ready (SPEC-herdr Decision 1).
+pub fn launcher(s: &AppState) -> Launcher {
+    let launch = &s.services.launch;
+    s.settings()
+        .launcher(&launch.availability(), &launch.herdr_availability())
 }
 
 fn action(label: &str, command: &str, args: ToastArgs) -> ToastEventAction {

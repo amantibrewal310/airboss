@@ -92,6 +92,8 @@ impl CatchUp {
             connections: ConnectionsChanged {
                 connections: Vec::new(),
                 availability: airboss_services::Availability::Unknown,
+                herdr: airboss_services::Availability::Unknown,
+                launcher: crate::dto::LauncherKind::T3,
                 agent_report: None,
                 cli: crate::dto::CliStatus {
                     installed: false,
@@ -380,7 +382,13 @@ pub(crate) fn log_connections(c: &ConnectionsChanged) {
             )
         })
         .collect();
-    log::info!("connections: {}; T3 {:?}", rows.join(", "), c.availability);
+    log::info!(
+        "connections: {}; T3 {:?}; Herdr {:?}; starts in {:?}",
+        rows.join(", "),
+        c.availability,
+        c.herdr,
+        c.launcher
+    );
 }
 
 fn read_err(e: airboss_core::Error) -> AppError {

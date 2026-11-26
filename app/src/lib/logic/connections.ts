@@ -1,7 +1,15 @@
-import type { AgentTools, Availability, Connection, Timestamp } from '../types';
+import type { AgentTools, Availability, Connection, LauncherKind, Timestamp } from '../types';
 import { ago } from './time';
 
-const ORDER = ['T3 Code', 'GitHub', 'Agents', 'Claude Code'];
+const ORDER = ['T3 Code', 'Herdr', 'GitHub', 'Agents', 'Claude Code'];
+
+/** Where Do it and Plan it start agents, as copy names it. */
+export const LAUNCHER_NAME: Record<LauncherKind, string> = { t3: 'T3 Code', herdr: 'Herdr' };
+
+/** "Do it and Plan it need Herdr. Install it, then choose Check again." */
+export function launcherMissingText(launcher: LauncherKind): string {
+  return `Do it and Plan it need ${LAUNCHER_NAME[launcher]}. Install it, then choose Check again.`;
+}
 
 export function t3Available(a: Availability): boolean {
   return typeof a === 'object' && 'ready' in a;
@@ -13,13 +21,14 @@ export function t3MissingReason(a: Availability): string | null {
 
 /**
  * Rows with the same name are one row: ok when all are ok; state, detail and fix from the
- * first that isn't (EM decision, 26 Nov). T3 Code is also off when `launch` says it's missing.
+ * first that isn't (EM decision, 26 Nov). T3 Code is also off when `launch` says it's missing,
+ * unless agents start in Herdr (Rust leaves that row out then, and it isn't put back).
  * Claude Code shows only when it's broken.
  */
 export function mergeConnections(
   rows: Connection[],
   availability: Availability,
-  app: { cliInstalled?: boolean; agents?: AgentTools; agentReport?: Timestamp | null; now?: number } = {},
+  app: { cliInstalled?: boolean; agents?: AgentTools; agentReport?: Timestamp | null; now?: number; launcher?: LauncherKind } = {},
 ): Connection[] {
   const byName = new Map<string, Connection>();
   for (const r of rows) {
@@ -46,7 +55,7 @@ export function mergeConnections(
   }
   const missing = t3MissingReason(availability);
   const t3 = byName.get('T3 Code');
-  if (missing && (!t3 || t3.ok)) {
+  if (missing && (t3 ? t3.ok : app.launcher !== 'herdr')) {
     byName.set('T3 Code', {
       name: 'T3 Code',
       ok: false,

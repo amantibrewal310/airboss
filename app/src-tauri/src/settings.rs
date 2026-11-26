@@ -6,6 +6,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use airboss_core::TaskId;
+use airboss_services::{Availability, HerdrAgent, Launcher};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -25,6 +26,19 @@ pub enum Appearance {
     Light,
 }
 
+/// Settings › Agent setup › "Start agents in": where Do it and Plan it start agents.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export_to = "types.ts")]
+pub enum StartAgentsIn {
+    /// T3 Code when it's Ready, else Herdr when it's Ready, else T3 Code (SPEC-herdr
+    /// Decision 1).
+    #[default]
+    Auto,
+    T3,
+    Herdr,
+}
+
 /// Everything Settings (⌘,) changes, plus the folded parents.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(default)]
@@ -40,6 +54,11 @@ pub struct Settings {
     /// Parents folded in the tree; saved a second after the last change.
     #[ts(as = "Vec<crate::dto::TaskIdTs>")]
     pub folded: Vec<TaskId>,
+    /// Where Do it and Plan it start agents.
+    pub start_agents_in: StartAgentsIn,
+    /// The agent a Herdr tab runs: Claude Code (the default) or Codex.
+    #[ts(as = "crate::dto::HerdrAgentTs")]
+    pub herdr_agent: HerdrAgent,
     /// Release the hidden quick-add panel after this many idle minutes (off by default; see
     /// SPEC-app "Memory"). Not shown in the UI.
     #[ts(skip)]
@@ -54,7 +73,35 @@ impl Default for Settings {
             appearance: Appearance::System,
             notifications: true,
             folded: Vec::new(),
+            start_agents_in: StartAgentsIn::Auto,
+            herdr_agent: HerdrAgent::Claude,
             quickadd_release_after_min: None,
+        }
+    }
+}
+
+impl Settings {
+    /// The launcher Do it and Plan it use now, from "Start agents in" and what's Ready
+    /// (SPEC-herdr Decision 1). Automatic is T3 Code when it's Ready, else Herdr when it's
+    /// Ready, else T3 Code, whose error then says what's missing. T3 Code not checked yet
+    /// counts as Ready, as the buttons treat it, so a T3 user never starts in Herdr by
+    /// pressing Do it in the app's first moment.
+    pub fn launcher(&self, t3: &Availability, herdr: &Availability) -> Launcher {
+        let herdr_launcher = Launcher::Herdr {
+            agent: self.herdr_agent,
+        };
+        match self.start_agents_in {
+            StartAgentsIn::T3 => Launcher::T3,
+            StartAgentsIn::Herdr => herdr_launcher,
+            StartAgentsIn::Auto => {
+                let t3_missing = matches!(t3, Availability::Missing { .. });
+                let herdr_ready = matches!(herdr, Availability::Ready { .. });
+                if t3_missing && herdr_ready {
+                    herdr_launcher
+                } else {
+                    Launcher::T3
+                }
+            }
         }
     }
 }
@@ -210,6 +257,8 @@ mod tests {
             appearance: Appearance::Dark,
             notifications: false,
             folded: vec![TaskId(3)],
+            start_agents_in: StartAgentsIn::Herdr,
+            herdr_agent: HerdrAgent::Codex,
             quickadd_release_after_min: Some(10),
         };
         save(&path, &s).unwrap();
@@ -225,6 +274,71 @@ mod tests {
         assert!(
             s.notifications,
             "a file from before notifications turns them on"
+        );
+    }
+
+    #[test]
+    fn a_file_from_before_herdr_starts_agents_automatically_with_claude_code() {
+        let old = r#"{"hotkey":"Control+Alt+K","open_at_login":false,"appearance":"dark","notifications":true,"folded":[3]}"#;
+        let s: Settings = serde_json::from_str(old).unwrap();
+        assert_eq!(s.hotkey, "Control+Alt+K");
+        assert_eq!(s.start_agents_in, StartAgentsIn::Auto);
+        assert_eq!(s.herdr_agent, HerdrAgent::Claude);
+        let text = serde_json::to_value(Settings::default()).unwrap();
+        assert_eq!(text["start_agents_in"], "auto");
+        assert_eq!(text["herdr_agent"], "claude");
+        let s: Settings =
+            serde_json::from_str(r#"{"start_agents_in":"herdr","herdr_agent":"codex"}"#).unwrap();
+        assert_eq!(
+            (s.start_agents_in, s.herdr_agent),
+            (StartAgentsIn::Herdr, HerdrAgent::Codex)
+        );
+    }
+
+    #[test]
+    fn automatic_picks_t3_when_ready_else_herdr_when_ready_else_t3() {
+        let ready = || Availability::Ready {
+            version: "1".into(),
+        };
+        let missing = || Availability::Missing {
+            reason: "gone".into(),
+        };
+        let unknown = || Availability::Unknown;
+        let claude = Launcher::Herdr {
+            agent: HerdrAgent::Claude,
+        };
+        let auto = Settings::default();
+        for (t3, herdr, want) in [
+            (ready(), ready(), Launcher::T3),
+            (ready(), missing(), Launcher::T3),
+            (missing(), ready(), claude),
+            (missing(), missing(), Launcher::T3),
+            (missing(), unknown(), Launcher::T3),
+            // Not checked yet counts as Ready, as the buttons treat it.
+            (unknown(), ready(), Launcher::T3),
+        ] {
+            assert_eq!(
+                auto.launcher(&t3, &herdr),
+                want,
+                "T3 {t3:?}, Herdr {herdr:?}"
+            );
+        }
+        // A choice is kept whatever is Ready: its own error says what's missing.
+        let t3 = Settings {
+            start_agents_in: StartAgentsIn::T3,
+            ..Settings::default()
+        };
+        assert_eq!(t3.launcher(&missing(), &ready()), Launcher::T3);
+        let codex = Settings {
+            start_agents_in: StartAgentsIn::Herdr,
+            herdr_agent: HerdrAgent::Codex,
+            ..Settings::default()
+        };
+        assert_eq!(
+            codex.launcher(&ready(), &missing()),
+            Launcher::Herdr {
+                agent: HerdrAgent::Codex
+            }
         );
     }
 

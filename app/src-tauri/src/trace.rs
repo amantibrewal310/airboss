@@ -283,6 +283,8 @@ mod tests {
                 fix: None,
             }],
             availability: Availability::Unknown,
+            herdr: Availability::Unknown,
+            launcher: crate::dto::LauncherKind::T3,
             agent_report: None,
             cli: crate::dto::CliStatus {
                 installed: true,

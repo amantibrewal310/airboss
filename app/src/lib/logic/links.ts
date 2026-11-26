@@ -86,6 +86,8 @@ export function linkLabel(link: Pick<Link, 'kind' | 'ref' | 'title' | 'url'>): s
     }
     case 't3_thread':
       return `T3 · ${link.ref}`;
+    case 'herdr_terminal':
+      return `Herdr · ${link.ref}`;
     case 'claude_session':
       return `Claude · ${basename(link.ref) || link.ref}`;
     case 'slack':

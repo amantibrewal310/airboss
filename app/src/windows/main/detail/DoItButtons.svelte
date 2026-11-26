@@ -4,11 +4,11 @@
   import { useApp } from '../../../lib/state/context';
   import type { TaskId } from '../../../lib/types';
 
-  /** Plan it (⇧⌘↩) and Do it (primary, ⌘↩), with "Starting…" and the T3-missing state. */
+  /** Plan it (⇧⌘↩) and Do it (primary, ⌘↩), with "Starting…" and the launcher-missing state. */
   let { task }: { task: TaskId } = $props();
   const app = useApp();
   const row = $derived(app.row(task));
-  const off = $derived(!app.conn.t3Ready);
+  const off = $derived(!app.conn.launchReady);
   const starting = $derived(app.ui.starting.has(task));
   const closed = $derived(row?.status === 'done' || row?.status === 'dropped' || row?.status === 'proposed');
   /** The branch Do it would use, when the task has none of its own. */
@@ -19,7 +19,7 @@
   type="button"
   class="ghost"
   aria-disabled={off || closed ? 'true' : undefined}
-  title={off ? 'Do it and Plan it need T3 Code' : 'Plan it (⇧⌘↩)'}
+  title={off ? app.conn.launchOff : 'Plan it (⇧⌘↩)'}
   onclick={() => app.planIt(task)}
 >
   <Icon name="waves" size={14} />Plan it
@@ -30,7 +30,7 @@
   data-do-it
   aria-disabled={off || starting ? 'true' : undefined}
   aria-busy={starting}
-  title={off ? 'Do it and Plan it need T3 Code' : planned ? `Do it (⌘↩) · on ${planned}` : 'Do it (⌘↩)'}
+  title={off ? app.conn.launchOff : planned ? `Do it (⌘↩) · on ${planned}` : 'Do it (⌘↩)'}
   onclick={() => !starting && app.doIt(task)}
 >
   {#if starting}

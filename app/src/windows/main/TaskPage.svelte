@@ -36,7 +36,7 @@
       <DoItButtons task={row.id} />
       <button type="button" class="ib" title="Back (⌘↑ or Esc)" aria-label="Back to the list" onclick={() => app.closePage()}><Icon name="close" size={14} /></button>
     </div>
-    {#if !app.conn.t3Ready}<T3Banner />{/if}
+    {#if !app.conn.launchReady}<T3Banner />{/if}
     <div class="page">
       <div class="content">
         <article class="doc" bind:clientWidth={columnWidth}>

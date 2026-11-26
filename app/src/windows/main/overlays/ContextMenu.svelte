@@ -35,7 +35,7 @@
     switch (id) {
       case 'do_it':
       case 'plan_it':
-        if (!app.conn.t3Ready) return 'Do it and Plan it need T3 Code';
+        if (!app.conn.launchReady) return app.conn.launchOff;
         if (row.status === 'proposed') return 'Accept the proposal first';
         if (id === 'do_it' && row.waiting) return `Waits on ${row.waits_on.join(', ')}`;
         return false;

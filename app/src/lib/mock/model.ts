@@ -51,6 +51,12 @@ export interface MockSeed {
   readySince: Record<number, Timestamp>;
   connections: Connection[];
   availability: Availability;
+  /** Whether Herdr is there to start agents in (missing if unset). */
+  herdr?: Availability;
+  /** `herdr-app ls`'s space folders, then its recent ones (for `herdr_folders`). */
+  herdrFolders?: { name: string; folder: string }[];
+  /** Open thread on a Herdr terminal fails, as when Herdr can't show it. */
+  herdrFails?: boolean;
   settings: Settings;
   cli: CliStatus;
   /** Which agent tools have the airboss MCP server (Rust reads their config files). */

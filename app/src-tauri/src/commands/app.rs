@@ -381,7 +381,13 @@ pub fn set_settings(s: &AppState, _c: Caller, settings: Settings) -> AppResult<S
             n.request();
         }
     }
+    let launcher_changed =
+        new.start_agents_in != old.start_agents_in || new.herdr_agent != old.herdr_agent;
     s.store_settings(new.clone())?;
+    // "Start agents in" changes the launcher and the Herdr row.
+    if launcher_changed {
+        s.refresh_connections();
+    }
     Ok(new)
 }
 

@@ -9,11 +9,13 @@ import type { ArgsOf, CommandName, EventName, Events, ResultOf } from '../api/co
 import type { Transport } from '../api/transport';
 import type {
   AppError,
+  Availability,
   Connection,
   DoItPlace,
   DoItResult,
   EventKind,
   LaunchReport,
+  LauncherKind,
   Mode,
   NeedsList,
   Patch,
@@ -90,6 +92,9 @@ function fail(code: AppError['code'], message: string, detail: string | null = n
 }
 
 const T3_MISSING = 'Do it and Plan it need T3 Code. Install it, then choose Check again.';
+const HERDR_MISSING = "Herdr isn't installed.";
+const isReady = (a: Availability) => typeof a === 'object' && 'ready' in a;
+const isMissing = (a: Availability) => typeof a === 'object' && 'missing' in a;
 const BRANCH = /^[A-Za-z0-9._/-]+$/;
 
 export class MockBackend implements Transport {
@@ -208,7 +213,53 @@ export class MockBackend implements Transport {
   /** The newest agent event's time, as Rust's catch-up tracks it. */
   /** `connections:changed`, as Rust sends it. */
   private emitConnections(): void {
-    this.emit('connections:changed', { connections: this.s.connections, availability: this.s.availability, agent_report: this.agentReport(), cli: this.s.cli, agents: this.s.agents });
+    this.emit('connections:changed', {
+      connections: this.connectionRows(),
+      availability: this.s.availability,
+      herdr: this.herdr(),
+      launcher: this.launcher(),
+      agent_report: this.agentReport(),
+      cli: this.s.cli,
+      agents: this.s.agents,
+    });
+  }
+
+  private showHerdr(ref: string): null {
+    if (this.s.herdrFails) throw fail('herdr_failed', "Couldn't show that terminal in Herdr.");
+    this.opened.push(`herdr:${ref}`);
+    return null;
+  }
+
+  private herdr(): Availability {
+    return this.s.herdr ?? { missing: { reason: HERDR_MISSING } };
+  }
+
+  /** Where Do it and Plan it start agents, as `Settings::launcher` picks. */
+  private launcher(): LauncherKind {
+    const pick = this.s.settings.start_agents_in;
+    if (pick !== 'auto') return pick;
+    return isMissing(this.s.availability) && isReady(this.herdr()) ? 'herdr' : 't3';
+  }
+
+  /** The rows as `connections.rs` merges them: Herdr's own row, and no T3 Code row for someone on Herdr alone. */
+  private connectionRows(): Connection[] {
+    const h = this.herdr();
+    const pick = this.s.settings.start_agents_in;
+    let rows = this.s.connections.filter((c) => c.name !== 'Herdr');
+    if (typeof h === 'object' && 'ready' in h) {
+      const detail =
+        this.launcher() === 'herdr'
+          ? `Herdr ${h.ready.version}. Do it and Plan it start agents here.`
+          : `Herdr ${h.ready.version}. To start agents here, choose it in Settings › Agent setup.`;
+      rows = [{ name: 'Herdr', ok: true, state: 'Ready', detail, fix: null }, ...rows];
+    } else if (typeof h === 'object' && 'missing' in h && pick === 'herdr') {
+      rows = [
+        { name: 'Herdr', ok: false, state: 'Not installed', detail: h.missing.reason, fix: 'Install Herdr, then choose Check again. Or start agents in T3 Code in Settings › Agent setup.' },
+        ...rows,
+      ];
+    }
+    if (isMissing(this.s.availability) && isReady(h) && pick !== 't3') rows = rows.filter((c) => c.name !== 'T3 Code');
+    return rows;
   }
 
   /** The Agents row as Rust words it (`connections.rs`): the CLI, then an agent tool with the server. */
@@ -262,8 +313,11 @@ export class MockBackend implements Transport {
 
   private async launch(id: TaskId, mode: Mode, place: DoItPlace | null, again: boolean): Promise<DoItResult> {
     const t = this.task(id);
-    if (this.launching.has(id)) throw fail('already_starting', 'Already starting — check T3 in a moment.');
-    if (typeof this.s.availability === 'object' && 'missing' in this.s.availability) throw fail('t3_missing', T3_MISSING);
+    const launcher = this.launcher();
+    const herdr = launcher === 'herdr';
+    if (this.launching.has(id)) throw fail('already_starting', `Already starting — check ${herdr ? 'Herdr' : 'T3'} in a moment.`);
+    if (!herdr && isMissing(this.s.availability)) throw fail('t3_missing', T3_MISSING);
+    if (herdr && isMissing(this.herdr())) throw fail('herdr_missing', HERDR_MISSING);
     if (t.status === 'done' || t.status === 'dropped') throw fail('task_closed', `${id} is ${t.status === 'done' ? 'done' : 'dropped'}.`);
     if (t.status === 'proposed') throw fail('task_proposed', `${id} is still a proposal. Accept it first.`);
     const ix = indexTree(this.s);
@@ -298,18 +352,22 @@ export class MockBackend implements Transport {
         if (repo !== null) report.skipped.push(repo);
         continue;
       }
-      if (repo !== null && this.s.notProjects.includes(repo)) {
+      if (!herdr && repo !== null && this.s.notProjects.includes(repo)) {
         const err: ServiceError = { code: 'not_a_project', message: `${repoName} isn't a T3 project yet.` };
         report.failed.push([repo, err]);
         continue;
       }
-      const ref = `${mode === 'plan_it' ? 'plan' : 'task'}-${id}${repoName ? `-${repoName}` : ''}-${this.s.nextLinkId}`;
+      // A Herdr terminal's address counts up (`t4p`); a T3 thread has its own id.
+      const ref = herdr ? `t${this.s.nextLinkId}p` : `${mode === 'plan_it' ? 'plan' : 'task'}-${id}${repoName ? `-${repoName}` : ''}-${this.s.nextLinkId}`;
       const title = mode === 'plan_it' ? `Plan ${id}` : repoName ? `${id} in ${repoName}` : `${id} research`;
-      this.s.threads.set(`t3:${ref}`, {
+      const source = herdr ? 'herdr' : 't3';
+      const url = herdr ? null : `t3code://threads/env-local/${ref}`;
+      const kind = herdr ? 'herdr_terminal' : 't3_thread';
+      this.s.threads.set(`${source}:${ref}`, {
         tasks: [id],
-        url: `t3code://threads/env-local/${ref}`,
+        url,
         view: {
-          key: { source: 't3', ref },
+          key: { source, ref },
           linked: true,
           state: 'running',
           title,
@@ -328,16 +386,16 @@ export class MockBackend implements Transport {
       this.s.links.push({
         id: this.s.nextLinkId++,
         task: id,
-        kind: 't3_thread',
+        kind,
         ref,
-        url: `t3code://threads/env-local/${ref}`,
+        url,
         pr_state: null,
-        title: `T3 · ${title}`,
+        title: `${herdr ? 'Herdr' : 'T3'} · ${title}`,
         linked_by: 'launch',
         linked_at: this.now(),
       });
-      this.event(id, 'linked', { actor: 'launch', body: `t3_thread ${ref}` });
-      const started: StartedThread = { key: { source: 't3', ref }, mode, repo, title, linked: true };
+      this.event(id, 'linked', { actor: 'launch', body: `${kind} ${ref}` });
+      const started: StartedThread = { key: { source, ref }, mode, repo, title, linked: true };
       report.started.push(started);
     }
     if (report.started.length && !t.branch && prepared.branch) t.branch = prepared.branch;
@@ -360,8 +418,10 @@ export class MockBackend implements Transport {
         order,
         repos: this.s.repos,
         needs: this.needsList(),
-        connections: this.s.connections,
+        connections: this.connectionRows(),
         availability: this.s.availability,
+        herdr: this.herdr(),
+        launcher: this.launcher(),
         agent_report: this.agentReport(),
         settings: this.s.settings,
         accent: null,
@@ -786,7 +846,10 @@ export class MockBackend implements Transport {
       if (settings.hotkey === 'Command+Shift+Space') {
         throw fail('not_allowed', 'That key is in use by another app. Pick another.');
       }
+      const before = this.launcher();
+      const pickedBefore = this.s.settings.start_agents_in;
       this.s.settings = structuredClone(settings);
+      if (this.launcher() !== before || settings.start_agents_in !== pickedBefore) this.emitConnections();
       return this.s.settings;
     },
 

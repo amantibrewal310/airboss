@@ -39,6 +39,7 @@ import { keyOf, Sequencer } from '../logic/keymap';
 import { resolve } from '../logic/commands';
 import { applyAccent, applyAppearance } from '../logic/theme';
 import { launchToast } from '../logic/launch';
+import { launcherMissingText } from '../logic/connections';
 import { statusToast } from '../logic/copy';
 import { canMarkDone } from '../logic/needs';
 import { keepMapSelection, keepSelection, reveal as revealPlan, selectionAfterFold } from '../logic/selection';
@@ -67,7 +68,15 @@ export type ViewKind = 'list' | 'needs' | 'plans' | 'page';
 /** Commands a quick repeat of the last key must not run on whatever is selected next. */
 const SETTLE_GUARDED = new Set<CommandId>(['rename', 'needs_main', 'needs_dismiss', 'needs_done', 'plans_open']);
 
-const DEFAULT_SETTINGS: Settings = { hotkey: 'Control+Alt+N', open_at_login: true, appearance: 'system', notifications: true, folded: [] };
+const DEFAULT_SETTINGS: Settings = {
+  hotkey: 'Control+Alt+N',
+  open_at_login: true,
+  appearance: 'system',
+  notifications: true,
+  folded: [],
+  start_agents_in: 'auto',
+  herdr_agent: 'claude',
+};
 
 export function asAppError(e: unknown): AppError {
   if (e && typeof e === 'object' && 'code' in e && 'message' in e) return e as AppError;
@@ -152,7 +161,7 @@ export class App {
       const b = await api.bootstrap();
       this.tasks.load(b);
       this.needs.load(b.needs);
-      this.conn.set(b.connections, b.availability, b.agent_report);
+      this.conn.set(b.connections, b.availability, b.agent_report, b);
       this.settings = b.settings;
       this.cli = b.cli;
       this.conn.cliInstalled = b.cli.installed;
@@ -183,7 +192,7 @@ export class App {
         if (this.needs.apply(c)) this.reconcileNeeds(before);
       }),
       on('connections:changed', (c) => {
-        this.conn.set(c.connections, c.availability, c.agent_report);
+        this.conn.set(c.connections, c.availability, c.agent_report, c);
         this.cli = c.cli;
         this.conn.cliInstalled = c.cli.installed;
         this.conn.agents = c.agents;
@@ -880,8 +889,8 @@ export class App {
 
   private async launch(id: TaskId | null, mode: Mode, place: DoItPlace | null, again: boolean): Promise<void> {
     if (id === null || !this.tasks.rows.has(id)) return;
-    if (!this.conn.t3Ready) {
-      return this.toast(this.conn.t3Missing ?? 'Do it and Plan it need T3 Code. Install it, then choose Check again.', 'warn');
+    if (!this.conn.launchReady) {
+      return this.toast(this.conn.launchMissing ?? launcherMissingText(this.conn.launcher), 'warn');
     }
     if (this.ui.starting.has(id)) return;
     this.ui.setStarting(id, true);
