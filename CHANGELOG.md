@@ -4,6 +4,20 @@ What changed in each release of Airboss. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+## [0.1.0-alpha.6] - 2026-11-26
+
+### Added
+
+- **Start ready.** On a task with subtasks, such as a settled plan or one of its phases, Do it becomes **Start ready (n)**: it starts an agent on each step that can start now, each with its own thread, worktree and branch, and says what started in one toast. A step under a phase that still waits on another isn't started. A step with no repo is left for you to start. **Do it as one thread** (right-click menu and ⌘K) still hands the whole task to one agent, which is now told to report on each step rather than on the parent.
+- **Add a repo from Do it.** When a task has no repo, the Start in menu offers to add a T3 project the task's title or notes name and start there (**Add hub-ui and start** for `hub-ui: fix 7 tests`), and **Add another repo…**. Agents can't add repos, so they're now told to name one that isn't registered this way.
+
+### Changed
+
+- A thread that has finished its turn and waits for your reply shows **Your turn** instead of **Stopped**, and its line reads "replied 2m ago". Stopped now means it failed or was settled.
+- The avatar for Do it and Plan it says where the agent runs: **T** for T3 Code, **H** for Herdr, in place of "L" for Launch. The activity list reads "T3 moved this to In progress".
+- The activity list folds the same event on several subtasks into one line, so importing a plan reads "33 subtasks · Plan created" rather than 33 lines. A plan import's note now reads "Imported from implementation-plan.md", and older notes show the same way.
+- An agent whose thread Airboss doesn't know reads "An agent", never a raw thread id.
+
 ## [0.1.0-alpha.5] - 2026-11-26
 
 ### Added
@@ -61,7 +75,8 @@ What changed in each release of Airboss. The format follows [Keep a Changelog](h
 - A one-line installer that checks the .dmg's SHA-256 and signature.
 - Help › Report a Problem…, and an alpha feedback form.
 
-[Unreleased]: https://github.com/amantibrewal310/airboss/compare/v0.1.0-alpha.5...HEAD
+[Unreleased]: https://github.com/amantibrewal310/airboss/compare/v0.1.0-alpha.6...HEAD
+[0.1.0-alpha.6]: https://github.com/amantibrewal310/airboss/compare/v0.1.0-alpha.5...v0.1.0-alpha.6
 [0.1.0-alpha.5]: https://github.com/amantibrewal310/airboss/compare/v0.1.0-alpha.4...v0.1.0-alpha.5
 [0.1.0-alpha.4]: https://github.com/amantibrewal310/airboss/compare/v0.1.0-alpha.3...v0.1.0-alpha.4
 [0.1.0-alpha.3]: https://github.com/amantibrewal310/airboss/compare/v0.1.0-alpha.2...v0.1.0-alpha.3

@@ -908,10 +908,7 @@ fn import_plan_records_which_thread_sent_it_on_every_created_task() {
             .find(|e| e.kind == airboss_core::EventKind::Note)
             .expect("an import note");
         assert_eq!(note.actor, Actor::Agent(format!("t3/{THREAD}")));
-        assert_eq!(
-            note.body.as_deref(),
-            Some("Imported from booking.md")
-        );
+        assert_eq!(note.body.as_deref(), Some("Imported from booking.md"));
     }
 }
 
