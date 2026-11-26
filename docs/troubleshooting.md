@@ -115,6 +115,16 @@ What to do:
 
 Never delete `airboss.db-wal` or `airboss.db-shm` while Airboss, the CLI or an agent has the database open. With everything quit, SQLite removes them itself.
 
+## Building the .dmg
+
+If `pnpm bundle` stops at the disk-image step with `AppleEvent timed out` or `Failed running AppleScript`, the bundler couldn't get Finder to lay out the disk-image window. That happens over SSH, in a terminal without automation permission, and in CI. Build without that step:
+
+```
+cd app && CI=true pnpm bundle --bundles dmg
+```
+
+The disk image works the same; only the icon layout in its window is plainer.
+
 ## Logs
 
 - **The app** logs to `~/Library/Logs/Airboss/app.log`: start-up, connections, refused hotkeys, background errors and panics, plus every line from its services, tagged `airboss-sync`, `airboss-launch` or `airboss-attention` (for example "Claude sync broken: ps failed"). That holds when Airboss opens from Finder or at login, where nothing reads stderr. The file is rotated at 1 MB and the last two are kept, as `app_<date>.log`.
