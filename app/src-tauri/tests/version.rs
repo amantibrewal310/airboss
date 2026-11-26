@@ -141,8 +141,19 @@ fn the_updater_reads_the_manifest_on_main_and_checks_airboss_own_key() {
     assert_eq!(&raw[..2], b"Ed");
     // The release build's config doesn't move the endpoint or the key.
     assert!(json("tauri.bundle.conf.json").get("plugins").is_none());
-    assert!(
-        updater.get("dangerousInsecureTransportProtocol").is_none(),
-        "only a QA build may allow plain HTTP"
-    );
+    for unsafe_option in [
+        "dangerousInsecureTransportProtocol",
+        "dangerousAcceptInvalidCerts",
+        "dangerousAcceptInvalidHostnames",
+        "allowDowngrades",
+    ] {
+        assert!(
+            updater.get(unsafe_option).is_none(),
+            "{unsafe_option} is for a QA build's own config only"
+        );
+    }
+    // The archive's signed trusted comment carries `version:<v>`, and the app installs only
+    // when it matches the manifest's version: no replaying an older signed build under a new
+    // number.
+    assert_eq!(updater["requireSignedVersion"], true);
 }

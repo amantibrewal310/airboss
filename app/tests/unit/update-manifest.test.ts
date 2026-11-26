@@ -1,6 +1,23 @@
+/// <reference types="node" />
+// The release scripts run in Node, and so does this test (Vitest's unit project).
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error: a plain .mjs release script, without type declarations.
-import { assetUrl, changelogSection, manifest } from '../../src-tauri/scripts/update-manifest.mjs';
+import { assetUrl, changelogSection, manifest, verifyUpdateSignature } from '../../src-tauri/scripts/update-manifest.mjs';
+
+/** Signed by `tauri signer sign` with a throwaway key whose private half wasn't kept. */
+const fixture = (name: string) => readFileSync(new URL(`./fixtures/update-signature/${name}`, import.meta.url));
+const TEST_KEY = fixture('key.pub').toString().trim();
+const SIG = fixture('archive.bin.sig').toString().trim();
+const DATA = fixture('archive.bin');
+const APP_KEY = JSON.parse(readFileSync(new URL('../../src-tauri/tauri.conf.json', import.meta.url), 'utf8')).plugins.updater.pubkey as string;
+
+/** The .sig with its trusted comment replaced (its global signature then no longer holds). */
+function withTrustedComment(sig: string, comment: string): string {
+  const lines = Buffer.from(sig, 'base64').toString('utf8').split('\n');
+  lines[2] = `trusted comment: ${comment}`;
+  return Buffer.from(lines.join('\n')).toString('base64');
+}
 
 const CHANGELOG = `# Changelog
 
@@ -56,5 +73,20 @@ describe('the update manifest (SPEC-updates)', () => {
     expect(() => manifest({ ...ok, signature: '' })).toThrow('one base64 line');
     expect(() => manifest({ ...ok, signature: 'a b' })).toThrow('one base64 line');
     expect(() => manifest({ ...ok, pubDate: 'soon' })).toThrow('not a date');
+  });
+
+  it('verifies a real Tauri signature and reads its trusted comment', () => {
+    const signed = verifyUpdateSignature({ pubkeyB64: TEST_KEY, sigB64: SIG, data: DATA });
+    expect(signed.file).toBe('archive.bin');
+    expect(Number(signed.timestamp)).toBeGreaterThan(1_700_000_000);
+  });
+
+  it('refuses another archive, another key, or a changed trusted comment', () => {
+    expect(() => verifyUpdateSignature({ pubkeyB64: TEST_KEY, sigB64: SIG, data: Buffer.from('something else') })).toThrow(
+      "doesn't match the archive",
+    );
+    expect(() => verifyUpdateSignature({ pubkeyB64: APP_KEY, sigB64: SIG, data: DATA })).toThrow("isn't the app's key");
+    const forged = withTrustedComment(SIG, 'timestamp:1\tfile:archive.bin\tversion:9.9.9');
+    expect(() => verifyUpdateSignature({ pubkeyB64: TEST_KEY, sigB64: forged, data: DATA })).toThrow('trusted comment was changed');
   });
 });
