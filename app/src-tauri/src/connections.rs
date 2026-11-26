@@ -10,13 +10,14 @@ use std::time::SystemTime;
 use serde::Deserialize;
 use tauri_plugin_log::log;
 
-use crate::dto::{AgentTools, CliStatus, ConnectionsChanged};
+use crate::dto::{AgentTools, CliStatus, ConnectionsChanged, LauncherKind};
 use crate::services::Services;
+use crate::settings::{Settings, StartAgentsIn};
 use crate::state::Problems;
 use crate::viewmodel::ViewModel;
 
-/// The footer's order: T3 Code, GitHub, Agents, Claude Code, then anything else.
-const ORDER: [&str; 4] = ["T3 Code", "GitHub", "Agents", "Claude Code"];
+/// The footer's order: T3 Code, Herdr, GitHub, Agents, Claude Code, then anything else.
+const ORDER: [&str; 5] = ["T3 Code", "Herdr", "GitHub", "Agents", "Claude Code"];
 
 fn row(name: &str, ok: bool, state: &str, detail: &str, fix: Option<&str>) -> Connection {
     Connection {
@@ -161,19 +162,62 @@ pub fn agent_tools(home: &Path) -> AgentTools {
     }
 }
 
-/// Every row the footer shows, and T3's availability. `agent_report` is the time of the
-/// newest `agent:*` event, which the UI shows as "Last report 3m ago".
+/// Herdr's row from `launch.herdr_availability()` (SPEC-herdr "app"): "Ready" with its
+/// version, or "Not installed". It shows when Herdr is installed or chosen in Settings.
+fn herdr_row(herdr: &Availability, chosen: bool, launcher: LauncherKind) -> Option<Connection> {
+    match herdr {
+        Availability::Ready { version } => Some(row(
+            "Herdr",
+            true,
+            "Ready",
+            &match launcher {
+                LauncherKind::Herdr => {
+                    format!("Herdr {version}. Do it and Plan it start agents here.")
+                }
+                LauncherKind::T3 => format!(
+                    "Herdr {version}. To start agents here, choose it in Settings › Agent setup."
+                ),
+            },
+            None,
+        )),
+        Availability::Missing { reason } if chosen => Some(row(
+            "Herdr",
+            false,
+            "Not installed",
+            reason,
+            Some(
+                "Install Herdr, then choose Check again. Or start agents in T3 Code in Settings › Agent setup.",
+            ),
+        )),
+        _ => None,
+    }
+}
+
+/// Every row the footer shows, T3's and Herdr's availability, and the launcher Do it uses.
+/// `agent_report` is the time of the newest `agent:*` event, which the UI shows as "Last
+/// report 3m ago".
 pub(crate) fn merged(
     services: &Services,
     _vm: &ViewModel,
     problems: &Problems,
+    settings: &Settings,
     cli_status: CliStatus,
     agents: AgentTools,
     agent_report: Option<&str>,
 ) -> ConnectionsChanged {
     let cli = cli_at(Path::new(&cli_status.path));
     let availability = services.launch.availability();
-    let mut rows: Vec<Connection> = Vec::new();
+    let herdr = services.launch.herdr_availability();
+    let launcher = LauncherKind::from(settings.launcher(&availability, &herdr));
+    // Herdr's own row goes first, so its "Ready" and version win over another ok "Herdr" row
+    // (sync's "Live state"); a broken one still wins, as merging keeps the worst.
+    let mut rows: Vec<Connection> = herdr_row(
+        &herdr,
+        settings.start_agents_in == StartAgentsIn::Herdr,
+        launcher,
+    )
+    .into_iter()
+    .collect();
     for s in services.all() {
         rows.extend(s.connections());
     }
@@ -265,9 +309,20 @@ pub(crate) fn merged(
     let mut merged = merge(rows);
     // Claude Code shows only when it's broken.
     merged.retain(|r| r.name != "Claude Code" || !r.ok);
+    // Someone who uses Herdr and not T3 Code isn't told T3 Code is missing, unless they chose
+    // T3 Code, whose row then says why Do it is off.
+    let t3_missing = matches!(availability, Availability::Missing { .. });
+    if t3_missing
+        && matches!(herdr, Availability::Ready { .. })
+        && settings.start_agents_in != StartAgentsIn::T3
+    {
+        merged.retain(|r| r.name != "T3 Code");
+    }
     ConnectionsChanged {
         connections: merged,
         availability,
+        herdr,
+        launcher,
         agent_report: agent_report.map(str::to_string),
         cli: cli_status,
         agents,

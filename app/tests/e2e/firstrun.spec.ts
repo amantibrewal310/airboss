@@ -98,3 +98,18 @@ test('the project list is one Tab stop with ↑↓, Home, End and Space', async 
   await page.keyboard.press('Tab');
   await expect(page.getByRole('button', { name: 'Add another folder…' })).toBeFocused();
 });
+
+test('first run without T3 Code lists Herdr folders and adds one by keyboard', async ({ page }) => {
+  const errors = watchErrors(page);
+  await page.goto('/?fixture=herdr');
+  await expect(page.getByRole('heading', { name: 'From Herdr' })).toBeVisible();
+  const list = page.getByRole('group', { name: 'From Herdr' });
+  await expect(list.getByRole('checkbox')).toHaveCount(4);
+  await expect(page.locator('.c').filter({ hasText: 'Herdr · Ready' })).toBeVisible();
+  await expect(page.locator('.c').filter({ hasText: 'T3 Code ·' })).toHaveCount(0);
+  await list.getByRole('checkbox', { name: 'booking-web' }).focus();
+  await page.keyboard.press('Space');
+  await page.keyboard.press('Meta+Enter');
+  await expect(list.getByRole('checkbox', { name: 'booking-web' })).toContainText('Added');
+  expect(errors).toEqual([]);
+});

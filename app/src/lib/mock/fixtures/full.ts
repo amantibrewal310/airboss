@@ -41,6 +41,10 @@ export function fullSeed(): MockSeed {
   b.task({ id: 178, title: 'Neovim LSP config', status: 'doing', repos: [DOTFILES], created: 4 * DAY });
   b.thread(178, 'nvim-lsp', 'running', { source: 'claude', repo: 'dotfiles', launchedAgo: 2 * HOUR, ago: 9 * MIN });
   b.moved(178, 'doing', 2 * HOUR, 'me');
+  // An agent in a Herdr terminal (SPEC-herdr): its link is the terminal's address.
+  b.task({ id: 179, title: 'Tmux status line', status: 'doing', repos: [DOTFILES], created: 2 * DAY });
+  b.thread(179, 't4p', 'running', { source: 'herdr', title: '179 Tmux status line', repo: 'dotfiles', launchedAgo: HOUR, ago: 3 * MIN });
+  b.moved(179, 'doing', HOUR, 'launch');
 
   // booking-api
   b.task({ id: 180, title: 'Rate limiting', status: 'doing', repos: [API], created: 5 * DAY });

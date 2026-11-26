@@ -411,10 +411,8 @@ export function buildDetail(s: MockState, id: TaskId, req: number, limit: number
   const links: LinkDto[] = s.links
     .filter((l) => l.task === id)
     .map((l) => {
-      const thread =
-        l.kind === 't3_thread' || l.kind === 'claude_session'
-          ? s.threads.get(`${l.kind === 't3_thread' ? 't3' : 'claude'}:${l.ref}`)
-          : undefined;
+      const source = ({ t3_thread: 't3', claude_session: 'claude', herdr_terminal: 'herdr' } as const)[l.kind as string];
+      const thread = source ? s.threads.get(`${source}:${l.ref}`) : undefined;
       return {
         ...structuredClone(l),
         pr: l.kind === 'pr' ? structuredClone(s.prs.get(l.ref) ?? null) : null,

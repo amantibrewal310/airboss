@@ -1347,7 +1347,7 @@ fn copy_codex_setup_names_the_cli_by_its_absolute_path_and_passes_the_thread_id(
     appcmd::copy_text(&app.state, M, CopyWhat::CodexSetup).unwrap();
     let bin = app.home.join(".local/bin/airboss");
     let expected = format!(
-        "copy_text([mcp_servers.airboss]\ncommand = \"{}\"\nargs = [\"mcp\"]\nenv_vars = [\"T3CODE_THREAD_ID\"]\n)",
+        "copy_text([mcp_servers.airboss]\ncommand = \"{}\"\nargs = [\"mcp\"]\nenv_vars = [\"T3CODE_THREAD_ID\", \"HC_TERMINAL_ID\"]\n)",
         bin.display()
     );
     assert!(

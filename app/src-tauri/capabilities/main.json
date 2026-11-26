@@ -15,6 +15,7 @@
     "allow-plans",
     "allow-quickadd-data",
     "allow-t3-projects",
+    "allow-herdr-folders",
     "allow-create-task",
     "allow-rename-task",
     "allow-edit-notes",

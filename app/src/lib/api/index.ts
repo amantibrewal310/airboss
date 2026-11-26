@@ -34,6 +34,7 @@ export const api = {
   plans: (req: number) => call('plans', { req }),
   quickaddData: () => call('quickadd_data', none),
   t3Projects: () => call('t3_projects', none),
+  herdrFolders: () => call('herdr_folders', none),
   createTask: (task: CreateTaskInput) => call('create_task', { task }),
   renameTask: (id: TaskId, title: string) => call('rename_task', { id, title }),
   editNotes: (id: TaskId, body: string | null) => call('edit_notes', { id, body }),

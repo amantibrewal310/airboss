@@ -40,6 +40,12 @@
           "state": "Not set up"
         }
       ],
+      "herdr": {
+        "missing": {
+          "reason": "Herdr isn't installed."
+        }
+      },
+      "launcher": "t3",
       "needs": {
         "checked_at": "2026-11-25T10:44:00.000Z",
         "count": 8,
@@ -1155,19 +1161,23 @@
       "settings": {
         "appearance": "system",
         "folded": [],
+        "herdr_agent": "claude",
         "hotkey": "Control+Alt+N",
         "notifications": true,
         "open_at_login": true,
-        "quickadd_release_after_min": null
+        "quickadd_release_after_min": null,
+        "start_agents_in": "auto"
       }
     },
     "get_settings": {
       "appearance": "system",
       "folded": [],
+      "herdr_agent": "claude",
       "hotkey": "Control+Alt+N",
       "notifications": true,
       "open_at_login": true,
-      "quickadd_release_after_min": null
+      "quickadd_release_after_min": null,
+      "start_agents_in": "auto"
     },
     "notification_permission": "granted",
     "plans": [

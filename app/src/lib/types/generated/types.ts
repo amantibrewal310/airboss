@@ -82,6 +82,14 @@ export type Bootstrap = { seq: number,
  */
 rows: Array<RowDto>, order: Array<TaskId>, repos: Array<Repo>, needs: NeedsList, connections: Array<Connection>, availability: Availability, 
 /**
+ * Whether Herdr is there to start agents in.
+ */
+herdr: Availability, 
+/**
+ * Where Do it and Plan it start agents now.
+ */
+launcher: LauncherKind, 
+/**
  * When an agent last reported (the newest `agent:*` event), for the Agents row.
  */
 agent_report: Timestamp | null, settings: Settings, 
@@ -114,6 +122,14 @@ export type Connection = { name: string, ok: boolean, state: string, detail: str
  * `connections:changed`'s payload.
  */
 export type ConnectionsChanged = { connections: Array<Connection>, availability: Availability, 
+/**
+ * Whether Herdr is there to start agents in.
+ */
+herdr: Availability, 
+/**
+ * Where Do it and Plan it start agents now: "Start agents in", resolved.
+ */
+launcher: LauncherKind, 
 /**
  * When an agent last reported (the newest `agent:*` event), for "Last report 3m ago".
  */
@@ -201,6 +217,11 @@ view: string, };
 export type FocusZone = "list" | "panel" | "sidebar" | "field" | "overlay" | "quickadd";
 
 /**
+ * `services::HerdrAgent`: the agent a Herdr tab runs.
+ */
+export type HerdrAgent = "claude" | "codex";
+
+/**
  * One event in the activity feed (an `Event`), with the agent's thread title when known
  * ("Agent in slot-picker").
  */
@@ -219,6 +240,12 @@ on_path: boolean, };
  * `services::LaunchReport`.
  */
 export type LaunchReport = { started: Array<StartedThread>, skipped: Array<RepoId>, failed: Array<[RepoId | null, ServiceError]>, branch: string | null, moved_to_doing: boolean, };
+
+/**
+ * Where Do it and Plan it start agents now: "Start agents in", resolved against what's Ready
+ * (`Settings::launcher`). The buttons, their disabled reason and the copy follow it.
+ */
+export type LauncherKind = "t3" | "herdr";
 
 /**
  * `core::Link`.
@@ -243,7 +270,7 @@ export type LinkId = number;
 /**
  * `core::LinkKind`.
  */
-export type LinkKind = "t3_thread" | "claude_session" | "pr" | "slack" | "doc" | "github_issue";
+export type LinkKind = "t3_thread" | "claude_session" | "pr" | "slack" | "doc" | "github_issue" | "herdr_terminal";
 
 /**
  * `menu:action`'s payload: a command id from `lib/logic/commands.ts`.
@@ -558,12 +585,25 @@ notifications: boolean,
 /**
  * Parents folded in the tree; saved a second after the last change.
  */
-folded: Array<TaskId>, };
+folded: Array<TaskId>, 
+/**
+ * Where Do it and Plan it start agents.
+ */
+start_agents_in: StartAgentsIn, 
+/**
+ * The agent a Herdr tab runs: Claude Code (the default) or Codex.
+ */
+herdr_agent: HerdrAgent, };
 
 /**
  * `services::Source`.
  */
-export type Source = "t3" | "claude";
+export type Source = "t3" | "claude" | "herdr";
+
+/**
+ * Settings › Agent setup › "Start agents in": where Do it and Plan it start agents.
+ */
+export type StartAgentsIn = "auto" | "t3" | "herdr";
 
 /**
  * `services::StartedThread`.
@@ -581,7 +621,7 @@ export type Status = "proposed" | "todo" | "doing" | "in_review" | "blocked" | "
 export type T3Project = { id: string, name: string, path: string, };
 
 /**
- * One of T3's projects, for Add repos.
+ * One of T3's projects, or a folder Herdr knows (`herdr_folders`), for Add repos.
  */
 export type T3ProjectRow = { path: string, name: string, 
 /**

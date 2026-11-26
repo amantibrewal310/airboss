@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use airboss_core::{LinkKind, TaskId};
-use airboss_services::ThreadKey;
+use airboss_services::{Source, ThreadKey};
 use tauri_plugin_log::log;
 
 use crate::classify::{expand_home, file_url};
@@ -14,6 +14,7 @@ use crate::dto::{
 };
 use crate::errors::{AppError, AppResult, Ctx, ErrorCode, MSG_HOTKEY_IN_USE, MSG_LINK_GONE};
 use crate::handlers::{Kind, verified_app};
+use crate::herdr::MSG_SHOW_FAILED;
 use crate::menu::{FocusContext, WindowName};
 use crate::notify::Permission;
 use crate::opener::{self, Opening};
@@ -26,9 +27,9 @@ pub const AGENT_NOTE: &str = include_str!("../../resources/agent-note.md");
 /// The command "Copy setup command" copies.
 pub const SETUP_COMMAND: &str = "claude mcp add --scope user airboss -- ~/.local/bin/airboss mcp";
 /// What "Copy Codex setup" copies: `codex mcp add` can't set `env_vars`, which Codex needs to
-/// pass T3's thread id to the server, so it's a table for `~/.codex/config.toml` (`{bin}` is
-/// the CLI's absolute path).
-pub const CODEX_SETUP: &str = "[mcp_servers.airboss]\ncommand = \"{bin}\"\nargs = [\"mcp\"]\nenv_vars = [\"T3CODE_THREAD_ID\"]\n";
+/// pass T3's thread id and Herdr's terminal id to the server, so it's a table for
+/// `~/.codex/config.toml` (`{bin}` is the CLI's absolute path).
+pub const CODEX_SETUP: &str = "[mcp_servers.airboss]\ncommand = \"{bin}\"\nargs = [\"mcp\"]\nenv_vars = [\"T3CODE_THREAD_ID\", \"HC_TERMINAL_ID\"]\n";
 /// How long Connect Claude Code waits for `claude mcp add`.
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
 /// Where Claude Code's `claude` usually is, under the home folder and then the system's,
@@ -36,8 +37,12 @@ pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
 const CLAUDE_PLACES: &[&str] = &[".local/bin/claude", ".claude/local/claude"];
 const CLAUDE_SYSTEM_PLACES: &[&str] = &["/opt/homebrew/bin/claude", "/usr/local/bin/claude"];
 
-/// Opens a thread in T3 Code through `sync.thread_url` (`t3code://threads/…`).
+/// Opens a thread: in T3 Code through `sync.thread_url` (`t3code://threads/…`), or a Herdr
+/// terminal by showing it in Herdr.
 pub fn open_thread(s: &AppState, _c: Caller, key: ThreadKey) -> AppResult<()> {
+    if key.source == Source::Herdr {
+        return show_herdr_terminal(s, &key.r#ref);
+    }
     let url = s.services.sync.thread_url(&key).ok_or_else(|| {
         AppError::new(
             ErrorCode::NotFound,
@@ -47,15 +52,31 @@ pub fn open_thread(s: &AppState, _c: Caller, key: ThreadKey) -> AppResult<()> {
     open_checked(s, &url)
 }
 
-/// Opens a URL, or a link by its id, through the allowlist in `opener.rs`.
+/// Shows a Herdr terminal (`herdr-app do agent.focus`, then Herdr in front). The address is
+/// checked as `core` checks it (1–64 printable ASCII characters, no spaces) and goes inside
+/// one JSON argument, never through a shell.
+fn show_herdr_terminal(s: &AppState, terminal: &str) -> AppResult<()> {
+    let fine = (1..=64).contains(&terminal.len()) && terminal.bytes().all(|b| b.is_ascii_graphic());
+    if !fine {
+        return Err(AppError::new(ErrorCode::NotFound, MSG_SHOW_FAILED));
+    }
+    s.shell.show_herdr_terminal(terminal).map_err(|e| {
+        log::warn!("couldn't show Herdr terminal {terminal}: {e}");
+        AppError::new(ErrorCode::HerdrFailed, MSG_SHOW_FAILED).with_detail(e)
+    })
+}
+
+/// Opens a URL, or a link by its id, through the allowlist in `opener.rs`. A Herdr terminal
+/// link has no URL: it's shown in Herdr.
 pub fn open_url(s: &AppState, _c: Caller, target: OpenTarget) -> AppResult<()> {
     let url = match target {
         OpenTarget::Url(u) => u,
         OpenTarget::Link(id) => {
-            // A link is found by kind; there are six, each one small read.
+            // A link is found by kind; there are seven, each one small read.
             let kinds = [
                 LinkKind::Pr,
                 LinkKind::T3Thread,
+                LinkKind::HerdrTerminal,
                 LinkKind::ClaudeSession,
                 LinkKind::Doc,
                 LinkKind::Slack,
@@ -70,6 +91,9 @@ pub fn open_url(s: &AppState, _c: Caller, target: OpenTarget) -> AppResult<()> {
                 }
             }
             let found = found.ok_or_else(|| AppError::new(ErrorCode::NotFound, MSG_LINK_GONE))?;
+            if found.kind == LinkKind::HerdrTerminal {
+                return show_herdr_terminal(s, &found.r#ref);
+            }
             match found.url {
                 Some(u) => u,
                 None if found.r#ref.starts_with('/') || found.r#ref.starts_with('~') => {
@@ -381,7 +405,13 @@ pub fn set_settings(s: &AppState, _c: Caller, settings: Settings) -> AppResult<S
             n.request();
         }
     }
+    let launcher_changed =
+        new.start_agents_in != old.start_agents_in || new.herdr_agent != old.herdr_agent;
     s.store_settings(new.clone())?;
+    // "Start agents in" changes the launcher and the Herdr row.
+    if launcher_changed {
+        s.refresh_connections();
+    }
     Ok(new)
 }
 

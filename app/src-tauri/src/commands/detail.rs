@@ -1,5 +1,5 @@
-//! The read commands: `bootstrap`, `task_detail`, `run_map`, `plans`, `quickadd_data` and
-//! `t3_projects`.
+//! The read commands: `bootstrap`, `task_detail`, `run_map`, `plans`, `quickadd_data`,
+//! `t3_projects` and `herdr_folders`.
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -31,6 +31,8 @@ pub fn bootstrap(s: &AppState, _c: Caller) -> AppResult<Bootstrap> {
         needs: (*cu.vm.needs).clone(),
         connections: cu.connections.connections.clone(),
         availability: cu.connections.availability.clone(),
+        herdr: cu.connections.herdr.clone(),
+        launcher: cu.connections.launcher,
         agent_report: cu.connections.agent_report.clone(),
         settings,
         accent,
@@ -49,11 +51,13 @@ pub fn thread_title(actor: &airboss_core::Actor, sync: &SyncSnapshot) -> Option<
     }
 }
 
-/// `agent:t3/97b5c8b5` names thread `97b5c8b5` in T3; `claude/<id>` a Claude Code session.
+/// `agent:t3/97b5c8b5` names thread `97b5c8b5` in T3; `herdr/<address>` a Herdr terminal;
+/// `claude/<id>` a Claude Code session.
 fn thread_key_of_agent(r: &str) -> Option<ThreadKey> {
     let (source, id) = r.split_once('/')?;
     let source = match source {
         "t3" => Source::T3,
+        "herdr" => Source::Herdr,
         "claude" => Source::Claude,
         _ => return None,
     };
@@ -136,6 +140,7 @@ pub fn task_detail(
                 .and_then(|r| sync.prs.get(&r).cloned()),
             thread: match l.kind {
                 LinkKind::T3Thread => thread_view(Source::T3, &l.r#ref),
+                LinkKind::HerdrTerminal => thread_view(Source::Herdr, &l.r#ref),
                 LinkKind::ClaudeSession => thread_view(Source::Claude, &l.r#ref),
                 _ => None,
             },
@@ -237,6 +242,28 @@ pub fn t3_projects(s: &AppState, _c: Caller) -> AppResult<Vec<T3ProjectRow>> {
             name: p.name.clone(),
             is_git: Path::new(&p.path).join(".git").exists(),
             added: added.contains(&path_text(&p.path)),
+        })
+        .collect())
+}
+
+/// Herdr's space folders, then its recent ones, for first run without T3 Code, with the same
+/// rules as T3's projects. Nothing when Herdr can't be asked (not installed, window closed).
+pub fn herdr_folders(s: &AppState, _c: Caller) -> AppResult<Vec<T3ProjectRow>> {
+    let folders = match s.shell.herdr_folders().folders() {
+        Ok(f) => f,
+        Err(e) => {
+            tauri_plugin_log::log::info!("no folders from Herdr: {e}");
+            return Ok(Vec::new());
+        }
+    };
+    let added: HashSet<String> = s.vm(|vm| vm.repos.iter().map(|r| r.path.clone()).collect());
+    Ok(folders
+        .into_iter()
+        .map(|f| T3ProjectRow {
+            path: path_text(&f.path),
+            name: f.name,
+            is_git: f.path.join(".git").exists(),
+            added: added.contains(&path_text(&f.path)),
         })
         .collect())
 }

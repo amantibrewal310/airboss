@@ -29,7 +29,7 @@
       return l ? linkLabel(l) : null;
     },
     threadTitle: (ref) => {
-      const l = links.find((x) => x.kind === 't3_thread' && x.ref === ref);
+      const l = links.find((x) => (x.kind === 't3_thread' || x.kind === 'herdr_terminal') && x.ref === ref);
       return l?.thread?.title ?? l?.title ?? null;
     },
   };

@@ -1,13 +1,14 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import Button from '../../lib/components/Button.svelte';
   import Icon from '../../lib/components/Icon.svelte';
   import type { T3ProjectRow } from '../../lib/types';
   import { useApp } from '../../lib/state/context';
 
   /**
-   * Add repos from T3's projects (each unticked; folders that aren't git repos or are already
-   * added are greyed with the reason), or another folder. The list is one Tab stop (roving
+   * Add repos from T3's projects, or without T3 Code from Herdr's space and recent folders
+   * ("From Herdr"), each unticked; folders that aren't git repos or are already added are
+   * greyed with the reason. Or another folder. The list is one Tab stop (roving
    * tabindex): ↑↓ move, Home/End jump, Space ticks, ⌘↩ adds. Embedded in first run, it stays
    * after an add: added repos show ticked and greyed, and other ticks are kept.
    */
@@ -23,8 +24,11 @@
   /** The row that holds the list's one Tab stop. */
   let active = $state<string | null>(null);
 
+  /** Without T3 Code, Herdr's folders stand in for its projects. Chosen once, so the list doesn't swap under the user. */
+  const fromHerdr = untrack(() => !app.conn.t3Ready && typeof app.conn.herdr === 'object' && 'ready' in app.conn.herdr);
+  const load = () => (fromHerdr ? app.herdrFolders() : app.t3Projects());
   onMount(async () => {
-    rows = await app.t3Projects();
+    rows = await load();
     loaded = true;
   });
 
@@ -37,7 +41,7 @@
     return [...rows, ...extra];
   });
   const reason = (r: T3ProjectRow) => (r.added ? (embedded ? 'Added' : 'Already added') : !r.is_git ? 'Not a git repository' : null);
-  const t3 = $derived(app.conn.t3Ready && (rows.length > 0 || !loaded));
+  const listed = $derived((fromHerdr || app.conn.t3Ready) && (rows.length > 0 || !loaded));
   const current = $derived(items.some((r) => r.path === active) ? active : (items[0]?.path ?? null));
   const id = (i: number, part: string) => `${uid}-${i}-${part}`;
 
@@ -47,9 +51,9 @@
     ticked = ticked.includes(r.path) ? ticked.filter((p) => p !== r.path) : [...ticked, r.path];
   }
 
-  /** Reads T3's projects again and keeps only the ticks that can still be added. */
+  /** Reads the projects (or Herdr's folders) again and keeps only the ticks that can still be added. */
   async function reload() {
-    rows = await app.t3Projects();
+    rows = await load();
     const addable = new Set(rows.filter((r) => !reason(r)).map((r) => r.path));
     ticked = ticked.filter((p) => addable.has(p));
   }
@@ -111,9 +115,17 @@
 </script>
 
 <div class="ar" class:embedded>
-  {#if items.length && (t3 || embedded)}
+  {#if fromHerdr && rows.length}<h3 class="from" id="{uid}-from">From Herdr</h3>{/if}
+  {#if items.length && (listed || embedded)}
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-    <div class="list" bind:this={list} role="group" aria-label={rows.length ? 'T3 Code projects' : 'Repos'} onkeydown={key}>
+    <div
+      class="list"
+      bind:this={list}
+      role="group"
+      aria-label={fromHerdr && rows.length ? undefined : rows.length ? 'T3 Code projects' : 'Repos'}
+      aria-labelledby={fromHerdr && rows.length ? `${uid}-from` : undefined}
+      onkeydown={key}
+    >
       {#each items as r, i (r.path)}
         {@const why = reason(r)}
         <!-- Space and the arrows are the list's (roving tabindex), so the row needs no handler of its own. -->
@@ -139,14 +151,14 @@
       {/each}
     </div>
   {/if}
-  {#if loaded && !t3}
-    <p class="none">T3 Code's projects show here once it's installed.</p>
+  {#if loaded && !listed}
+    <p class="none">{fromHerdr ? "Herdr's folders show here while it's open." : "T3 Code's projects show here once it's installed."}</p>
   {/if}
   {#if error}<p class="err" role="alert">{error}</p>{/if}
   <div class="acts" bind:this={acts}>
     <Button variant="ghost" onclick={another}><Icon name="folder" size={14} />Add another folder…</Button>
     <span class="sp"></span>
-    {#if t3 && rows.length}
+    {#if listed && rows.length}
       <Button variant={embedded ? 'secondary' : 'primary'} disabled={!ticked.length} onclick={add}>
         Add {ticked.length || ''} {ticked.length === 1 ? 'repo' : 'repos'}
       </Button>
@@ -225,6 +237,12 @@
     font-size: var(--fs-label);
     color: var(--text-3);
     white-space: nowrap;
+  }
+  .from {
+    font-size: var(--fs-label);
+    font-weight: 500;
+    line-height: 14px;
+    color: var(--text-3);
   }
   .none {
     color: var(--text-2);

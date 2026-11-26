@@ -135,7 +135,7 @@ describe('Settings › Agent setup', () => {
     expect(line('Codex').querySelector('button')!.textContent).toBe('Copy Codex setup');
     line('Codex').querySelector('button')!.click();
     await wait(20);
-    expect(backend.opened.at(-1)).toContain('env_vars = ["T3CODE_THREAD_ID"]');
+    expect(backend.opened.at(-1)).toContain('env_vars = ["T3CODE_THREAD_ID", "HC_TERMINAL_ID"]');
     expect(app.toasts.list.at(-1)!.text).toContain('~/.codex/config.toml');
     const texts = [...document.querySelectorAll('button')].map((b) => b.textContent!.trim());
     expect(texts).toContain('Copy agent note');

@@ -5,7 +5,7 @@
   import { useApp } from '../../../lib/state/context';
   import { threadSummary } from '../../../lib/logic/copy';
 
-  /** One row per linked thread: live chip, title, request or error summary, and Open ↗. */
+  /** One row per linked thread: live chip, title, request or error summary, and Open ↗ (T3 threads and Herdr terminals). */
   let { links }: { links: LinkDto[] } = $props();
   const app = useApp();
   const threads = $derived(links.filter((l): l is LinkDto & { thread: ThreadDto } => !!l.thread));
@@ -20,7 +20,7 @@
       <div class="thr">
         {#if t.chip}<LiveChip chip={t.chip} short />{/if}
         <span class="t"><span class="name">{t.title ?? l.ref}</span> <span class="faint">· {threadSummary(t, app.now)}</span></span>
-        {#if t.url}
+        {#if t.url || t.key.source === 'herdr'}
           <button type="button" class="open" onclick={() => app.openThread(t.key)}>Open <Icon name="open" size={11} /></button>
         {:else if t.project_path}
           <span class="faint path" title={t.project_path}>{t.project_path}</span>
