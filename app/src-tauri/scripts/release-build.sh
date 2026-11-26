@@ -47,9 +47,11 @@ echo "Info.plist: $short ($build); $cli"
 # The compiled-in updater config is the production one.
 binary=$app/Contents/MacOS/airboss-app
 strings "$binary" | grep -qF "$endpoint" || fail "the app doesn't have the production update endpoint"
-if strings "$binary" | grep -qE '127\.0\.0\.1|localhost:[0-9]'; then
-  fail "the app has a loopback address compiled in: a QA config leaked into the build"
-fi
+# Every build embeds `build.devUrl` (the Vite dev server); any other loopback URL means a QA
+# config leaked in.
+devurl=$(cd "$root/app" && node -p "require('./src-tauri/tauri.conf.json').build.devUrl")
+loopback=$(strings "$binary" | grep -oE 'https?://(127\.0\.0\.1|localhost)(:[0-9]+)?' | sort -u | grep -vxF "$devurl" || true)
+[ -z "$loopback" ] || fail "the app has a loopback URL compiled in ($loopback): a QA config leaked into the build"
 
 archive=$bundle/macos/Airboss.app.tar.gz
 [ -s "$archive" ] && [ -s "$archive.sig" ] || fail "no signed update archive: is createUpdaterArtifacts on?"
