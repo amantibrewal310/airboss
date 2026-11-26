@@ -224,12 +224,12 @@ fn herdr_errors_read_well_and_offer_retry_never_add_to_t3() {
 }
 
 #[test]
-fn open_thread_shows_a_herdr_terminal_through_herdr_app_then_brings_herdr_forward() {
+fn open_thread_brings_herdr_forward_then_shows_the_terminal_through_herdr_app() {
     let app = TestApp::new();
     appcmd::open_thread(&app.state, M, herdr_key("t4p")).unwrap();
     assert_eq!(
         app.shell.calls().last().unwrap(),
-        r#"show_herdr_terminal(herdr-app do agent.focus {"terminal":"t4p"}; open -b dev.herdr.app)"#
+        r#"show_herdr_terminal(open -b dev.herdr.app; herdr-app do agent.focus {"terminal":"t4p"})"#
     );
     // The link itself opens the same way: it has no URL, and never reaches the allowlist.
     let t = app.add("T", None);
@@ -244,7 +244,7 @@ fn open_thread_shows_a_herdr_terminal_through_herdr_app_then_brings_herdr_forwar
     appcmd::open_url(&app.state, M, OpenTarget::Link(link.id)).unwrap();
     assert_eq!(
         app.shell.calls().last().unwrap(),
-        r#"show_herdr_terminal(herdr-app do agent.focus {"terminal":"vps/t7"}; open -b dev.herdr.app)"#
+        r#"show_herdr_terminal(open -b dev.herdr.app; herdr-app do agent.focus {"terminal":"vps/t7"})"#
     );
     assert!(!app.shell.calls().iter().any(|c| c.starts_with("open_url")));
     // Herdr couldn't show it: the toast's sentence.
