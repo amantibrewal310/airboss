@@ -18,6 +18,7 @@
   const ICON: Partial<Record<CommandId, string>> = {
     do_it: ICONS.play,
     plan_it: ICONS.waves,
+    do_it_whole: ICONS.play,
     toggle_done: ICONS.check,
     rename: ICONS.edit,
     link_repos: ICONS.repo,
@@ -35,9 +36,11 @@
     switch (id) {
       case 'do_it':
       case 'plan_it':
+      case 'do_it_whole':
+        if (id === 'do_it_whole' && !row.has_children) return 'Only for a task with subtasks';
         if (!app.conn.launchReady) return app.conn.launchOff;
         if (row.status === 'proposed') return 'Accept the proposal first';
-        if (id === 'do_it' && row.waiting) return `Waits on ${row.waits_on.join(', ')}`;
+        if (id !== 'plan_it' && row.waiting) return `Waits on ${row.waits_on.join(', ')}`;
         return false;
       case 'move_up':
       case 'move_down':
@@ -57,7 +60,8 @@
     CONTEXT_MENU.map((id): MenuEntry => {
       if (id === '-') return 'separator';
       const cmd = BY_ID.get(id)!;
-      const label = id === 'toggle_done' && row?.status === 'done' ? 'Mark not done' : cmd.label;
+      const label =
+        id === 'toggle_done' && row?.status === 'done' ? 'Mark not done' : id === 'do_it' && row?.has_children ? `Start ready (${app.readySteps(task).length})` : cmd.label;
       const svg = id === 'status' && row ? shapeSvg(shapeOf(row), 14) : ICON[id] ? iconSvg(ICON[id]!) : '';
       return {
         id,

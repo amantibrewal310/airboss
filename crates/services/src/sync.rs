@@ -184,13 +184,15 @@ pub enum ThreadState {
 }
 
 impl ThreadState {
-    /// The live chip the app shows: Running is Working, NeedsMe is WaitingOnYou; Errored,
-    /// Idle and Settled are Stopped; a Gone thread has no chip.
+    /// The live chip the app shows: Running is Working, NeedsMe is WaitingOnYou, Idle is
+    /// YourTurn (the agent finished its turn and the next message is mine); Errored and Settled
+    /// are Stopped; a Gone thread has no chip.
     pub fn chip(self) -> Option<Chip> {
         match self {
             ThreadState::Running => Some(Chip::Working),
             ThreadState::NeedsMe => Some(Chip::WaitingOnYou),
-            ThreadState::Errored | ThreadState::Idle | ThreadState::Settled => Some(Chip::Stopped),
+            ThreadState::Idle => Some(Chip::YourTurn),
+            ThreadState::Errored | ThreadState::Settled => Some(Chip::Stopped),
             ThreadState::Gone => None,
         }
     }
@@ -202,6 +204,7 @@ impl ThreadState {
 pub enum Chip {
     Working,
     WaitingOnYou,
+    YourTurn,
     Stopped,
 }
 

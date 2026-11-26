@@ -11,7 +11,7 @@ use airboss_core::{
 };
 use airboss_services::{
     Availability, Chip, Connection, HerdrAgent, LaunchReport, Launcher, NeedsItem, NeedsList,
-    PrView, Prepared, Request, ThreadKey, ThreadState, ThreadView,
+    PrView, Prepared, Request, Source, ThreadKey, ThreadState, ThreadView,
 };
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -296,6 +296,7 @@ pub enum ThreadStateTs {
 pub enum ChipTs {
     Working,
     WaitingOnYou,
+    YourTurn,
     Stopped,
 }
 
@@ -648,11 +649,12 @@ pub fn status_label(s: Status) -> &'static str {
     }
 }
 
-/// Higher is stronger: Waiting on you, then Working, then Stopped.
+/// Higher is stronger: Waiting on you, then Working, then Your turn, then Stopped.
 pub fn chip_strength(c: Chip) -> u8 {
     match c {
-        Chip::WaitingOnYou => 3,
-        Chip::Working => 2,
+        Chip::WaitingOnYou => 4,
+        Chip::Working => 3,
+        Chip::YourTurn => 2,
         Chip::Stopped => 1,
     }
 }
@@ -708,6 +710,10 @@ pub struct RowDto {
     /// Who made that event, as text ("me", "agent:t3/…").
     #[ts(as = "ActorTs")]
     pub last_actor: String,
+    /// When `last_actor` is Launch: where its thread runs (T3 or Herdr), so the avatar can say
+    /// so. The task's most recently active T3 thread or Herdr terminal; `null` otherwise.
+    #[ts(as = "Option<SourceTs>")]
+    pub launched_in: Option<Source>,
 }
 
 /// What changed in the rows since the last patch. Apply it only if `seq` is greater than the

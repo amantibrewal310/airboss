@@ -57,7 +57,7 @@
   const shownRepos = $derived(names.slice(0, 2));
   const pct = $derived(percent(row.progress));
   const time = $derived(since ? row.ready_since : row.last_at);
-  const liveLabel = $derived(row.live === 'working' ? 'agent working' : row.live === 'waiting_on_you' ? 'waiting on you' : row.live === 'stopped' ? 'agent stopped' : '');
+  const liveLabel = $derived(row.live === 'working' ? 'agent working' : row.live === 'waiting_on_you' ? 'waiting on you' : row.live === 'your_turn' ? 'your turn' : row.live === 'stopped' ? 'agent stopped' : '');
   const aria = $derived(
     [
       row.id,
@@ -159,7 +159,7 @@
       {#each names as r (r.id)}<RepoDot id={r.id} name={r.name} />{/each}
     </span>
   {/if}
-  <Avatar actor={row.last_actor} decorative />
+  <Avatar actor={row.last_actor} launchedIn={row.launched_in} decorative />
   <span class="when" aria-hidden="true">{relative(time, now)}</span>
 </div>
 

@@ -12,7 +12,7 @@ const row = (id: number, extra: Partial<RowDto> = {}): RowDto => ({
   id, parent: null, depth: 0, position: id, title: `T${id}`, status: 'todo', origin: 'me', blocked_reason: null,
   waiting: false, waits_on: [], has_children: false, progress: null, repos: [], repos_from_subtasks: false,
   branch: null, ready: false, ready_since: null, ready_pill: false, quiet_days: null, needs: false,
-  needs_stale: false, live: null, last_at: '2026-11-25T10:00:00.000Z', last_actor: 'me', ...extra,
+  needs_stale: false, live: null, last_at: '2026-11-25T10:00:00.000Z', last_actor: 'me', launched_in: null, ...extra,
 });
 
 describe('applyPatch', () => {
@@ -80,8 +80,8 @@ describe('time', () => {
     expect(needsLead({ kind: 'agent_stopped', since: ago(12 * 60_000) }, now)).toBe('Agent stopped · 12m ago');
     const t = (over: Partial<ThreadDto>): ThreadDto =>
       ({ key: { source: 't3', id: 'x' }, state: 'idle', chip: null, title: null, request: null, error: null, project_path: null, url: null, last_activity_at: ago(20_000), ...over }) as ThreadDto;
-    expect(threadSummary(t({}), now)).toBe('stopped just now');
-    expect(threadSummary(t({ last_activity_at: ago(6 * 60_000) }), now)).toBe('stopped 6m ago');
+    expect(threadSummary(t({}), now)).toBe('replied just now');
+    expect(threadSummary(t({ last_activity_at: ago(6 * 60_000) }), now)).toBe('replied 6m ago');
     expect(threadSummary(t({ state: 'running' }), now)).toBe('working · now');
     expect(threadSummary(t({ state: 'needs_me', request: { kind: 'question', at: ago(20_000) } as ThreadDto['request'] }), now)).toBe('asked a question just now');
     expect(threadSummary(t({ state: 'needs_me', request: { kind: 'approval', at: ago(3 * 3_600_000) } as ThreadDto['request'] }), now)).toBe('wants approval 3h ago');

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { phrase } from '../../src/lib/logic/activity';
+import { groupFeed, launchSources, phrase } from '../../src/lib/logic/activity';
 import { footerText, mergeConnections } from '../../src/lib/logic/connections';
 import { headlineOf } from '../../src/lib/logic/needs';
 import { sheetRows } from '../../src/lib/logic/commands';
@@ -42,6 +42,48 @@ describe('copy', () => {
     expect(text(phrase({ ...e, task: 2 }, 1))).toBe('2 · Started a thread');
     // The history's own title still counts.
     expect(text(phrase({ ...e, thread_title: 'slot-picker' }, 1))).toBe('Started thread slot-picker');
+  });
+
+  it('folds a plan import into one line per kind of event', () => {
+    const text = (segs: { text: string }[]) => segs.map((s) => s.text).join('');
+    const old = 'Imported by agent:t3/mcp:c55d from /Users/me/out/implementation-plan.md';
+    const note = (id: number, task: number, body = old): HistoryEntry => ({ id, task, kind: 'note', to_status: null, body, actor: 'agent:t3/mcp:c55d', at: '', thread_title: 'Plan 3 Mira' });
+    const created = (id: number, task: number): HistoryEntry => ({ id, task, kind: 'created', to_status: null, body: null, actor: 'plan', at: '', thread_title: null });
+    const history = [note(10, 6), note(9, 5), note(8, 4), note(7, 7), created(4, 6), created(3, 5), note(2, 3, 'hi'), created(1, 3)];
+    const lines = groupFeed(history, 3);
+    expect(lines.map((l) => l.tasks)).toEqual([[6, 5, 4, 7], [6, 5], [], []]);
+    expect(text(phrase(lines[0]!.entry, 3, {}, lines[0]!.tasks))).toBe('4 subtasks · Agent in Plan 3 Mira: Imported from implementation-plan.md');
+    expect(text(phrase(lines[1]!.entry, 3, {}, lines[1]!.tasks))).toBe('5, 6 · Plan created');
+    // The task's own events never fold.
+    expect(groupFeed([note(2, 3, 'a'), note(1, 3, 'a')], 3).length).toBe(2);
+    // The new note text reads as it is.
+    expect(text(phrase(note(1, 3, 'Imported from plan.md'), 3))).toBe('Agent in Plan 3 Mira: Imported from plan.md');
+  });
+
+  it('never names an agent by a raw thread id', () => {
+    const text = (segs: { text: string }[]) => segs.map((s) => s.text).join('');
+    const e: HistoryEntry = { id: 1, task: 43, kind: 'created', to_status: null, body: null, actor: 'agent:t3/mcp:0e9396f8-fad7-4d4e-9db8-17052a62313e', at: '', thread_title: null };
+    expect(text(phrase(e, 43))).toBe('An agent created this');
+    expect(text(phrase({ ...e, thread_title: '4 Phase 1' }, 43))).toBe('Agent in 4 Phase 1 created this');
+    expect(text(phrase({ ...e, actor: 'agent:slot-picker' }, 43))).toBe('Agent in slot-picker created this');
+  });
+
+  it('names Launch by where its thread runs: T3 or Herdr', () => {
+    const ev = (id: number, over: Partial<HistoryEntry>): HistoryEntry => ({ id, task: 3, kind: 'status', to_status: 'doing', body: null, actor: 'launch', at: '', thread_title: null, ...over });
+    const t3 = [ev(1, { actor: 'me', kind: 'created', to_status: null }), ev(2, { kind: 'linked', to_status: null, body: 't3_thread mcp:abc' }), ev(3, {})];
+    const sources = launchSources(t3);
+    expect(sources.get(2)).toBe('t3');
+    expect(sources.get(3)).toBe('t3');
+    expect(sources.has(1)).toBe(false);
+    const text = (segs: { text: string }[]) => segs.map((s) => s.text).join('');
+    const ctx = { launchedIn: (e: HistoryEntry) => sources.get(e.id) ?? null };
+    expect(text(phrase(t3[2]!, 3, ctx))).toBe('T3 moved this to In progress');
+    // Herdr; the status can come before the link in id order, and takes the link's source.
+    const herdr = launchSources([ev(5, {}), ev(6, { kind: 'linked', to_status: null, body: 'herdr_terminal w1:p2' })]);
+    expect(herdr.get(5)).toBe('herdr');
+    expect(text(phrase(ev(5, {}), 3, { launchedIn: (e) => herdr.get(e.id) ?? null }))).toBe('Herdr moved this to In progress');
+    // No thread link in the feed: still "Launch".
+    expect(text(phrase(ev(7, {}), 3))).toBe('Launch moved this to In progress');
   });
 
   it('reads core’s event bodies in plain words', () => {

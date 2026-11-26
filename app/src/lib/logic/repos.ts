@@ -38,3 +38,20 @@ export function filterRepos<T extends { name: string; path: string }>(items: T[]
   }
   return [...byName, ...byPath];
 }
+
+/**
+ * Folders that could be added as repos (git, not added yet) whose name or path the task's
+ * title or notes mention, such as "hub-ui: fix 7 tests" or "Repo: hub-ui (not registered in
+ * Airboss)". Agents can't add repos, so they name an unregistered one in the text; Do it
+ * offers to add it and start there. A name counts only as a whole word of 3+ characters.
+ */
+export function mentionedRepos<T extends { name: string; path: string; is_git: boolean; added: boolean }>(rows: T[], text: string): T[] {
+  const lower = text.toLowerCase();
+  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return rows.filter((r) => {
+    if (r.added || !r.is_git) return false;
+    const name = r.name.trim().toLowerCase();
+    if (r.path && lower.includes(r.path.toLowerCase())) return true;
+    return name.length >= 3 && new RegExp(`(^|[^a-z0-9_-])${esc(name)}($|[^a-z0-9_-])`).test(lower);
+  });
+}

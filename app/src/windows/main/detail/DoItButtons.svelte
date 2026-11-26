@@ -4,7 +4,10 @@
   import { useApp } from '../../../lib/state/context';
   import type { TaskId } from '../../../lib/types';
 
-  /** Plan it (⇧⌘↩) and Do it (primary, ⌘↩), with "Starting…" and the launcher-missing state. */
+  /**
+   * Plan it (⇧⌘↩) and Do it (primary, ⌘↩), with "Starting…" and the launcher-missing state. On a
+   * task with subtasks, Do it is Start ready: one thread per step that can start now.
+   */
   let { task }: { task: TaskId } = $props();
   const app = useApp();
   const row = $derived(app.row(task));
@@ -13,6 +16,21 @@
   const closed = $derived(row?.status === 'done' || row?.status === 'dropped' || row?.status === 'proposed');
   /** The branch Do it would use, when the task has none of its own. */
   const planned = $derived(app.detail.detail?.task.id === task ? app.detail.detail.prepared?.branch : null);
+  const parent = $derived(!!row?.has_children);
+  const ready = $derived(parent ? app.readySteps(task).length : 0);
+  const title = $derived(
+    off
+      ? app.conn.launchOff
+      : parent
+        ? row?.waiting
+          ? `Start ready (⌘↩): #${task} waits on ${row.waits_on.join(', ')}`
+          : ready
+            ? `Start ready (⌘↩): an agent starts on each of the ${ready} step${ready === 1 ? '' : 's'} that can start now`
+            : 'Start ready (⌘↩): nothing can start now; steps are running, done or waiting'
+        : planned
+          ? `Do it (⌘↩): an agent starts on this task, on branch ${planned}`
+          : 'Do it (⌘↩): an agent starts on this task',
+  );
 </script>
 
 <button
@@ -28,15 +46,15 @@
   type="button"
   class="pri"
   data-do-it
-  aria-disabled={off || starting ? 'true' : undefined}
+  aria-disabled={off || starting || (parent && (!ready || row?.waiting)) ? 'true' : undefined}
   aria-busy={starting}
-  title={off ? app.conn.launchOff : planned ? `Do it (⌘↩): an agent starts on this task, on branch ${planned}` : 'Do it (⌘↩): an agent starts on this task'}
+  {title}
   onclick={() => !starting && app.doIt(task)}
 >
   {#if starting}
     <span class="spin" aria-hidden="true"></span>Starting…
   {:else}
-    <Icon name="play" size={14} />Do it <Kbd keys="mod+enter" onFill joined />
+    <Icon name="play" size={14} />{#if parent}Start ready ({ready}){:else}Do it{/if} <Kbd keys="mod+enter" onFill joined />
   {/if}
 </button>
 

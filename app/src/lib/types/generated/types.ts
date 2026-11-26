@@ -111,7 +111,7 @@ export type Checks = "passing" | "failing" | "pending" | "none";
 /**
  * `services::Chip`.
  */
-export type Chip = "working" | "waiting_on_you" | "stopped";
+export type Chip = "working" | "waiting_on_you" | "your_turn" | "stopped";
 
 /**
  * Whether the `airboss` command-line tool is linked, for Settings and the Agents row.
@@ -541,7 +541,12 @@ last_at: Timestamp,
 /**
  * Who made that event, as text ("me", "agent:t3/…").
  */
-last_actor: Actor, };
+last_actor: Actor, 
+/**
+ * When `last_actor` is Launch: where its thread runs (T3 or Herdr), so the avatar can say
+ * so. The task's most recently active T3 thread or Herdr terminal; `null` otherwise.
+ */
+launched_in: Source | null, };
 
 /**
  * A line from a blocker to the task waiting on it, lifted to the parent's subtasks.

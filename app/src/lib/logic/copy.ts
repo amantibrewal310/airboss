@@ -15,12 +15,13 @@ export function statusToast(id: TaskId, status: Status): string {
   return `Moved #${id} to ${SHAPE_LABEL[status]}`;
 }
 
-/** A linked thread's line in the panel: "asked a question just now", "working · 6m", "stopped 2h ago". */
+/** A linked thread's line in the panel: "asked a question just now", "working · 6m", "replied 2h ago", "stopped 2h ago". */
 export function threadSummary(t: ThreadDto, now: number): string {
   const at = t.request?.at ?? t.last_activity_at;
   if (t.state === 'needs_me' && t.request) return `${t.request.kind === 'approval' ? 'wants approval' : 'asked a question'} ${ago(at, now)}`;
   if (t.state === 'errored') return t.error ?? 'stopped with an error';
   if (t.state === 'running') return `working · ${relative(at, now)}`;
   if (t.state === 'gone') return t.key.source === 'herdr' ? 'no longer in Herdr' : 'no longer in T3';
+  if (t.state === 'idle') return `replied ${ago(at, now)}`;
   return `stopped ${ago(at, now)}`;
 }

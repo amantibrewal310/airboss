@@ -95,6 +95,10 @@ fn enums_are_snake_case_strings() {
             serde_json::to_string(&Chip::WaitingOnYou).unwrap(),
             "\"waiting_on_you\"",
         ),
+        (
+            serde_json::to_string(&Chip::YourTurn).unwrap(),
+            "\"your_turn\"",
+        ),
         (serde_json::to_string(&Source::T3).unwrap(), "\"t3\""),
         (
             serde_json::to_string(&Review::ChangesRequested).unwrap(),

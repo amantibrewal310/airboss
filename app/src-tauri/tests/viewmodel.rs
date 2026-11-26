@@ -217,7 +217,7 @@ fn needs_items_set_the_dot_the_ready_pill_quiet_days_and_staleness() {
 }
 
 #[test]
-fn an_agent_stopped_item_sets_the_dot_beside_the_stopped_chip() {
+fn an_agent_stopped_item_sets_the_dot_beside_the_your_turn_chip() {
     let mut s = store();
     let a = add(&mut s, "A", None);
     status(&mut s, a, Status::Doing);
@@ -260,7 +260,7 @@ fn an_agent_stopped_item_sets_the_dot_beside_the_stopped_chip() {
     let v = vm_with(&s, sync, needs);
     let row = &v.rows[&a];
     assert!(row.needs && !row.needs_stale);
-    assert_eq!(row.live, Some(Chip::Stopped));
+    assert_eq!(row.live, Some(Chip::YourTurn));
     assert!(!row.ready_pill && row.quiet_days.is_none());
 }
 
@@ -564,4 +564,52 @@ fn rows_follow_status_for_the_ui() {
     assert_eq!(v.rows[&a].status, Status::Blocked);
     assert_eq!(v.rows[&a].blocked_reason.as_deref(), Some("stuck"));
     let _ = SystemTime::now();
+}
+
+#[test]
+fn launch_rows_say_where_the_thread_runs() {
+    let mut s = store();
+    let a = add(&mut s, "A", None);
+    let b = add(&mut s, "B", None);
+    s.set_status(a, Status::Doing, None, &Actor::Launch).unwrap();
+    s.set_status(b, Status::Doing, None, &Actor::Me).unwrap();
+    let thread = |source: Source, r: &str, at: &str| {
+        let key = ThreadKey {
+            source,
+            r#ref: r.into(),
+        };
+        let view = ThreadView {
+            key: key.clone(),
+            linked: true,
+            state: ThreadState::Idle,
+            title: None,
+            request: None,
+            error: None,
+            run_id: None,
+            project_path: None,
+            branch: None,
+            worktree_path: None,
+            parent_ref: None,
+            child_count: 0,
+            last_activity_at: Some(at.into()),
+            stale: false,
+        };
+        (key, view)
+    };
+    let mut sync = SyncSnapshot::default();
+    // A's newest thread is a Herdr terminal; B's last actor is me, so it says nothing.
+    for (src, r, at, task) in [
+        (Source::T3, "t-a", "2026-11-26T10:00:00.000Z", a),
+        (Source::Herdr, "h-a", "2026-11-26T11:00:00.000Z", a),
+        (Source::T3, "t-b", "2026-11-26T11:00:00.000Z", b),
+    ] {
+        let (key, view) = thread(src, r, at);
+        sync.thread_tasks.insert(key.clone(), vec![task]);
+        sync.threads.insert(key, view);
+    }
+    let v = vm_with(&s, sync, NeedsList::default());
+    assert_eq!(v.rows[&a].last_actor, "launch");
+    assert_eq!(v.rows[&a].launched_in, Some(Source::Herdr));
+    assert_eq!(v.rows[&a].live, Some(Chip::YourTurn));
+    assert_eq!(v.rows[&b].launched_in, None);
 }

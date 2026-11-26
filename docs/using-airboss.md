@@ -70,11 +70,13 @@ Every task has two buttons in its panel.
 **Do it** (⌘↩) hands the task to an agent. For each repo linked to the task, it starts an agent in a new git worktree: a T3 Code thread, or a tab in Herdr (see [Where agents start](#where-agents-start)). All the threads share one branch: the task's own, or `task-<id>-<slug>`, such as `task-142-booking-flow`. Each thread's first message is a brief: the task's title, notes, parent, subtasks, dependencies and links, plus how to report back. With several repos, each brief says how to find the sibling threads through Airboss. The task moves to in progress.
 
 - While it starts, the button reads "Starting…". A toast says what started, with **Open thread**.
-- A task with no repo opens a menu: **Start in &lt;repo&gt;**, which links that repo and starts, or **No repo: research only**, which starts one thread with no worktree.
+- A task with no repo opens a menu: **Start in &lt;repo&gt;**, which links that repo and starts; **Add another repo…**; or **No repo: research only**, which starts one thread with no worktree. If the task's title or notes name a T3 project that isn't a repo here yet, such as `hub-ui: fix 7 tests`, the menu leads with **Add hub-ui and start**. Agents can't add repos, so they name one that isn't registered this way.
 - A task that still waits on others isn't started. The toast names what it waits on.
 - On a done or dropped task, the toast offers **Reopen and start**.
 - If one repo fails and another starts, the toast offers **Retry**, which starts only the failed one. A repo that isn't a T3 project yet gets **Add to T3 and retry**.
 - A repo that already has a thread from this task is skipped. **Start again** starts a fresh one, on a new branch such as `task-142-booking-flow-2`.
+
+**Start ready** takes Do it's place on a task with subtasks, such as a settled plan or one of its phases. The button counts the steps that can start now: open subtasks with no subtasks of their own, nothing open to wait on, and no waiting phase above them. It runs Do it on each of those steps, so every step gets its own thread, worktree and branch, and moves to in progress by itself. One toast says what started. A step with no repo isn't started; the toast names it and offers to start it, and Do it then asks where. Once those steps finish, the next ones become ready, and Start ready shows the new count. To hand the whole task to one agent anyway, use **Do it as one thread** from the right-click menu or ⌘K. That agent is told to report on each step, not on the parent.
 
 **Plan it** (⇧⌘↩) starts one thread that plans the task with you, with no worktree, because planning changes no code. When you tell it the plan is settled, it calls `import_plan`, and the plan's phases and steps appear as subtasks, with their dependencies, and the plan file linked. Sending the plan again adds only new steps.
 
@@ -94,8 +96,8 @@ You rarely set a status by hand. It comes from four places, and the activity lis
 
 - **Agents**, through the MCP tools: in progress when they start, in review when their PR is up, blocked with a reason, and notes along the way. An agent can mark a task done only if it has no PR, and must say what it did.
 - **GitHub**, through `gh`: every linked open PR is read about every 5 minutes, and again when you open its task. When all of a task's PRs have merged or closed, with at least one merged, the task is done. If an agent on it is still running or waiting on you, Airboss waits until it stops. A PR reopened on GitHub moves its done task back to in review. PRs that T3 Code lists on a linked thread are linked to the task too.
-- **T3 Code**, read from its database: each linked thread shows as Working, Waiting on you or Stopped, with its question or error. A failed run adds a note to the task. T3 state never changes a task's status by itself.
-- **Herdr**, from `hc events`: each linked terminal shows as Working, Waiting on you (Herdr says it's blocked on you) or Stopped. When the agent asks for something, Needs me shows what Herdr reports, such as "Allow: trust this folder".
+- **T3 Code**, read from its database: each linked thread shows as Working, Waiting on you (it asked a question or wants approval), Your turn (it finished and waits for your next message) or Stopped (it failed or was settled), with its question or error. A failed run adds a note to the task. T3 state never changes a task's status by itself.
+- **Herdr**, from `hc events`: each linked terminal shows as Working, Waiting on you (Herdr says it's blocked on you), Your turn (it finished) or Stopped. When the agent asks for something, Needs me shows what Herdr reports, such as "Allow: trust this folder".
 - **Claude Code** sessions run outside T3 Code and Herdr: linked sessions show as working or stopped.
 
 The rest is yours: accepting proposals, dropping tasks, and finishing a task whose PR hasn't merged. Space marks the selected task done, or not done. S opens the status menu: 1 Todo, 2 In progress, 3 In review, 4 Blocked (asks why), 5 Done, 6 Dropped (asks first, because it drops every open subtask too).

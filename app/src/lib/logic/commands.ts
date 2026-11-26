@@ -62,6 +62,7 @@ export const COMMAND_IDS = [
   'link_repos',
   'do_it',
   'plan_it',
+  'do_it_whole',
   'open_page',
   'back',
   'move_up',
@@ -133,6 +134,8 @@ export const COMMANDS: Command[] = [
   { id: 'link_repos', label: 'Link repos…', bind: [['r', 'letter']], views: LIST, needsTask: true, menu: 'task' },
   { id: 'do_it', label: 'Do it', bind: [['mod+enter', 'task']], views: TASKS, needsTask: true, menu: 'task', palette: true },
   { id: 'plan_it', label: 'Plan it', bind: [['shift+mod+enter', 'task']], views: TASKS, needsTask: true, menu: 'task', palette: true },
+  // On a task with subtasks, Do it is Start ready; this starts one thread for the whole task.
+  { id: 'do_it_whole', label: 'Do it as one thread', bind: [], views: TASKS, needsTask: true, palette: true },
   { id: 'open_page', label: 'Open page', bind: [['mod+down', 'task']], views: LIST, needsTask: true, menu: 'task' },
   { id: 'back', label: 'Back to the list', bind: [['mod+up', 'task']], views: ['page'], menu: 'view' },
   { id: 'move_up', label: 'Move up', bind: [['alt+mod+up', 'task']], views: LIST, needsTask: true, menu: 'task' },
@@ -222,6 +225,7 @@ export function sheetRows(hotkey: string): { label: string; keys: string }[] {
 export const CONTEXT_MENU: (CommandId | '-')[] = [
   'do_it',
   'plan_it',
+  'do_it_whole',
   '-',
   'status',
   'toggle_done',

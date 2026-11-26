@@ -26,7 +26,7 @@ fn every_thread_state_has_its_chip() {
             (Running, Some(Chip::Working)),
             (NeedsMe, Some(Chip::WaitingOnYou)),
             (Errored, Some(Chip::Stopped)),
-            (Idle, Some(Chip::Stopped)),
+            (Idle, Some(Chip::YourTurn)),
             (Settled, Some(Chip::Stopped)),
             (Gone, None),
         ]

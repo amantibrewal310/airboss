@@ -39,7 +39,7 @@ import { controlOwnsKey, zoneOf } from '../logic/focus';
 import { keyOf, Sequencer } from '../logic/keymap';
 import { resolve } from '../logic/commands';
 import { applyAccent, applyAppearance } from '../logic/theme';
-import { launchToast } from '../logic/launch';
+import { launchToast, readySteps, startReadyToast, type StartReadyResult } from '../logic/launch';
 import { launcherMissingText } from '../logic/connections';
 import { statusToast } from '../logic/copy';
 import { canMarkDone } from '../logic/needs';
@@ -888,8 +888,67 @@ export class App {
     return this.ui.selected;
   }
 
+  /** Do it; on a task with subtasks, Start ready (one thread per ready step). */
   async doIt(id: TaskId | null = this.actionTask(), place: DoItPlace | null = null, again = false): Promise<void> {
+    if (id !== null && this.tasks.rows.get(id)?.has_children && place === null && !again) return this.startReady(id);
     await this.launch(id, 'do_it', place, again);
+  }
+
+  /** Do it on a task with subtasks as one thread, the way Do it worked before Start ready. */
+  async doItWhole(id: TaskId | null = this.actionTask()): Promise<void> {
+    await this.launch(id, 'do_it', null, false);
+  }
+
+  /** The steps Start ready would start for `id` now. */
+  readySteps(id: TaskId): TaskId[] {
+    return readySteps(this.tasks.rows, this.tasks.order, id);
+  }
+
+  /**
+   * Start ready: Do it on every ready step under `id`, one after another (each start runs `t3`
+   * and takes seconds), with one toast at the end. A step with no repo is left for the user,
+   * because Do it would ask where.
+   */
+  async startReady(id: TaskId): Promise<void> {
+    if (!this.conn.launchReady) {
+      return this.toast(this.conn.launchMissing ?? launcherMissingText(this.conn.launcher), 'warn');
+    }
+    const parent = this.tasks.rows.get(id);
+    if (!parent) return;
+    if (parent.waiting) return this.toast(`#${id} waits on ${parent.waits_on.map((w) => `#${w}`).join(', ')}`, 'warn');
+    if (this.ui.starting.has(id)) return;
+    const steps = this.readySteps(id);
+    if (!steps.length) return this.toast(`Nothing under #${id} is ready to start: its steps are running, done or waiting.`, 'info');
+    const result: StartReadyResult = { started: [], noRepo: [], failed: [] };
+    this.ui.setStarting(id, true);
+    try {
+      for (const step of steps) {
+        if (!this.tasks.rows.get(step)?.repos.length) {
+          result.noRepo.push(step);
+          continue;
+        }
+        this.ui.setStarting(step, true);
+        try {
+          const res = await api.doIt(step, null, false);
+          if ('needs_choice' in res) result.noRepo.push(step);
+          else {
+            this.applyWrite(res.started.patch);
+            result.started.push({ task: step, report: res.started.report });
+            const failed = res.started.report.failed[0];
+            if (failed) result.failed.push({ task: step, message: failed[1].message });
+          }
+        } catch (e) {
+          result.failed.push({ task: step, message: asAppError(e).message });
+        } finally {
+          this.ui.setStarting(step, false);
+        }
+      }
+    } finally {
+      this.ui.setStarting(id, false);
+    }
+    const t = startReadyToast(id, result);
+    const first = result.noRepo[0];
+    this.toast(t.text, t.tone, first !== undefined ? [{ label: `Start #${first}…`, run: () => void this.launch(first, 'do_it', null, false) }] : []);
   }
 
   async planIt(id: TaskId | null = this.actionTask(), again = false): Promise<void> {
@@ -1314,6 +1373,19 @@ export class App {
     }
   }
 
+  /** "Add hub-ui and start": adds the folder as a repo, then Do it there (which links it). */
+  async addRepoAndStart(task: TaskId, path: string): Promise<void> {
+    try {
+      const res = await api.addRepos([path]);
+      this.applyWrite(res.patch);
+      const repo = res.repos[0];
+      if (!repo) return this.toast('That folder was already added.', 'warn');
+      await this.doIt(task, { repo: repo.id });
+    } catch (e) {
+      this.fail(e);
+    }
+  }
+
   /** Returns an error message to show inline, or null. */
   async addRepos(paths: string[]): Promise<string | null> {
     try {
@@ -1600,6 +1672,8 @@ export class App {
         return void this.doIt();
       case 'plan_it':
         return void this.planIt();
+      case 'do_it_whole':
+        return void this.doItWhole();
       case 'open_page':
         return this.openPage(this.actionTask());
       case 'back':

@@ -86,10 +86,11 @@ describe('StartInMenu', () => {
     const onpick = vi.fn();
     const onclose = vi.fn();
     const choices = loadFixture('design').repos;
-    await render(StartInMenu, { task: 206, x: 200, y: 200, choices, onpick, onclose });
+    const { app } = await startApp();
+    await render(Harness, { props: { app, component: StartInMenu, props: { task: 206, x: 200, y: 200, choices, onpick, onclose } } });
     await wait(20);
     const labels = [...document.querySelectorAll('[role="menuitem"]')].map((e) => e.textContent?.trim());
-    expect(labels).toEqual(['Start in airboss', 'Start in booking-web', 'Start in booking-api', 'Start in dotfiles', 'No repo: research only']);
+    expect(labels).toEqual(['Start in airboss', 'Start in booking-web', 'Start in booking-api', 'Start in dotfiles', 'Add another repo…', 'No repo: research only']);
     // ↩ waits out the 300 ms after opening, so the key that opened the menu can't pick from it.
     await userEvent.keyboard('{ArrowDown}');
     await wait(320);

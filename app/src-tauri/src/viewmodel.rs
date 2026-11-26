@@ -8,8 +8,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use airboss_core::{CoreSnapshot, EventId, Repo, RepoId, Status, TaskId, TaskNode};
-use airboss_services::{NeedsKind, NeedsList, SyncSnapshot, time};
+use airboss_core::{Actor, CoreSnapshot, EventId, Repo, RepoId, Status, TaskId, TaskNode};
+use airboss_services::{NeedsKind, NeedsList, Source, SyncSnapshot, time};
 
 use airboss_services::Chip;
 
@@ -258,10 +258,23 @@ fn build_rows(
         }
     }
 
-    // The strongest live chip per task, from one pass over the linked threads.
+    // The strongest live chip per task, from one pass over the linked threads. The same pass
+    // notes where each task's most recently active T3 thread or Herdr terminal runs, which is
+    // where Do it or Plan it started it, for Launch's avatar.
     let mut live: HashMap<TaskId, Chip> = HashMap::new();
+    let mut runs_in: HashMap<TaskId, (Option<&str>, Source)> = HashMap::new();
     for (key, tasks) in &sync.thread_tasks {
-        let Some(chip) = sync.threads.get(key).and_then(|t| t.state.chip()) else {
+        let view = sync.threads.get(key);
+        if matches!(key.source, Source::T3 | Source::Herdr) {
+            let at = view.and_then(|t| t.last_activity_at.as_deref());
+            for task in tasks {
+                let e = runs_in.entry(*task).or_insert((at, key.source));
+                if at > e.0 {
+                    *e = (at, key.source);
+                }
+            }
+        }
+        let Some(chip) = view.and_then(|t| t.state.chip()) else {
             continue;
         };
         for task in tasks {
@@ -348,6 +361,11 @@ fn build_rows(
                     node.last_event_at.clone()
                 },
                 last_actor: node.last_actor.to_string(),
+                launched_in: if node.last_actor == Actor::Launch {
+                    runs_in.get(&id).map(|(_, s)| *s)
+                } else {
+                    None
+                },
             }
         })
         .collect()
