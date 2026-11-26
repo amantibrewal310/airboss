@@ -384,9 +384,9 @@ mod tests {
     #[test]
     fn task_items_act_in_list_panel_and_sidebar() {
         for zone in [Zone::List, Zone::Panel, Zone::Sidebar] {
-            let s = menu_state(&focus(zone, Some(1)), Some("Mark done 1".into()));
+            let s = menu_state(&focus(zone, Some(1)), Some("Mark done #1".into()));
             assert!(s.task_items && s.selection, "{zone:?}");
-            assert_eq!(s.undo.as_deref(), Some("Mark done 1"));
+            assert_eq!(s.undo.as_deref(), Some("Mark done #1"));
         }
     }
 

@@ -1010,7 +1010,7 @@ pub struct T3ProjectRow {
 pub struct UndoEntry {
     #[ts(as = "f64")]
     pub id: u64,
-    /// e.g. "Mark done 144".
+    /// e.g. "Mark done #144".
     pub label: String,
 }
 
@@ -1118,7 +1118,7 @@ pub struct CreateTaskResult {
     pub patch: Patch,
     /// When `then` asked for Do it or Plan it and it ran; if it failed, a `toast` says why.
     pub launch: Option<DoItResult>,
-    /// "Created 153, but couldn't link …".
+    /// "Created #153, but couldn't link …".
     pub link_errors: Vec<LinkError>,
 }
 

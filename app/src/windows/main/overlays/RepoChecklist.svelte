@@ -28,4 +28,4 @@
   ]);
 </script>
 
-<Menu {items} x={at.x} y={at.y} width={220} label="Link repos to {task}" checklist onclose={() => app.close()} />
+<Menu {items} x={at.x} y={at.y} width={220} label="Link repos to #{task}" checklist onclose={() => app.close()} />

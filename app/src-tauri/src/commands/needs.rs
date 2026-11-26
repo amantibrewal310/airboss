@@ -21,7 +21,7 @@ fn item_task(s: &AppState, key: &NeedsKey) -> Option<airboss_core::TaskId> {
 
 fn label(verb: &str, task: Option<airboss_core::TaskId>) -> String {
     match task {
-        Some(t) => format!("{verb} {}", t.0),
+        Some(t) => format!("{verb} #{}", t.0),
         None => verb.to_string(),
     }
 }

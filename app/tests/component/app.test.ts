@@ -83,7 +83,7 @@ describe('Needs me: local hiding and the reject window', () => {
     await app.rejectProposals(item, [153]);
     expect(app.tasks.hidden.has(153)).toBe(true);
     const undo = app.toasts.list.at(-1)!;
-    expect(undo.text).toBe('Rejected 153');
+    expect(undo.text).toBe('Rejected #153');
     undo.actions[0]!.run();
     await wait(10);
     expect(app.tasks.hidden.has(153)).toBe(false);

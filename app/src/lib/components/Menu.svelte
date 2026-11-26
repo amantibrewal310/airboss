@@ -32,6 +32,7 @@
     checklist = false,
     onclose,
     footer,
+    initial = 0,
   }: {
     items: MenuEntry[];
     x: number;
@@ -42,10 +43,13 @@
     checklist?: boolean;
     onclose: () => void;
     footer?: Snippet;
+    /** The item highlighted on open (a status menu starts on the current status). */
+    initial?: number;
   } = $props();
 
   const live = $derived(items.filter((i): i is MenuItem => i !== 'separator'));
-  let hl = $state(0);
+  // svelte-ignore state_referenced_locally
+  let hl = $state(initial);
   /**
    * A menu opened by a key press must not be picked by that key's repeat: ↩, Space and clicks
    * wait 300 ms after opening, and ⌘↩ never picks. Number keys are an explicit choice and act at

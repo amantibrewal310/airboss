@@ -24,7 +24,7 @@ async function main() {
   }
   const target = document.getElementById('app');
   if (!target) throw new Error('missing #app');
-  const app = new App();
+  const app = new App({ native: !__MOCK__ });
   mount(AppView, { target, props: { app } });
   // In the mock, ?view= and ?select= start somewhere other than Needs me (for screenshots).
   const params = new URLSearchParams(location.search);

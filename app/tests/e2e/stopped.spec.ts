@@ -42,7 +42,7 @@ test('Agent stopped: right after Failed runs; ↩ opens the thread; Space marks 
 
   const toast = page.locator('[data-toast]').last();
   await page.keyboard.press(' ');
-  await expect(toast).toContainText('Marked 202 done');
+  await expect(toast).toContainText('Marked #202 done');
   await expect(page.getByRole('option', { name: /Agent stopped: 202/ })).toHaveCount(0);
   await page.keyboard.press('Meta+z');
   await expect(toast).toContainText('Undid');

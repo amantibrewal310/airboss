@@ -37,4 +37,4 @@
   ]);
 </script>
 
-<Menu {items} {x} {y} width={240} label="Start {task} in" {onclose} />
+<Menu {items} {x} {y} width={240} label="Start #{task} in" {onclose} />

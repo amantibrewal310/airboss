@@ -192,19 +192,19 @@ impl AppError {
         AppError::new(ErrorCode::Internal, MSG_INTERNAL).with_detail(detail)
     }
 
-    /// "Task 144 no longer exists."
+    /// "Task #144 no longer exists."
     pub fn task_gone(id: TaskId) -> AppError {
         AppError::new(
             ErrorCode::NotFound,
-            format!("Task {} no longer exists.", id.0),
+            format!("Task #{} no longer exists.", id.0),
         )
     }
 
-    /// "144 changed since; nothing was undone."
+    /// "#144 changed since; nothing was undone."
     pub fn undo_refused(id: TaskId) -> AppError {
         AppError::new(
             ErrorCode::UndoRefused,
-            format!("{} changed since; nothing was undone.", id.0),
+            format!("#{} changed since; nothing was undone.", id.0),
         )
     }
 
@@ -232,7 +232,7 @@ impl AppError {
                 Ctx::Dependency { id, .. } => AppError::task_gone(id),
                 Ctx::Repo(id) => AppError::new(
                     ErrorCode::NotFound,
-                    format!("That repo isn't linked to {}.", id.0),
+                    format!("That repo isn't linked to #{}.", id.0),
                 ),
                 Ctx::Link => AppError::new(ErrorCode::NotFound, MSG_LINK_GONE),
                 Ctx::AddRepo | Ctx::Read => {
@@ -250,7 +250,7 @@ impl AppError {
                 Ctx::Dependency { id, waits_on } => AppError::new(
                     ErrorCode::Loop,
                     format!(
-                        "That would make a loop: {} already waits on {}.",
+                        "That would make a loop: #{} already waits on #{}.",
                         waits_on.0, id.0
                     ),
                 ),

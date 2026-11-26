@@ -46,7 +46,7 @@ describe('Agent stopped', () => {
     await wait(300);
     expect(backend.calls.filter((c) => c.command === 'set_status').map((c) => c.args)).toEqual([{ id: 202, status: 'done', note: null }]);
     expect(app.tasks.rows.get(202)!.status).toBe('done');
-    expect(app.toasts.list.at(-1)!.text).toBe('Marked 202 done');
+    expect(app.toasts.list.at(-1)!.text).toBe('Marked #202 done');
     await wait(100);
     expect(app.needs.items.some((n) => n.key === item.key)).toBe(false);
   });
@@ -56,7 +56,7 @@ describe('Agent stopped', () => {
     buttons(screen.container)[2]!.click();
     await wait(300);
     expect(backend.calls.filter((c) => c.command === 'set_status').map((c) => c.args)).toEqual([{ id: 202, status: 'in_review', note: null }]);
-    expect(app.toasts.list.at(-1)!.text).toBe('Moved 202 to In review');
+    expect(app.toasts.list.at(-1)!.text).toBe('Moved #202 to In review');
     await wait(100);
     expect(app.needs.items.some((n) => n.key === item.key)).toBe(false);
   });

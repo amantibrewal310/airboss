@@ -1,5 +1,5 @@
 import type { Availability, Connection, Timestamp } from '../types';
-import { relative } from './time';
+import { ago } from './time';
 
 const ORDER = ['T3 Code', 'GitHub', 'Agents', 'Claude Code'];
 
@@ -67,7 +67,5 @@ export function footerText(merged: Connection[], background: string | null): { o
 /** "Last report 3m ago", "Last report just now", "Last report on 4 Nov", or none yet. */
 export function lastReport(at: Timestamp | null, now: number): string {
   if (!at) return 'No agent has reported yet.';
-  const r = relative(at, now);
-  if (r === 'now') return 'Last report just now';
-  return /^\d+[mhdw]$/.test(r) ? `Last report ${r} ago` : `Last report on ${r}`;
+  return `Last report ${ago(at, now)}`;
 }

@@ -157,7 +157,7 @@ export class MockBackend implements Transport {
 
   private task(id: TaskId) {
     const t = this.s.tasks.get(id);
-    if (!t) throw fail('not_found', `Task ${id} no longer exists.`);
+    if (!t) throw fail('not_found', `Task #${id} no longer exists.`);
     return t;
   }
 
@@ -443,7 +443,7 @@ export class MockBackend implements Transport {
       }
       if (t.status === status && status !== 'blocked') return { patch: null, undo: null };
       for (const k of touched) this.setStatusRaw(k, status, k === id ? note : null);
-      const label = status === 'done' ? `Mark done ${id}` : status === 'dropped' ? `Drop ${id}` : status === 'blocked' ? `Mark blocked ${id}` : `Move ${id} to ${LABEL[status]}`;
+      const label = status === 'done' ? `Mark done #${id}` : status === 'dropped' ? `Drop #${id}` : status === 'blocked' ? `Mark blocked #${id}` : `Move #${id} to ${LABEL[status]}`;
       // As in Rust: a dropped proposal stays dropped (me can't make a proposal again).
       const rec = this.pushUndo(label, touched, () => {
         for (const [k, b] of before) if (!(status === 'dropped' && b.status === 'proposed')) this.setStatusRaw(k, b.status, b.reason);
@@ -457,7 +457,7 @@ export class MockBackend implements Transport {
       const to: Status = t.status === 'done' ? (this.s.statusBefore.get(id) ?? 'todo') : 'done';
       if (to === 'blocked') this.setStatusRaw(id, 'blocked', prev.reason ?? 'Blocked');
       else this.setStatusRaw(id, to, null);
-      const rec = this.pushUndo(to === 'done' ? `Mark done ${id}` : `Mark not done ${id}`, [id], () =>
+      const rec = this.pushUndo(to === 'done' ? `Mark done #${id}` : `Mark not done #${id}`, [id], () =>
         this.setStatusRaw(id, prev.status, prev.reason),
       );
       return { patch: this.commit(), undo: this.entry(rec) };
@@ -473,7 +473,7 @@ export class MockBackend implements Transport {
 
     reject_proposals: ({ ids }) => {
       for (const id of ids) this.task(id);
-      const label = ids.length === 1 ? `Reject ${ids[0]}` : `Reject ${ids.length} subtasks`;
+      const label = ids.length === 1 ? `Reject #${ids[0]}` : `Reject ${ids.length} subtasks`;
       const rec = this.pushUndo(label, ids, () => {
         if (rec.timer) clearTimeout(rec.timer);
       });
@@ -505,7 +505,7 @@ export class MockBackend implements Transport {
       const prev = { parent: t.parent, position: t.position };
       this.place(id, parent, position);
       this.event(id, 'moved');
-      const rec = this.pushUndo(`Move ${id}`, [id], () => {
+      const rec = this.pushUndo(`Move #${id}`, [id], () => {
         this.place(id, prev.parent, prev.position);
         this.event(id, 'moved');
       });
@@ -529,7 +529,7 @@ export class MockBackend implements Transport {
       };
       swap();
       this.event(id, 'moved');
-      const rec = this.pushUndo(`Move ${id} ${direction}`, [id, other.id], swap);
+      const rec = this.pushUndo(`Move #${id} ${direction}`, [id, other.id], swap);
       return { patch: this.commit(), undo: this.entry(rec) };
     },
 
@@ -615,7 +615,7 @@ export class MockBackend implements Transport {
         const n = stack.pop()!;
         for (const [task, on] of this.s.edges) {
           if (task !== n || seen.has(on)) continue;
-          if (on === id) throw fail('loop', `That would make a loop: ${waitsOn} already waits on ${id}.`);
+          if (on === id) throw fail('loop', `That would make a loop: #${waitsOn} already waits on #${id}.`);
           seen.add(on);
           stack.push(on);
         }

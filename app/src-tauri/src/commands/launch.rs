@@ -181,7 +181,7 @@ fn error_toast(id: TaskId, e: &AppError, mode: Mode) -> ToastEvent {
         _ => vec![retry(id, mode, false, "Retry")],
     };
     ToastEvent {
-        text: format!("Couldn't start {}: {}", id.0, e.message),
+        text: format!("Couldn't start #{}: {}", id.0, e.message),
         actions,
         undo: None,
         tone: Some(ToastTone::Warning),
@@ -208,18 +208,18 @@ pub fn report_toast(
         ([], []) if !r.skipped.is_empty() => {
             let names: Vec<String> = r.skipped.iter().map(|r| repo_name(Some(*r))).collect();
             (
-                format!("{task} already has threads in {}", and_list(&names)),
+                format!("#{task} already has threads in {}", and_list(&names)),
                 ToastTone::Info,
                 vec![retry(id, mode, true, "Start again")],
             )
         }
         ([], [(repo, e), ..]) => (
-            format!("Couldn't start {task}: {}", e.message),
+            format!("Couldn't start #{task}: {}", e.message),
             ToastTone::Warning,
             fixes(*repo, e.code),
         ),
         ([], []) => (
-            format!("Couldn't start {task}: nothing to start."),
+            format!("Couldn't start #{task}: nothing to start."),
             ToastTone::Warning,
             vec![retry(id, mode, false, "Retry")],
         ),
@@ -238,25 +238,25 @@ pub fn report_toast(
         }
         ([one], []) if mode == Mode::PlanIt => (
             format!(
-                "Started a planning thread for {task}. Its steps become subtasks when you settle the plan."
+                "Started a planning thread for #{task}. Its steps become subtasks when you settle the plan."
             ),
             ToastTone::Info,
             vec![open_thread(&one.key)],
         ),
         ([one], []) if one.repo.is_none() => (
-            format!("Started a research thread for {task}"),
+            format!("Started a research thread for #{task}"),
             ToastTone::Info,
             vec![open_thread(&one.key)],
         ),
         ([one], []) => (
-            format!("Started a thread for {task} in {}", repo_name(one.repo)),
+            format!("Started a thread for #{task} in {}", repo_name(one.repo)),
             ToastTone::Info,
             vec![open_thread(&one.key)],
         ),
         (many, []) => (
             match &r.branch {
-                Some(b) => format!("Started {} threads for {task} on {b}", many.len()),
-                None => format!("Started {} threads for {task}", many.len()),
+                Some(b) => format!("Started {} threads for #{task} on {b}", many.len()),
+                None => format!("Started {} threads for #{task}", many.len()),
             },
             ToastTone::Info,
             Vec::new(),

@@ -129,7 +129,7 @@ export type CreateTaskResult = { id: TaskId, patch: Patch,
  */
 launch: DoItResult | null, 
 /**
- * "Created 153, but couldn't link …".
+ * "Created #153, but couldn't link …".
  */
 link_errors: Array<LinkError>, };
 
@@ -683,7 +683,7 @@ export type ToastTone = "info" | "warning";
  */
 export type UndoEntry = { id: number, 
 /**
- * e.g. "Mark done 144".
+ * e.g. "Mark done #144".
  */
 label: string, };
 

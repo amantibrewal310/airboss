@@ -34,7 +34,7 @@ fn undo_reverts_a_status_change_and_a_blocked_reason_comes_back() {
     .unwrap();
     tasks::set_status(&app.state, M, t, Status::Done, None).unwrap();
     let r = tasks::undo(&app.state, M, None).unwrap();
-    assert_eq!(r.message, format!("Undid “Mark done {}”", t.0));
+    assert_eq!(r.message, format!("Undid “Mark done #{}”", t.0));
     assert!(r.patch.is_some());
     let task = app.core(|s| s.task(t).unwrap());
     assert_eq!(task.status, Status::Blocked);
@@ -78,7 +78,7 @@ fn undoing_a_drop_restores_the_subtrees_previous_statuses() {
     });
     app.sync_vm();
     let r = tasks::set_status(&app.state, M, p, Status::Dropped, None).unwrap();
-    assert_eq!(r.undo.unwrap().label, format!("Drop {}", p.0));
+    assert_eq!(r.undo.unwrap().label, format!("Drop #{}", p.0));
     assert_eq!(status(&app, a), Status::Dropped);
     assert_eq!(status(&app, c), Status::Done, "done stays done");
     tasks::undo(&app.state, M, None).unwrap();
@@ -107,7 +107,7 @@ fn undo_is_refused_after_someone_else_changes_the_task() {
     assert_eq!(e.code, ErrorCode::UndoRefused);
     assert_eq!(
         e.message,
-        format!("{} changed since; nothing was undone.", t.0)
+        format!("#{} changed since; nothing was undone.", t.0)
     );
     assert_eq!(status(&app, t), Status::InReview);
     // The entry was dropped.
@@ -174,7 +174,7 @@ fn a_reject_is_written_after_the_delay_unless_undone() {
         .unwrap()
         .undo
         .unwrap();
-    assert_eq!(undo.label, format!("Reject {}", x.0));
+    assert_eq!(undo.label, format!("Reject #{}", x.0));
     assert_eq!(status(&app, x), Status::Proposed, "nothing written yet");
     tasks::undo(&app.state, M, None).unwrap();
 
@@ -255,7 +255,7 @@ fn the_task_menu_shows_the_newest_undo() {
         .rev()
         .find(|c| c.starts_with("update_menus"))
         .unwrap();
-    assert!(last.contains(&format!("Mark done {}", t.0)), "{last}");
+    assert!(last.contains(&format!("Mark done #{}", t.0)), "{last}");
 }
 
 #[test]
@@ -300,7 +300,7 @@ fn only_proposals_can_be_rejected_and_an_accepted_one_is_left_alone() {
     assert_eq!(status(&app, x), Status::Todo);
     assert_eq!(
         toasts(&app),
-        vec![format!("{} was already accepted; left as is", x.0)]
+        vec![format!("#{} was already accepted; left as is", x.0)]
     );
 }
 
@@ -340,7 +340,7 @@ fn a_reject_all_writes_what_is_still_proposed_and_names_the_rest() {
     assert_eq!(
         toasts(&app),
         vec![format!(
-            "{} and {} were already accepted and {} already dropped; left as is",
+            "#{} and #{} were already accepted and #{} already dropped; left as is",
             b.0, c.0, d.0
         )]
     );
@@ -358,7 +358,7 @@ fn a_proposal_dropped_meanwhile_says_already_dropped() {
     app.state.shutdown(Duration::from_secs(1));
     assert_eq!(
         toasts(&app),
-        vec![format!("{} was already dropped; left as is", x.0)]
+        vec![format!("#{} was already dropped; left as is", x.0)]
     );
 }
 
@@ -405,7 +405,7 @@ fn undoing_a_drop_leaves_the_agents_proposals_dropped() {
     }
     assert_eq!(
         r.message,
-        format!("Undid “Drop {}”. Its 2 proposals stay dropped.", p.0)
+        format!("Undid “Drop #{}”. Its 2 proposals stay dropped.", p.0)
     );
 }
 
@@ -500,7 +500,7 @@ fn reorder_moves_past_hidden_siblings_and_only_a_real_move_is_undoable() {
         vec![b, a],
         "A moved past the hidden ones"
     );
-    assert_eq!(w.undo.unwrap().label, format!("Move {}", a.0));
+    assert_eq!(w.undo.unwrap().label, format!("Move #{}", a.0));
 
     // At either end nothing happens, and nothing joins the undo stack.
     for (id, dir) in [(a, tasks::Direction::Down), (b, tasks::Direction::Up)] {
@@ -595,7 +595,7 @@ fn a_reject_that_still_fails_shows_a_toast_with_retry() {
         .expect("a toast");
     assert_eq!(
         toast.text,
-        format!("Couldn't reject {}: the database stayed busy.", x.0)
+        format!("Couldn't reject #{}: the database stayed busy.", x.0)
     );
     assert_eq!(toast.tone, Some(airboss_app::dto::ToastTone::Warning));
     let retry = &toast.actions[0];

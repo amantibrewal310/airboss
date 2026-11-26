@@ -92,8 +92,15 @@ export class App {
   plans = $state.raw<PlanCard[]>([]);
   plansLoaded = $state(false);
   runMap = $state.raw<RunMap | null>(null);
-  /** Native app (Tauri): real traffic lights and drag regions. */
-  native = false;
+  /**
+   * Native app (Tauri): real traffic lights and drag regions. Reactive, and given at construction,
+   * because the window is mounted before `start()` runs.
+   */
+  native = $state(false);
+
+  constructor(opts: { native?: boolean } = {}) {
+    this.native = opts.native ?? false;
+  }
 
   /** Rows the current view shows (locally hidden rows left out). */
   visible: VisibleItem[] = $derived.by(() => {
@@ -218,7 +225,7 @@ export class App {
       this.loadDetail(shown);
     }
     if (selected !== null && p.removed.includes(selected)) {
-      this.toast(`Task ${selected} no longer exists.`, 'warn');
+      this.toast(`Task #${selected} no longer exists.`, 'warn');
     }
     if (this.ui.pageOpen && this.ui.selected !== null && upserted.has(this.ui.selected)) this.loadRunMap(this.ui.selected);
     if (this.ui.view === 'plans' && p.upserts.some((r) => r.parent === null && r.has_children)) {
@@ -648,7 +655,7 @@ export class App {
       const w = await api.toggleDone(r.id);
       this.applyWrite(w.patch);
       const now = this.tasks.get(r.id);
-      this.undoToast(now?.status === 'done' ? `Marked ${r.id} done` : `Marked ${r.id} not done`, w, undefined, [r.id]);
+      this.undoToast(now?.status === 'done' ? `Marked #${r.id} done` : `Marked #${r.id} not done`, w, undefined, [r.id]);
     } catch (e) {
       this.fail(e);
     }
@@ -676,7 +683,7 @@ export class App {
     try {
       const w = await api.setStatus(id, 'dropped', null);
       this.applyWrite(w.patch);
-      this.undoToast(`Dropped ${id}`, w, undefined, [id]);
+      this.undoToast(`Dropped #${id}`, w, undefined, [id]);
     } catch (e) {
       this.fail(e);
     }
@@ -753,7 +760,7 @@ export class App {
   async addDependency(id: TaskId, on: TaskId): Promise<void> {
     try {
       this.applyWrite(await api.addDependency(id, on));
-      this.toast(`Made ${id} wait on ${on}`);
+      this.toast(`Made #${id} wait on #${on}`);
     } catch (e) {
       this.fail(e);
     }
@@ -789,7 +796,7 @@ export class App {
     try {
       const w = await api.moveTask(id, parent, null);
       this.applyWrite(w.patch);
-      this.undoToast(parent === null ? `Moved ${id} to the top level` : `Moved ${id} under ${parent}`, w, undefined, [id]);
+      this.undoToast(parent === null ? `Moved #${id} to the top level` : `Moved #${id} under #${parent}`, w, undefined, [id]);
       this.reveal(id);
     } catch (e) {
       this.fail(e);
@@ -803,7 +810,7 @@ export class App {
     try {
       const w = await api.reorder(id, direction);
       this.applyWrite(w.patch);
-      if (w.patch) this.undoToast(`Moved ${id} ${direction}`, w, undefined, [id]);
+      if (w.patch) this.undoToast(`Moved #${id} ${direction}`, w, undefined, [id]);
     } catch (e) {
       this.fail(e);
     }
@@ -813,7 +820,7 @@ export class App {
     if (id === null) return;
     try {
       await api.copyText({ task_number: id });
-      this.toast(`Copied ${id}`);
+      this.toast(`Copied #${id}`);
     } catch (e) {
       this.fail(e);
     }
@@ -843,7 +850,7 @@ export class App {
       .filter((l) => (l.thread && (l.thread.url || l.kind === 't3_thread')) || (l.kind === 'pr' && (l.url || l.pr?.url)))
       .sort((a, b) => b.linked_at.localeCompare(a.linked_at));
     const latest = candidates[0];
-    if (!latest) return this.toast(`${id} has no thread or PR yet`);
+    if (!latest) return this.toast(`#${id} has no thread or PR yet`);
     try {
       if (latest.thread) await api.openThread(latest.thread.key);
       else await api.openUrl({ link: latest.id });
@@ -1012,7 +1019,7 @@ export class App {
           this.leave(item);
           const w = await api.setStatus(item.task, 'done', null);
           this.applyWrite(w.patch);
-          this.undoToast(`Marked ${item.task} done`, w);
+          this.undoToast(`Marked #${item.task} done`, w);
           break;
         }
         case 'quiet':
@@ -1057,7 +1064,7 @@ export class App {
     this.leave(item);
     try {
       const w = await api.needsDismiss(item.key);
-      this.undoToast(item.kind === 'finish_it' ? `Kept ${item.task} open` : `Dismissed ${item.task}`, w, { key: item.key });
+      this.undoToast(item.kind === 'finish_it' ? `Kept #${item.task} open` : `Dismissed #${item.task}`, w, { key: item.key });
     } catch (e) {
       this.needs.unhide(item.key);
       this.fail(e);
@@ -1069,7 +1076,7 @@ export class App {
     this.leave(item);
     try {
       const w = await api.needsSnooze(item.key, null);
-      this.undoToast(`Snoozed ${item.task} for 3 days`, w, { key: item.key });
+      this.undoToast(`Snoozed #${item.task} for 3 days`, w, { key: item.key });
     } catch (e) {
       this.needs.unhide(item.key);
       this.fail(e);
@@ -1081,7 +1088,7 @@ export class App {
     if (all) this.leave(item);
     try {
       this.applyWrite(await api.acceptProposals(ids));
-      this.toast(ids.length === 1 ? `Accepted ${ids[0]}` : `Added ${ids.length} subtasks to ${item.task}`);
+      this.toast(ids.length === 1 ? `Accepted #${ids[0]}` : `Added ${ids.length} subtasks to #${item.task}`);
     } catch (e) {
       if (all) this.needs.unhide(item.key);
       this.fail(e);
@@ -1109,7 +1116,7 @@ export class App {
     try {
       const w = await api.rejectProposals(ids, null);
       this.undoToast(
-        ids.length === 1 ? `Rejected ${ids[0]}` : `Rejected ${ids.length} subtasks`,
+        ids.length === 1 ? `Rejected #${ids[0]}` : `Rejected ${ids.length} subtasks`,
         w,
         { rows: ids, ...(all ? { key: item.key } : {}) },
         undefined,
@@ -1128,7 +1135,7 @@ export class App {
     if (item) return this.acceptProposals(item, [id]);
     try {
       this.applyWrite(await api.acceptProposals([id]));
-      this.toast(`Accepted ${id}`);
+      this.toast(`Accepted #${id}`);
     } catch (e) {
       this.fail(e);
     }
@@ -1157,7 +1164,7 @@ export class App {
     const deadline = Date.now() + App.rejectDelayMs;
     try {
       const w = await api.rejectProposals([id], null);
-      this.undoToast(`Rejected ${id}`, w, { rows: [id] }, undefined, deadline);
+      this.undoToast(`Rejected #${id}`, w, { rows: [id] }, undefined, deadline);
     } catch (e) {
       this.tasks.hide([id], false);
       this.fail(e);
@@ -1198,7 +1205,7 @@ export class App {
       this.applyWrite(res.patch);
       this.reveal(res.id);
       this.settle();
-      for (const l of res.link_errors) this.toast(`Created ${res.id}, but couldn't link ${l.text}`, 'warn');
+      for (const l of res.link_errors) this.toast(`Created #${res.id}, but couldn't link ${l.text}`, 'warn');
       if (input.then === 'do_it') void this.doIt(res.id);
       if (input.then === 'plan_it') void this.planIt(res.id);
       return res.id;

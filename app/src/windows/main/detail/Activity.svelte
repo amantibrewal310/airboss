@@ -28,6 +28,10 @@
       const l = links.find((x) => x.kind === kind && x.ref === ref);
       return l ? linkLabel(l) : null;
     },
+    threadTitle: (ref) => {
+      const l = links.find((x) => x.kind === 't3_thread' && x.ref === ref);
+      return l?.thread?.title ?? l?.title ?? null;
+    },
   };
   let note = $state('');
   let area: HTMLTextAreaElement | undefined = $state();

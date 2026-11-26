@@ -2076,7 +2076,7 @@
         "patch": null,
         "undo": {
           "id": 1,
-          "label": "Reject 210"
+          "label": "Reject #210"
         }
       }
     },
@@ -2090,7 +2090,7 @@
         "patch": null,
         "undo": {
           "id": 2,
-          "label": "Dismiss 144"
+          "label": "Dismiss #144"
         }
       }
     },
@@ -2101,7 +2101,7 @@
       "command": "undo",
       "events": [],
       "response": {
-        "message": "Undid “Dismiss 144”",
+        "message": "Undid “Dismiss #144”",
         "patch": null
       }
     },
@@ -2485,7 +2485,7 @@
         },
         "undo": {
           "id": 3,
-          "label": "Mark done 145"
+          "label": "Mark done #145"
         }
       }
     },
@@ -2648,7 +2648,7 @@
         },
         "undo": {
           "id": 4,
-          "label": "Mark blocked 146"
+          "label": "Mark blocked #146"
         }
       }
     },
@@ -2934,7 +2934,7 @@
         },
         "undo": {
           "id": 5,
-          "label": "Move 146"
+          "label": "Move #146"
         }
       }
     },

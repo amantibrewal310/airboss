@@ -47,7 +47,7 @@
       case 'toggle_done':
         return row.status === 'proposed' ? 'Accept the proposal first' : false;
       case 'add_waits_on':
-        return closed ? `${task} is ${row.status}` : false;
+        return closed ? `#${task} is ${row.status}` : false;
       default:
         return false;
     }
@@ -71,4 +71,4 @@
   );
 </script>
 
-<Menu {items} x={at.x} y={at.y} width={240} label="Actions for {task}" onclose={() => app.close()} />
+<Menu {items} x={at.x} y={at.y} width={240} label="Actions for #{task}" onclose={() => app.close()} />

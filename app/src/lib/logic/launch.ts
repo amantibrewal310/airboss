@@ -41,28 +41,28 @@ export function launchToast(task: TaskId, mode: Mode, report: LaunchReport, repo
     return { text: `Started in ${ok}. ${bad}`, tone: 'warn', actions: retryFor() };
   }
   if (!started.length && failed.length) {
-    return { text: `Couldn't start ${task}: ${failed[0]![1].message}`, tone: 'warn', actions: retryFor() };
+    return { text: `Couldn't start #${task}: ${failed[0]![1].message}`, tone: 'warn', actions: retryFor() };
   }
   if (!started.length) {
     const where = and(names(report.skipped, repos));
     return {
-      text: where ? `${task} already has threads in ${where}` : `${task} already has a thread`,
+      text: where ? `#${task} already has threads in ${where}` : `#${task} already has a thread`,
       tone: 'info',
       actions: [{ kind: 'again', label: 'Start again' }],
     };
   }
   if (mode === 'plan_it') {
     return {
-      text: `Started a planning thread for ${task}. Its steps become subtasks when you settle the plan.`,
+      text: `Started a planning thread for #${task}. Its steps become subtasks when you settle the plan.`,
       tone: 'info',
       actions: open(0),
     };
   }
   if (started.length === 1) {
     const s = started[0]!;
-    if (s.repo === null) return { text: `Started a research thread for ${task}`, tone: 'info', actions: open(0) };
-    return { text: `Started a thread for ${task} in ${names([s.repo], repos)[0]}`, tone: 'info', actions: open(0) };
+    if (s.repo === null) return { text: `Started a research thread for #${task}`, tone: 'info', actions: open(0) };
+    return { text: `Started a thread for #${task} in ${names([s.repo], repos)[0]}`, tone: 'info', actions: open(0) };
   }
   const on = report.branch ? ` on ${report.branch}` : '';
-  return { text: `Started ${started.length} threads for ${task}${on}`, tone: 'info', actions: [] };
+  return { text: `Started ${started.length} threads for #${task}${on}`, tone: 'info', actions: [] };
 }

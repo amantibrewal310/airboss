@@ -16,6 +16,9 @@
   const row = $derived(app.row(task));
   const ORDER: Status[] = ['todo', 'doing', 'in_review', 'blocked', 'done', 'dropped'];
 
+  /** The status the task has now is highlighted when the menu opens. */
+  const initial = $derived(row && row.status !== 'proposed' ? Math.max(0, ORDER.indexOf(row.status)) : 0);
+
   const icon = (s: Status) => createRawSnippet(() => ({ render: () => shapeSvg(s) }));
 
   const items: MenuEntry[] = $derived(
@@ -34,4 +37,4 @@
   );
 </script>
 
-<Menu {items} x={at.x} y={at.y} width={220} label="Status of {task}" numbered onclose={() => app.close()} />
+<Menu {items} {initial} x={at.x} y={at.y} width={220} label="Status of #{task}" numbered onclose={() => app.close()} />

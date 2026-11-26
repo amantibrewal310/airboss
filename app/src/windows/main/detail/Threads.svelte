@@ -3,21 +3,13 @@
   import Icon from '../../../lib/components/Icon.svelte';
   import type { LinkDto, ThreadDto } from '../../../lib/types';
   import { useApp } from '../../../lib/state/context';
-  import { relative } from '../../../lib/logic/time';
+  import { threadSummary } from '../../../lib/logic/copy';
 
   /** One row per linked thread: live chip, title, request or error summary, and Open ↗. */
   let { links }: { links: LinkDto[] } = $props();
   const app = useApp();
   const threads = $derived(links.filter((l): l is LinkDto & { thread: ThreadDto } => !!l.thread));
 
-  function summary(t: ThreadDto): string {
-    const ago = relative(t.request?.at ?? t.last_activity_at, app.now);
-    if (t.state === 'needs_me' && t.request) return t.request.kind === 'approval' ? `wants approval ${ago} ago` : `asked a question ${ago} ago`;
-    if (t.state === 'errored') return t.error ?? 'stopped with an error';
-    if (t.state === 'running') return `working · ${ago}`;
-    if (t.state === 'gone') return 'no longer in T3';
-    return `stopped ${ago} ago`;
-  }
 </script>
 
 {#if threads.length}
@@ -27,7 +19,7 @@
       {@const t = l.thread}
       <div class="thr">
         {#if t.chip}<LiveChip chip={t.chip} short />{/if}
-        <span class="t"><span class="name">{t.title ?? l.ref}</span> <span class="faint">· {summary(t)}</span></span>
+        <span class="t"><span class="name">{t.title ?? l.ref}</span> <span class="faint">· {threadSummary(t, app.now)}</span></span>
         {#if t.url}
           <button type="button" class="open" onclick={() => app.openThread(t.key)}>Open <Icon name="open" size={11} /></button>
         {:else if t.project_path}

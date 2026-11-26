@@ -1,5 +1,6 @@
 import type { NeedsGroup, NeedsItem, NeedsKind } from '../types';
 import type { IconName } from '../components/icons';
+import { ago } from './time';
 
 export const KIND_LABEL: Record<NeedsKind, string> = {
   question: 'Question',
@@ -12,6 +13,11 @@ export const KIND_LABEL: Record<NeedsKind, string> = {
   finish_it: 'Finish it?',
   quiet: 'Quiet 5+ days',
 };
+
+/** The card's and callout's lead: "Question · just now", "Agent stopped · 12m ago". */
+export function needsLead(item: Pick<NeedsItem, 'kind' | 'since'>, now: number): string {
+  return `${KIND_LABEL[item.kind]} · ${ago(item.since, now)}`;
+}
 
 /** The headline as the card shows it, under the kind label: "Ready to start: 143 is done" → "143 is done". */
 export function headlineOf(item: { kind: NeedsKind; headline: string }): string {
