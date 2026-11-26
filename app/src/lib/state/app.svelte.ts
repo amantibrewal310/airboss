@@ -1243,7 +1243,9 @@ export class App {
       const r = await api.installCli();
       this.cli = { installed: true, path: r.path, on_path: r.on_path };
       this.conn.cliInstalled = true;
-      this.toast(r.on_path ? `Installed airboss at ${r.path}` : `Installed at ${r.path}. Add ~/.local/bin to your PATH.`);
+      // It always lands in the home folder's ~/.local/bin: say so, not the long absolute path.
+      const at = r.path.replace(/^.*(\/\.local\/bin\/airboss)$/, '~$1');
+      this.toast(r.on_path ? `Installed airboss at ${at}` : `Installed at ${at}. Add ~/.local/bin to your PATH.`);
     } catch (e) {
       this.fail(e);
     }

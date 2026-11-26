@@ -214,7 +214,7 @@ export class MockBackend implements Transport {
   /** The Agents row as Rust words it (`connections.rs`): the CLI, then an agent tool with the server. */
   private agentsRow(): Connection {
     if (!this.s.cli.installed) {
-      return { name: 'Agents', ok: false, state: 'Not set up', detail: 'Agents report progress and ask questions through the airboss command.', fix: 'Install the command-line tool, then copy the agent note.' };
+      return { name: 'Agents', ok: false, state: 'Not set up', detail: 'Agents report progress and ask questions through the airboss command.', fix: 'Install the command-line tool, then connect Claude Code.' };
     }
     if (!this.s.agents.claude && !this.s.agents.codex) {
       return { name: 'Agents', ok: false, state: 'Not connected', detail: "Agents can't report to Airboss yet.", fix: "Agents can't report to Airboss yet. Connect Claude Code in Settings › Agent setup." };

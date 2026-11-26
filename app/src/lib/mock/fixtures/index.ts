@@ -69,7 +69,7 @@ export function loadFixture(name: FixtureName): MockSeed {
         ];
       } else {
         seed.connections = [
-          { name: 'Agents', ok: false, state: 'Not set up', detail: 'Agents report progress and ask questions through Airboss.', fix: 'Install the command-line tool, then copy the agent note into each repo.' },
+          { name: 'Agents', ok: false, state: 'Not set up', detail: 'Agents report progress and ask questions through Airboss.', fix: 'Install the command-line tool, then connect Claude Code.' },
           ...CONNECTED.filter((c) => c.name !== 'Agents'),
         ];
       }

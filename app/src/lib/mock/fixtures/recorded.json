@@ -34,7 +34,7 @@
         },
         {
           "detail": "Agents report progress and ask questions through the airboss command.",
-          "fix": "Install the command-line tool, then copy the agent note.",
+          "fix": "Install the command-line tool, then connect Claude Code.",
           "name": "Agents",
           "ok": false,
           "state": "Not set up"

@@ -31,7 +31,7 @@ export function mergeConnections(
   // until it's installed, whatever the last report was.
   const agents = byName.get('Agents');
   if (app.cliInstalled === false && agents?.ok) {
-    byName.set('Agents', { ...agents, ok: false, state: 'Not set up', fix: 'Install the command-line tool, then copy the agent note into each repo.' });
+    byName.set('Agents', { ...agents, ok: false, state: 'Not set up', fix: 'Install the command-line tool, then connect Claude Code.' });
   }
   // The CLI alone isn't enough (#9): an agent tool needs the airboss MCP server too.
   const wired = byName.get('Agents');

@@ -214,14 +214,14 @@ pub(crate) fn merged(
             false,
             "Link broken",
             "~/.local/bin/airboss points at a file that's gone or can't run.",
-            Some("Install the command-line tool again in Settings, then copy the agent note."),
+            Some("Install the command-line tool again in Settings, then connect Claude Code."),
         ),
         (Cli::Missing, _) => row(
             "Agents",
             false,
             "Not set up",
             detail,
-            Some("Install the command-line tool, then copy the agent note."),
+            Some("Install the command-line tool, then connect Claude Code."),
         ),
     });
     if problems.db_moved {

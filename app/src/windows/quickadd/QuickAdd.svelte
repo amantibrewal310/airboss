@@ -136,6 +136,8 @@
     const onFocus = () => {
       settle();
       void api.quickaddShown().catch(() => {});
+      // Repos and tasks may have changed in the main window since the panel last hid.
+      void refresh();
     };
     window.addEventListener('focus', onFocus);
     void api.uiReady('quickadd').catch(() => {});
