@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, channel};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use airboss_services::{Source, ThreadKey, ThreadState};
+use airboss_services::{RequestKind, Source, ThreadKey, ThreadState};
 use airboss_sync::T3Msg;
 use airboss_sync::fake::TempDir;
 use airboss_sync::herdr::{
@@ -51,6 +51,8 @@ fn a_snapshot_line_lists_every_terminal() {
                 address: "t4n".into(),
                 live: false,
                 status: None,
+                status_kind: None,
+                status_msg: None,
                 status_ms: None,
                 title: None,
                 cwd: Some("/Users/me".into()),
@@ -59,6 +61,8 @@ fn a_snapshot_line_lists_every_terminal() {
                 address: "t4p".into(),
                 live: true,
                 status: Some("done".into()),
+                status_kind: None,
+                status_msg: None,
                 status_ms: Some(1_795_592_904_598),
                 title: Some("Fix the login bug".into()),
                 cwd: Some("/Users/me/work".into()),
@@ -78,7 +82,9 @@ fn event_lines_become_changes_and_the_rest_are_dropped() {
         HerdrUpdate::Status {
             seq: 1231,
             address: "t4x".into(),
-            status: Some("blocked".into())
+            status: Some("blocked".into()),
+            kind: None,
+            msg: None,
         }
     );
     assert_eq!(
@@ -86,7 +92,9 @@ fn event_lines_become_changes_and_the_rest_are_dropped() {
         HerdrUpdate::Status {
             seq: 1235,
             address: "t4x".into(),
-            status: None
+            status: None,
+            kind: None,
+            msg: None,
         }
     );
     assert_eq!(
@@ -261,6 +269,140 @@ fn an_unknown_status_word_is_idle() {
         .replace("t4x", "t4p");
     t.apply(update(&line), now());
     assert_eq!(herdr::state_of(t.terminals.get("t4p")), ThreadState::Idle);
+}
+
+fn blocked(address: &str, kind: Option<&str>, msg: Option<&str>) -> String {
+    let mut status = serde_json::json!({"app": "claude-code", "state": "blocked"});
+    if let Some(k) = kind {
+        status["kind"] = k.into();
+    }
+    if let Some(m) = msg {
+        status["msg"] = m.into();
+    }
+    serde_json::json!({"seq": 1, "terminals": [{"address": address, "state": "live",
+        "status": status, "status_ms": 1_795_600_000_000_u64, "title": "", "cwd": "/w"}]})
+    .to_string()
+}
+
+fn status_event(seq: u64, address: &str, status: serde_json::Value) -> String {
+    serde_json::json!({"jsonrpc": "2.0", "method": "event", "params": {"data": {"records": {},
+        "reported": true, "status": status}, "seq": seq, "terminal": address, "type": "status"}})
+    .to_string()
+}
+
+fn request_of(t: &HerdrTable, address: &str) -> airboss_services::Request {
+    herdr::views(t, &[address.to_string()])[0]
+        .request
+        .clone()
+        .unwrap()
+}
+
+#[test]
+fn a_blocked_terminal_asks_what_its_program_said() {
+    let cases = [
+        (
+            Some("permission"),
+            Some("  trust this folder \n"),
+            RequestKind::Approval,
+            "trust this folder",
+        ),
+        (
+            Some("question"),
+            Some("Which branch?"),
+            RequestKind::Question,
+            "Which branch?",
+        ),
+        (
+            Some("auth"),
+            Some("Sign in"),
+            RequestKind::Question,
+            "Sign in",
+        ),
+        (
+            Some("permission"),
+            None,
+            RequestKind::Question,
+            herdr::NO_MESSAGE,
+        ),
+        (
+            Some("permission"),
+            Some("   "),
+            RequestKind::Question,
+            herdr::NO_MESSAGE,
+        ),
+        (None, None, RequestKind::Question, herdr::NO_MESSAGE),
+    ];
+    for (kind, msg, want_kind, want_text) in cases {
+        let mut t = HerdrTable::default();
+        t.apply(update(&blocked("t4p", kind, msg)), now());
+        let r = request_of(&t, "t4p");
+        assert_eq!(
+            (r.kind, r.text.as_str()),
+            (want_kind, want_text),
+            "{kind:?} {msg:?}"
+        );
+        assert_eq!(r.id, "herdr/t4p/1795600000000");
+        assert_eq!(r.at, "2026-11-25T09:46:40.000Z");
+    }
+    // Only a blocked terminal asks.
+    let mut t = HerdrTable::default();
+    t.apply(update(SNAPSHOT), now());
+    assert_eq!(
+        herdr::views(&t, &["t4p".to_string()])[0].request,
+        None,
+        "done"
+    );
+}
+
+#[test]
+fn a_request_keeps_its_id_when_the_stream_restarts() {
+    let mut t = HerdrTable::default();
+    t.apply(update(&blocked("t4p", None, None)), now());
+    // It becomes blocked on a permission through an event, stamped when it arrives.
+    let asks =
+        serde_json::json!({"state": "blocked", "kind": "permission", "msg": "trust this folder"});
+    t.apply(update(&status_event(2, "t4p", asks)), now());
+    let first = request_of(&t, "t4p");
+    assert_eq!(first.id, "herdr/t4p/1795672000000");
+    assert_eq!(first.kind, RequestKind::Approval);
+    // The restarted stream's snapshot has hc's own time for the word: the id stays.
+    let later = now() + Duration::from_secs(30);
+    let restart = blocked("t4p", Some("permission"), Some("trust this folder"));
+    assert!(!t.apply(update(&restart), later), "nothing changed");
+    assert_eq!(request_of(&t, "t4p"), first);
+    // A created or restarted record with the same status keeps it too.
+    let record = r#"{"jsonrpc":"2.0","method":"event","params":{"data":{"address":"t4p","state":"live","status":{"state":"blocked","kind":"permission","msg":"trust this folder"},"status_ms":5,"title":"","cwd":"/w"},"seq":3,"terminal":"t4p","type":"restarted"}}"#;
+    t.apply(update(record), later);
+    assert_eq!(request_of(&t, "t4p").id, first.id);
+}
+
+#[test]
+fn a_new_message_while_blocked_is_a_new_request() {
+    let mut t = HerdrTable::default();
+    t.apply(
+        update(&blocked(
+            "t4p",
+            Some("permission"),
+            Some("trust this folder"),
+        )),
+        now(),
+    );
+    let first = request_of(&t, "t4p");
+    let later = now() + Duration::from_secs(5);
+    let next = serde_json::json!({"state": "blocked", "kind": "permission", "msg": "run npm test"});
+    assert!(t.apply(update(&status_event(2, "t4p", next)), later));
+    let second = request_of(&t, "t4p");
+    assert_eq!(second.text, "run npm test");
+    assert_ne!(second.id, first.id);
+    assert_eq!(second.id, "herdr/t4p/1795672005000");
+    // Seen first in a snapshot (the event was missed), hc's time for the word hasn't moved;
+    // the message did, so it's a new request too.
+    let much_later = later + Duration::from_secs(5);
+    let snap = blocked("t4p", Some("question"), Some("Which branch?"));
+    t.apply(update(&snap), much_later);
+    let third = request_of(&t, "t4p");
+    assert_eq!(third.id, "herdr/t4p/1795672010000");
+    assert_eq!(third.kind, RequestKind::Question);
 }
 
 #[test]

@@ -19,7 +19,7 @@ use std::sync::mpsc::Sender;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use airboss_services::time::to_ts;
-use airboss_services::{Source, ThreadKey, ThreadState, ThreadView};
+use airboss_services::{Request, RequestKind, Source, ThreadKey, ThreadState, ThreadView};
 use serde_json::Value;
 
 use crate::worker::T3Msg;
@@ -34,7 +34,12 @@ pub struct HerdrTerminal {
     /// The program's status word (`idle`, `working`, `done`, `blocked`, `error`), or `None`
     /// when it never reported one or has exited.
     pub status: Option<String>,
-    /// When the status word last changed, in epoch milliseconds.
+    /// What a `blocked` program wants (`permission`, `question`, `auth`), when it said.
+    pub status_kind: Option<String>,
+    /// The program's own words about its status, when it gave some.
+    pub status_msg: Option<String>,
+    /// When the status (word, kind or message) last changed, in epoch milliseconds. It
+    /// names the request a blocked terminal makes, so it stays put across stream restarts.
     pub status_ms: Option<u64>,
     /// Its title, else its name; `None` when it has neither.
     pub title: Option<String>,
@@ -53,11 +58,13 @@ pub enum HerdrUpdate {
     Created { seq: u64, terminal: HerdrTerminal },
     /// Its program was lost (killed by a signal); a kept terminal is restarted after it.
     Lost { seq: u64, address: String },
-    /// Its program reported a status word, or its status cleared.
+    /// Its program reported a status, or its status cleared: all three are replaced.
     Status {
         seq: u64,
         address: String,
         status: Option<String>,
+        kind: Option<String>,
+        msg: Option<String>,
     },
     Title {
         seq: u64,
@@ -88,12 +95,20 @@ fn text(v: &Value, k: &str) -> Option<String> {
     v.get(k).and_then(Value::as_str).map(str::to_string)
 }
 
-/// A status object's word: `{state: "…", …}` is its `state`; `null`, or anything else, is
-/// none (which maps to idle).
-fn status_word(v: Option<&Value>) -> Option<String> {
-    v.and_then(|s| s.get("state"))
-        .and_then(Value::as_str)
-        .map(str::to_string)
+/// A status object's word, kind and message: `{state: "…", kind?, msg?}`; `null`, or one
+/// without a word, is none (which maps to idle).
+type Status = (Option<String>, Option<String>, Option<String>);
+
+fn status_of(v: Option<&Value>) -> Status {
+    let Some(s) = v.filter(|s| s.get("state").and_then(Value::as_str).is_some()) else {
+        return (None, None, None);
+    };
+    let field = |k: &str| text(s, k).filter(|x| !x.trim().is_empty());
+    (
+        field("state").or_else(|| text(s, "state")),
+        field("kind"),
+        field("msg"),
+    )
 }
 
 /// Logs, once per process, that Herdr sent a terminal `sync` reads only in part.
@@ -128,8 +143,11 @@ fn terminal(v: &Value, fallback: Option<&str>) -> Option<HerdrTerminal> {
     let title = text(v, "title")
         .filter(|t| !t.is_empty())
         .or_else(|| text(v, "name").filter(|n| !n.is_empty()));
+    let (status, status_kind, status_msg) = status_of(v.get("status"));
     Some(HerdrTerminal {
-        status: status_word(v.get("status")),
+        status,
+        status_kind,
+        status_msg,
         status_ms: v.get("status_ms").and_then(Value::as_u64),
         title,
         cwd: text(v, "cwd"),
@@ -189,11 +207,16 @@ pub fn parse_line(line: &str) -> Result<Option<HerdrUpdate>, String> {
                 seq,
                 address: address()?,
             },
-            "status" => HerdrUpdate::Status {
-                seq,
-                address: address()?,
-                status: status_word(data.get("status")),
-            },
+            "status" => {
+                let (status, kind, msg) = status_of(data.get("status"));
+                HerdrUpdate::Status {
+                    seq,
+                    address: address()?,
+                    status,
+                    kind,
+                    msg,
+                }
+            }
             "title" => HerdrUpdate::Title {
                 seq,
                 address: address()?,
@@ -232,26 +255,34 @@ impl HerdrTable {
         match u {
             HerdrUpdate::Snapshot { seq, terminals } => {
                 self.seq = seq;
+                let old = std::mem::take(&mut self.terminals);
                 self.terminals = terminals
                     .into_iter()
-                    .map(|t| (t.address.clone(), t))
+                    .map(|t| (t.address.clone(), stamped(old.get(&t.address), t, now)))
                     .collect();
             }
             HerdrUpdate::Created { terminal, .. } => {
-                self.terminals.insert(terminal.address.clone(), terminal);
+                let t = stamped(self.terminals.get(&terminal.address), terminal, now);
+                self.terminals.insert(t.address.clone(), t);
             }
             HerdrUpdate::Status {
-                address, status, ..
+                address,
+                status,
+                kind,
+                msg,
+                ..
             } => {
                 if let Some(t) = self.terminals.get_mut(&address) {
                     // Only a running program reports a word.
                     t.live |= status.is_some();
-                    if t.status != status {
+                    if (&t.status, &t.status_kind, &t.status_msg) != (&status, &kind, &msg) {
                         // The event doesn't carry `status_ms`; it's now, give or take the
                         // line's trip through the pipe.
                         t.status_ms = Some(epoch_ms(now));
                     }
                     t.status = status;
+                    t.status_kind = kind;
+                    t.status_msg = msg;
                 }
             }
             HerdrUpdate::Title { address, title, .. } => {
@@ -267,6 +298,8 @@ impl HerdrTable {
                     && t.status.is_some()
                 {
                     t.status = None;
+                    t.status_kind = None;
+                    t.status_msg = None;
                     t.status_ms = Some(epoch_ms(now));
                 }
             }
@@ -282,6 +315,51 @@ impl HerdrTable {
         self.terminals != before
     }
 }
+
+/// `new` as a snapshot or `created`/`restarted` record gives it, with its status time kept
+/// from `old` while its word, kind and message are the same, so a blocked terminal's
+/// request keeps its id when the stream restarts. When one of them changed it's now (`hc`
+/// stamps only the word, so its time may be an older request's); a word with no time is
+/// now too.
+fn stamped(old: Option<&HerdrTerminal>, mut new: HerdrTerminal, now: SystemTime) -> HerdrTerminal {
+    let same = |o: &HerdrTerminal| {
+        (&o.status, &o.status_kind, &o.status_msg)
+            == (&new.status, &new.status_kind, &new.status_msg)
+    };
+    match old {
+        Some(o) if same(o) && o.status_ms.is_some() => new.status_ms = o.status_ms,
+        Some(o) if !same(o) => new.status_ms = Some(epoch_ms(now)),
+        _ if new.status.is_some() && new.status_ms.is_none() => {
+            new.status_ms = Some(epoch_ms(now));
+        }
+        _ => {}
+    }
+    new
+}
+
+/// The request a blocked terminal makes: an approval when it asks permission and says for
+/// what, else a question; its message, or a plain line when it gave none. Its id is the
+/// terminal and its status time, so it changes only when the status does.
+fn request(t: &HerdrTerminal) -> Request {
+    let ms = t.status_ms.unwrap_or(0);
+    let msg = t
+        .status_msg
+        .as_deref()
+        .map(str::trim)
+        .filter(|m| !m.is_empty());
+    Request {
+        id: format!("herdr/{}/{ms}", t.address),
+        kind: match (t.status_kind.as_deref(), msg) {
+            (Some("permission"), Some(_)) => RequestKind::Approval,
+            _ => RequestKind::Question,
+        },
+        text: msg.unwrap_or(NO_MESSAGE).to_string(),
+        at: to_ts(UNIX_EPOCH + Duration::from_millis(ms)),
+    }
+}
+
+/// A blocked terminal's request text when its program said nothing more.
+pub const NO_MESSAGE: &str = "Waiting on you in Herdr.";
 
 fn epoch_ms(t: SystemTime) -> u64 {
     t.duration_since(UNIX_EPOCH)
@@ -304,21 +382,22 @@ pub fn state_of(t: Option<&HerdrTerminal>) -> ThreadState {
 }
 
 /// A view for each linked address. Herdr terminals are only ever reported when linked; a
-/// blocked one needs me without saying what for (`request` is `None`).
+/// blocked one carries its [`request`].
 pub fn views(table: &HerdrTable, linked: &[String]) -> Vec<ThreadView> {
     linked
         .iter()
         .map(|address| {
             let t = table.terminals.get(address);
+            let state = state_of(t);
             ThreadView {
                 key: ThreadKey {
                     source: Source::Herdr,
                     r#ref: address.clone(),
                 },
                 linked: true,
-                state: state_of(t),
+                state,
                 title: t.and_then(|t| t.title.clone()),
-                request: None,
+                request: t.filter(|_| state == ThreadState::NeedsMe).map(request),
                 error: None,
                 run_id: None,
                 project_path: t.and_then(|t| t.cwd.clone()),
