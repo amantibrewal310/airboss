@@ -108,6 +108,7 @@ Five engineers fixed the findings on branches `wave8/*`, merged into `main`. The
 - **#11:** "Started thread Plan 2 QA plan in scratch".
 - **#17:** "Agent stopped · 42m ago".
 - **#24:** the actions wrap, with Dismiss on its own line.
+- **Agent stopped across a sleep:** the Mac slept 6 minutes after an agent stopped. The "Agent stopped" item and its notification came at the first wake ("posted 1 notification(s)"), not at the 10-minute mark, which passed during sleep. That's expected: nothing runs while the Mac sleeps.
 - **#13:** the menu-bar menu reads "Quick Add… ⌃⌥N", and the hotkey still works.
 - **#20:** the menu-bar item's AX description is "Airboss, 2 waiting on you".
 - **#19 and #4:** both pickers show in full, and quick add has a visible shadow in Light.
@@ -115,8 +116,13 @@ Five engineers fixed the findings on branches `wave8/*`, merged into `main`. The
 Found during the re-check and fixed by the EM:
 
 - **Quick add stale data:** quick add loaded its repos and parents only at start and after hiding, so the first open after adding a repo or task showed old lists. It now reloads whenever it gains focus. A test covers it.
-- **Ghost outline under quick add's pickers:** AppKit's window shadow traced the picker's blurred CSS shadow. In quick add, pickers and the Start in menu now get a ring, like the card.
+- **Ghost outline under quick add's pickers:** AppKit's window shadow traced the picker's blurred CSS shadow. In quick add, pickers and the Start in menu now get a ring, like the card. After a rebuild, both pickers have a clean edge on screen, with no outline below.
 - **Wording:** the install toast now shows `~/.local/bin/airboss`, and the Agents hint says "then connect Claude Code".
+
+Found in the final test run and fixed by the EM:
+
+- **Tests left temp folders behind:** the app's Rust tests left about 100 folders in the system temp dir on every run, and 8,446 had piled up. Each test's folders are now removed when it ends, pass or fail. A run now leaves none. The piled-up folders were deleted.
+- **The frame budget assumed one frame clock:** on battery, WebKit's frames lock to exactly 60 Hz, and whole-millisecond timestamps read some of them as 18–19 ms. The 17.5 ms limit then failed with no dropped frame at all (180 frames in 3 s, max 25 ms). The median frame must now be a 60 Hz one, and the 95th percentile can sit within 15% of it. A frame missed at 60 Hz (33 ms) still fails, and so does a 30 fps scroll. The test also ran alongside four other browser workers, which dropped real frames once (max 87 ms) that it never drops alone. It now runs last, on its own.
 
 Not done:
 
