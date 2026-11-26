@@ -1304,6 +1304,8 @@ pub enum ToastArgs {
         ids: Vec<TaskId>,
         reason: Option<String>,
     },
+    /// No arguments (`{}`), e.g. `install_update()`.
+    Empty {},
 }
 
 /// One button on a toast Rust sends.
@@ -1357,13 +1359,26 @@ pub enum Theme {
 pub enum UpdateStatus {
     Idle,
     /// A newer release; `notes_url` is its GitHub release page.
-    Available { version: String, notes_url: String },
+    Available {
+        version: String,
+        notes_url: String,
+    },
     /// `percent` once the download's size is known.
-    Downloading { version: String, percent: Option<u8> },
-    Installing { version: String },
-    Restarting { version: String },
+    Downloading {
+        version: String,
+        percent: Option<u8>,
+    },
+    Installing {
+        version: String,
+    },
+    Restarting {
+        version: String,
+    },
     /// The update stopped before the swap; the running app is untouched.
-    Failed { version: String, message: String },
+    Failed {
+        version: String,
+        message: String,
+    },
 }
 
 /// `appearance:changed`'s payload.

@@ -30,6 +30,7 @@ pub mod state;
 pub mod trace;
 pub mod tray;
 pub mod undo;
+pub mod updates;
 pub mod util;
 pub mod viewmodel;
 pub mod watcher;

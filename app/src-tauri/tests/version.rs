@@ -70,34 +70,6 @@ fn the_changelog_has_this_version() {
 
 // ------------------------------------------------------------------ updates (SPEC-updates)
 
-/// Where installed apps read `updates/latest.json`: the repo's `main` branch on GitHub's raw
-/// host, because `releases/latest` skips pre-releases.
-fn manifest_url() -> String {
-    let repo = env!("CARGO_PKG_REPOSITORY").trim_end_matches('/');
-    let path = repo
-        .strip_prefix("https://github.com/")
-        .expect("the repository is on GitHub");
-    format!("https://raw.githubusercontent.com/{path}/main/updates/latest.json")
-}
-
-#[test]
-fn the_updater_reads_the_manifest_on_main_with_a_minisign_key() {
-    let conf = json("tauri.conf.json");
-    let updater = &conf["plugins"]["updater"];
-    assert_eq!(updater["endpoints"], serde_json::json!([manifest_url()]));
-    // base64 of "untrusted comment: minisign public key:", the start of every key file that
-    // `tauri signer generate` writes.
-    let key = updater["pubkey"].as_str().unwrap();
-    assert!(
-        key.starts_with("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6"),
-        "pubkey should be the .key.pub file's contents"
-    );
-    assert!(
-        updater.get("dangerousInsecureTransportProtocol").is_none(),
-        "only a QA build may allow plain HTTP"
-    );
-}
-
 #[test]
 fn only_the_release_build_makes_the_signed_update() {
     assert!(json("tauri.conf.json")["bundle"]["createUpdaterArtifacts"].is_null());
@@ -126,4 +98,51 @@ fn the_published_manifest_names_its_own_release() {
     );
     assert!(!platform["signature"].as_str().unwrap().is_empty());
     assert!(m["pub_date"].as_str().is_some());
+}
+
+/// Standard base64, for the updater's public key.
+fn base64(text: &str) -> Vec<u8> {
+    const ABC: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut bits = 0u32;
+    let mut n = 0;
+    let mut out = Vec::new();
+    for c in text.bytes().filter(|c| *c != b'=') {
+        let v = ABC.iter().position(|a| *a == c).expect("base64") as u32;
+        bits = (bits << 6) | v;
+        n += 6;
+        if n >= 8 {
+            n -= 8;
+            out.push((bits >> n) as u8);
+        }
+    }
+    out
+}
+
+#[test]
+fn the_updater_reads_the_manifest_on_main_and_checks_airboss_own_key() {
+    // SPEC-updates decisions 2 and 3: one compiled-in https endpoint, and a minisign key.
+    let updater = &json("tauri.conf.json")["plugins"]["updater"];
+    assert_eq!(
+        updater["endpoints"],
+        serde_json::json!([
+            "https://raw.githubusercontent.com/amantibrewal310/airboss/main/updates/latest.json"
+        ])
+    );
+    let key = String::from_utf8(base64(updater["pubkey"].as_str().unwrap())).unwrap();
+    let lines: Vec<&str> = key.lines().collect();
+    assert_eq!(lines.len(), 2, "{key}");
+    assert!(
+        lines[0].starts_with("untrusted comment: minisign public key: "),
+        "{key}"
+    );
+    // An Ed25519 minisign key: "Ed", an 8-byte key id and 32 bytes of key.
+    let raw = base64(lines[1]);
+    assert_eq!(raw.len(), 42);
+    assert_eq!(&raw[..2], b"Ed");
+    // The release build's config doesn't move the endpoint or the key.
+    assert!(json("tauri.bundle.conf.json").get("plugins").is_none());
+    assert!(
+        updater.get("dangerousInsecureTransportProtocol").is_none(),
+        "only a QA build may allow plain HTTP"
+    );
 }

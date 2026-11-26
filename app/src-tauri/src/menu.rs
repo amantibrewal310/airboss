@@ -179,6 +179,7 @@ pub mod ids {
     pub const COPY_AGENT_NOTE: &str = "copy_agent_note";
     pub const COPY_SETUP: &str = "copy_setup_command";
     pub const REPORT_PROBLEM: &str = "report_problem";
+    pub const CHECK_FOR_UPDATES: &str = "check_for_updates";
 }
 
 /// The handles Rust keeps to enable, disable and relabel items.
@@ -228,6 +229,13 @@ pub fn build<R: Runtime>(
         true,
         &[
             &PredefinedMenuItem::about(app, Some("About Airboss"), Some(about))?,
+            &MenuItem::with_id(
+                app,
+                ids::CHECK_FOR_UPDATES,
+                "Check for Updates…",
+                true,
+                None::<&str>,
+            )?,
             &PredefinedMenuItem::separator(app)?,
             &MenuItem::with_id(app, ids::SETTINGS, "Settings…", true, Some("CmdOrCtrl+,"))?,
             &MenuItem::with_id(
