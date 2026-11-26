@@ -710,7 +710,11 @@ export type ThreadDto = { key: ThreadKey, state: ThreadState, chip: Chip | null,
 /**
  * `t3code://threads/…`; `null` for a Claude Code session, which shows its folder.
  */
-url: string | null, last_activity_at: Timestamp | null, stale: boolean, };
+url: string | null, last_activity_at: Timestamp | null, 
+/**
+ * The agent's newest reply (T3), where it says what's left for me.
+ */
+last_reply: string | null, stale: boolean, };
 
 /**
  * `services::ThreadKey`.
@@ -725,7 +729,7 @@ export type ThreadState = "running" | "needs_me" | "errored" | "idle" | "settled
 /**
  * `services::ThreadView`.
  */
-export type ThreadView = { key: ThreadKey, linked: boolean, state: ThreadState, title: string | null, request: Request | null, error: string | null, run_id: string | null, project_path: string | null, branch: string | null, worktree_path: string | null, parent_ref: string | null, child_count: number, last_activity_at: Timestamp | null, stale: boolean, };
+export type ThreadView = { key: ThreadKey, linked: boolean, state: ThreadState, title: string | null, request: Request | null, error: string | null, run_id: string | null, project_path: string | null, branch: string | null, worktree_path: string | null, parent_ref: string | null, child_count: number, last_activity_at: Timestamp | null, last_reply: string | null, stale: boolean, };
 
 /**
  * UTC text in `core`'s format.

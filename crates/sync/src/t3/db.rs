@@ -69,6 +69,8 @@ const COLUMNS: &[(&str, &[&str])] = &[
             "thread_id",
             "run_id",
             "node_id",
+            "parent_item_id",
+            "ordinal",
             "type",
             "status",
             "updated_at",
@@ -126,7 +128,11 @@ impl Queries {
                 "SELECT t.thread_id, t.title, t.updated_at,
                         t.archived_at IS NOT NULL OR t.deleted_at IS NOT NULL,
                         {b}, {w}, {p}, {s}, {prs}, pr.workspace_root,
-                        {tb}, {tw}, {tp}, {tr}, {ts}
+                        {tb}, {tw}, {tp}, {tr}, {ts},
+                        (SELECT {text} FROM {ITEMS} AS m
+                         WHERE m.thread_id = t.thread_id AND m.type = 'assistant_message'
+                           AND m.status = 'completed' AND m.parent_item_id IS NULL
+                         ORDER BY m.ordinal DESC LIMIT 1)
                  FROM json_each(?1) AS w JOIN {THREADS} AS t ON t.thread_id = w.value
                  LEFT JOIN {PROJECTS} AS pr ON pr.project_id = t.project_id",
                 b = j("t", "$.branch"),
@@ -139,6 +145,7 @@ impl Queries {
                 tp = jt("t", "$.lineage.parentThreadId"),
                 tr = jt("t", "$.lineage.rootThreadId"),
                 ts = jt("t", "$.settledAt"),
+                text = j("m", "$.text"),
             ),
             q2: format!(
                 "SELECT r.thread_id, r.run_id, r.status, r.requested_at, {s}, {ts}, r.completed_at
@@ -427,6 +434,7 @@ impl Queries {
                 settled_at: opt_time(col(r, 7, "Q1")?, &what)?,
                 pull_requests: pull_requests(col(r, 8, "Q1")?, &id)?,
                 project_path: col(r, 9, "Q1")?,
+                last_reply: reply(col(r, 15, "Q1")?),
                 id,
             })
         })
@@ -531,6 +539,28 @@ impl Queries {
             })
         })
     }
+}
+
+/// The most of a reply kept: enough for its closing list of next steps.
+const REPLY_CHARS: usize = 6000;
+
+/// A reply, trimmed; its last [`REPLY_CHARS`] characters when longer, since what's left for
+/// me is usually at the end.
+fn reply(text: Option<String>) -> Option<String> {
+    let text = text?;
+    let text = text.trim();
+    if text.is_empty() {
+        return None;
+    }
+    let n = text.chars().count();
+    Some(if n > REPLY_CHARS {
+        format!(
+            "…{}",
+            text.chars().skip(n - REPLY_CHARS).collect::<String>()
+        )
+    } else {
+        text.to_string()
+    })
 }
 
 /// The deepest project whose root holds `project`, comparing canonical paths.

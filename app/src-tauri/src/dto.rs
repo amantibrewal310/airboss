@@ -342,6 +342,7 @@ pub struct ThreadViewTs {
     parent_ref: Option<String>,
     child_count: u32,
     last_activity_at: Option<TimestampTs>,
+    last_reply: Option<String>,
     stale: bool,
 }
 
@@ -867,6 +868,8 @@ pub struct ThreadDto {
     pub url: Option<String>,
     #[ts(as = "Option<TimestampTs>")]
     pub last_activity_at: Option<Timestamp>,
+    /// The agent's newest reply (T3), where it says what's left for me.
+    pub last_reply: Option<String>,
     pub stale: bool,
 }
 
@@ -883,6 +886,7 @@ impl ThreadDto {
             project_path: t.project_path.clone(),
             url,
             last_activity_at: t.last_activity_at.clone(),
+            last_reply: t.last_reply.clone(),
             stale: t.stale,
         }
     }

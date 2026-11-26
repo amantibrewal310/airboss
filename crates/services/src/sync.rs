@@ -167,6 +167,10 @@ pub struct ThreadView {
     pub parent_ref: Option<String>,
     pub child_count: u32,
     pub last_activity_at: Option<Timestamp>,
+    /// The agent's newest top-level reply, where it usually says what's left for me (T3 only).
+    /// Not kept in `sync`'s own database: it arrives with the first read after a start.
+    #[serde(default)]
+    pub last_reply: Option<String>,
     /// Its source is broken or off, so this is the last known state.
     pub stale: bool,
 }

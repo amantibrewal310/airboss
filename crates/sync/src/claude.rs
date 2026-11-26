@@ -232,6 +232,7 @@ fn view(s: &ClaudeSession, linked: bool, state: ThreadState) -> ThreadView {
         parent_ref: None,
         child_count: 0,
         last_activity_at: last,
+        last_reply: None,
         stale: false,
     }
 }
@@ -255,6 +256,7 @@ fn missing(id: &str) -> ThreadView {
         parent_ref: None,
         child_count: 0,
         last_activity_at: None,
+        last_reply: None,
         stale: false,
     }
 }

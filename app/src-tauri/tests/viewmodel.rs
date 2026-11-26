@@ -135,6 +135,7 @@ fn thread(id: &str, state: ThreadState) -> ThreadView {
         parent_ref: None,
         child_count: 0,
         last_activity_at: None,
+        last_reply: None,
         stale: false,
     }
 }
@@ -243,6 +244,7 @@ fn an_agent_stopped_item_sets_the_dot_beside_the_your_turn_chip() {
             parent_ref: None,
             child_count: 0,
             last_activity_at: Some(common::NOW.into()),
+            last_reply: None,
             stale: false,
         },
     );
@@ -593,6 +595,7 @@ fn launch_rows_say_where_the_thread_runs() {
             parent_ref: None,
             child_count: 0,
             last_activity_at: Some(at.into()),
+            last_reply: None,
             stale: false,
         };
         (key, view)

@@ -82,6 +82,7 @@ pub fn gone_view(id: &str) -> ThreadView {
         parent_ref: None,
         child_count: 0,
         last_activity_at: None,
+        last_reply: None,
         stale: false,
     }
 }
@@ -126,6 +127,7 @@ pub fn linked(read: &T3Read, ids: &[String], known_errors: &HashMap<String, Stri
         view.worktree_path = t.worktree_path.clone();
         view.parent_ref = t.parent.clone();
         view.child_count = read.children.get(id).copied().unwrap_or(0);
+        view.last_reply = t.last_reply.clone();
         if t.gone {
             out.views.push(view);
             continue;

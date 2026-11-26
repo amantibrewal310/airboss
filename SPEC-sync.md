@@ -254,7 +254,12 @@ SELECT t.thread_id, t.title, t.updated_at, t.archived_at IS NOT NULL OR t.delete
        j(t,'$.branch'), j(t,'$.worktreePath'), j(t,'$.lineage.parentThreadId'), j(t,'$.settledAt'),
        j(t,'$.pullRequests'), p.workspace_root,
        jt(t,'$.branch'), jt(t,'$.worktreePath'), jt(t,'$.lineage.parentThreadId'),
-       jt(t,'$.lineage.rootThreadId'), jt(t,'$.settledAt')
+       jt(t,'$.lineage.rootThreadId'), jt(t,'$.settledAt'),
+       -- the last reply: newest finished top-level assistant message (thread_ordinal index),
+       -- trimmed and cut to its last 6,000 characters; the panel shows its next steps
+       (SELECT j(m,'$.text') FROM orchestration_v2_projection_turn_items AS m
+        WHERE m.thread_id = t.thread_id AND m.type = 'assistant_message' AND m.status = 'completed'
+          AND m.parent_item_id IS NULL ORDER BY m.ordinal DESC LIMIT 1)
 FROM json_each(?1) AS w JOIN orchestration_v2_projection_threads AS t ON t.thread_id = w.value
 LEFT JOIN projection_projects AS p ON p.project_id = t.project_id;
 -- Q2 latest run of each

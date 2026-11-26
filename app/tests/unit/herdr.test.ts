@@ -38,6 +38,7 @@ describe('Herdr terminals read like threads', () => {
       project_path: null,
       url: null,
       last_activity_at: null,
+      last_reply: null,
       stale: false,
     };
     expect(threadSummary(t, 0)).toBe('no longer in Herdr');

@@ -238,6 +238,7 @@ fn thread_row(r: &Row<'_>) -> rusqlite::Result<Option<StoredThread>> {
             parent_ref: r.get(8)?,
             child_count: u32::try_from(children).unwrap_or(0),
             last_activity_at: r.get(16)?,
+            last_reply: None,
             stale: true,
         },
         noted_run_id: r.get(17)?,
@@ -674,6 +675,7 @@ mod tests {
             parent_ref: None,
             child_count: 2,
             last_activity_at: Some("2026-11-26T10:00:00.000Z".into()),
+            last_reply: None,
             stale: true,
         }
     }

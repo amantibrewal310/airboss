@@ -855,6 +855,11 @@ export class App {
     api.openThread(key).catch((e) => this.fail(e));
   }
 
+  /** An https link in an agent's reply, through the same allowlist as any other link. */
+  openExternal(url: string): void {
+    api.openUrl({ url }).catch((e) => this.fail(e));
+  }
+
   /** ⌘O: the latest thread or PR. */
   async openLatest(id: TaskId | null = this.ui.selected): Promise<void> {
     if (id === null) return;

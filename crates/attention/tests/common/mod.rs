@@ -177,6 +177,7 @@ pub fn thread(r: &str, state: ThreadState) -> ThreadView {
         parent_ref: None,
         child_count: 0,
         last_activity_at: Some(ts(0, 0)),
+        last_reply: None,
         stale: false,
     }
 }

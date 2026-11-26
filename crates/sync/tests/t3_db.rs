@@ -137,6 +137,69 @@ fn json_null_is_accepted() {
 }
 
 #[test]
+fn q1_reads_the_newest_finished_top_level_reply() {
+    let f = T3Fixture::with_rows();
+    f.exec(
+        r#"INSERT INTO orchestration_v2_projection_turn_items
+             (turn_item_id, thread_id, run_id, node_id, parent_item_id, ordinal, type, status, updated_at, payload_json)
+           VALUES
+             ('m-old',   't-idle', 'r-idle-1', 'm1', NULL,      10, 'assistant_message', 'completed', '2026-11-26T09:00:00.000Z', '{"text":"Old reply"}'),
+             ('m-new',   't-idle', 'r-idle-1', 'm2', NULL,      20, 'assistant_message', 'completed', '2026-11-26T08:00:00.000Z', '{"text":"  **Next steps:**\n- Merge it  "}'),
+             ('m-sub',   't-idle', 'r-idle-1', 'm3', 'parent',  30, 'assistant_message', 'completed', '2026-11-26T10:00:00.000Z', '{"text":"A subagent"}'),
+             ('m-live',  't-idle', 'r-idle-1', 'm4', NULL,      40, 'assistant_message', 'running',   '2026-11-26T10:00:00.000Z', '{"text":"Still typ"}'),
+             ('m-bad',   't-run',  'r-run-2',  'm5', NULL,      10, 'assistant_message', 'completed', '2026-11-26T10:00:00.000Z', 'not json'),
+             ('m-blank', 't-settled', 'r-settled-1', 'm6', NULL, 10, 'assistant_message', 'completed', '2026-11-26T10:00:00.000Z', '{"text":"  "}')"#,
+    );
+    let r = read(&f);
+    let reply = |id: &str| {
+        r.threads
+            .iter()
+            .find(|t| t.id == id)
+            .unwrap()
+            .last_reply
+            .clone()
+    };
+    assert_eq!(
+        reply("t-idle").as_deref(),
+        Some("**Next steps:**\n- Merge it"),
+        "by ordinal, top-level and finished only, trimmed"
+    );
+    assert_eq!(
+        reply("t-run"),
+        None,
+        "a payload that isn't JSON reads as none"
+    );
+    assert_eq!(reply("t-settled"), None, "a blank reply is none");
+    assert_eq!(reply("t-question"), None);
+}
+
+#[test]
+fn a_long_reply_keeps_its_end() {
+    let f = T3Fixture::with_rows();
+    let text = format!("{}END", "x".repeat(7000));
+    f.exec(&format!(
+        r#"INSERT INTO orchestration_v2_projection_turn_items
+             (turn_item_id, thread_id, run_id, node_id, ordinal, type, status, updated_at, payload_json)
+           VALUES ('m-long', 't-idle', 'r-idle-1', 'm1', 10, 'assistant_message', 'completed', '2026-11-26T09:00:00.000Z', '{{"text":"{text}"}}')"#
+    ));
+    let r = read(&f);
+    let reply = r
+        .threads
+        .iter()
+        .find(|t| t.id == "t-idle")
+        .unwrap()
+        .last_reply
+        .clone()
+        .unwrap();
+    assert!(
+        reply.starts_with('…') && reply.ends_with("END"),
+        "{}",
+        &reply[..20]
+    );
+    assert_eq!(reply.chars().count(), 6001);
+}
+
+#[test]
 fn thread_prs_are_read_with_every_key() {
     let r = read(&T3Fixture::with_rows());
     let t = r.threads.iter().find(|t| t.id == "t-prs").unwrap();

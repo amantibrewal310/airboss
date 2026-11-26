@@ -139,7 +139,7 @@ export class SeedBuilder {
     task: TaskId | TaskId[],
     ref: string,
     state: ThreadState,
-    opts: { title?: string; repo?: string; error?: string; ask?: { id: string; kind: 'question' | 'approval'; text: string; ago: number }; ago?: number; source?: 't3' | 'claude' | 'herdr'; stale?: boolean; launchedAgo?: number } = {},
+    opts: { title?: string; repo?: string; error?: string; ask?: { id: string; kind: 'question' | 'approval'; text: string; ago: number }; ago?: number; source?: 't3' | 'claude' | 'herdr'; stale?: boolean; launchedAgo?: number; reply?: string } = {},
   ): this {
     const tasks = Array.isArray(task) ? task : [task];
     const source = opts.source ?? 't3';
@@ -161,6 +161,7 @@ export class SeedBuilder {
         parent_ref: null,
         child_count: 0,
         last_activity_at: this.at(opts.ago ?? 10 * MIN),
+        last_reply: opts.reply ?? null,
         stale: opts.stale ?? false,
       },
     });

@@ -385,6 +385,7 @@ function threadDto(t: MockThread): ThreadDto {
     project_path: t.view.project_path,
     url: t.url,
     last_activity_at: t.view.last_activity_at,
+    last_reply: t.view.last_reply ?? null,
     stale: t.view.stale,
   };
 }

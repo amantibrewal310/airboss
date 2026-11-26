@@ -236,6 +236,7 @@ fn sync_values_round_trip() {
         parent_ref: None,
         child_count: 2,
         last_activity_at: Some("2026-11-26T09:00:00.000Z".into()),
+        last_reply: None,
         stale: true,
     });
     for problem in [

@@ -29,7 +29,21 @@ export function fullSeed(): MockSeed {
   b.moved(163, 'doing', 3 * HOUR, 'launch');
   b.readySince[165] = b.at(2 * DAY);
 
-  b.thread(128, 'mcp-server', 'settled', { repo: 'airboss', launchedAgo: 3 * DAY, ago: 45 * MIN });
+  b.thread(128, 'mcp-server', 'settled', {
+    repo: 'airboss',
+    launchedAgo: 3 * DAY,
+    ago: 45 * MIN,
+    reply: [
+      'The MCP server now answers `list_tasks`, `get_task` and `update_task`, and the stdio tests pass: [PR #31](https://github.com/airboss/airboss/pull/31).',
+      '',
+      '**Next on your side:**',
+      '1. Review and merge PR #31.',
+      '2. Run `airboss mcp install` once, so T3 picks the server up.',
+      '3. Decide whether `propose_tasks` should need your approval in the app.',
+      '',
+      'Once you decide on approval, tell me and I will add it.',
+    ].join('\n'),
+  });
 
   // dotfiles
   b.task({ id: 175, title: 'Shell prompt speed-up', status: 'done', repos: [DOTFILES], created: 12 * DAY });

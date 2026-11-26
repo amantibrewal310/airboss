@@ -85,6 +85,8 @@ pub struct T3Thread {
     pub project_path: Option<String>,
     /// `$.pullRequests` (absent means none).
     pub pull_requests: Vec<T3Pr>,
+    /// The text of its newest completed top-level `assistant_message`, trimmed.
+    pub last_reply: Option<String>,
 }
 
 /// One entry of a thread's `$.pullRequests`.

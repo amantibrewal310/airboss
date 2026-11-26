@@ -395,6 +395,7 @@ export class MockBackend implements Transport {
           parent_ref: null,
           child_count: 0,
           last_activity_at: this.now(),
+          last_reply: null,
           stale: false,
         },
       });

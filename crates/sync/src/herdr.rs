@@ -409,6 +409,7 @@ pub fn views(table: &HerdrTable, linked: &[String]) -> Vec<ThreadView> {
                     .and_then(|t| t.status_ms)
                     .and_then(|ms| UNIX_EPOCH.checked_add(Duration::from_millis(ms)))
                     .map(to_ts),
+                last_reply: None,
                 stale: false,
             }
         })

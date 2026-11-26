@@ -156,6 +156,7 @@ fn thread(
         parent_ref: None,
         child_count: 0,
         last_activity_at: Some(at(secs(ago))),
+        last_reply: None,
         stale: false,
     }
 }

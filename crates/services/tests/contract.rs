@@ -258,6 +258,7 @@ fn thread(r: &str, linked: bool, at: Option<&str>) -> ThreadView {
         parent_ref: None,
         child_count: 0,
         last_activity_at: at.map(str::to_string),
+        last_reply: None,
         stale: false,
     }
 }

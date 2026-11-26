@@ -397,6 +397,7 @@ fn a_herdr_terminal_link_shows_its_thread_in_the_task_detail() {
             parent_ref: None,
             child_count: 0,
             last_activity_at: None,
+            last_reply: None,
             stale: false,
         },
     );
