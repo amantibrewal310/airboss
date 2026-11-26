@@ -145,7 +145,14 @@ fn kind_icon(kind: NeedsKind) -> Image<'static> {
     }
 }
 
-/// The native menu for a model.
+/// The native menu for a model. `hotkey` is the quick-add hotkey as an accelerator
+/// (`"Control+Alt+N"`, from Settings), shown as Quick Add's key equivalent ("⌃⌥N"). It has to
+/// be the accelerator: tauri drops one that doesn't parse, such as the label "⌃⌥N".
+///
+/// The key equivalent doesn't register anything: muda only sets the menu item's
+/// `keyEquivalent`, which AppKit consults while this menu is open. The global hotkey is a
+/// Carbon hot key, which macOS takes before any menu sees the keystroke, so the two never
+/// both fire.
 pub fn menu<R: Runtime>(app: &AppHandle<R>, m: &TrayModel, hotkey: &str) -> tauri::Result<Menu<R>> {
     let menu = Menu::new(app)?;
     menu.append(&MenuItem::with_id(

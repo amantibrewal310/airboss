@@ -27,7 +27,7 @@ use crate::ipc::App;
 use crate::menu::{self, MenuHandles, MenuState, ids};
 use crate::notify::{Notice, Notifications, Permission};
 use crate::services::Services;
-use crate::settings::{self, Appearance, hotkey_label};
+use crate::settings::{self, Appearance};
 use crate::shell::{Shell, UiEvent};
 use crate::state::{AppConfig, AppState, Caller, lock, share};
 use crate::util::Debounced;
@@ -189,7 +189,8 @@ impl TauriShell {
                 .unwrap_or(0.0);
             let model = tray::model(&needs, now, macos::local_offset(secs));
             crate::trace::tray(&model);
-            let hotkey = hotkey_label(&lock(&me.hotkey));
+            // The accelerator itself: the menu shows it as "⌃⌥N".
+            let hotkey = lock(&me.hotkey).clone();
             let mut tray = lock(&me.tray);
             let result = match tray.as_ref() {
                 Some(t) => tray::update(app, t, &model, &hotkey),
@@ -313,6 +314,10 @@ impl Shell for Arc<TauriShell> {
         match gs.register(new) {
             Ok(()) => {
                 *lock(&self.hotkey) = new.to_string();
+                // The menu-bar menu shows the hotkey on Quick Add.
+                if let Some(d) = lock(&self.tray_rebuild).as_ref() {
+                    d.poke();
+                }
                 Ok(())
             }
             Err(e) => {
