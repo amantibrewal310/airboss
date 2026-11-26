@@ -1,0 +1,11 @@
+{
+  "version": "0.1.0-alpha.4",
+  "notes": "### Added\n\n- Updates inside the app. When a new version is out, the foot of the sidebar says so, and **Update and restart** downloads it, checks its signature, puts it in place and restarts, with the window showing. **Airboss › Check for Updates…** looks right away, and **Settings › Check for updates automatically** (on by default) looks every 6 hours. Each check reads one small file from GitHub.\n\n### Fixed\n\n- Add repos with many T3 Code projects no longer runs past the bottom of the window: the list scrolls inside it, and **Add another folder…** and **Add repos** stay in view. A folder's path shows as a tooltip only when it's cut off, so it no longer covers the next row.",
+  "pub_date": "2026-11-26T10:42:56.334Z",
+  "platforms": {
+    "darwin-aarch64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUMDNZSDF4azBBS1JrbmJLQWxaR0pmVUNGaG82RjFoMkF2NTQzQTlaZVlyZFVydUlVcmJCWCtTc1dLa1VsWlZpTGdNODc0bEYremo1b2lyemdyNzR3cjc4ZEQxTUZDdlF3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1Njg5NzA0CWZpbGU6QWlyYm9zcy5hcHAudGFyLmd6CXZlcnNpb246MC4xLjAtYWxwaGEuNApwMVROQ1cyRFRiazU4ZWY4bE0xY244N2phUlZicGsyaldnN0RTVjdUY1hEeStweVZkVGtVMDlrdG01dzdUQkI1am9vT0ovVU5XSFVoUFAvWVJWV0REUT09Cg==",
+      "url": "https://github.com/amantibrewal310/airboss/releases/download/v0.1.0-alpha.4/Airboss_0.1.0-alpha.4_aarch64.app.tar.gz"
+    }
+  }
+}
