@@ -63,7 +63,9 @@ describe('mock view model (SPEC-app "The view model and patches")', () => {
     expect(rows.get(147)!.waits_on).toEqual([144, 145, 146]);
     expect(rows.get(146)!.waiting).toBe(false);
     expect(rows.get(146)!.ready).toBe(true);
-    expect(rows.get(146)!.ready_pill).toBe(true);
+    expect(rows.get(146)!.needs).toBe(true);
+    expect(rows.get(146)!.signal).toBeNull();
+    expect(rows.get(145)!.signal).toEqual({ kind: 'waiting_on' });
   });
 
   it('builds DESIGN’s Refunds run map: waves of 3, 2, 1 and 2, one outside blocker', () => {

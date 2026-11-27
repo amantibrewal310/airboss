@@ -9,7 +9,7 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 
 use airboss_core::{EventId, Repo};
 use airboss_services::{SharedStore, StoreChange};
@@ -66,11 +66,7 @@ fn core_read<T>(
 
 impl CatchUp {
     /// The first view model: one snapshot, the repos and `data_version`, one lock each.
-    pub(crate) fn first(
-        store: &SharedStore,
-        services: &Services,
-        now: SystemTime,
-    ) -> AppResult<CatchUp> {
+    pub(crate) fn first(store: &SharedStore, services: &Services) -> AppResult<CatchUp> {
         let snapshot = Arc::new(core_read(store, |s| s.snapshot())?);
         let repos = core_read(store, |s| s.repos())?;
         let data_version = core_read(store, |s| s.data_version())?;
@@ -81,7 +77,6 @@ impl CatchUp {
             repos,
             services.sync.snapshot(),
             needs.clone(),
-            now,
         );
         Ok(CatchUp {
             cursor: snapshot.latest_event_id,
@@ -209,7 +204,6 @@ impl AppState {
             repos,
             self.services.sync.snapshot(),
             needs.clone(),
-            self.now(),
         );
         let patch = diff(&cu.vm, &vm).map(|mut p| {
             cu.seq += 1;

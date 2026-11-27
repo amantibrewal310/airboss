@@ -32,7 +32,7 @@ describe('TaskRow', () => {
 
   it('reads like a sentence to VoiceOver', async () => {
     const { el } = await show(144);
-    expect(name(el)).toBe('144, Web: slot picker, In progress, waiting on you, needs you, booking-web, 6 minutes ago');
+    expect(name(el)).toBe('144, Web: slot picker, In progress, Needs you, booking-web, 6 minutes ago');
     // Nothing else in the row is read, so the sentence is not followed by "6m" and the chip text.
     const read = [...el.querySelectorAll(':scope > :not([aria-hidden="true"]):not(.sr)')].filter((c) => c.textContent?.trim());
     expect(read).toEqual([]);
@@ -47,12 +47,32 @@ describe('TaskRow', () => {
     }
   });
 
-  it('shows a parent’s progress, a blocked pill, waits-on and Ready', async () => {
-    expect((await show(142)).el.textContent).toContain('1/5');
-    const blocked = (await show(203)).el;
-    expect(blocked.querySelector('.pill.warn')?.textContent).toBe('Blocked');
+  it('shows at most one chip: the most urgent of needs you, failed, PR open and waits on', async () => {
+    const chip = (el: Element) => [...el.querySelectorAll<HTMLElement>('.sig')];
+    // 144 has a question and a waiting-on-you thread: one chip, no live chip beside it.
+    const asks = (await show(144)).el;
+    expect(chip(asks).map((c) => c.className)).toEqual([expect.stringContaining('needs_you')]);
+    expect(chip(asks)[0]!.textContent).toBe('Needs you1');
+    expect(asks.querySelector('.live')).toBeNull();
+    expect((await show(131)).el.querySelector('.sig.failed')?.textContent).toBe('Failed');
+    expect((await show(204)).el.querySelector('.sig.pr_open')?.textContent).toBe('PR open');
     expect((await show(147)).el.textContent).toContain('waits on 144, 145, 146');
-    expect((await show(146)).el.querySelector('.pill.ok')?.textContent).toBe('Ready');
+    // Blocked and ready read from the status icon alone; a quiet row shows no chip.
+    for (const id of [203, 146]) expect(chip((await show(id)).el)).toEqual([]);
+    // A done task never shows one.
+    expect(chip((await show(143)).el)).toEqual([]);
+    // No actor avatars on rows.
+    expect(asks.querySelector('.av')).toBeNull();
+  });
+
+  it('shows a parent’s progress and rolled-up count, and no repo tags', async () => {
+    const { el } = await show(142);
+    expect(el.textContent).toContain('1/5');
+    expect(el.querySelector('.sig.needs_you .lab')?.textContent).toBe('1 needs you');
+    expect(el.querySelector('.rn')).toBeNull();
+    expect(el.querySelector('.rd')).toBeNull();
+    expect(name(el)).not.toContain('booking-web');
+    expect(el.getBoundingClientRect().height).toBe(38);
   });
 
   it('badges a task’s priority after its title, and says it to VoiceOver', async () => {
@@ -92,24 +112,24 @@ describe('TaskRow', () => {
     expect(visible(narrow.querySelector('.short'))).toBe(true);
     const parent = (await show(142, 520)).el;
     expect(visible(parent.querySelector('.pc'))).toBe(false);
-    // Chips shorten first ("Waiting"), then lose their label at 460px or less.
-    const live = (await show(144, 520)).el;
-    expect(visible(live.querySelector('.live .full'))).toBe(false);
-    expect(live.querySelector('.live .brief')!.textContent).toBe('Waiting');
-    expect(visible(live.querySelector('.live .brief'))).toBe(true);
-    expect(visible(live.querySelector('.dot'))).toBe(true);
+    // At 460px or less the chip keeps its icon (and count), its label moving to the tooltip.
+    const roomy = (await show(144, 520)).el;
+    expect(visible(roomy.querySelector('.sig .lab'))).toBe(true);
     const tight = (await show(144, 440)).el;
-    expect(visible(tight.querySelector('.live .lt'))).toBe(false);
-    expect(visible(tight.querySelector('.dot'))).toBe(false);
-    expect(live.querySelector('.live')!.getAttribute('title')).toBe('Waiting on you');
-    expect(name(live)).toContain('waiting on you');
+    expect(visible(tight.querySelector('.sig .lab'))).toBe(false);
+    expect(visible(tight.querySelector('.sig svg'))).toBe(true);
+    expect(visible(tight.querySelector('.sig .n'))).toBe(true);
+    expect(tight.querySelector('.sig')!.getAttribute('title')).toBe('Needs you');
+    expect(name(tight)).toContain('Needs you');
   });
 
-  it('dims the needs-me dot of a stale item, with a tooltip', async () => {
+  it('dims the chip of a stale item, with a tooltip', async () => {
     const { el } = await show(180);
-    const dot = el.querySelector<HTMLElement>('.dot')!;
-    expect(dot.title).toBe('May be out of date');
-    expect(Number(getComputedStyle(dot).opacity)).toBeLessThan(1);
+    const sig = el.querySelector<HTMLElement>('.sig')!;
+    expect(sig.title).toBe('Needs you · may be out of date');
+    expect(getComputedStyle(sig).borderTopStyle).toBe('dashed');
+    expect(Number(getComputedStyle(sig.querySelector('svg')!).opacity)).toBeLessThan(1);
+    expect(name(el)).toContain('Needs you (may be out of date)');
   });
 
   it('draws the keyboard outline on the selected row', async () => {

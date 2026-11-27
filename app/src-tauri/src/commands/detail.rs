@@ -147,7 +147,7 @@ pub fn task_detail(
         };
         sync.threads
             .get(&key)
-            .map(|t| ThreadDto::new(t, s.services.sync.thread_url(&key)))
+            .map(|t| ThreadDto::new(t, s.services.sync.thread_url(&key), open(task.status)))
     };
     let link_dtos = links
         .iter()

@@ -10,7 +10,7 @@
 mod common;
 
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 
 use airboss_app::Caller;
 use airboss_app::commands::tasks;
@@ -66,7 +66,6 @@ fn perf_rebuild_diff_and_write_at_2000_tasks() {
             repos.clone(),
             old.sync.clone(),
             old.needs.clone(),
-            SystemTime::now(),
         );
         std::hint::black_box(diff(&old, &vm));
         build.push(t.elapsed());

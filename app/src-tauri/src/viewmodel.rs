@@ -6,14 +6,13 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
 
-use airboss_core::{Actor, CoreSnapshot, EventId, Repo, RepoId, Status, TaskId, TaskNode};
-use airboss_services::{NeedsKind, NeedsList, Source, SyncSnapshot, time};
+use airboss_core::{CoreSnapshot, EventId, PrState, Repo, RepoId, Status, TaskId, TaskNode};
+use airboss_services::{Checks, NeedsKind, NeedsList, SyncSnapshot};
 
 use airboss_services::Chip;
 
-use crate::dto::{NextUp, Patch, PlanCard, Progress, RowDto, chip_strength};
+use crate::dto::{NextUp, Patch, PlanCard, Progress, RowDto, RowSignal, chip_strength};
 use crate::runmap;
 
 /// The tree's shape, indexed once per snapshot.
@@ -73,16 +72,15 @@ pub struct ViewModel {
 }
 
 impl ViewModel {
-    /// Builds every row. `now` only turns Quiet items into whole days.
+    /// Builds every row.
     pub fn build(
         snapshot: Arc<CoreSnapshot>,
         repos: Vec<Repo>,
         sync: Arc<SyncSnapshot>,
         needs: Arc<NeedsList>,
-        now: SystemTime,
     ) -> ViewModel {
         let index = TreeIndex::new(&snapshot.tree);
-        let rows = build_rows(&snapshot, &index, &repos, &sync, &needs, now);
+        let rows = build_rows(&snapshot, &index, &repos, &sync, &needs);
         let order = snapshot.tree.iter().map(|n| n.task.id).collect();
         ViewModel {
             rows: rows.into_iter().map(|r| (r.id, r)).collect(),
@@ -107,7 +105,6 @@ impl ViewModel {
             Vec::new(),
             Arc::default(),
             Arc::default(),
-            SystemTime::now(),
         )
     }
 
@@ -183,13 +180,65 @@ fn leaf_progress(s: Status) -> Progress {
     }
 }
 
+/// One task's Needs me facts, for its row's chip.
+#[derive(Default)]
+struct Needs {
+    /// Any item at all, Ready to start included.
+    any: bool,
+    /// Items that ask me for something: every kind but Ready to start and Failed run.
+    decisions: u32,
+    stale: bool,
+    failed: bool,
+    failed_stale: bool,
+}
+
+/// The row's one chip, the most urgent of needs you, failed, PR open and waiting on (task 55).
+/// A done or dropped task has none. A parent shows its rolled-up count instead of its own
+/// items, and takes no PR.
+fn row_signal(
+    status: Status,
+    parent: bool,
+    needs: Option<&Needs>,
+    rolled: (u32, bool),
+    open_pr: Option<bool>,
+    waiting: bool,
+) -> Option<RowSignal> {
+    if !is_open(status) {
+        return None;
+    }
+    if parent {
+        if rolled.0 > 0 {
+            return Some(RowSignal::NeedsYou {
+                count: rolled.0,
+                stale: rolled.1,
+            });
+        }
+    } else {
+        if let Some(n) = needs.filter(|n| n.decisions > 0) {
+            return Some(RowSignal::NeedsYou {
+                count: n.decisions,
+                stale: n.stale,
+            });
+        }
+        let failed_run = needs.filter(|n| n.failed);
+        if failed_run.is_some() || open_pr == Some(true) {
+            return Some(RowSignal::Failed {
+                stale: failed_run.is_some_and(|n| n.failed_stale),
+            });
+        }
+        if open_pr.is_some() {
+            return Some(RowSignal::PrOpen);
+        }
+    }
+    waiting.then_some(RowSignal::WaitingOn)
+}
+
 fn build_rows(
     snap: &CoreSnapshot,
     index: &TreeIndex,
     repos: &[Repo],
     sync: &SyncSnapshot,
     needs: &NeedsList,
-    now: SystemTime,
 ) -> Vec<RowDto> {
     let tree = &snap.tree;
     let n = tree.len();
@@ -238,42 +287,60 @@ fn build_rows(
         .map(|r| (r.task.id, r.since.as_str()))
         .collect();
 
-    // Needs me facts per task.
-    #[derive(Default)]
-    struct Needs {
-        any: bool,
-        stale: bool,
-        ready: bool,
-        quiet_since: Option<SystemTime>,
-    }
+    // Needs me facts per task: its own decisions and failed runs (Ready to start is left out:
+    // the Ready view lists those), for the row's one chip.
     let mut needs_of: HashMap<TaskId, Needs> = HashMap::new();
     for item in &needs.items {
         let e = needs_of.entry(item.task).or_default();
         e.any = true;
-        e.stale |= item.stale;
         match item.kind {
-            NeedsKind::Ready => e.ready = true,
-            NeedsKind::Quiet => e.quiet_since = time::from_ts(&item.since),
-            _ => {}
+            NeedsKind::Ready => {}
+            NeedsKind::FailedRun => {
+                e.failed = true;
+                e.failed_stale |= item.stale;
+            }
+            _ => {
+                e.decisions += 1;
+                e.stale |= item.stale;
+            }
+        }
+    }
+    // A parent's rolled-up count, children before parents (reverse tree order): every item but
+    // Ready to start, about it or anything under it, as its panel's Needs you lists them.
+    let mut rolled: Vec<(u32, bool)> = vec![(0, false); n];
+    for i in (0..n).rev() {
+        let id = tree[i].task.id;
+        let own = needs_of.get(&id);
+        let mut r = own.map_or((0, false), |e| {
+            (e.decisions + u32::from(e.failed), e.stale || e.failed_stale)
+        });
+        for kid in index.children_of(id) {
+            if let Some(&k) = index.pos.get(kid) {
+                r.0 += rolled[k].0;
+                r.1 |= rolled[k].1;
+            }
+        }
+        rolled[i] = r;
+    }
+
+    // Open PRs per task, and whether any of them fails its checks.
+    let mut prs_of: HashMap<TaskId, bool> = HashMap::new();
+    for (pr, tasks) in &sync.pr_tasks {
+        let Some(view) = sync.prs.get(pr) else {
+            continue;
+        };
+        if view.state != Some(PrState::Open) {
+            continue;
+        }
+        for task in tasks {
+            *prs_of.entry(*task).or_default() |= view.checks == Checks::Failing;
         }
     }
 
-    // The strongest live chip per task, from one pass over the linked threads. The same pass
-    // notes where each task's most recently active T3 thread or Herdr terminal runs, which is
-    // where Do it or Plan it started it, for Launch's avatar.
+    // The strongest live chip per task, from one pass over the linked threads.
     let mut live: HashMap<TaskId, Chip> = HashMap::new();
-    let mut runs_in: HashMap<TaskId, (Option<&str>, Source)> = HashMap::new();
     for (key, tasks) in &sync.thread_tasks {
         let view = sync.threads.get(key);
-        if matches!(key.source, Source::T3 | Source::Herdr) {
-            let at = view.and_then(|t| t.last_activity_at.as_deref());
-            for task in tasks {
-                let e = runs_in.entry(*task).or_insert((at, key.source));
-                if at > e.0 {
-                    *e = (at, key.source);
-                }
-            }
-        }
         let Some(chip) = view.and_then(|t| t.state.chip()) else {
             continue;
         };
@@ -312,14 +379,14 @@ fn build_rows(
                 repos_u.sort_by_key(|r| (repo_rank.get(r).copied().unwrap_or(usize::MAX), r.0));
             }
             let nd = needs_of.get(&id);
-            let quiet_days = nd.and_then(|n| n.quiet_since).map(|since| {
-                let days = now
-                    .duration_since(since)
-                    .unwrap_or(Duration::ZERO)
-                    .as_secs()
-                    / 86_400;
-                u32::try_from(days).unwrap_or(u32::MAX)
-            });
+            let signal = row_signal(
+                task.status,
+                has_children,
+                nd,
+                rolled[i],
+                prs_of.get(&id).copied(),
+                node.waiting,
+            );
             RowDto {
                 id,
                 parent: task.parent,
@@ -349,26 +416,19 @@ fn build_rows(
                 } else {
                     ready.get(&id).map(|s| s.to_string())
                 },
-                ready_pill: nd.is_some_and(|n| n.ready),
-                quiet_days,
                 needs: nd.is_some_and(|n| n.any),
-                needs_stale: nd.is_some_and(|n| n.stale),
                 live: if is_open(task.status) {
                     live.get(&id).copied()
                 } else {
                     None
                 },
+                signal,
                 last_at: if has_children {
                     node.subtree_last_event_at.clone()
                 } else {
                     node.last_event_at.clone()
                 },
                 last_actor: node.last_actor.to_string(),
-                launched_in: if node.last_actor == Actor::Launch {
-                    runs_in.get(&id).map(|(_, s)| *s)
-                } else {
-                    None
-                },
             }
         })
         .collect()

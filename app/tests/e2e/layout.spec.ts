@@ -17,10 +17,9 @@ test.describe('at 1100px', () => {
     await page.locator('[data-row="144"]').waitFor();
     expect(await width(page, 'aside.peek')).toBeCloseTo(380, 0);
     expect(await width(page, '.list')).toBeGreaterThanOrEqual(480);
-    // The live chip keeps a short label rather than becoming a bare dot.
-    expect(await shown(page, '[data-row="144"] .live .brief')).toBe(true);
-    expect(await page.locator('[data-row="144"] .live .brief').first().textContent()).toBe('Waiting');
-    expect(await shown(page, '[data-row="144"] .live .full')).toBe(false);
+    // The row's chip keeps its label.
+    expect(await shown(page, '[data-row="144"] .sig .lab')).toBe(true);
+    expect(await page.locator('[data-row="144"] .sig .lab').first().textContent()).toBe('Needs you');
   });
 
   test('plan cards stay at least 340px wide', async ({ page }) => {
@@ -45,14 +44,15 @@ test.describe('at 1100px', () => {
 test.describe('at 1000px', () => {
   test.use({ viewport: { width: 1000, height: 760 } });
 
-  test('a bare chip dot is the only red mark on a row waiting on you', async ({ page }) => {
+  test('a row’s chip keeps its icon and count when its label goes', async ({ page }) => {
     await page.goto('/?fixture=design&view=all&select=144');
     await page.locator('[data-row="144"]').waitFor();
     expect(await width(page, '.list')).toBeLessThanOrEqual(460);
-    expect(await shown(page, '[data-row="144"] .live .lt')).toBe(false);
-    expect(await shown(page, '[data-row="144"] .dot')).toBe(false);
-    // A needs-me row with no live chip keeps its dot.
-    expect(await shown(page, '[data-row="146"] .dot')).toBe(true);
+    expect(await shown(page, '[data-row="144"] .sig .lab')).toBe(false);
+    expect(await shown(page, '[data-row="144"] .sig svg')).toBe(true);
+    expect(await shown(page, '[data-row="144"] .sig .n')).toBe(true);
+    // Ready to start is no chip: the Ready view lists it.
+    expect(await page.locator('[data-row="146"] .sig').count()).toBe(0);
   });
 
   test('a run map wider than the page fades its hidden edge and says it scrolls', async ({ page }) => {
@@ -79,8 +79,9 @@ test.describe('at 1440px', () => {
     await page.locator('[data-row="144"]').waitFor();
     expect(await width(page, 'aside.peek')).toBeCloseTo(480, 0);
     expect(await shown(page, '[data-row="144"] .rn')).toBe(true);
-    expect(await shown(page, '[data-row="144"] .live .full')).toBe(true);
-    expect(await shown(page, '[data-row="144"] .dot')).toBe(true);
+    expect(await shown(page, '[data-row="144"] .sig .lab')).toBe(true);
+    // A parent shows no repo tags: they'd repeat on every phase.
+    expect(await page.locator('[data-row="142"] .rn').count()).toBe(0);
   });
 
   test('the run map fits without scrolling', async ({ page }) => {

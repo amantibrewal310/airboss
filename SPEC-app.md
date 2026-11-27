@@ -208,7 +208,7 @@ There is one process, `Airboss.app`, with a Dock icon (activation policy Regular
   4. Return `Patch` (or a struct holding it).
 - All `core` calls act as `Actor::Me`.
 - **Which needs fields a write's patch carries:** the patch returns as soon as `core` is written and the services have been *told*. The app doesn't wait for `attention` to recompute (it settles for 150 ms).
-  - The needs-derived fields in that patch (the needs-me dot, Ready and Quiet pills, Needs me list) still hold `attention`'s previous values.
+  - The needs-derived fields in that patch (`needs`, the row's Needs you chip, the Needs me list) still hold `attention`'s previous values.
   - A follow-up patch and `needs:changed` arrive when `attention` bumps its `Changes`, usually within 250 ms.
   - A Needs me item the user acted on is hidden locally at once, with its 180 ms exit. It stays hidden until `attention` drops it, or for 2 s at most; if `attention` still lists it after that, it comes back.
 - **In-flight guard:** `do_it` and `plan_it` hold a per-task entry in `AppState.launching` until `start` returns. A second request for the same task gets `AppError::AlreadyStarting` and the UI ignores it.
@@ -230,10 +230,10 @@ There is one process, `Airboss.app`, with a Dock icon (activation policy Regular
 | `repos`, `repos_from_subtasks` | `Task.repos`; for a parent with none, the union over its subtree, flagged |
 | `branch` | `Task.branch`, or the nearest ancestor's (display only) |
 | `ready` | in `ready` and a leaf; `ready_since` from it |
-| `ready_pill`, `quiet_days`, `needs`, `needs_stale` | from `attention`: a Ready item, a Quiet item, any item, any stale item |
+| `needs` | from `attention`: any item about it, Ready to start included |
+| `signal` | the row's one chip (task 55), the first that holds: **NeedsYou** `{count, stale}` (its `attention` items but Ready to start and Failed run; on a parent, every item but Ready to start about it or anything under it), **Failed** `{stale}` (a Failed run item, or an open linked PR whose checks fail), **PrOpen** (an open linked PR), **WaitingOn** (`waiting`). A parent takes only NeedsYou and WaitingOn. `null` on a done or dropped task. |
 | `live` | the strongest `chip()` of the task's threads in `sync.snapshot().threads_for(id)`: Waiting on you, then Working, then Your turn, then Stopped. Only while the task is open. |
 | `last_at`, `last_actor` | `subtree_last_event_at` for a parent, `last_event_at` for a leaf, and `last_actor` |
-| `launched_in` | when `last_actor` is Launch: the `Source` (T3 or Herdr) of the task's most recently active linked T3 thread or Herdr terminal, so the avatar reads T (T3) or H (Herdr) in place of L. `null` otherwise |
 
 - **Plan cards, display waves and the dependency lists** in the panel are built from the same `tree` and `edges`.
 - **`diff(old, new)`** gives `Patch { seq, upserts, removed, order, repos, created }`:
@@ -449,7 +449,7 @@ Every screen keeps DESIGN.md's layout, sizes and motion. This section adds data,
 - **Rows:** exactly DESIGN "Task rows".
   - Click selects and opens the panel; double-click opens the page; right-click opens the context menu.
   - The status icon opens the status menu, and the arrow folds.
-  - A row with `needs_stale` dims its needs-me dot and gets the tooltip "May be out of date".
+  - A chip whose `stale` is set gets a dashed edge, a faded icon and the tooltip "… · may be out of date".
 - **Reorder:** ⌥⌘↑ / ⌥⌘↓ move the selected task one place among its siblings (`reorder`), only in tree layouts. At either end nothing happens. In flat views it shows "Reorder in All tasks or a parent's view".
 - **Empty view:** "Nothing here" and "No tasks match this view." Ready adds "Tasks show here when nothing they wait on is open."
 - **Loading:** none. The data is in memory before the window shows.
@@ -487,7 +487,7 @@ Every screen keeps DESIGN.md's layout, sizes and motion. This section adds data,
   - A PR link is checked with `sync.lookup_pr` in the background. Its title and state fill in when the lookup answers.
 - **Notes:** the body in Notes type. Click to edit in an auto-growing textarea; ⌘↩ or blur saves, and Esc cancels.
 - **Subtasks:** on a task with subtasks the panel leads with them instead, as DESIGN "Parent panel" sets out (task 54): the summary line, Needs you, Ready now with Start ready, In progress, Next and Done folded, then the notes, Links folded, and the properties without Status (for a parent with steps), Branch and Links. Built from the rows, `needs` and `task_detail`'s `waves` (for run order) and `proposals`.
-- **Threads:** one row per linked thread: live chip (Running, Waiting, Your turn, Stopped), title, request or error summary, and "Open ↗" (`open_thread`). Open shows only when `sync.thread_url` returns a URL. Claude Code sessions have none, so they show their folder instead.
+- **Threads:** one row per linked thread: live chip (Running, Waiting, Your turn, Stopped), title, request or error summary, and "Open ↗" (`open_thread`). On a done or dropped task (`ThreadDto.task_closed`) the card keeps only Running, and its line reads "last active 2h ago" in place of a question, an error or "stopped". Open shows only when `sync.thread_url` returns a URL. Claude Code sessions have none, so they show their folder instead.
 - **Activity:**
   - One line per event: the actor's avatar and name (You, Agent or "Agent in <thread title>", GitHub, T3, Plan, and Launch named by where its thread runs: T3 or Herdr, "Launch" only when the feed has no thread link to tell), then a verb phrase per event kind.
   - A subtask's events start with its id: "143 moved to Done".
@@ -798,7 +798,7 @@ Targets from CAPABILITIES, measured by `scripts/measure.sh` on this Mac, in a re
   - It replaces the accent in focus rings, the keyboard outline and text selection only.
   - Done, progress and the primary button stay Signal Indigo.
   - The Multicolor setting keeps indigo everywhere.
-- **Never colour alone:** status always has its shape; live chips have a label, or a tooltip and an accessible name at narrow widths; repo dots carry the repo name; the needs-me dot is named "Needs you".
+- **Never colour alone:** status always has its shape; live chips have a label, or a tooltip and an accessible name at narrow widths; repo dots carry the repo name; a row's chip has an icon per kind plus its label, and at narrow widths keeps the icon with its label as tooltip and accessible name.
 - **VoiceOver:**
   - **The list:** tree layout is `role="tree"`, with rows as `treeitem` carrying `aria-level`, `aria-expanded`, `aria-setsize` and `aria-posinset`. Flat views are a `listbox`. The list uses `aria-activedescendant`, and the active row is always rendered.
   - **Labels:** a row reads "144, Web: slot picker, In progress, agent working, needs you, booking-web, 6 minutes ago". Map stations are buttons: "203 Payment webhook, blocked, wave 2, waits on 201".
@@ -961,7 +961,7 @@ applyPatch(p: Patch) {
 | Every shortcut in menus | Single letters listed in menus | Bare-letter key equivalents would swallow typing | Single letters appear in item titles, not as key equivalents |
 | System accent | One accent, indigo, for done, selection, focus and primary | PRODUCT: respect the system accent where it fits | The system accent drives focus and selection outlines only |
 | Capability map | `launch` depends on `app`; `sync` on `core` only | One-way dependencies | The contract lives in `crates/services`; the services depend on it, and the app binary wires them |
-| Ready pill | On a task that just became ready | `ready()` lists every ready task | The pill shows only with an attention Ready item; the Ready view lists every ready leaf |
+| Ready pill | On a task that just became ready | `ready()` lists every ready task; task 55 keeps rows to one chip | Rows show no Ready pill; the Ready view lists every ready leaf |
 | ⌘0 | "Open Airboss on Needs me" | Not a global hotkey | ⌘0 is a Window-menu item, shown in the menu-bar menu; only quick add is global |
 | Toast duration | Toasts leave after 2.8 s | Undo and Retry need time to reach | Toasts with an action stay 5 s and pause on hover |
 | Undo of Reject | (not designed) | Rule 6: `me` can't set `proposed` | Reject is written 5 s later; until then it can be undone. Accept isn't undoable, for the same reason. |

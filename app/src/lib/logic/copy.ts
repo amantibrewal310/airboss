@@ -18,6 +18,8 @@ export function statusToast(id: TaskId, status: Status): string {
 /** A linked thread's line in the panel: "asked a question just now", "working · 6m", "replied 2h ago", "stopped 2h ago". */
 export function threadSummary(t: ThreadDto, now: number): string {
   const at = t.request?.at ?? t.last_activity_at;
+  // A finished task's threads say only when they last ran: no Stopped, no question or error.
+  if (t.task_closed && t.state !== 'running' && t.state !== 'gone') return `last active ${ago(at, now)}`;
   if (t.state === 'needs_me' && t.request) return `${t.request.kind === 'approval' ? 'wants approval' : 'asked a question'} ${ago(at, now)}`;
   if (t.state === 'errored') return t.error ?? 'stopped with an error';
   if (t.state === 'running') return `working · ${relative(at, now)}`;

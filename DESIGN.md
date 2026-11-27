@@ -291,13 +291,13 @@ A near-black, low-contrast base with one cool accent, one alarm red, a five-colo
 - **Indigo Wash** (accent-soft): new-row highlight, selected station on the run-order map, focus halo, text selection.
 
 ### Secondary
-- **Needs-Me Red** (needs): the sidebar Needs me count, the menu-bar count, the needs-me dot on a row, the "Waiting on you" chip, the kind icon and label on needs-me cards.
+- **Needs-Me Red** (needs): the sidebar Needs me count, the menu-bar count, a row's Needs you and Failed chips, the "Waiting on you" chip, the kind icon and label on needs-me cards.
 - **Needs-Me Wash** (needs-soft): the fill of a needs-me callout in the detail panel.
 
 ### Tertiary (status and repos)
 - **Status set**: todo grey (st-todo), in-progress amber (st-doing), in-review green (st-review), blocked orange (st-blocked), done indigo (st-done, the same as the accent). Each status also has its own icon shape (see Components).
 - **Repo set** (repo-1 to repo-4): blue, pink, green, orange. Each repo keeps one colour everywhere: its dot in the sidebar, row tags, property tags and run-order stations. Repo colour never colours lines or lanes, since a task can have no repo or several.
-- **Actor set** (actor-agent, actor-me, actor-sync, actor-plan, actor-launch): fills for the 18–20px initial avatars in rows and the activity feed. They are the same in both themes.
+- **Actor set** (actor-agent, actor-me, actor-sync, actor-plan, actor-launch): fills for the 18px initial avatars in the activity feed, each beside its actor's name. Rows show none (task 55). They are the same in both themes.
 
 ### Neutral
 - **Desk** (desk): behind the window, outside the app.
@@ -346,7 +346,8 @@ Rows are 38px high and indent 22px per nesting level. Spacing steps are 4, 6, 8,
 
 **Narrow widths.** The list is a size container and the row drops detail in two steps:
 - At 820px of list width or less: repo pills become repo dots, and the time column narrows from 44px to 32px.
-- At 680px or less: "waits on 144, 145" becomes the dependency icon plus a count, the progress fraction hides (the ring stays), and live chips lose their label and show only the dot.
+- At 680px or less: "waits on 144, 145" becomes the dependency icon plus a count, and the progress fraction hides (the ring stays).
+- Narrower still (460px of list): a row's chip keeps its icon (and count, for Needs you) and moves its label to the tooltip.
 - When the whole window is 980px or less, the detail panel narrows to 380px.
 
 ### Named Rules
@@ -403,15 +404,18 @@ Progress is done ÷ all leaf subtasks at any depth. Only leaves count, so nested
 - Rows show the ring plus "done/total"; the page shows "35% · 7 of 20 done".
 
 ### Task rows
-- 38px, fixed. Left to right: fold arrow, status icon, id (34px, tabular), title, priority tag, progress ring and fraction, live chip, needs-me dot, a flexible gap, pills (Blocked, waits on, Ready), repo tags, actor avatar, time.
+- 38px, fixed. Left to right: fold arrow, status icon, id (34px, tabular), title, priority tag, progress ring and fraction (a parent), at most one chip, a flexible gap, repo tags (a step), time.
+- **One signal each** (task 55). The status icon is the row's one status mark; blocked and waiting read from its shape. After it comes at most one chip, the most urgent that holds: **Needs you** (a Needs me item about it, but Ready to start), **Failed** (a failed run, or failing checks on an open PR), **PR open**, **waits on 144, 145**. A quiet row shows none. A parent shows its progress and a rolled-up count, "2 need you", over itself and everything under it; it shows no PR of its own and no repo tags (they'd repeat on every phase). A done or dropped task shows no chip.
+- Each chip is an icon plus its label, so it never reads by colour alone: inbox for Needs you, a cross for Failed, the PR mark, the dependency icon. Needs you and Failed get a red icon and edge (the label stays secondary text, for contrast); PR open and waits on stay neutral. A chip that may be out of date gets a dashed edge and a faded icon.
+- No actor avatar, no live agent chip, and no Ready, Quiet or Blocked pill on rows. Who acted is in the activity feed; agent state is in the panel's Threads; Ready and Quiet have their own views and Needs me groups.
 - Hover uses the hover wash; selection the selected wash; keyboard focus adds a 1px inset indigo outline.
 - Done rows dim their title to secondary text.
-- Repo pills (dot plus name) show every linked repo, up to two, then "+1". A task with no repo shows none.
-- A parent with no repos of its own shows the union of its subtasks' repos.
+- Repo pills (dot plus name) show every linked repo, up to two, then "+1". A task with no repo, and a parent, show none.
 - Rename happens in place: the title becomes an input with an indigo border.
 
 ### Pills and tags
-- **Pill** (22px, fully rounded, hairline border, label type): Blocked (orange), Ready (green), "waits on 144, 145" (neutral, with the dependency icon), repo (with its dot; one per linked repo).
+- **Pill** (22px, fully rounded, hairline border, label type): repo (with its dot; one per linked repo), Ready (green, on plan cards).
+- **Row chip** (20px, fully rounded, label type, a 12px icon): see "One signal each" under Task rows.
 - **Priority tag** (18px, 5px corners, Field Grey, 600 label type, tabular): P0 to P3 after a row's title, only when set. P0 and P1 in primary text, P2 and P3 in text-3. Never red: urgency isn't "needs you".
 - **Tag** (22px, 5px corners, Field Grey): property values in the detail panel: repos, branch (mono), parent, waits-on and blocks (each with the other task's status icon), links.
 
@@ -422,7 +426,7 @@ Progress is done ÷ all leaf subtasks at any depth. Only leaves count, so nested
 - Do it: one repo starts one thread there; several start one thread per repo on a shared branch; none opens a small menu, "Start in <repo>" for each repo plus "No repo: research only".
 
 ### Live agent chips
-Shown after the title only while a thread is attached and the task is open. A 20px rounded chip with a 6px dot and a label:
+Shown in the panel's Threads section, not on rows (task 55). On a done or dropped task a thread shows no chip but Agent working, and its line reads "last active 2h ago", never Stopped, a question or an error. A 20px rounded chip with a 6px dot and a label:
 - **Agent working:** green dot with a soft ring pulsing outward every 1.6s.
 - **Waiting on you:** red dot. The same item also appears in Needs me.
 - **Stopped:** grey dot. Also used when the thread finished without finishing the task.
@@ -516,7 +520,7 @@ Short and ease-out (`cubic-bezier(.2,.8,.2,1)`). Most moves take 120–200ms:
 ## Do's and Don'ts
 
 ### Do:
-- **Do** keep red for "needs me" only: the count badge, the needs-me dot, the "Waiting on you" chip and needs-me cards.
+- **Do** keep red for "needs me" only: the count badge, a row's Needs you and Failed chips, the "Waiting on you" chip and needs-me cards.
 - **Do** keep task rows at exactly 38px and truncate instead of wrapping.
 - **Do** show status by shape and colour together; never colour alone.
 - **Do** use tabular figures for every id, count, percentage and time.
