@@ -154,6 +154,17 @@ $ airboss branch 1 --clear
 ○ #1 Booking flow has no branch now
 ```
 
+### `airboss due <ID> <DATE>` and `airboss due <ID> --clear`
+
+Sets the day a task is due, `YYYY-MM-DD`, or clears it. From that day the task shows in Needs me until it's done. `show` lists it as **Due**.
+
+```console
+$ airboss due 1 2026-12-04
+○ #1 Booking flow is due 2026-12-04
+$ airboss due 1 --clear
+○ #1 Booking flow has no due date now
+```
+
 ## Status
 
 ### `airboss set <ID> <todo|doing|in_review|blocked> [--note <NOTE>]`

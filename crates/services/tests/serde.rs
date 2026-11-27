@@ -116,6 +116,7 @@ fn enums_are_snake_case_strings() {
             serde_json::to_string(&NeedsGroup::Stopped).unwrap(),
             "\"stopped\"",
         ),
+        (serde_json::to_string(&NeedsKind::Due).unwrap(), "\"due\""),
         (serde_json::to_string(&Mode::PlanIt).unwrap(), "\"plan_it\""),
         (
             serde_json::to_string(&Availability::Unknown).unwrap(),
@@ -387,6 +388,7 @@ fn attention_values_round_trip() {
         Review,
         FailedRun,
         AgentStopped,
+        Due,
         Proposed,
         Ready,
         Quiet,

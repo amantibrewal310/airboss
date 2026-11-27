@@ -12,6 +12,8 @@ airboss-core = { path = "../core" }
 airboss-services = { path = "../services" }
 # The same version as core's, so Cargo links one SQLite.
 rusqlite = { version = "0.43.0", features = ["bundled"] }
+# The system time zone, so a due date starts at my own midnight. Already in the lockfile.
+jiff = "1.0.3"
 
 [dev-dependencies]
 airboss-services = { path = "../services", features = ["fakes"] }

@@ -8,10 +8,11 @@
   import { useApp } from '../../../lib/state/context';
   import { linkLabel } from '../../../lib/logic/links';
   import { percent, shapeOf, SHAPE_LABEL } from '../../../lib/logic/views';
+  import { dueLabel, isDue } from '../../../lib/logic/time';
 
   /**
-   * The properties grid: Status, (Progress on the page), Repos, Branch, Parent, Waits on, Blocks,
-   * Links. 104px labels in the panel, 86px in the page's rail; 30px per line.
+   * The properties grid: Status, (Progress on the page), Due, Repos, Branch, Parent, Waits on,
+   * Blocks, Links. 104px labels in the panel, 86px in the page's rail; 30px per line.
    */
   let { row, detail, rail = false }: { row: RowDto; detail: TaskDetail | null; rail?: boolean } = $props();
   const app = useApp();
@@ -64,6 +65,48 @@
     }
   }
 
+  let editingDue = $state(false);
+  let dueError = $state<string | null>(null);
+  let dueInput: HTMLInputElement | undefined = $state();
+  let dueTag: HTMLButtonElement | undefined = $state();
+  /** Its due date has come: shown in the Needs colour, as Needs me lists it. */
+  const late = $derived(row.due_at !== null && isDue(row.due_at, app.now) && row.status !== 'done' && row.status !== 'dropped');
+
+  async function dueDone() {
+    editingDue = false;
+    await tick();
+    (dueTag ?? document.querySelector<HTMLElement>('[data-zone="panel"]'))?.focus({ preventScroll: true });
+  }
+
+  async function editDue() {
+    editingDue = true;
+    dueError = null;
+    await tick();
+    dueInput?.focus();
+  }
+
+  /** Saves the picked day, or clears it when the field is emptied. */
+  async function saveDue() {
+    if (!editingDue || !dueInput) return;
+    const value = dueInput.value.trim();
+    if (value === (row.due_at ?? '')) return void dueDone();
+    const err = await app.setDue(row.id, value);
+    dueError = err;
+    if (!err) void dueDone();
+  }
+
+  function dueKey(e: KeyboardEvent) {
+    e.stopPropagation();
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      void saveDue();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      dueError = null;
+      void dueDone();
+    }
+  }
+
   function anchorOf(e: MouseEvent) {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     return { x: r.left, y: r.bottom + 4 };
@@ -91,6 +134,32 @@
       </span>
     </div>
   {/if}
+
+  <div class="p" class:wrap={!!dueError}>
+    <span class="l">Due</span>
+    <span class="v col">
+      {#if editingDue}
+        <input
+          bind:this={dueInput}
+          type="date"
+          class="branch-in date-in"
+          value={row.due_at ?? ''}
+          aria-label="Due date"
+          aria-invalid={!!dueError}
+          onkeydown={dueKey}
+          onblur={saveDue}
+        />
+        {#if dueError}<span class="err" role="alert">{dueError}</span>{/if}
+      {:else if row.due_at}
+        <span class="tag dep" class:late title={row.due_at}>
+          <button bind:this={dueTag} type="button" class="in" title="Change the due date" onclick={editDue}><Icon name="calendar" size={12} />{dueLabel(row.due_at, app.now)}</button>
+          <button type="button" class="x" aria-label="Clear the due date" onclick={() => app.setDue(row.id, '')}><Icon name="close" size={11} stroke={1.8} /></button>
+        </span>
+      {:else}
+        <button bind:this={dueTag} type="button" class="faint link" onclick={editDue}>None · set a date</button>
+      {/if}
+    </span>
+  </div>
 
   <div class="p" class:wrap={rail}>
     <span class="l">Repos</span>
@@ -333,6 +402,20 @@
     background: var(--bg-input);
     border: 1px solid var(--accent);
     outline: none;
+  }
+  .date-in {
+    font-family: inherit;
+    font-size: var(--fs-meta);
+    width: 160px;
+  }
+  /* A due date that has come reads in the Needs colour, as its Needs me item does. */
+  .dep.late {
+    color: var(--needs-text);
+    border-color: var(--needs-edge);
+    background: var(--needs-soft);
+  }
+  .dep.late .in :global(svg) {
+    color: var(--needs);
   }
   .branch-in[aria-invalid='true'] {
     border-color: var(--st-blocked);

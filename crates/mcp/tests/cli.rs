@@ -775,6 +775,26 @@ fn branch_sets_and_clears() {
 }
 
 #[test]
+fn due_sets_shows_and_clears() {
+    let dir = TempDir::new();
+    let db = dir.db();
+    ok(&db, &["add", "Task"]);
+    assert_eq!(
+        ok(&db, &["due", "1", "2026-12-04"]),
+        "○ #1 Task is due 2026-12-04\n"
+    );
+    assert_eq!(json(&db, &["show", "1"])["task"]["due_at"], "2026-12-04");
+    assert!(ok(&db, &["show", "1"]).contains("2026-12-04"));
+    assert!(fails(&db, &["due", "1", "tomorrow"]).contains("YYYY-MM-DD"));
+    assert_eq!(
+        ok(&db, &["due", "1", "--clear"]),
+        "○ #1 Task has no due date now\n"
+    );
+    assert!(json(&db, &["show", "1"])["task"]["due_at"].is_null());
+    assert!(!run(&db, &["due", "1"]).status.success());
+}
+
+#[test]
 fn a_branch_name_git_would_misread_is_refused_plainly() {
     let dir = TempDir::new();
     let db = dir.db();

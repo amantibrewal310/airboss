@@ -16,6 +16,10 @@ pub(crate) const MIGRATIONS: &[Migration] = &[
         version: 2,
         sql: include_str!("migrations/002_agent_stopped.sql"),
     },
+    Migration {
+        version: 3,
+        sql: include_str!("migrations/003_due.sql"),
+    },
 ];
 
 /// Why the table couldn't be opened, for the log.

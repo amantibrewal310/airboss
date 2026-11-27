@@ -341,6 +341,7 @@ fn build_rows(
                 repos_from_subtasks: !own_repos && has_children && !repos_u.is_empty(),
                 repos: repos_u,
                 branch: branch[i].clone(),
+                due_at: task.due_at.clone(),
                 ready: !has_children && ready.contains_key(&id),
                 ready_since: if has_children {
                     None

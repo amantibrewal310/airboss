@@ -15,10 +15,12 @@ import { CONNECTED, designSeed, seedDefaults } from './design';
 import { fullSeed } from './full';
 import { perfSeed } from './perf';
 import { SeedBuilder } from './build';
+import { dueItem } from '../attention';
+import { localDate } from '../../logic/time';
 
-export type FixtureName = 'design' | 'full' | 'perf' | 'empty' | 'welcome' | 't3missing' | 'herdr' | 'nothing' | 'dberror' | 'stopped' | 'update';
+export type FixtureName = 'design' | 'full' | 'perf' | 'empty' | 'welcome' | 't3missing' | 'herdr' | 'nothing' | 'dberror' | 'stopped' | 'due' | 'update';
 
-export const FIXTURES: readonly FixtureName[] = ['design', 'full', 'perf', 'empty', 'welcome', 't3missing', 'herdr', 'nothing', 'dberror', 'stopped', 'update'];
+export const FIXTURES: readonly FixtureName[] = ['design', 'full', 'perf', 'empty', 'welcome', 't3missing', 'herdr', 'nothing', 'dberror', 'stopped', 'due', 'update'];
 
 export function isFixtureName(name: string): name is FixtureName {
   return (FIXTURES as readonly string[]).includes(name);
@@ -117,6 +119,19 @@ export function loadFixture(name: FixtureName): MockSeed {
         proposed: [],
         stale: false,
       });
+      return seed;
+    }
+    case 'due': {
+      // Task 59: 151 was due yesterday, so Needs me lists it; 206 is due in 3 days, not yet.
+      const seed = designSeed();
+      seed.name = 'due';
+      const nowMs = Date.parse(seed.now);
+      const day = (offset: number) => localDate(nowMs + offset * 86_400_000);
+      const setDue = (id: number, date: string) => (seed.tasks.find((t) => t.id === id)!.due_at = date);
+      setDue(151, day(-1));
+      setDue(206, day(3));
+      const item = dueItem(seed.tasks.find((t) => t.id === 151)!, nowMs)!;
+      seed.needs.splice(seed.needs.findIndex((n) => n.group === 'proposed'), 0, item);
       return seed;
     }
     case 'update': {

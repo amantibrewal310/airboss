@@ -310,3 +310,21 @@ fn an_agent_stopped_row_is_saved_and_read_back_with_its_kind() {
         vec![stopped]
     );
 }
+
+#[test]
+fn a_due_row_is_saved_and_read_back_with_its_kind() {
+    let dir = TempDir::new();
+    let store = HiddenStore::open(&dir.db()).unwrap();
+    let due = HiddenRow {
+        key: key("due:7:2026-12-04"),
+        kind: NeedsKind::Due,
+        task: TaskId(7),
+        until: None,
+    };
+    store.hide(&due).unwrap();
+    drop(store);
+    assert_eq!(
+        HiddenStore::open(&dir.db()).unwrap().load().unwrap(),
+        vec![due]
+    );
+}

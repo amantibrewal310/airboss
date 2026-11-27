@@ -5,7 +5,9 @@ use std::collections::HashMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use airboss_core::{Actor, NewLink, NewTask, PrState, Store, TaskId};
-use airboss_services::time::{from_ts, to_ts};
+use airboss_services::time::{
+    date_days, days_civil, days_date, from_ts, local_day, local_day_start, to_ts, weekday,
+};
 use airboss_services::{
     Checks, Chip, Clock, ErrorCode, NeedsGroup, NeedsKind, PrRef, PrView, Review, ServiceError,
     Source, SyncSnapshot, SystemClock, ThreadKey, ThreadState, ThreadView,
@@ -42,6 +44,7 @@ fn every_kind_has_its_group_and_groups_sort_in_display_order() {
         Review,
         FailedRun,
         AgentStopped,
+        Due,
         Proposed,
         Ready,
         Quiet,
@@ -57,6 +60,7 @@ fn every_kind_has_its_group_and_groups_sort_in_display_order() {
             NeedsGroup::Reviews,
             NeedsGroup::FailedRuns,
             NeedsGroup::Stopped,
+            NeedsGroup::Due,
             NeedsGroup::Proposed,
             NeedsGroup::Ready,
             NeedsGroup::Quiet,
@@ -420,4 +424,50 @@ fn a_service_error_displays_its_one_sentence() {
     assert_eq!(e.to_string(), "T3 Code isn't open.");
     let as_error: Box<dyn std::error::Error> = Box::new(e);
     assert_eq!(as_error.to_string(), "T3 Code isn't open.");
+}
+
+// ---- local dates ----
+
+#[test]
+fn dates_read_and_write_as_days() {
+    assert_eq!(date_days("1970-01-01"), Some(0));
+    assert_eq!(date_days("2026-11-27"), Some(20_784));
+    assert_eq!(days_date(20_784), "2026-11-27");
+    assert_eq!(days_civil(20_784), (2026, 11, 27));
+    assert_eq!(
+        date_days("2028-02-29").map(days_date).as_deref(),
+        Some("2028-02-29")
+    );
+    for bad in [
+        "2026-02-29",
+        "2026-13-01",
+        "2026-12-00",
+        "2026-1-01",
+        "Friday",
+        "",
+        "2026-12-04T00",
+    ] {
+        assert_eq!(date_days(bad), None, "{bad}");
+    }
+    // 27 Nov 2026 is a Friday; 1 Jan 1970 a Thursday.
+    assert_eq!(weekday(20_784), 4);
+    assert_eq!(weekday(0), 3);
+}
+
+#[test]
+fn a_local_day_follows_the_zone() {
+    let ist = 5 * 3600 + 30 * 60;
+    let pst = -8 * 3600;
+    // 20:00 UTC on 26 Nov is already 27 Nov in India, and still 26 Nov in California.
+    let t = from_ts("2026-11-26T20:00:00.000Z").unwrap();
+    assert_eq!(days_date(local_day(t, 0)), "2026-11-26");
+    assert_eq!(days_date(local_day(t, ist)), "2026-11-27");
+    assert_eq!(days_date(local_day(t, pst)), "2026-11-26");
+    let day = date_days("2026-11-27").unwrap();
+    assert_eq!(to_ts(local_day_start(day, ist)), "2026-11-26T18:30:00.000Z");
+    assert_eq!(to_ts(local_day_start(day, pst)), "2026-11-27T08:00:00.000Z");
+    // The day starts exactly at its first moment.
+    let start = local_day_start(day, ist);
+    assert_eq!(local_day(start, ist), day);
+    assert_eq!(local_day(start - Duration::from_millis(1), ist), day - 1);
 }

@@ -5,7 +5,8 @@ import { expect, test, type Page } from '@playwright/test';
  * dark and in light: 24 baselines at 1440 × 900 with animations off, on the `design` fixture
  * (the design's sample data). They were compared with the design PNGs by eye; after that they
  * guard against regressions. Screen 08 (the native menu-bar menu) is checked by hand (QA.md).
- * Screen 14, the Agent stopped card (R5), has no design PNG: it follows the other Needs me cards.
+ * Screen 14, the Agent stopped card (R5), and 15, the Due card (task 59), have no design PNG:
+ * they follow the other Needs me cards.
  */
 
 type Screen = { name: string; url: string; steps?: (page: Page) => Promise<void> };
@@ -76,6 +77,14 @@ const SCREENS: Screen[] = [
     url: '/?fixture=stopped',
     steps: async (page) => {
       await page.getByRole('option', { name: /Agent stopped: 202/ }).click();
+    },
+  },
+  {
+    // Task 59: not a design screen; the Due card on the `due` fixture.
+    name: '15-due',
+    url: '/?fixture=due',
+    steps: async (page) => {
+      await page.getByRole('option', { name: /^Due: 151/ }).click();
     },
   },
 ];

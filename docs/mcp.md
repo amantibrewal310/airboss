@@ -100,15 +100,16 @@ Threads that Do it started for the task show up in `links` as `t3_thread` links,
 
 ### `update_task`
 
-> Report progress on a task: set `status`, add a `note`, or both. Set doing when you start, in_review when your PR is open, blocked with a `note` saying why. Set done with a `note` saying what you did, but only on a task with no PR: a task with a PR finishes by itself when the PR merges. A note alone records progress. A task with subtasks has no status of its own: it shows what they add up to, so update the subtask you're on.
+> Report progress on a task: set `status`, add a `note`, or both. Set doing when you start, in_review when your PR is open, blocked with a `note` saying why. Set done with a `note` saying what you did, but only on a task with no PR: a task with a PR finishes by itself when the PR merges. A note alone records progress. A task with subtasks has no status of its own: it shows what they add up to, so update the subtask you're on. When the user gives a deadline ("by Friday", "in 2 days"), set `due` to that day as YYYY-MM-DD, worked out from today's date in their time zone; "" clears it. The task shows in their Needs me from that day.
 
 | Argument | Type | Meaning |
 |---|---|---|
 | `id` | number | The task |
 | `status` | `doing`, `in_review`, `blocked` or `done` | The new status. The schema offers only the statuses an agent may set. |
 | `note` | text | With `status`: why it's blocked, or what was done. Alone: a progress note. |
+| `due` | text | The day it's due, `YYYY-MM-DD` in the user's time zone; `""` clears it. Set first, so a bad date writes nothing. |
 
-Give `status`, `note`, or both. Returns the task after the change, in the same shape as `get_task`'s `task`.
+Give `status`, `note`, `due`, or several. Returns the task after the change, in the same shape as `get_task`'s `task`.
 
 ### `link`
 
@@ -186,7 +187,8 @@ Every refusal is one of these sentences, filled in with the task, status or name
 - "Say why it's blocked in `note`."
 - "Agents can set doing, in_review, blocked, or done (on a task with no PR); only the user can set {status}."
 - "Task #6 is dropped, so its status can't change from here. Ask the user to reopen it if there's more to do." For a proposed task the last part is "Wait for the user to accept it."
-- "Give `status`, `note`, or both."
+- "Give `status`, `note`, `due`, or several."
+- "A due date is a real day written YYYY-MM-DD, e.g. 2026-12-04. Work out \"Friday\" or \"in 2 days\" from today's date in the user's time zone first."
 
 **Ids, names and files**
 

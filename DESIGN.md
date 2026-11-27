@@ -428,10 +428,11 @@ Shown after the title only while a thread is attached and the task is open. A 20
 In the Threads section of the detail panel the labels shorten to Running, Waiting, Stopped. At narrow widths the chip shows only its dot.
 
 ### Needs me
-- **Inbox list:** grouped under 11.5px headings in a fixed order: Questions, Reviews, Failed runs, Stopped, Proposed, Ready, Quiet. Each item: kind icon, task id and title, time, and one line of context.
+- **Inbox list:** grouped under 11.5px headings in a fixed order: Questions, Reviews, Failed runs, Stopped, Due, Proposed, Ready, Quiet. Each item: kind icon, task id and title, time, and one line of context.
 - **Detail card:** raised, 12px corners. Kind icon in red, then "Question · 6m ago · 144 Web: slot picker", the question at 17px, and actions. The main action is primary and shows ↩; Dismiss sits at the right as a ghost button with ⌘⌫.
-- **Actions per kind:** Question and Approval: Open thread. Review: Open PR. Failed run: Open thread. Agent stopped: Open thread, then Mark done (Space), Set in review, Snooze 3 days. Proposed subtasks: Accept, Edit or reject each one, or Accept all / Reject all. Ready to start: Do it. Quiet 5+ days: Open or Snooze 3 days.
+- **Actions per kind:** Question and Approval: Open thread. Review: Open PR. Failed run: Open thread. Agent stopped: Open thread, then Mark done (Space), Set in review, Snooze 3 days. Due: Open, then Mark done (Space), Snooze 3 days. Proposed subtasks: Accept, Edit or reject each one, or Accept all / Reject all. Ready to start: Do it. Quiet 5+ days: Open or Snooze 3 days.
 - **Agent stopped:** a run that ended without a PR. The task is in progress, every agent on it has stopped (not failed: that's a Failed run), no PR is open, and nothing has changed for 10 minutes. Its icon is a circle with a pause, the line reads "refund-service stopped" with the time beside it, and the card's headline is "Agent stopped · no PR yet" ("no open PR" when its only PRs are closed). It sits right after Failed runs, since both are a run that ended, and before the calmer kinds. It leaves as soon as an agent runs again, a PR opens or the task moves on.
+- **Due:** a task whose due date has come. Its icon is a calendar with a tick, the line reads "Due Tue 24 Nov", and the headline counts the days: "Due today", "Due yesterday", "Overdue by 3 days". It sits after Stopped and before Proposed. In the panel, the **Due** line shows the date as a tag ("Fri 4 Dec"), red-washed once the day has come; click it to pick another day, × to clear, or "None · set a date" to add one.
 - A cleared item slides 10px left and fades over 180ms, then the list closes up.
 - **Empty state:** a check, "Nothing needs you", when it was last checked, counts of in-progress and ready tasks, and a button to show ready tasks.
 - **In the detail panel:** the same items appear as red-washed callouts above the properties.
@@ -470,7 +471,7 @@ Single-letter keys only work when no field has focus. Every shortcut also lives 
 | ↑ ↓ | Move through rows, inbox items, plan cards |
 | → ← | Open or fold; → on an open parent goes to its first subtask, ← goes to the parent |
 | Return | Rename the task; in Needs me, run the main action; in Plans, open |
-| Space | Mark done or not done (not on a parent, whose status follows its subtasks); in Needs me, Mark done (Agent stopped) |
+| Space | Mark done or not done (not on a parent, whose status follows its subtasks); in Needs me, Mark done (Agent stopped, Due) |
 | S, then 1–6 | Change status |
 | R | Link repos (checklist) |
 | ⌘↩ | Do it (in Needs me: the main action) |

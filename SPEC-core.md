@@ -121,6 +121,8 @@ CREATE TABLE tasks (                     -- one thing to get done, at any depth
   origin         TEXT NOT NULL CHECK (origin IN ('me','agent','plan')),
   plan_key       TEXT,                   -- the plan's own id for this step; null unless origin = plan
   branch         TEXT,                   -- the branch its threads share; null: no branch yet
+  due_at         TEXT CHECK (due_at IS NULL OR due_at GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]'),
+                                         -- the day it's due, YYYY-MM-DD in my own time zone (migration 6); null: none
   created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   CHECK ((status = 'blocked') = (blocked_reason IS NOT NULL)),
   CHECK (parent_id IS NULL OR parent_id <> id),
@@ -237,6 +239,7 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
    | `edit_task` (title, notes) | yes | (no) | (no) | (no) | (no) | (no) |
    | `link_repo` / `unlink_repo` | yes | (no) | yes | (no) | (no) | (no) |
    | `set_branch` | yes | (no) | (no) | (no) | (no) | yes |
+   | `set_due` | yes | yes | (no) | (no) | (no) | (no) |
    | `add_note` | yes | yes | (no) | yes | yes | yes |
    | `move_task` | yes | (no) | (no) | (no) | (no) | (no) |
    | `delete_task` | yes | (no) | (no) | (no) | (no) | (no) |
@@ -276,6 +279,8 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
     - A name, once trimmed, uses only `A–Z`, `a–z`, `0–9`, `.`, `_`, `/` and `-`, and is at most 200 characters long.
     - It can't contain `..`, start with `-` or `/`, or end with `/` or `.lock`.
     - Anything else is `Error::InvalidTarget`, and nothing is written. `launch` passes the name to `git` and `t3`, so it must never read as an option or a path outside the repo.
+
+35. **A task may be due on a day,** `YYYY-MM-DD` in my own time zone; null means no due date. Agents turn "Friday" or "in 2 days" into the date; `core` stores only the day. `set_due` writes one `edited` event whose body names it, e.g. `due: 2026-12-04`, or `due date cleared`. A blank date clears it, and setting the date it already has writes nothing. Anything but a real day from year 1000 to 9999, written exactly so, is `Error::InvalidTarget`, and nothing is written. Any task may have one, a parent too, in any status; `attention` lists it when its day comes ([SPEC-attention](SPEC-attention.md)).
 
 ### Links (enforced by code)
 
@@ -690,6 +695,13 @@ Agreed with the user on 27 Nov 2026 (task 53, under 52; replaces proposal #50). 
 - [x] Waiting on a parent ends when its last step finishes, and ready-since is that step's finish; a parent is never in `ready()`; run order reads phases as they show.
 - [x] A parent takes new steps whatever it shows; a finished task without steps still doesn't.
 - [x] The 2,000-task timings stay within their targets.
+
+## v7: due dates (27 Nov 2026)
+
+Task 59, from user feedback. Things with a deadline had nowhere to live, so they didn't come back on the day.
+
+1. **`tasks.due_at`** (`006_due_dates.sql`, `ALTER TABLE … ADD COLUMN`, every row kept), `Task.due_at`, and `set_due` for `me` and agents (rules 8 and 35).
+2. **A day, not a time.** "Friday" means the whole of Friday wherever I am, so the column holds the calendar date and `attention` reads it in the system time zone. No model runs in the app: the agent works the date out, `core` only checks it's a real one.
 
 ## Open questions
 

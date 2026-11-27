@@ -201,6 +201,7 @@ commands! {
     back_up_database(BackUpDatabaseArgs) => repos::back_up_database, [] -> Option<String>;
     pick_folder(PickFolderArgs) => repos::pick_folder, [] -> Option<String>;
     set_branch(SetBranchArgs) => tasks::set_branch, [id: TaskId, branch: Option<String>] -> Patch;
+    set_due(SetDueArgs) => tasks::set_due, [id: TaskId, due: Option<String>] -> Patch;
     add_dependency(AddDependencyArgs) => tasks::add_dependency, [id: TaskId, waits_on: TaskId] -> Patch;
     remove_dependency(RemoveDependencyArgs) => tasks::remove_dependency,
         [id: TaskId, waits_on: TaskId] -> Patch;

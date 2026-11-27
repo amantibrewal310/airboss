@@ -782,6 +782,16 @@ export class App {
     }
   }
 
+  /** Sets the day a task is due (`YYYY-MM-DD`), or clears it with "". Returns an error to show inline, or null. */
+  async setDue(id: TaskId, due: string): Promise<string | null> {
+    try {
+      this.applyWrite(await api.setDue(id, due));
+      return null;
+    } catch (e) {
+      return asAppError(e).message;
+    }
+  }
+
   async addDependency(id: TaskId, on: TaskId): Promise<void> {
     try {
       this.applyWrite(await api.addDependency(id, on));
@@ -1106,6 +1116,7 @@ export class App {
           this.leave(item);
           await this.doIt(item.task);
           break;
+        case 'due':
         case 'quiet':
           this.reveal(item.task);
           break;
@@ -1116,7 +1127,7 @@ export class App {
     }
   }
 
-  /** Mark done (Space) on a kind that offers it: Agent stopped. As me, with Undo. */
+  /** Mark done (Space) on a kind that offers it: Agent stopped and Due. As me, with Undo. */
   async markNeedDone(item: NeedsItem | null = this.needsItem): Promise<void> {
     if (!item || !canMarkDone(item.kind)) return;
     await this.setNeedStatus(item, 'done');

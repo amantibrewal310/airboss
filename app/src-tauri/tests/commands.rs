@@ -475,6 +475,27 @@ fn rename_notes_note_and_branch_return_their_patches() {
             "Branch names can use letters, digits, `.`, `_`, `/` and `-`.".into()
         )
     );
+    let p = tasks::set_due(&app.state, M, t, Some("2026-12-04".into())).unwrap();
+    assert_eq!(p.upserts[0].due_at.as_deref(), Some("2026-12-04"));
+    assert_eq!(
+        err_code(tasks::set_due(&app.state, M, t, Some("Friday".into()))),
+        (
+            ErrorCode::InvalidTarget,
+            "A due date is a real day, like 2026-12-04.".into()
+        )
+    );
+    let p = tasks::set_due(&app.state, M, t, Some(" ".into())).unwrap();
+    assert_eq!(p.upserts[0].due_at, None);
+    assert_eq!(
+        err_code(tasks::set_due(
+            &app.state,
+            M,
+            TaskId(404),
+            Some("2026-12-04".into())
+        ))
+        .1,
+        "Task #404 no longer exists."
+    );
     assert_eq!(
         err_code(tasks::rename_task(&app.state, M, TaskId(404), "x".into())).1,
         "Task #404 no longer exists."

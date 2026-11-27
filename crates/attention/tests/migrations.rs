@@ -1,4 +1,5 @@
-//! `attention` migration 1: each CHECK, and opening twice applies it once.
+//! `attention`'s migrations: each CHECK, opening twice applies each once, and every version
+//! keeps the rows before it.
 #![allow(clippy::unwrap_used)]
 
 mod common;
@@ -38,6 +39,7 @@ fn a_good_row_of_every_kind_goes_in() {
         "finish",
         "quiet",
         "stopped",
+        "due",
     ] {
         assert!(
             insert(&conn, &format!("{kind}:1"), kind, "dismissed", None),
@@ -101,7 +103,11 @@ fn opening_twice_applies_the_migration_once() {
         .unwrap();
     assert_eq!(
         applied,
-        vec![("attention".to_string(), 1), ("attention".to_string(), 2)]
+        vec![
+            ("attention".to_string(), 1),
+            ("attention".to_string(), 2),
+            ("attention".to_string(), 3)
+        ]
     );
     // core still opens the same file.
     airboss_core::Store::open(&dir.db()).unwrap();
@@ -148,6 +154,73 @@ fn version_two_keeps_every_row_from_version_one() {
     assert!(rows[0].until.is_some());
     let conn = Connection::open(dir.db()).unwrap();
     assert!(insert(&conn, "stopped:1", "stopped", "dismissed", None));
+    let indexed: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE name = 'attention_hidden_task_idx'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(indexed, 1);
+}
+
+#[test]
+fn version_three_keeps_every_row_from_version_two_and_takes_due() {
+    let dir = TempDir::new();
+    // A file at attention v2, as alpha 7 shipped it.
+    let mut store = airboss_core::Store::open(&dir.db()).unwrap();
+    store
+        .migrate_module(
+            "attention",
+            &[
+                airboss_core::Migration {
+                    version: 1,
+                    sql: include_str!("../src/migrations/001_attention.sql"),
+                },
+                airboss_core::Migration {
+                    version: 2,
+                    sql: include_str!("../src/migrations/002_agent_stopped.sql"),
+                },
+            ],
+        )
+        .unwrap();
+    drop(store);
+    let conn = Connection::open(dir.db()).unwrap();
+    assert!(insert(&conn, "stopped:1:x", "stopped", "dismissed", None));
+    assert!(insert(
+        &conn,
+        "quiet:9",
+        "quiet",
+        "snoozed",
+        Some("2026-11-29T00:00:00.000Z")
+    ));
+    assert!(!insert(&conn, "due:1:2026-12-04", "due", "dismissed", None));
+    let sql = "SELECT item_key, task_id, kind, action, until, hidden_at FROM attention_hidden
+               ORDER BY item_key";
+    let read = |conn: &Connection| -> Vec<(String, i64, String, String, Option<String>, String)> {
+        conn.prepare(sql)
+            .unwrap()
+            .query_map([], |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get(4)?,
+                    r.get(5)?,
+                ))
+            })
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    };
+    let before = read(&conn);
+    drop(conn);
+
+    HiddenStore::open(&dir.db()).unwrap();
+    let conn = Connection::open(dir.db()).unwrap();
+    assert_eq!(read(&conn), before, "every row kept as it was");
+    assert!(insert(&conn, "due:1:2026-12-04", "due", "dismissed", None));
     let indexed: i64 = conn
         .query_row(
             "SELECT count(*) FROM sqlite_master WHERE name = 'attention_hidden_task_idx'",

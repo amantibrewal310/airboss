@@ -93,6 +93,8 @@ CREATE INDEX attention_hidden_task_idx ON attention_hidden(task_id);
 
 Version 2 adds the kind `'stopped'` (Agent stopped) to the CHECK. SQLite can't change a CHECK in place, so it creates `attention_hidden_v2` with the new list, copies every row, drops the old table, renames the new one and creates the index again (`src/migrations/002_agent_stopped.sql`). A test opens a version 1 file with a row in it and checks the row survives.
 
+Version 3 adds `'due'` the same way (`src/migrations/003_due.sql`); a test opens a version 2 file and checks every row survives.
+
 An item is hidden while a row with its key exists and `until` is null or later than now. A row whose key hasn't been live for 30 days is deleted, at most once a day during a recompute.
 
 ## Behaviour
@@ -110,6 +112,7 @@ From `CoreSnapshot`: `tree` (statuses, titles, `last_event_at`, `subtree_last_ev
 | Review (Reviews) | a linked PR is `open`, not a draft, without a problem; its task is open; none of that task's threads is `Running` or `NeedsMe` | `review:<pr ref>` | `ready_since` | "PR #{n} · {title}" · "+{add} −{del} · checks {passing/failing/pending} · {approved/changes requested/review required}" | Open PR |
 | Failed run (Failed runs) | a linked T3 thread is `Errored`, and its task is open | `failed:<run id>` | the thread's `last_activity_at` | "{thread title} stopped: {error}" · "Thread stopped · {error}" | Open thread |
 | Agent stopped (Stopped) | the task is `doing` and has no steps (a parent shows `doing` because a step is, SPEC-core rule 10); it has at least one linked thread; every one is `Idle`, `Settled` or `Gone`; no linked PR is open (or of unknown state); and `stopped_after` (10 min) has passed since the last change | `stopped:<task id>:<last change>` | the last change: the newest of the task's own `last_event_at` and its threads' `last_activity_at` | "Agent stopped · no PR yet" (or "· no open PR" when its only PRs are closed or merged) · "{thread title} stopped", or "All {n} threads stopped" | Open thread (the most recently active one) |
+| Due (Due) | the task is `todo`, `doing`, `in_review` or `blocked`, has a `due_at` (SPEC-core rule 35), and that day has started in my time zone | `due:<task id>:<date>` | the first moment of that day | "Due today", "Due yesterday" or "Overdue by {n} days" · "Due {Fri 4 Dec}", with the year when it isn't this one | Open |
 | Proposed (Proposed) | tree nodes with status `proposed`: one item per parent; a top-level proposal is its own item | `proposed:<parent id>:<largest proposed id>`, or `proposed:<id>` | newest `created_at` in the group | "The agent proposed {n} subtasks" · "{n} proposed subtasks" | Accept all, Reject all, or each |
 | Ready (Ready) | in `ready`, with at least one edge `(task, _)` (so every blocker finished), and `since` within `ready_window` | `ready:<task id>:<since>` | `since` | "Ready to start: {ids} {is/are} done" · "{ids} done · ready to start" | Do it |
 | Quiet (Quiet) | `doing`, `in_review` or `blocked`; quiet for `quiet_after` or longer; no ancestor shown as quiet | `quiet:<task id>:<activity>` | last activity | "No activity for {d} days." plus " {n} open PRs." if any · "Quiet for {d} days" | Open, or Snooze 3 days |
@@ -120,11 +123,12 @@ From `CoreSnapshot`: `tree` (statuses, titles, `last_event_at`, `subtree_last_ev
 - **Last activity**, for Quiet, is the latest across the task and every task under it of: `subtree_last_event_at` (which includes `sync`'s failed-run notes); each linked thread's `last_activity_at`, where a `Running` or `NeedsMe` thread counts as now; and each linked PR's `updated_at`. One bottom-up pass over `tree`; Quiet is then checked top-down, so a quiet parent hides its quiet subtasks.
 - **Agent stopped** is one item per `doing` task, not per thread, because its actions (Mark done, Set in review) act on the task. A thread linked to two `doing` tasks gives each its own item. It clears when any condition stops holding: an agent runs or asks again, a thread errors (a Failed run shows instead), a PR opens, or the task leaves `doing`. A thread `sync` has no view of yet counts as not stopped, and so does a PR whose state isn't known yet, so nothing shows before `sync`'s first read. The task's own `last_event_at` counts, not its subtree's: a subtask's change isn't a change to this task. A new stop after the agent was resumed has a newer last change, so a new key, and shows again after a dismiss.
 - **Quiet gives way to Agent stopped:** a Quiet item isn't shown for a task with a visible Agent stopped item, so one task never has both. Once Agent stopped is dismissed or snoozed, Quiet can show for it again.
+- **Due** reads the date in the system time zone at each moment (`AttentionConfig.utc_offset`, `None` by default; tests fix it), so it follows daylight saving. A task due later sets `next_wake` to the start of its day, and a visible item to the next midnight, when its headline changes. One key per task and date, so a dismissal holds however late it gets; moving the date makes a new item. Done, dropped and proposed tasks never show. It sends no notification.
 - **`stale`** is set on an item built from a `ThreadView` or `PrView` marked `stale`.
 
 ### Order
 
-Groups in the design's order, with Stopped right after Failed runs (both are a run that ended): Questions, Reviews, Failed runs, Stopped, Proposed, Ready, Quiet. Inside a group, newest `since` first; in Quiet, longest quiet first. Ties by task id, then key. `for_task` uses the same order.
+Groups in the design's order, with Stopped right after Failed runs (both are a run that ended): Questions, Reviews, Failed runs, Stopped, Due, Proposed, Ready, Quiet. Due comes before Proposed: a date I set ahead of anything an agent only suggests. Inside a group, newest `since` first; in Quiet, longest quiet first. Ties by task id, then key. `for_task` uses the same order.
 
 ### What each action calls
 
@@ -134,10 +138,10 @@ Groups in the design's order, with Stopped right after Failed runs (both are a r
 | Accept, Accept all | `set_status(id, Todo, None, me)` per task |
 | Reject, Reject all | `set_status(id, Dropped, reason, me)`; `core` records a `rejected` event |
 | Do it | `launch.start(&StartRequest { task, mode: DoIt, place: TaskRepos, again: false })` |
-| Mark done | `set_status(parent, Done, None, me)`; for Agent stopped, the task itself |
+| Mark done | `set_status(parent, Done, None, me)`; for Agent stopped and Due, the task itself |
 | Set in review (Agent stopped) | `set_status(task, InReview, None, me)` |
 | Keep open, Dismiss (⌘⌫) | `dismiss(key)` |
-| Snooze 3 days (Quiet, Agent stopped) | `snooze(key, None)` |
+| Snooze 3 days (Quiet, Agent stopped, Due) | `snooze(key, None)` |
 | Undo | `restore(key)` |
 
 ### The count and "checked"
@@ -397,6 +401,10 @@ The EM's decision on finding R5 (26 Nov 2026), in `tasks/program.md`:
 3. **Migration `attention` version 2** adds `'stopped'` to the kind CHECK, keeping every row.
 4. **Quiet gives way** to a visible Agent stopped item on the same task.
 5. **Actions:** Open thread (main), Mark done and Set in review (as me), Snooze 3 days and Dismiss.
+
+## Due dates (27 Nov 2026)
+
+Task 59: a task whose due date (SPEC-core rule 35) has come is listed as **Due**, in its own group after Stopped, until it's done or dropped, its date moves or is cleared, or I dismiss or snooze it. `NeedsKind::Due` and `NeedsGroup::Due` serialise as `due`, and so does its hidden rows' kind. `AttentionConfig.utc_offset` fixes the zone for tests; the app leaves it `None`, the system's. No notifications yet. Tests: `tests/due.rs`.
 
 ## Parents are containers: no "Finish it?" (27 Nov 2026)
 

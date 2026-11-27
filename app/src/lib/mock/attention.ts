@@ -3,11 +3,12 @@
   adds the Ready items a write can cause, as SPEC-attention's table describes.
 */
 
-import type { NeedsGroup, NeedsItem, TaskId } from '../types';
+import type { NeedsGroup, NeedsItem, Task, TaskId } from '../types';
+import { dueDay, dueLabel } from '../logic/time';
 import { isOpen, ts, type MockState } from './model';
 import { indexTree, isReady, liveKids, openBlockers, stepsOf, visibleNeeds, type TreeIndex } from './viewmodel';
 
-export const GROUP_ORDER: NeedsGroup[] = ['questions', 'reviews', 'failed_runs', 'stopped', 'proposed', 'ready', 'quiet'];
+export const GROUP_ORDER: NeedsGroup[] = ['questions', 'reviews', 'failed_runs', 'stopped', 'due', 'proposed', 'ready', 'quiet'];
 
 export function sortNeeds(items: NeedsItem[]): NeedsItem[] {
   return [...items].sort(
@@ -17,6 +18,31 @@ export function sortNeeds(items: NeedsItem[]): NeedsItem[] {
       a.task - b.task ||
       a.key.localeCompare(b.key),
   );
+}
+
+const DAY = 86_400_000;
+
+/** A Due item for an open task whose date has come, worded as `attention` words it; else null. */
+export function dueItem(task: { id: TaskId; title: string; status: Task['status']; due_at: string | null }, nowMs: number): NeedsItem | null {
+  const day = dueDay(task.due_at);
+  if (day === null || day > nowMs || !isOpen(task.status) || task.status === 'proposed') return null;
+  const start = new Date(nowMs);
+  const today = new Date(start.getFullYear(), start.getMonth(), start.getDate()).getTime();
+  const late = Math.round((today - day) / DAY);
+  const headline = late <= 0 ? 'Due today' : late === 1 ? 'Due yesterday' : `Overdue by ${late} days`;
+  return {
+    key: `due:${task.id}:${task.due_at}`,
+    kind: 'due',
+    group: 'due',
+    task: task.id,
+    task_title: task.title,
+    since: new Date(day).toISOString(),
+    headline,
+    context: `Due ${dueLabel(task.due_at!, nowMs)}`,
+    target: { task: task.id },
+    proposed: [],
+    stale: false,
+  };
 }
 
 function stillHolds(s: MockState, ix: TreeIndex, n: NeedsItem): NeedsItem | null {
@@ -59,6 +85,8 @@ function stillHolds(s: MockState, ix: TreeIndex, n: NeedsItem): NeedsItem | null
         context: `${count} proposed subtask${count === 1 ? '' : 's'}`,
       };
     }
+    case 'due':
+      return n.key === `due:${t.id}:${t.due_at}` ? dueItem(t, s.nowMs) : null;
     case 'ready':
       return isReady(s, ix, n.task) ? n : null;
     case 'quiet':
@@ -96,6 +124,9 @@ export function recomputeNeeds(s: MockState, version: { value: number }): boolea
       });
     }
     if (!isReady(s, ix, t.id) && openBlockers(s, ix, t.id).length) delete s.readySince[t.id];
+    // A task whose due date has come, or that was given one that has.
+    const due = dueItem(t, s.nowMs);
+    if (due && !kept.some((n) => n.key === due.key)) kept.push(due);
   }
   for (const n of kept) n.task_title = s.tasks.get(n.task)?.title ?? n.task_title;
   s.needs = sortNeeds(kept);

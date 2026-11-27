@@ -80,6 +80,66 @@ pub fn from_ts(ts: &str) -> Option<SystemTime> {
     at.checked_add(Duration::from_nanos(u64::from(nanos)))
 }
 
+/// The day a `YYYY-MM-DD` date names, as days since 1970-01-01. `None` for anything else,
+/// including impossible dates such as 2026-02-30.
+pub fn date_days(date: &str) -> Option<i64> {
+    let b = date.as_bytes();
+    if b.len() != 10 || b[4] != b'-' || b[7] != b'-' {
+        return None;
+    }
+    let num = |from: usize, to: usize| -> Option<u32> {
+        let digits = date.get(from..to)?;
+        digits
+            .bytes()
+            .all(|c| c.is_ascii_digit())
+            .then(|| digits.parse().ok())
+            .flatten()
+    };
+    let (year, month, day) = (i64::from(num(0, 4)?), num(5, 7)?, num(8, 10)?);
+    if !(1..=12).contains(&month) || !(1..=days_in_month(year, month)).contains(&day) {
+        return None;
+    }
+    Some(days_from_civil(year, month, day))
+}
+
+/// `days` since 1970-01-01 as `YYYY-MM-DD`.
+pub fn days_date(days: i64) -> String {
+    let (year, month, day) = civil_from_days(days);
+    format!("{year:04}-{month:02}-{day:02}")
+}
+
+/// The local day `t` falls on, as days since 1970-01-01, for a zone `utc_offset` seconds east
+/// of UTC at that moment.
+pub fn local_day(t: SystemTime, utc_offset: i32) -> i64 {
+    let secs = match t.duration_since(UNIX_EPOCH) {
+        Ok(after) => after.as_secs() as i64,
+        Err(before) => -(before.duration().as_secs_f64().ceil() as i64),
+    };
+    (secs + i64::from(utc_offset)).div_euclid(SECS_PER_DAY)
+}
+
+/// The moment local day `days` starts, for a zone `utc_offset` seconds east of UTC then.
+pub fn local_day_start(days: i64, utc_offset: i32) -> SystemTime {
+    let secs = days * SECS_PER_DAY - i64::from(utc_offset);
+    let whole = Duration::from_secs(secs.unsigned_abs());
+    if secs >= 0 {
+        UNIX_EPOCH + whole
+    } else {
+        UNIX_EPOCH - whole
+    }
+}
+
+/// The day of the week of `days` since 1970-01-01: 0 for Monday to 6 for Sunday.
+pub fn weekday(days: i64) -> u32 {
+    // 1970-01-01 was a Thursday.
+    (days + 3).rem_euclid(7) as u32
+}
+
+/// The month and day of month of `days` since 1970-01-01, and its year.
+pub fn days_civil(days: i64) -> (i64, u32, u32) {
+    civil_from_days(days)
+}
+
 fn is_leap(year: i64) -> bool {
     year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
 }

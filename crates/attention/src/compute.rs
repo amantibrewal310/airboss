@@ -16,7 +16,7 @@ use airboss_services::{
     NeedsGroup, NeedsItem, NeedsKey, NeedsKind, SyncSnapshot, Target, ThreadState, Timestamp,
 };
 
-use crate::{AttentionConfig, kinds, quiet, stopped};
+use crate::{AttentionConfig, due, kinds, quiet, stopped};
 
 /// Everything `compute` reads: the latest `core` and `sync` snapshots.
 #[derive(Debug, Clone)]
@@ -99,6 +99,7 @@ pub(crate) fn compute_full(
     kinds::threads(&ctx, &mut all);
     stopped::stopped(&ctx, &mut all, &mut wake);
     kinds::reviews(&ctx, &mut all);
+    due::due(&ctx, &mut all, &mut wake);
     kinds::proposed(&ctx, &mut all);
     kinds::ready(&ctx, &mut all);
     quiet::quiet(&ctx, &mut all, &mut wake);

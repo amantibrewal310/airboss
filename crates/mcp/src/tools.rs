@@ -110,7 +110,7 @@ impl From<AgentStatus> for Status {
     }
 }
 
-/// Arguments for `update_task`. Give `status`, `note`, or both.
+/// Arguments for `update_task`. Give `status`, `note`, `due`, or any of them together.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateTask {
@@ -122,6 +122,10 @@ pub struct UpdateTask {
     /// With `status`: why it's blocked, or what was done. Alone: a progress note.
     #[serde(default)]
     pub note: Option<String>,
+    /// The day it's due, YYYY-MM-DD in the user's time zone, e.g. "2026-12-04" for "Friday".
+    /// An empty string clears it. On that day it shows in the user's Needs me.
+    #[serde(default)]
+    pub due: Option<String>,
 }
 
 /// What a link points at.
@@ -421,6 +425,14 @@ pub fn update_task(
     let id = TaskId(args.id);
     let note = args.note.as_deref().filter(|n| !n.trim().is_empty());
     let actor = &who.actor;
+    // The date first: a bad one is the likeliest mistake, and then nothing else is written.
+    let dated = match &args.due {
+        Some(due) => Some(store.set_due(id, Some(due), actor).map_err(|e| match e {
+            airboss_core::Error::InvalidTarget => ToolError::bad_due(),
+            e => explain(store, actor, e, &Subject::task(id)),
+        })?),
+        None => None,
+    };
     let task = match (args.status, note) {
         (Some(to), note) => {
             let to = Status::from(to);
@@ -439,7 +451,10 @@ pub fn update_task(
                 .map_err(|e| fail(store, e))?;
             store.task(id).map_err(|e| fail(store, e))?
         }
-        (None, None) => return Err(ToolError::new("Give `status`, `note`, or both.")),
+        (None, None) => match dated {
+            Some(task) => task,
+            None => return Err(ToolError::new("Give `status`, `note`, `due`, or several.")),
+        },
     };
     Ok(TaskView::new(task, &RepoNames::load(store)?))
 }

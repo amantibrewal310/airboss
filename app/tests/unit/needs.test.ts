@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GROUP_ORDER, grouped, headlineOf, KIND_ICON, KIND_LABEL, mainLabel, otherLabel } from '../../src/lib/logic/needs';
+import { canMarkDone, GROUP_ORDER, grouped, headlineOf, KIND_ICON, KIND_LABEL, mainLabel, otherLabel } from '../../src/lib/logic/needs';
 import { GROUP_ORDER as MOCK_ORDER } from '../../src/lib/mock/attention';
 import { resolve } from '../../src/lib/logic/commands';
 import type { NeedsItem } from '../../src/lib/types';
@@ -29,7 +29,7 @@ describe('Agent stopped', () => {
   });
 
   it('groups right after Failed runs, as Rust orders it', () => {
-    expect(GROUP_ORDER.slice(2, 5)).toEqual(['failed_runs', 'stopped', 'proposed']);
+    expect(GROUP_ORDER.slice(2, 6)).toEqual(['failed_runs', 'stopped', 'due', 'proposed']);
     expect(MOCK_ORDER).toEqual(GROUP_ORDER);
     const g = grouped([item('proposed', 'proposed', 'p'), item('agent_stopped', 'stopped', 's'), item('failed_run', 'failed_runs', 'f')]);
     expect(g.map((x) => x.label)).toEqual(['Failed runs', 'Stopped', 'Proposed']);
@@ -39,5 +39,21 @@ describe('Agent stopped', () => {
     expect(resolve('space', 'list', 'needs', true)?.id).toBe('needs_done');
     expect(resolve('space', 'panel', 'needs', true)?.id).toBe('needs_done');
     expect(resolve('space', 'list', 'list', true)?.id).toBe('toggle_done');
+  });
+});
+
+/** Task 59: Due, an open task whose due date has come. */
+describe('Due', () => {
+  it('has its label, icon and actions', () => {
+    expect(KIND_LABEL.due).toBe('Due');
+    expect(KIND_ICON.due).toBe('calendar');
+    expect(mainLabel('due')).toBe('Open');
+    expect(otherLabel('due')).toBe('Dismiss');
+    expect(canMarkDone('due')).toBe(true);
+  });
+
+  it('groups after Stopped and before Proposed, as Rust orders it', () => {
+    const g = grouped([item('proposed', 'proposed', 'p'), item('due', 'due', 'd'), item('agent_stopped', 'stopped', 's')]);
+    expect(g.map((x) => x.label)).toEqual(['Stopped', 'Due', 'Proposed']);
   });
 });

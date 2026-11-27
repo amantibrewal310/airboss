@@ -85,6 +85,7 @@ impl Core {
             origin: Origin::Me,
             plan_key: None,
             branch: None,
+            due_at: None,
             created_at: ts(0, 0),
         };
         if status != Status::Proposed
@@ -101,6 +102,14 @@ impl Core {
             last_actor: Actor::Me,
             subtree_last_event_at: last.to_string(),
         });
+        self
+    }
+
+    /// Sets the last task's due date, `YYYY-MM-DD`.
+    pub fn due(mut self, date: &str) -> Core {
+        if let Some(n) = self.nodes.last_mut() {
+            n.task.due_at = Some(date.to_string());
+        }
         self
     }
 

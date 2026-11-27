@@ -63,7 +63,12 @@
               { label: 'Set in review', run: () => app.setNeedInReview(item) },
               { label: 'Snooze 3 days', run: () => app.snooze(item) },
             ]
-          : [],
+          : item.kind === 'due'
+            ? [
+                { label: 'Mark done', keys: 'space', run: () => app.markNeedDone(item) },
+                { label: 'Snooze 3 days', run: () => app.snooze(item) },
+              ]
+            : [],
   );
 </script>
 

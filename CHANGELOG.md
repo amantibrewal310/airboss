@@ -4,6 +4,10 @@ What changed in each release of Airboss. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Added
+
+- **Due dates.** A task can have a day it's due. Tell an agent "by Friday" or "in 2 days" and it sets the date; or pick one on the new **Due** line of a task's panel, or run `airboss due 12 2026-12-04`. From that day (your midnight, in your time zone) the task shows in Needs me under **Due** ("Due today", "Due yesterday", "Overdue by 3 days") until it's done, with Mark done, Snooze 3 days and Dismiss. No notifications for it yet.
+
 ### Changed
 
 - **A task with subtasks has no status of its own.** It shows what its subtasks add up to: done when every one is done or dropped, dropped when all are, blocked when any is (naming which), in progress when any is under way or some are finished, otherwise todo. A plan with 8 of 38 steps done now shows in progress, not done. Its old status is ignored, not changed.

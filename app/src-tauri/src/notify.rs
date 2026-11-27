@@ -315,6 +315,7 @@ mod tests {
             ("a", NeedsKind::Approval),
             ("f", NeedsKind::FailedRun),
             ("s", NeedsKind::AgentStopped),
+            ("d", NeedsKind::Due),
             ("r", NeedsKind::Review),
             ("p", NeedsKind::Proposed),
             ("y", NeedsKind::Ready),

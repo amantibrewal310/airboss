@@ -30,6 +30,7 @@ import type {
   UpdateStatus,
 } from '../types';
 import { classify } from '../logic/links';
+import { dueDay } from '../logic/time';
 import { codexNeedsTerminalId } from '../logic/connections';
 import { recomputeNeeds, sortNeeds } from './attention';
 import { isOpen, MOCK_VERSION, stateFromSeed, ts, type MockSeed, type MockState } from './model';
@@ -518,6 +519,7 @@ export class MockBackend implements Transport {
         position: siblings.length ? Math.max(...siblings.map((t) => t.position)) + 1 : 0,
         origin: 'me',
         plan_key: null,
+        due_at: null,
         branch: null,
         created_at: this.now(),
       });
@@ -731,6 +733,16 @@ export class MockBackend implements Transport {
       }
       t.branch = b || null;
       this.event(id, 'edited', { body: b ? `branch: ${b}` : 'branch cleared' });
+      return this.commit();
+    },
+
+    set_due: ({ id, due }) => {
+      const t = this.task(id);
+      const d = due.trim();
+      if (d && dueDay(d) === null) throw fail('invalid_target', 'A due date is a real day, like 2026-12-04.');
+      if ((t.due_at ?? '') === d) return this.commit();
+      t.due_at = d || null;
+      this.event(id, 'edited', { body: d ? `due: ${d}` : 'due date cleared' });
       return this.commit();
     },
 

@@ -68,6 +68,8 @@ pub enum NeedsKind {
     FailedRun,
     /// Every linked thread of a `doing` task stopped, with no open PR and nothing new for a while.
     AgentStopped,
+    /// An open task whose due date is today or past, in my own time zone.
+    Due,
     Proposed,
     Ready,
     Quiet,
@@ -81,6 +83,7 @@ impl NeedsKind {
             NeedsKind::Review => NeedsGroup::Reviews,
             NeedsKind::FailedRun => NeedsGroup::FailedRuns,
             NeedsKind::AgentStopped => NeedsGroup::Stopped,
+            NeedsKind::Due => NeedsGroup::Due,
             NeedsKind::Proposed => NeedsGroup::Proposed,
             NeedsKind::Ready => NeedsGroup::Ready,
             NeedsKind::Quiet => NeedsGroup::Quiet,
@@ -89,7 +92,8 @@ impl NeedsKind {
 }
 
 /// The design's groups, declared in display order, so sorting by group is display order.
-/// Stopped (Agent stopped) sits right after Failed runs: both are a run that ended.
+/// Stopped (Agent stopped) sits right after Failed runs: both are a run that ended. Due comes
+/// next: a date I set, ahead of anything an agent only suggests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NeedsGroup {
@@ -97,6 +101,7 @@ pub enum NeedsGroup {
     Reviews,
     FailedRuns,
     Stopped,
+    Due,
     Proposed,
     Ready,
     Quiet,

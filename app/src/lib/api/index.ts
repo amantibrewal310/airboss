@@ -53,6 +53,7 @@ export const api = {
   backUpDatabase: () => call('back_up_database', none),
   pickFolder: () => call('pick_folder', none),
   setBranch: (id: TaskId, branch: string) => call('set_branch', { id, branch }),
+  setDue: (id: TaskId, due: string) => call('set_due', { id, due }),
   addDependency: (id: TaskId, waitsOn: TaskId) => call('add_dependency', { id, waitsOn }),
   removeDependency: (id: TaskId, waitsOn: TaskId) => call('remove_dependency', { id, waitsOn }),
   addLink: (id: TaskId, text: string, title: string | null = null) => call('add_link', { id, text, title }),

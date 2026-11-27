@@ -187,6 +187,9 @@ pub struct Task {
     pub plan_key: Option<String>,
     /// The branch every thread for this task shares; `None` until one is chosen.
     pub branch: Option<String>,
+    /// The calendar date it's due, `YYYY-MM-DD` in my own time zone; `None` when it has no
+    /// due date (rule 35).
+    pub due_at: Option<String>,
     pub created_at: String,
 }
 
