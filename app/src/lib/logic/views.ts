@@ -3,7 +3,7 @@
   Pure functions of (rows, order, view, folded, layout), wrapped in one $derived by the UI.
 */
 
-import type { Repo, RowDto, Status, TaskId } from '../types';
+import type { Repo, RowDto, RowSignal, Status, TaskId } from '../types';
 
 export type View = 'needs' | 'ready' | 'plans' | 'progress' | 'all' | `repo:${number}` | `parent:${number}`;
 export type Layout = 'tree' | 'status';
@@ -38,6 +38,23 @@ export const STATUS_GROUPS: Shape[] = ['doing', 'in_review', 'blocked', 'todo', 
 
 export function shapeOf(row: Pick<RowDto, 'status' | 'waiting'>): Shape {
   return row.waiting && row.status === 'todo' ? 'waiting' : row.status;
+}
+
+/**
+ * A row chip's words (task 55): "Needs you" on a step, "2 need you" on a parent (or a step with
+ * several), "Failed", "PR open", "waits on 144, 145".
+ */
+export function signalLabel(sig: RowSignal, row: Pick<RowDto, 'has_children' | 'waits_on'>): string {
+  switch (sig.kind) {
+    case 'needs_you':
+      return !row.has_children && sig.count === 1 ? 'Needs you' : `${sig.count} ${sig.count === 1 ? 'needs' : 'need'} you`;
+    case 'failed':
+      return 'Failed';
+    case 'pr_open':
+      return 'PR open';
+    case 'waiting_on':
+      return `waits on ${row.waits_on.join(', ')}`;
+  }
 }
 
 export const isOpenStatus = (s: Status) => s === 'todo' || s === 'doing' || s === 'in_review' || s === 'blocked';

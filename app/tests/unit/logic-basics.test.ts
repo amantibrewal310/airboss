@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { applyPatch, type RowsState } from '../../src/lib/logic/patch';
 import { ago as agoText, clockTime, dueDay, dueLabel, feedTime, isDue, localDate, relative, relativeLong } from '../../src/lib/logic/time';
 import { needsLead } from '../../src/lib/logic/needs';
+import { signalLabel } from '../../src/lib/logic/views';
 import { threadSummary } from '../../src/lib/logic/copy';
 import type { ThreadDto } from '../../src/lib/types';
 import { agentsStep, footerText, mergeConnections } from '../../src/lib/logic/connections';
@@ -11,8 +12,8 @@ import { lastReport } from '../../src/lib/logic/connections';
 const row = (id: number, extra: Partial<RowDto> = {}): RowDto => ({
   id, parent: null, depth: 0, position: id, title: `T${id}`, status: 'todo', origin: 'me', priority: null, blocked_reason: null,
   waiting: false, waits_on: [], has_children: false, has_steps: false, progress: null, repos: [], repos_from_subtasks: false,
-  branch: null, due_at: null, ready: false, ready_since: null, ready_pill: false, quiet_days: null, needs: false,
-  needs_stale: false, live: null, last_at: '2026-11-25T10:00:00.000Z', last_actor: 'me', launched_in: null, ...extra,
+  branch: null, due_at: null, ready: false, ready_since: null, needs: false,
+  live: null, signal: null, last_at: '2026-11-25T10:00:00.000Z', last_actor: 'me', ...extra,
 });
 
 describe('applyPatch', () => {
@@ -87,6 +88,11 @@ describe('time', () => {
     expect(threadSummary(t({ state: 'needs_me', request: { kind: 'approval', at: ago(3 * 3_600_000) } as ThreadDto['request'] }), now)).toBe('wants approval 3h ago');
     expect(threadSummary(t({ state: 'errored', error: 'boom' }), now)).toBe('boom');
     expect(threadSummary(t({ state: 'gone' }), now)).toBe('no longer in T3');
+    // A finished task's thread says only when it last ran: no Stopped, no error, no question.
+    expect(threadSummary(t({ state: 'errored', error: 'boom', task_closed: true }), now)).toBe('last active just now');
+    expect(threadSummary(t({ state: 'settled', task_closed: true }), now)).toBe('last active just now');
+    expect(threadSummary(t({ state: 'needs_me', request: { kind: 'question', at: ago(20_000) } as ThreadDto['request'], task_closed: true }), now)).toBe('last active just now');
+    expect(threadSummary(t({ state: 'running', task_closed: true }), now)).toBe('working · now');
     expect(lastReport(ago(20_000), now)).toBe('Last report just now');
     expect(lastReport(ago(6 * 60_000), now)).toBe('Last report 6m ago');
     expect(lastReport(ago(90 * 86_400_000), now)).toBe('Last report on 27 Aug');
@@ -183,5 +189,19 @@ describe('due dates', () => {
     expect(isDue('2026-12-04', at(2026, 12, 4, 0) - 1)).toBe(false);
     expect(isDue('2026-12-04', at(2026, 12, 9))).toBe(true);
     expect(isDue(null, at(2026, 12, 9))).toBe(false);
+  });
+});
+
+describe('signalLabel', () => {
+  it('words a row’s one chip', () => {
+    const leaf = row(1, { waits_on: [144, 145] });
+    const parent = row(2, { has_children: true });
+    expect(signalLabel({ kind: 'needs_you', count: 1, stale: false }, leaf)).toBe('Needs you');
+    expect(signalLabel({ kind: 'needs_you', count: 2, stale: false }, leaf)).toBe('2 need you');
+    expect(signalLabel({ kind: 'needs_you', count: 1, stale: false }, parent)).toBe('1 needs you');
+    expect(signalLabel({ kind: 'needs_you', count: 3, stale: false }, parent)).toBe('3 need you');
+    expect(signalLabel({ kind: 'failed', stale: false }, leaf)).toBe('Failed');
+    expect(signalLabel({ kind: 'pr_open' }, leaf)).toBe('PR open');
+    expect(signalLabel({ kind: 'waiting_on' }, leaf)).toBe('waits on 144, 145');
   });
 });

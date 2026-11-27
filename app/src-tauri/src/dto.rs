@@ -12,7 +12,7 @@ use airboss_core::{
 };
 use airboss_services::{
     Availability, Chip, Connection, HerdrAgent, LaunchReport, Launcher, NeedsItem, NeedsList,
-    PrView, Prepared, Request, Source, ThreadKey, ThreadState, ThreadView,
+    PrView, Prepared, Request, ThreadKey, ThreadState, ThreadView,
 };
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -674,6 +674,23 @@ pub fn chip_strength(c: Chip) -> u8 {
     }
 }
 
+/// The one chip a row shows after its title (task 55): the most urgent of needs you, failed,
+/// PR open and waiting on. `None` on a quiet row, and always on a done or dropped one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[ts(export_to = "types.ts")]
+pub enum RowSignal {
+    /// Needs me items about it, every kind but Ready to start and Failed run; on a parent,
+    /// every kind but Ready to start, about it or anything under it ("2 need you").
+    NeedsYou { count: u32, stale: bool },
+    /// A failed run, or failing checks on an open PR.
+    Failed { stale: bool },
+    /// An open PR is linked.
+    PrOpen,
+    /// Something it waits on is still open (`waits_on` says what).
+    WaitingOn,
+}
+
 /// One row of the task list: everything it draws, worked out in Rust.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export_to = "types.ts")]
@@ -716,27 +733,19 @@ pub struct RowDto {
     pub ready: bool,
     #[ts(as = "Option<TimestampTs>")]
     pub ready_since: Option<Timestamp>,
-    /// `attention` lists it as Ready to start.
-    pub ready_pill: bool,
-    /// `attention` lists it as Quiet: whole days since its last activity.
-    pub quiet_days: Option<u32>,
-    /// Any Needs me item about it (the red dot).
+    /// Any Needs me item about it, Ready to start included.
     pub needs: bool,
-    /// Any of those items may be out of date.
-    pub needs_stale: bool,
     /// The strongest chip of its threads, only while it's open.
     #[ts(as = "Option<ChipTs>")]
     pub live: Option<Chip>,
+    /// The one chip the row shows.
+    pub signal: Option<RowSignal>,
     /// Its newest event, or for a parent the newest anywhere in its subtree.
     #[ts(as = "TimestampTs")]
     pub last_at: Timestamp,
     /// Who made that event, as text ("me", "agent:t3/…").
     #[ts(as = "ActorTs")]
     pub last_actor: String,
-    /// When `last_actor` is Launch: where its thread runs (T3 or Herdr), so the avatar can say
-    /// so. The task's most recently active T3 thread or Herdr terminal; `null` otherwise.
-    #[ts(as = "Option<SourceTs>")]
-    pub launched_in: Option<Source>,
 }
 
 /// What changed in the rows since the last patch. Apply it only if `seq` is greater than the
@@ -893,15 +902,19 @@ pub struct ThreadDto {
     /// The agent's newest reply (T3), where it says what's left for me.
     pub last_reply: Option<String>,
     pub stale: bool,
+    /// Its task is done or dropped: the card then shows no chip but Agent working, and no
+    /// question, approval or error (task 55: a finished task never shows Stopped or alerts).
+    pub task_closed: bool,
 }
 
 impl ThreadDto {
-    /// The thread, with the URL `sync.thread_url` gave for it.
-    pub fn new(t: &ThreadView, url: Option<String>) -> ThreadDto {
+    /// The thread, with the URL `sync.thread_url` gave for it. `task_open`: whether the task
+    /// whose panel shows it is still open.
+    pub fn new(t: &ThreadView, url: Option<String>, task_open: bool) -> ThreadDto {
         ThreadDto {
             key: t.key.clone(),
             state: t.state,
-            chip: t.state.chip(),
+            chip: t.state.chip().filter(|&c| task_open || c == Chip::Working),
             title: t.title.clone(),
             request: t.request.clone(),
             error: t.error.clone(),
@@ -910,6 +923,7 @@ impl ThreadDto {
             last_activity_at: t.last_activity_at.clone(),
             last_reply: t.last_reply.clone(),
             stale: t.stale,
+            task_closed: !task_open,
         }
     }
 }

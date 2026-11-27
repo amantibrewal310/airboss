@@ -5,8 +5,8 @@ import type { RowDto } from '../../src/lib/types';
 const row = (id: number, repos: number[], fromSubtasks = false): RowDto => ({
   id, parent: null, depth: 0, position: id, title: `T${id}`, status: 'todo', origin: 'me', priority: null, blocked_reason: null,
   waiting: false, waits_on: [], has_children: fromSubtasks, has_steps: fromSubtasks, progress: null, repos, repos_from_subtasks: fromSubtasks,
-  branch: null, due_at: null, ready: false, ready_since: null, ready_pill: false, quiet_days: null, needs: false,
-  needs_stale: false, live: null, last_at: '2026-11-25T10:00:00.000Z', last_actor: 'me', launched_in: null,
+  branch: null, due_at: null, ready: false, ready_since: null, needs: false,
+  live: null, signal: null, last_at: '2026-11-25T10:00:00.000Z', last_actor: 'me',
 });
 
 describe('Settings › Repos › Remove', () => {

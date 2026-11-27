@@ -160,7 +160,7 @@ impl AppState {
         clock: Arc<dyn Clock>,
         config: AppConfig,
     ) -> AppResult<Arc<AppState>> {
-        let first = CatchUp::first(&store, &services, clock.now())?;
+        let first = CatchUp::first(&store, &services)?;
         // After the first reads, so the WAL exists and its identity is the one the app holds.
         let db = DbHealth::new(lock(&store).path());
         let settings = config.settings.clone();

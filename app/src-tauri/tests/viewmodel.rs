@@ -9,12 +9,13 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
-use airboss_app::dto::Progress;
+use airboss_app::dto::{Progress, RowSignal};
 use airboss_app::runmap::{display_waves, map_fits, run_map};
 use airboss_app::viewmodel::{ViewModel, diff, plan_cards};
-use airboss_core::{Actor, NewTask, Status, Store, TaskEdit, TaskId};
+use airboss_core::{Actor, NewTask, PrState, Status, Store, TaskEdit, TaskId};
 use airboss_services::{
-    Chip, NeedsKind, NeedsList, Source, SyncSnapshot, ThreadKey, ThreadState, ThreadView,
+    Checks, Chip, NeedsKind, NeedsList, PrRef, PrView, Review, Source, SyncSnapshot, ThreadKey,
+    ThreadState, ThreadView,
 };
 use common::{TestApp, needs_item};
 
@@ -43,7 +44,6 @@ fn vm_with(s: &Store, sync: SyncSnapshot, needs: NeedsList) -> ViewModel {
         s.repos().unwrap(),
         Arc::new(sync),
         Arc::new(needs),
-        common::at(common::NOW),
     )
 }
 
@@ -218,32 +218,168 @@ fn a_proposed_blocker_holds_nothing_until_it_is_accepted() {
     assert_eq!(v.rows[&a].waits_on, vec![p], "accepted, it holds A up");
 }
 
-#[test]
-fn needs_items_set_the_dot_the_ready_pill_quiet_days_and_staleness() {
-    let mut s = store();
-    let a = add(&mut s, "A", None);
-    let b = add(&mut s, "B", None);
-    let now = common::at(common::NOW);
-    let six_days = airboss_services::time::to_ts(now - Duration::from_secs(6 * 86_400 + 60));
-    let mut quiet = needs_item("quiet:a", NeedsKind::Quiet, a, &six_days);
-    quiet.stale = true;
-    let needs = NeedsList {
-        count: 2,
-        items: vec![
-            quiet,
-            needs_item("ready:b", NeedsKind::Ready, b, common::NOW),
-        ],
+fn needs(items: Vec<airboss_services::NeedsItem>) -> NeedsList {
+    NeedsList {
+        count: items.len() as u32,
+        items,
         checked_at: None,
         version: 1,
-    };
-    let v = vm_with(&s, SyncSnapshot::default(), needs);
-    assert_eq!(v.rows[&a].quiet_days, Some(6));
-    assert!(v.rows[&a].needs && v.rows[&a].needs_stale && !v.rows[&a].ready_pill);
-    assert!(v.rows[&b].ready_pill && v.rows[&b].needs && !v.rows[&b].needs_stale);
+    }
+}
+
+fn pr(r: &str, state: PrState, checks: Checks) -> PrView {
+    PrView {
+        r#ref: PrRef::parse(r).unwrap(),
+        linked: true,
+        url: None,
+        title: None,
+        state: Some(state),
+        draft: false,
+        review: Review::None,
+        checks,
+        additions: None,
+        deletions: None,
+        head_ref: None,
+        author: None,
+        updated_at: None,
+        ready_since: None,
+        problem: None,
+        stale: false,
+    }
+}
+
+fn link_pr(sync: &mut SyncSnapshot, view: PrView, task: TaskId) {
+    sync.pr_tasks.insert(view.r#ref.clone(), vec![task]);
+    sync.prs.insert(view.r#ref.clone(), view);
 }
 
 #[test]
-fn an_agent_stopped_item_sets_the_dot_beside_the_your_turn_chip() {
+fn a_row_shows_one_signal_the_most_urgent_of_needs_you_failed_pr_open_and_waiting_on() {
+    let mut s = store();
+    let asks = add(&mut s, "Asks", None);
+    let failed = add(&mut s, "Failed run", None);
+    let red = add(&mut s, "Red checks", None);
+    let pr_open = add(&mut s, "PR open", None);
+    let waits = add(&mut s, "Waits", None);
+    let blocker = add(&mut s, "Blocker", None);
+    let ready = add(&mut s, "Ready", None);
+    let quiet = add(&mut s, "Quiet", None);
+    for t in [asks, waits] {
+        s.add_dependency(t, blocker, &Actor::Me).unwrap();
+    }
+    let mut sync = SyncSnapshot::default();
+    link_pr(&mut sync, pr("o/r#1", PrState::Open, Checks::Passing), asks);
+    link_pr(&mut sync, pr("o/r#2", PrState::Open, Checks::Failing), red);
+    link_pr(
+        &mut sync,
+        pr("o/r#3", PrState::Open, Checks::Pending),
+        pr_open,
+    );
+    link_pr(
+        &mut sync,
+        pr("o/r#4", PrState::Merged, Checks::Passing),
+        ready,
+    );
+    let mut stale_fail = needs_item("failed:x", NeedsKind::FailedRun, failed, common::NOW);
+    stale_fail.stale = true;
+    let list = needs(vec![
+        needs_item("question:a", NeedsKind::Question, asks, common::NOW),
+        needs_item("failed:a", NeedsKind::FailedRun, asks, common::NOW),
+        stale_fail,
+        needs_item("ready:r", NeedsKind::Ready, ready, common::NOW),
+        needs_item("quiet:q", NeedsKind::Quiet, quiet, common::NOW),
+    ]);
+    let v = vm_with(&s, sync, list);
+    let sig = |t: TaskId| v.rows[&t].signal.clone();
+    // Needs you beats a failed run, an open PR and waiting.
+    assert_eq!(
+        sig(asks),
+        Some(RowSignal::NeedsYou {
+            count: 1,
+            stale: false
+        })
+    );
+    assert_eq!(sig(failed), Some(RowSignal::Failed { stale: true }));
+    assert_eq!(
+        sig(red),
+        Some(RowSignal::Failed { stale: false }),
+        "failing checks"
+    );
+    assert_eq!(sig(pr_open), Some(RowSignal::PrOpen));
+    assert_eq!(sig(waits), Some(RowSignal::WaitingOn));
+    // Ready to start is no chip (the Ready view lists it), and a merged PR isn't open.
+    assert_eq!(sig(ready), None);
+    assert!(v.rows[&ready].needs);
+    // Quiet is a Needs me item with its own action, so it counts.
+    assert_eq!(
+        sig(quiet),
+        Some(RowSignal::NeedsYou {
+            count: 1,
+            stale: false
+        })
+    );
+    assert_eq!(sig(blocker), None, "nothing happening, no chip");
+}
+
+#[test]
+fn a_done_task_shows_no_signal_even_with_items_or_threads_left() {
+    let mut s = store();
+    let a = add(&mut s, "A", None);
+    status(&mut s, a, Status::Done);
+    let sync = sync_with(&[("a1", ThreadState::Errored, a)]);
+    let list = needs(vec![needs_item(
+        "stopped:a",
+        NeedsKind::AgentStopped,
+        a,
+        common::NOW,
+    )]);
+    let v = vm_with(&s, sync, list);
+    assert_eq!(v.rows[&a].signal, None);
+    assert_eq!(v.rows[&a].live, None);
+}
+
+#[test]
+fn a_parent_rolls_up_what_needs_me_under_it_and_shows_no_pr_of_its_own() {
+    let mut s = store();
+    let p = add(&mut s, "Plan", None);
+    let phase = add(&mut s, "Phase", Some(p));
+    let a = add(&mut s, "A", Some(phase));
+    let b = add(&mut s, "B", Some(phase));
+    let c = add(&mut s, "C", Some(p));
+    let quiet_parent = add(&mut s, "Quiet plan", None);
+    let _d = add(&mut s, "D", Some(quiet_parent));
+    let mut sync = SyncSnapshot::default();
+    link_pr(&mut sync, pr("o/r#9", PrState::Open, Checks::Passing), c);
+    let mut stale = needs_item("failed:b", NeedsKind::FailedRun, b, common::NOW);
+    stale.stale = true;
+    let list = needs(vec![
+        needs_item("question:a", NeedsKind::Question, a, common::NOW),
+        stale,
+        needs_item("proposed:p", NeedsKind::Proposed, p, common::NOW),
+        needs_item("ready:c", NeedsKind::Ready, c, common::NOW),
+    ]);
+    let v = vm_with(&s, sync, list);
+    assert_eq!(
+        v.rows[&p].signal,
+        Some(RowSignal::NeedsYou {
+            count: 3,
+            stale: true
+        }),
+        "a question, a failed run and a proposal; Ready left out"
+    );
+    assert_eq!(
+        v.rows[&phase].signal,
+        Some(RowSignal::NeedsYou {
+            count: 2,
+            stale: true
+        })
+    );
+    assert_eq!(v.rows[&c].signal, Some(RowSignal::PrOpen));
+    assert_eq!(v.rows[&quiet_parent].signal, None);
+}
+
+#[test]
+fn an_agent_stopped_item_is_needs_you_beside_the_your_turn_chip() {
     let mut s = store();
     let a = add(&mut s, "A", None);
     status(&mut s, a, Status::Doing);
@@ -286,9 +422,14 @@ fn an_agent_stopped_item_sets_the_dot_beside_the_your_turn_chip() {
     };
     let v = vm_with(&s, sync, needs);
     let row = &v.rows[&a];
-    assert!(row.needs && !row.needs_stale);
+    assert_eq!(
+        row.signal,
+        Some(RowSignal::NeedsYou {
+            count: 1,
+            stale: false
+        })
+    );
     assert_eq!(row.live, Some(Chip::YourTurn));
-    assert!(!row.ready_pill && row.quiet_days.is_none());
 }
 
 #[test]
@@ -592,54 +733,4 @@ fn rows_follow_status_for_the_ui() {
     assert_eq!(v.rows[&a].status, Status::Blocked);
     assert_eq!(v.rows[&a].blocked_reason.as_deref(), Some("stuck"));
     let _ = SystemTime::now();
-}
-
-#[test]
-fn launch_rows_say_where_the_thread_runs() {
-    let mut s = store();
-    let a = add(&mut s, "A", None);
-    let b = add(&mut s, "B", None);
-    s.set_status(a, Status::Doing, None, &Actor::Launch)
-        .unwrap();
-    s.set_status(b, Status::Doing, None, &Actor::Me).unwrap();
-    let thread = |source: Source, r: &str, at: &str| {
-        let key = ThreadKey {
-            source,
-            r#ref: r.into(),
-        };
-        let view = ThreadView {
-            key: key.clone(),
-            linked: true,
-            state: ThreadState::Idle,
-            title: None,
-            request: None,
-            error: None,
-            run_id: None,
-            project_path: None,
-            branch: None,
-            worktree_path: None,
-            parent_ref: None,
-            child_count: 0,
-            last_activity_at: Some(at.into()),
-            last_reply: None,
-            stale: false,
-        };
-        (key, view)
-    };
-    let mut sync = SyncSnapshot::default();
-    // A's newest thread is a Herdr terminal; B's last actor is me, so it says nothing.
-    for (src, r, at, task) in [
-        (Source::T3, "t-a", "2026-11-26T10:00:00.000Z", a),
-        (Source::Herdr, "h-a", "2026-11-26T11:00:00.000Z", a),
-        (Source::T3, "t-b", "2026-11-26T11:00:00.000Z", b),
-    ] {
-        let (key, view) = thread(src, r, at);
-        sync.thread_tasks.insert(key.clone(), vec![task]);
-        sync.threads.insert(key, view);
-    }
-    let v = vm_with(&s, sync, NeedsList::default());
-    assert_eq!(v.rows[&a].last_actor, "launch");
-    assert_eq!(v.rows[&a].launched_in, Some(Source::Herdr));
-    assert_eq!(v.rows[&a].live, Some(Chip::YourTurn));
-    assert_eq!(v.rows[&b].launched_in, None);
 }

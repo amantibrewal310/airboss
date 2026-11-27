@@ -40,6 +40,7 @@ describe('Herdr terminals read like threads', () => {
       last_activity_at: null,
       last_reply: null,
       stale: false,
+      task_closed: false,
     };
     expect(threadSummary(t, 0)).toBe('no longer in Herdr');
     expect(threadSummary({ ...t, key: { source: 't3', ref: 'x' } }, 0)).toBe('no longer in T3');

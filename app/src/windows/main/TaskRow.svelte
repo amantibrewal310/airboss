@@ -3,17 +3,16 @@
   import type { Repo, RepoId, RowDto } from '../../lib/types';
   import StatusIcon from '../../lib/components/StatusIcon.svelte';
   import ProgressRing from '../../lib/components/ProgressRing.svelte';
-  import LiveChip from '../../lib/components/LiveChip.svelte';
-  import Avatar from '../../lib/components/Avatar.svelte';
   import RepoDot from '../../lib/components/RepoDot.svelte';
   import Icon from '../../lib/components/Icon.svelte';
-  import { percent, shapeOf, SHAPE_LABEL } from '../../lib/logic/views';
+  import { percent, shapeOf, signalLabel, SHAPE_LABEL } from '../../lib/logic/views';
   import { relative, relativeLong } from '../../lib/logic/time';
 
   /**
    * One task row: exactly 38px, nothing wraps. Left to right: fold arrow, status, id, title,
-   * priority badge, progress, live chip, needs-me dot, gap, pills, repo pills, actor, time. No effects and no
-   * listeners: the list handles clicks by delegation through the data-* attributes.
+   * priority badge, progress (a parent), at most one chip (`row.signal`, task 55), gap, repo
+   * pills (a leaf), time. No effects and no listeners: the list handles clicks by delegation
+   * through the data-* attributes.
    */
   let {
     row,
@@ -53,11 +52,14 @@
   } = $props();
 
   const shape = $derived(shapeOf(row));
-  const names = $derived(row.repos.map((id) => repos.get(id)).filter((r): r is Repo => !!r));
+  // A parent's repos are its steps' repos, the same on every phase: only leaves show them.
+  const names = $derived(row.has_children ? [] : row.repos.map((id) => repos.get(id)).filter((r): r is Repo => !!r));
   const shownRepos = $derived(names.slice(0, 2));
   const pct = $derived(percent(row.progress));
   const time = $derived(since ? row.ready_since : row.last_at);
-  const liveLabel = $derived(row.live === 'working' ? 'agent working' : row.live === 'waiting_on_you' ? 'waiting on you' : row.live === 'your_turn' ? 'your turn' : row.live === 'stopped' ? 'agent stopped' : '');
+  const sig = $derived(row.signal);
+  const sigLabel = $derived(sig ? signalLabel(sig, row) : '');
+  const stale = $derived(sig && 'stale' in sig && sig.stale);
   const aria = $derived(
     [
       row.id,
@@ -65,10 +67,8 @@
       SHAPE_LABEL[shape],
       row.priority ? `priority ${row.priority.toUpperCase()}` : '',
       row.status === 'blocked' && row.blocked_reason ? `blocked: ${row.blocked_reason}` : '',
-      row.waiting ? `waits on ${row.waits_on.join(', ')}` : '',
       row.progress ? `${row.progress.done} of ${row.progress.total} done` : '',
-      liveLabel,
-      row.needs ? 'needs you' : '',
+      sigLabel ? (stale ? `${sigLabel} (may be out of date)` : sigLabel) : '',
       names.map((r) => r.name).join(', '),
       relativeLong(time, now),
     ]
@@ -103,7 +103,6 @@
   class:kb={selected && keyboard}
   class:done={row.status === 'done'}
   class:fresh
-  class:waiting-you={row.live === 'waiting_on_you' && row.needs}
   style:--d={depth}
   data-row={row.id}
   {role}
@@ -136,34 +135,31 @@
       <ProgressRing {pct} size={13} /><span class="pc">{row.progress.done}/{row.progress.total}</span>
     </span>
   {/if}
-  {#if row.live}<LiveChip chip={row.live} decorative />{/if}
-  {#if row.needs}
-    <span class="dot" class:stale={row.needs_stale} title={row.needs_stale ? 'May be out of date' : 'Needs you'} aria-hidden="true"></span>
+  {#if sig}
+    <span class="sig {sig.kind}" class:stale title={stale ? `${sigLabel} · may be out of date` : sigLabel} aria-hidden="true">
+      {#if sig.kind === 'needs_you'}
+        <Icon name="inbox" size={12} /><span class="lab">{sigLabel}</span><span class="n">{sig.count}</span>
+      {:else if sig.kind === 'failed'}
+        <Icon name="failed" size={12} /><span class="lab">Failed</span>
+      {:else if sig.kind === 'pr_open'}
+        <Icon name="pr" size={12} /><span class="lab">PR open</span>
+      {:else}
+        <Icon name="dep" size={12} /><span class="long">{sigLabel}</span><span class="short">{row.waits_on.length}</span>
+      {/if}
+    </span>
   {/if}
   <span class="sp"></span>
-  <span class="meta" aria-hidden="true">
-    {#if row.status === 'blocked'}
-      <span class="pill warn" title={row.blocked_reason ?? undefined}>Blocked</span>
-    {/if}
-    {#if row.waiting}
-      <span class="pill" title="waits on {row.waits_on.join(', ')}">
-        <span class="long">waits on {row.waits_on.join(', ')}</span>
-        <span class="short"><Icon name="dep" size={12} />{row.waits_on.length}</span>
-      </span>
-    {/if}
-    {#if row.ready_pill}<span class="pill ok">Ready</span>{/if}
-    {#if row.quiet_days !== null}<span class="pill quiet">Quiet {row.quiet_days} {row.quiet_days === 1 ? 'day' : 'days'}</span>{/if}
-    {#each shownRepos as r (r.id)}
-      <span class="pill rn" title={row.repos_from_subtasks ? `${r.name} · from subtasks` : r.name}><RepoDot id={r.id} />{r.name}</span>
-    {/each}
-    {#if names.length > 2}<span class="pill rn" title={names.slice(2).map((r) => r.name).join(', ')}>+{names.length - 2}</span>{/if}
-  </span>
   {#if names.length}
+    <span class="meta" aria-hidden="true">
+      {#each shownRepos as r (r.id)}
+        <span class="pill rn" title={r.name}><RepoDot id={r.id} />{r.name}</span>
+      {/each}
+      {#if names.length > 2}<span class="pill rn" title={names.slice(2).map((r) => r.name).join(', ')}>+{names.length - 2}</span>{/if}
+    </span>
     <span class="rd" aria-hidden="true">
       {#each names as r (r.id)}<RepoDot id={r.id} name={r.name} />{/each}
     </span>
   {/if}
-  <Avatar actor={row.last_actor} launchedIn={row.launched_in} decorative />
   <span class="when" aria-hidden="true">{relative(time, now)}</span>
 </div>
 
@@ -292,15 +288,47 @@
     gap: 4px;
     flex: none;
   }
-  .dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--needs);
+  /*
+    The row's one chip (task 55): an icon that says which signal it is, then its label, so it
+    never reads by colour alone. Needs you and failed (both Needs me items) get a red icon and
+    edge; the label stays text-2 on Field Grey so it keeps 4.5:1. PR open and waits on stay
+    neutral.
+  */
+  .sig {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 20px;
+    padding: 0 7px 0 6px;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    background: var(--bg-input);
+    font-size: var(--fs-label);
+    line-height: 14px;
+    color: var(--text-2);
     flex: none;
   }
-  .dot.stale {
+  .sig :global(svg) {
+    color: var(--text-3);
+  }
+  .sig.needs_you,
+  .sig.failed {
+    border-color: var(--needs-edge);
+  }
+  .sig.needs_you :global(svg),
+  .sig.failed :global(svg) {
+    color: var(--needs);
+  }
+  /* Maybe out of date: a dashed edge and a faded icon; the label keeps its contrast. */
+  .sig.stale {
+    border-style: dashed;
+  }
+  .sig.stale :global(svg) {
     opacity: 0.45;
+  }
+  .sig .n {
+    display: none;
+    font-variant-numeric: tabular-nums;
   }
   .sp {
     flex: 1;
@@ -323,14 +351,6 @@
     font-size: var(--fs-label);
     line-height: 14px;
     color: var(--text-2);
-  }
-  .pill.warn {
-    color: var(--warn-text);
-    border-color: color-mix(in srgb, var(--st-blocked) 35%, transparent);
-  }
-  .pill.ok {
-    color: var(--ok-text);
-    border-color: color-mix(in srgb, var(--st-review) 35%, transparent);
   }
   .short {
     display: none;
@@ -372,35 +392,23 @@
       display: none;
     }
     .short {
-      display: inline-flex;
+      display: inline;
     }
     .pc {
       display: none;
     }
-    /* Chips take their short labels (Running, Waiting, Stopped) before they lose them. */
-    .row :global(.live .full) {
+  }
+  /* Beside the panel in a small window: the title keeps its room; the chip keeps its icon and
+     count, with its label in the tooltip and the row's accessible name. */
+  @container list (max-width: 460px) {
+    .sig .lab {
       display: none;
     }
-    .row :global(.live .brief) {
+    .sig .n {
       display: inline;
     }
-  }
-  /* Beside the panel in a small window: the title keeps its room; the actor and quieter pills go. */
-  @container list (max-width: 460px) {
-    .row :global(.av),
-    .pill.ok,
-    .pill.quiet {
-      display: none;
-    }
-    .row :global(.live .lt) {
-      display: none;
-    }
-    .row :global(.live) {
+    .sig {
       padding: 0 6px;
-    }
-    /* A bare red chip dot already says "waiting on you"; a second red dot beside it is noise. */
-    .waiting-you .dot {
-      display: none;
     }
     .when {
       width: 28px;
@@ -417,7 +425,7 @@
       min-width: 40px;
     }
     .rd,
-    .meta .pill:not(.warn) {
+    .meta {
       display: none;
     }
   }

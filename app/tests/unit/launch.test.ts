@@ -58,8 +58,8 @@ describe('Start ready', () => {
   const r = (id: number, over: Partial<RowDto> = {}): RowDto => ({
     id, parent: null, depth: 0, position: id, title: `T${id}`, status: 'todo', origin: 'plan', priority: null, blocked_reason: null,
     waiting: false, waits_on: [], has_children: false, has_steps: false, progress: null, repos: [1], repos_from_subtasks: false,
-    branch: null, due_at: null, ready: true, ready_since: null, ready_pill: false, quiet_days: null, needs: false,
-    needs_stale: false, live: null, last_at: '2026-11-26T10:00:00.000Z', last_actor: 'plan', launched_in: null, ...over,
+    branch: null, due_at: null, ready: true, ready_since: null, needs: false,
+    live: null, signal: null, last_at: '2026-11-26T10:00:00.000Z', last_actor: 'plan', ...over,
   });
   // 3 › phase 4 (steps 5, 6) · phase 7, waiting on 4 (step 8) · phase 22 (steps 23 doing, 24 waiting on 23)
   const list = [

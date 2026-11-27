@@ -5,7 +5,7 @@
 
 import type {
   Chip,
-  Source,
+  RowSignal,
   DepDto,
   HistoryEntry,
   LinkDto,
@@ -29,7 +29,6 @@ import type {
 } from '../types';
 import { isOpen, threadId, type MockState, type MockThread } from './model';
 
-const DAY = 86_400_000;
 
 export interface TreeIndex {
   children: Map<TaskId | null, TaskId[]>;
@@ -224,16 +223,34 @@ export function threadsFor(s: MockState, id: TaskId): MockThread[] {
   return [...s.threads.values()].filter((t) => t.tasks.includes(id));
 }
 
-/** Where the task's most recently active T3 thread or Herdr terminal runs (Launch's avatar). */
-function launchedIn(s: MockState, id: TaskId): Source | null {
-  let best: { at: string; source: Source } | null = null;
-  for (const t of threadsFor(s, id)) {
-    const source = t.view.key.source;
-    if (source !== 't3' && source !== 'herdr') continue;
-    const at = t.view.last_activity_at ?? '';
-    if (!best || at > best.at) best = { at, source };
+/** Its linked PRs that are open; `null` when none is, else whether any fails its checks. */
+function openPrs(s: MockState, id: TaskId): boolean | null {
+  let out: boolean | null = null;
+  for (const l of s.links) {
+    if (l.task !== id || l.kind !== 'pr') continue;
+    const pr = s.prs.get(l.ref);
+    if (pr?.state === 'open') out = (out ?? false) || pr.checks === 'failing';
   }
-  return best?.source ?? null;
+  return out;
+}
+
+/** The row's one chip, as `viewmodel::row_signal` works it out (task 55). */
+function signalOf(s: MockState, ix: TreeIndex, id: TaskId, needs: NeedsItem[], waiting: boolean, parent: boolean): RowSignal | null {
+  if (!isOpen(s.tasks.get(id)!.status)) return null;
+  if (parent) {
+    const inside = new Set([id, ...subtree(ix, id)]);
+    const under = needs.filter((n) => inside.has(n.task) && n.kind !== 'ready');
+    if (under.length) return { kind: 'needs_you', count: under.length, stale: under.some((n) => n.stale) };
+  } else {
+    const mine = needs.filter((n) => n.task === id);
+    const asks = mine.filter((n) => n.kind !== 'ready' && n.kind !== 'failed_run');
+    if (asks.length) return { kind: 'needs_you', count: asks.length, stale: asks.some((n) => n.stale) };
+    const failed = mine.filter((n) => n.kind === 'failed_run');
+    const prs = openPrs(s, id);
+    if (failed.length || prs === true) return { kind: 'failed', stale: failed.some((n) => n.stale) };
+    if (prs !== null) return { kind: 'pr_open' };
+  }
+  return waiting ? { kind: 'waiting_on' } : null;
 }
 
 function liveOf(s: MockState, id: TaskId): Chip | null {
@@ -270,7 +287,6 @@ export function buildRow(s: MockState, ix: TreeIndex, id: TaskId, needs: NeedsIt
   const { repos, fromSubtasks } = reposOf(s, ix, id);
   const ready = isReady(s, ix, id);
   const mine = needs.filter((n) => n.task === id);
-  const quiet = mine.find((n) => n.kind === 'quiet');
   const progress = progressOf(s, ix, id);
   const last = progress ? lastEvent(s, new Set([id, ...subtree(ix, id)])) : lastEvent(s, new Set([id]));
   return {
@@ -294,14 +310,11 @@ export function buildRow(s: MockState, ix: TreeIndex, id: TaskId, needs: NeedsIt
     due_at: t.due_at,
     ready,
     ready_since: ready ? (s.readySince[id] ?? last.at) : null,
-    ready_pill: mine.some((n) => n.kind === 'ready'),
-    quiet_days: quiet ? Math.max(1, Math.floor((s.nowMs - Date.parse(quiet.since)) / DAY)) : null,
     needs: mine.length > 0,
-    needs_stale: mine.some((n) => n.stale),
     live: liveOf(s, id),
+    signal: signalOf(s, ix, id, needs, waiting, progress !== null),
     last_at: last.at,
     last_actor: last.actor,
-    launched_in: last.actor === 'launch' ? launchedIn(s, id) : null,
   };
 }
 
@@ -425,11 +438,12 @@ function loops(nodes: TaskId[], edges: RunEdge[]): Set<TaskId> {
 
 // ---------------------------------------------------------------- detail
 
-function threadDto(t: MockThread): ThreadDto {
+function threadDto(t: MockThread, taskOpen: boolean): ThreadDto {
+  const chip = chipOf(t.view.state);
   return {
     key: t.view.key,
     state: t.view.state,
-    chip: chipOf(t.view.state),
+    chip: taskOpen || chip === 'working' ? chip : null,
     title: t.view.title,
     request: t.view.request,
     error: t.view.error,
@@ -438,6 +452,7 @@ function threadDto(t: MockThread): ThreadDto {
     last_activity_at: t.view.last_activity_at,
     last_reply: t.view.last_reply ?? null,
     stale: t.view.stale,
+    task_closed: !taskOpen,
   };
 }
 
@@ -483,7 +498,7 @@ export function buildDetail(s: MockState, id: TaskId, req: number, limit: number
       return {
         ...structuredClone(l),
         pr: l.kind === 'pr' ? structuredClone(s.prs.get(l.ref) ?? null) : null,
-        thread: thread ? threadDto(thread) : null,
+        thread: thread ? threadDto(thread, isOpen(task.status)) : null,
       };
     });
   const inTree = new Set([id, ...subtree(ix, id)]);

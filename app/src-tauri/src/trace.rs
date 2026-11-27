@@ -174,7 +174,6 @@ mod tests {
 
     use std::ffi::OsString;
     use std::sync::Arc;
-    use std::time::SystemTime;
 
     use airboss_core::{Actor, NewTask, Store};
     use airboss_services::Chip;
@@ -221,7 +220,6 @@ mod tests {
             Vec::new(),
             Arc::default(),
             Arc::default(),
-            SystemTime::now(),
         );
         let mut row = vm.rows.values().next().unwrap().clone();
         row.live = Some(Chip::Working);

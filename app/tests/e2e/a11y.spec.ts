@@ -21,7 +21,8 @@ test('Reduce Motion turns off every animation; the live pulse becomes a static r
 });
 
 test('motion stays on without the preference (a short ease-out)', async ({ page }) => {
-  await page.goto('/?fixture=full&view=progress');
+  // Rows carry no live chip (task 55); the panel's Threads card does.
+  await page.goto('/?fixture=full&view=all&select=163');
   const name = await page.locator('.live.working i').first().evaluate((el) => getComputedStyle(el, '::after').animationName);
   expect(name).not.toBe('none');
 });
@@ -81,7 +82,7 @@ test('every row has an accessible name and the list is a tree with levels', asyn
   await page.goto('/?fixture=design&view=all');
   const tree = page.getByRole('tree', { name: 'All tasks' });
   await expect(tree).toBeVisible();
-  const item = page.getByRole('treeitem', { name: /^144, Web: slot picker, In progress, waiting on you, needs you, booking-web/ });
+  const item = page.getByRole('treeitem', { name: /^144, Web: slot picker, In progress, Needs you, booking-web/ });
   await expect(item).toHaveAttribute('aria-level', '2');
   await expect(page.getByRole('treeitem', { name: /^142, Booking flow/ })).toHaveAttribute('aria-expanded', 'true');
 });

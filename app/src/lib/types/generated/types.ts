@@ -547,25 +547,17 @@ due_at: string | null,
  */
 ready: boolean, ready_since: Timestamp | null, 
 /**
- * `attention` lists it as Ready to start.
- */
-ready_pill: boolean, 
-/**
- * `attention` lists it as Quiet: whole days since its last activity.
- */
-quiet_days: number | null, 
-/**
- * Any Needs me item about it (the red dot).
+ * Any Needs me item about it, Ready to start included.
  */
 needs: boolean, 
-/**
- * Any of those items may be out of date.
- */
-needs_stale: boolean, 
 /**
  * The strongest chip of its threads, only while it's open.
  */
 live: Chip | null, 
+/**
+ * The one chip the row shows.
+ */
+signal: RowSignal | null, 
 /**
  * Its newest event, or for a parent the newest anywhere in its subtree.
  */
@@ -573,12 +565,13 @@ last_at: Timestamp,
 /**
  * Who made that event, as text ("me", "agent:t3/…").
  */
-last_actor: Actor, 
+last_actor: Actor, };
+
 /**
- * When `last_actor` is Launch: where its thread runs (T3 or Herdr), so the avatar can say
- * so. The task's most recently active T3 thread or Herdr terminal; `null` otherwise.
+ * The one chip a row shows after its title (task 55): the most urgent of needs you, failed,
+ * PR open and waiting on. `None` on a quiet row, and always on a done or dropped one.
  */
-launched_in: Source | null, };
+export type RowSignal = { "kind": "needs_you", count: number, stale: boolean, } | { "kind": "failed", stale: boolean, } | { "kind": "pr_open" } | { "kind": "waiting_on" };
 
 /**
  * A line from a blocker to the task waiting on it, lifted to the parent's subtasks.
@@ -750,7 +743,12 @@ url: string | null, last_activity_at: Timestamp | null,
 /**
  * The agent's newest reply (T3), where it says what's left for me.
  */
-last_reply: string | null, stale: boolean, };
+last_reply: string | null, stale: boolean, 
+/**
+ * Its task is done or dropped: the card then shows no chip but Agent working, and no
+ * question, approval or error (task 55: a finished task never shows Stopped or alerts).
+ */
+task_closed: boolean, };
 
 /**
  * `services::ThreadKey`.
