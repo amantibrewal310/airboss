@@ -1,16 +1,23 @@
 <script lang="ts">
   import Segmented from '../../../lib/components/Segmented.svelte';
   import StackedBar from '../../../lib/components/StackedBar.svelte';
-  import type { Progress, RunMap as RunMapDto } from '../../../lib/types';
+  import type { Progress, ProposalDto, RunMap as RunMapDto, TaskId } from '../../../lib/types';
   import { mapFits } from '../../../lib/logic/runMapLayout';
   import RunMap from './RunMap.svelte';
-  import WavesList from './WavesList.svelte';
+  import PlanSections from './PlanSections.svelte';
 
   /**
-   * The page's Subtasks section: "N waves", the 8px stacked bar with its legend, the Waves / Map
-   * switch (opening on Map unless the map is too big), and the reminder that nothing starts by itself.
+   * The page's Subtasks section: the 8px stacked bar with its legend, the List / Map switch
+   * (opening on Map unless the map is too big), and the reminder that nothing starts by itself.
+   * List is the panel's Ready now, In progress, Next and Done.
    */
-  let { map, progress, width }: { map: RunMapDto; progress: Progress; width: number } = $props();
+  let {
+    task,
+    map,
+    progress,
+    width,
+    proposals = null,
+  }: { task: TaskId; map: RunMapDto; progress: Progress; width: number; proposals?: ProposalDto[] | null } = $props();
   const fits = $derived(mapFits(map));
   let mode = $state<'map' | 'list'>('map');
   const showing = $derived(fits ? mode : 'list');
@@ -29,20 +36,19 @@
 <section class="sec" aria-label="Subtasks">
   <div class="h">
     <h3>Subtasks</h3>
-    <span class="n">{map.waves.length} {map.waves.length === 1 ? 'wave' : 'waves'}</span>
     <span class="sp"></span>
     {#if fits}
       <Segmented
         label="Show subtasks as"
         options={[
-          { value: 'list', label: 'Waves' },
+          { value: 'list', label: 'List' },
           { value: 'map', label: 'Map' },
         ] as { value: 'map' | 'list'; label: string }[]}
         value={mode}
         onchange={(v) => (mode = v)}
       />
     {:else}
-      <span class="n" title="The map is drawn for up to 40 subtasks and 8 waves">Map shows up to 40 subtasks</span>
+      <span class="n" title="The map is drawn for up to 40 subtasks, 8 deep">Map shows up to 40 subtasks</span>
     {/if}
   </div>
   <div class="big">
@@ -57,7 +63,7 @@
   {#if showing === 'map'}
     <RunMap {map} {width} />
   {:else}
-    <WavesList {map} />
+    <div class="list"><PlanSections {task} {map} {proposals} summary={false} asks={false} /></div>
   {/if}
   <p class="note">Nothing starts by itself. Select a ready task and press ⌘↩.</p>
 </section>
@@ -130,6 +136,11 @@
   .legend .todo {
     background: var(--bg-input);
     box-shadow: inset 0 0 0 1px var(--line-2);
+  }
+  .list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
   }
   .note {
     padding-top: 10px;

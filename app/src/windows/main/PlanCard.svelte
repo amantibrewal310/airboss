@@ -32,7 +32,6 @@
   const summary = $derived(
     [
       `${pct}% done, ${card.progress.done} of ${card.progress.total}`,
-      card.waves === 0 ? 'no waves yet' : card.current_wave === null ? 'all waves done' : `wave ${card.current_wave + 1} of ${card.waves}`,
       card.next_up.length ? `next up ${card.next_up.map((n) => `${n.id} ${n.title}`).join(', ')}` : 'nothing ready',
       card.working ? `${card.working} working` : '',
       card.blocked ? `${card.blocked} blocked` : '',
@@ -69,18 +68,6 @@
   </div>
   <div class="barrow"><StackedBar p={card.progress} surface="var(--bg-raised)" /></div>
   <div class="rows">
-    <div class="r">
-      <span class="k">Wave</span>
-      <span class="v">
-        <!-- Only proposals so far: nothing is in a wave until one is accepted. -->
-        {card.waves === 0 ? 'None yet, only proposals' : card.current_wave === null ? 'All waves done' : `${card.current_wave + 1} of ${card.waves}`}
-        <span class="dots" aria-hidden="true">
-          {#each { length: card.waves } as _, w (w)}
-            <b class:d={card.current_wave === null || w < card.current_wave} class:c={w === card.current_wave}></b>
-          {/each}
-        </span>
-      </span>
-    </div>
     <div class="r">
       <span class="k">Next up</span>
       <span class="v">
@@ -236,23 +223,6 @@
   }
   .faint {
     color: var(--text-3);
-  }
-  .dots {
-    display: flex;
-    gap: 4px;
-    margin-left: 2px;
-  }
-  .dots b {
-    width: 18px;
-    height: 5px;
-    border-radius: 3px;
-    background: var(--wave-empty);
-  }
-  .dots b.d {
-    background: var(--st-done);
-  }
-  .dots b.c {
-    background: var(--st-doing);
   }
   .pill {
     display: inline-flex;

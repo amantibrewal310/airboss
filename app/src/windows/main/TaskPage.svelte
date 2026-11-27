@@ -11,6 +11,7 @@
   import Threads from './detail/Threads.svelte';
   import Activity from './detail/Activity.svelte';
   import Subtasks from './detail/Subtasks.svelte';
+  import PlanSections from './detail/PlanSections.svelte';
   import Skeleton from './detail/Skeleton.svelte';
 
   /** The full task page: a centred document column (max 860px) and a 280px properties rail. */
@@ -45,11 +46,14 @@
             <div class="gap"><Skeleton lines={8} /></div>
           {:else}
             {@const items = app.needs.forTask(row.id)}
-            {#if items.length}<div class="gap calls"><Callouts {items} /></div>{/if}
+            {#if row.has_children}
+              <!-- A parent's Needs you lists its steps' items and proposals, each with its own action. -->
+              <div class="gap calls"><PlanSections task={row.id} {map} proposals={fresh ? detail!.proposals : null} summary={false} steps={false} /></div>
+            {:else if items.length}<div class="gap calls"><Callouts {items} /></div>{/if}
             <div class="notes"><Notes task={row.id} body={fresh ? detail!.task.body : null} empty="No notes yet." /></div>
             {#if fresh && detail!.links.some((l) => l.thread)}<div class="threads"><Threads links={detail!.links} /></div>{/if}
             {#if map && map.nodes.length && row.progress}
-              <Subtasks {map} progress={row.progress} width={columnWidth - 80} />
+              <Subtasks task={row.id} {map} progress={row.progress} width={columnWidth - 80} proposals={fresh ? detail!.proposals : null} />
             {/if}
             {#if fresh}
               <div class="activity"><Activity task={row.id} history={detail!.history} more={detail!.history_more} links={detail!.links} /></div>

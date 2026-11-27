@@ -64,7 +64,7 @@ test.describe('at 1000px', () => {
     await expect(scroll).toHaveClass(/more-r/);
     await expect(scroll).not.toHaveClass(/more-l/);
     expect(await scroll.evaluate((el) => getComputedStyle(el).maskImage)).toContain('linear-gradient');
-    await expect(page.locator('.map-scroll + .legend')).toContainText('Scroll sideways for more waves');
+    await expect(page.locator('.map-scroll + .legend')).toContainText('Scroll sideways for more');
     await scroll.evaluate((el) => el.scrollTo({ left: el.scrollWidth }));
     await expect(scroll).toHaveClass(/more-l/);
     await expect(scroll).not.toHaveClass(/more-r/);

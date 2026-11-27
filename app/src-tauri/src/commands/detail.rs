@@ -9,8 +9,8 @@ use airboss_services::{Mode, PrRef, Refresh, Source, SyncSnapshot, ThreadKey};
 
 use crate::commands::app::cli_status;
 use crate::dto::{
-    Bootstrap, DepDto, HistoryEntry, LinkDto, ParentOption, PlanCard, QuickaddData, RunMap,
-    T3ProjectRow, TaskDetail, ThreadDto, open, path_text,
+    Bootstrap, DepDto, HistoryEntry, LinkDto, ParentOption, PlanCard, ProposalDto, QuickaddData,
+    RunMap, T3ProjectRow, TaskDetail, ThreadDto, open, path_text,
 };
 use crate::errors::{AppResult, Ctx};
 use crate::runmap;
@@ -93,7 +93,7 @@ pub fn task_detail(
     history.truncate(limit as usize);
 
     let sync = s.services.sync.snapshot();
-    let (waits_on, blocks, waves, inherited_branch) = s.vm(|vm| {
+    let (waits_on, blocks, waves, inherited_branch, mut proposals) = s.vm(|vm| {
         let waits_on: Vec<DepDto> = vm
             .snapshot
             .edges
@@ -110,8 +110,35 @@ pub fn task_detail(
             .collect();
         let waves = (!vm.index.children_of(id).is_empty()).then(|| runmap::display_waves(vm, id));
         let branch = vm.rows.get(&id).and_then(|r| r.branch.clone());
-        (waits_on, blocks, waves, branch)
+        let mut proposals: Vec<ProposalDto> = vm
+            .index
+            .subtree(id)
+            .into_iter()
+            .skip(1)
+            .filter_map(|p| vm.node(p))
+            .filter(|n| n.task.status == Status::Proposed)
+            .filter_map(|n| {
+                Some(ProposalDto {
+                    id: n.task.id,
+                    parent: n.task.parent?,
+                    by: String::new(),
+                    at: n.task.created_at.clone(),
+                    follows: edge_ends(vm, |&(w, b)| (w == n.task.id).then_some(b)),
+                    blocks: edge_ends(vm, |&(w, b)| (b == n.task.id).then_some(w)),
+                })
+            })
+            .collect();
+        proposals.sort_by_key(|p| p.id);
+        (waits_on, blocks, waves, branch, proposals)
     });
+    // Who proposed each one: its first event, `created`. One read per proposal, outside the
+    // view-model lock; a plan rarely has more than a few open.
+    for p in &mut proposals {
+        if let Some(first) = s.core_as(ctx, |st| st.history(p.id))?.into_iter().next() {
+            p.by = first.actor.to_string();
+            p.at = first.at;
+        }
+    }
 
     let thread_view = |source: Source, r: &str| {
         let key = ThreadKey {
@@ -193,10 +220,18 @@ pub fn task_detail(
         waits_on,
         blocks,
         waves,
+        proposals,
         needs,
         prepared,
         suggested_prs,
     })
+}
+
+/// The other ends of the dependency edges `pick` keeps, sorted.
+fn edge_ends(vm: &ViewModel, pick: impl Fn(&(TaskId, TaskId)) -> Option<TaskId>) -> Vec<TaskId> {
+    let mut ids: Vec<TaskId> = vm.snapshot.edges.iter().filter_map(pick).collect();
+    ids.sort();
+    ids
 }
 
 /// The run-order map of a parent's subtasks. `req` is the UI's request number; the map

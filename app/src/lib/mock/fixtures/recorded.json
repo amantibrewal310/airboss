@@ -1934,6 +1934,7 @@
         "started": [],
         "waiting_on": []
       },
+      "proposals": [],
       "req": 1,
       "suggested_prs": [],
       "task": {

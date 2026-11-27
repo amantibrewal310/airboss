@@ -440,6 +440,24 @@ export type Priority = "p0" | "p1" | "p2" | "p3";
 export type Progress = { done: number, total: number, in_review: number, doing: number, blocked: number, };
 
 /**
+ * An open proposal under a task: who made it and when, so the panel can tell which ones
+ * came from one agent turn, and what it follows and blocks.
+ */
+export type ProposalDto = { id: TaskId, parent: TaskId, 
+/**
+ * Who proposed it, as text ("agent:t3/…").
+ */
+by: Actor, at: Timestamp, 
+/**
+ * The tasks it waits on, finished ones too.
+ */
+follows: Array<TaskId>, 
+/**
+ * The tasks that wait on it.
+ */
+blocks: Array<TaskId>, };
+
+/**
  * What quick add needs: the repos and the open tasks, in tree order.
  */
 export type QuickaddData = { repos: Array<Repo>, parents: Array<ParentOption>, };
@@ -687,7 +705,11 @@ history_more: boolean, waits_on: Array<DepDto>, blocks: Array<DepDto>,
 /**
  * For a task with subtasks: its display waves.
  */
-waves: RunMap | null, needs: Array<NeedsItem>, 
+waves: RunMap | null, 
+/**
+ * The open proposals anywhere under it, in id order.
+ */
+proposals: Array<ProposalDto>, needs: Array<NeedsItem>, 
 /**
  * What Do it would do; `null` for proposed, done and dropped tasks (or when launch can't
  * say, e.g. T3 is missing).

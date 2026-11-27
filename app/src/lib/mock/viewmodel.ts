@@ -496,6 +496,20 @@ export function buildDetail(s: MockState, id: TaskId, req: number, limit: number
     waits_on: (ix.blockers.get(id) ?? []).slice().sort((a, b) => a - b).map((b) => dep(s, ix, b)),
     blocks: (ix.dependents.get(id) ?? []).slice().sort((a, b) => a - b).map((b) => dep(s, ix, b)),
     waves: hasKids ? buildRunMap(s, ix, id) : null,
+    proposals: subtree(ix, id)
+      .filter((p) => p !== id && s.tasks.get(p)?.status === 'proposed')
+      .sort((a, b) => a - b)
+      .map((p) => {
+        const made = s.events.filter((e) => e.task === p).sort((a, b) => a.id - b.id)[0];
+        return {
+          id: p,
+          parent: s.tasks.get(p)!.parent!,
+          by: made?.actor ?? 'me',
+          at: made?.at ?? s.tasks.get(p)!.created_at,
+          follows: (ix.blockers.get(p) ?? []).slice().sort((a, b) => a - b),
+          blocks: (ix.dependents.get(p) ?? []).slice().sort((a, b) => a - b),
+        };
+      }),
     needs: visibleNeeds(s).filter((n) => n.task === id),
     prepared: prepare(s, ix, id),
     suggested_prs: [...s.prs.values()].filter(

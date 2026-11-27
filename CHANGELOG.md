@@ -11,6 +11,8 @@ What changed in each release of Airboss. The format follows [Keep a Changelog](h
 ### Changed
 
 - **A task with subtasks has no status of its own.** It shows what its subtasks add up to: done when every one is done or dropped, dropped when all are, blocked when any is (naming which), in progress when any is under way or some are finished, otherwise todo. A plan with 8 of 38 steps done now shows in progress, not done. Its old status is ignored, not changed.
+- **A parent's panel leads with what needs you.** One line says where it stands ("6 of 19 done · 2 ready · 4 to review"), then **Needs you** (each item with its own button), **Ready now** with Start ready, **In progress**, **Next** and **Done**, folded. Finished steps no longer sit above the ones that can start. Proposals show one by one with Accept and Reject, what they'd follow or block when known, and Accept all only for the ones one agent proposed together. The notes come next, with links folded under them; there's no Status or Branch row.
+- **No more "waves".** The full page's switch is List / Map, the map's columns read 1st, 2nd, 3rd, and plan cards drop their Wave row.
 - **Nothing finishes a parent by hand any more.** The status menu, Space and ⌘B offer only Drop on a parent, which drops its open subtasks. A parent takes no branch or PR of its own, so a merged PR linked to it long ago can't finish it; its PRs go on its subtasks.
 
 ### Removed

@@ -4,7 +4,7 @@
   import RepoDot from '../../../lib/components/RepoDot.svelte';
   import type { RunMap } from '../../../lib/types';
   import { useApp } from '../../../lib/state/context';
-  import { layoutRunMap, moveOnMap } from '../../../lib/logic/runMapLayout';
+  import { layoutRunMap, moveOnMap, ordinal } from '../../../lib/logic/runMapLayout';
   import { shapeOf, SHAPE_LABEL } from '../../../lib/logic/views';
 
   /**
@@ -50,7 +50,7 @@
     if (!r) return String(id);
     const s = sub(id).text;
     // Starts with the visible text (title, then "id · state") so Voice Control can match it.
-    return `${r.title}, ${id}, ${s}, wave ${wave + 1}`;
+    return `${r.title}, ${id}, ${s}, ${ordinal(wave + 1)} in run order`;
   }
 
   function key(e: KeyboardEvent) {
@@ -134,7 +134,7 @@
 <div class="legend">
   <span><svg width="18" height="4" aria-hidden="true"><path d="M1 2H17" stroke="var(--text-3)" stroke-width="1.75" stroke-linecap="round" /></svg>done, can follow</span>
   <span><svg width="18" height="4" aria-hidden="true"><path d="M1 2H17" stroke="var(--text-3)" stroke-width="1.75" stroke-linecap="round" stroke-dasharray="2 5" /></svg>still waiting</span>
-  <span>Hover a task to trace its lines · double-click to open{edge.l || edge.r ? ' · Scroll sideways for more waves' : ''}</span>
+  <span>Hover a task to trace its lines · double-click to open{edge.l || edge.r ? ' · Scroll sideways for more' : ''}</span>
 </div>
 {#if map.tangled.length}
   <p class="tangled">These wait on each other in a loop: {map.tangled.join(', ')}.</p>
