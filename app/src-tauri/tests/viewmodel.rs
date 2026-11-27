@@ -195,6 +195,30 @@ fn waits_on_lists_open_blockers_from_the_edges() {
 }
 
 #[test]
+fn a_proposed_blocker_holds_nothing_until_it_is_accepted() {
+    let mut s = store();
+    let a = add(&mut s, "A", None);
+    let open = add(&mut s, "Open", None);
+    s.add_dependency(a, open, &Actor::Me).unwrap();
+    let p = s
+        .add_task(
+            NewTask::new("Proposed").blocking(a),
+            &Actor::Agent("t3/x".into()),
+        )
+        .unwrap()
+        .id;
+    let v = vm(&s);
+    assert!(v.rows[&a].waiting);
+    assert_eq!(v.rows[&a].waits_on, vec![open], "the proposal isn't listed");
+    status(&mut s, open, Status::Done);
+    let v = vm(&s);
+    assert!(!v.rows[&a].waiting && v.rows[&a].ready);
+    status(&mut s, p, Status::Todo);
+    let v = vm(&s);
+    assert_eq!(v.rows[&a].waits_on, vec![p], "accepted, it holds A up");
+}
+
+#[test]
 fn needs_items_set_the_dot_the_ready_pill_quiet_days_and_staleness() {
     let mut s = store();
     let a = add(&mut s, "A", None);

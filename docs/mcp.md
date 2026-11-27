@@ -33,7 +33,7 @@ That's acceptable for a single-user tool that runs only on your Mac: anything th
 
 Sent with the `initialize` result, naming the actor:
 
-> Airboss is the user's to-do list, and these tools report on the tasks you work on. You act as agent:t3/97b5…. When you start, find your task with list_tasks (`mine: true`, or your repos), or use the task id in your brief, and read it with get_task. Link this thread to it (link, kind t3_thread or claude_session, no ref). Report status changes with update_task as they happen, and link every PR you open. Propose new work with propose_tasks; don't create it. Use import_plan only for a plan the user settled in plan-review.
+> Airboss is the user's to-do list, and these tools report on the tasks you work on. You act as agent:t3/97b5…. When you start, find your task with list_tasks (`mine: true`, or your repos), or use the task id in your brief, and read it with get_task. Link this thread to it (link, kind t3_thread or claude_session, no ref). Report status changes with update_task as they happen, and link every PR you open. Propose new work with propose_tasks; don't create it. Don't widen your own task: ship your part so it's safe without a missing piece, and propose that piece, such as another repo's work, as a sibling that says what it blocks. Use import_plan only for a plan the user settled in plan-review.
 
 ## What agents may do
 
@@ -42,8 +42,8 @@ The rules live in the task store, not in the server, so the CLI and the app foll
 - **Status:** an agent can move a task that is todo, in progress, in review or blocked to in progress, in review or blocked. Blocked needs a note saying why.
 - **Done:** an agent can finish a task only if it has **no** PR link, and only with a note saying what it did. A task with a PR finishes when GitHub says its PRs merged.
 - **Parents:** a task with subtasks has no status of its own; it shows what its subtasks add up to. Changing its status, or linking a PR to it, is refused with a message pointing at its subtasks. Notes still go on it.
-- **New work** arrives as proposals, which wait for you to accept or reject them.
-- **There are no tools** to delete, move or rename tasks, change a task's repos or branch, add dependencies outside a plan, accept proposals, drop tasks or set a PR's state. Those are yours, or belong to PR sync.
+- **New work** arrives as proposals, which wait for you to accept or reject them. A proposal lands next to the agent's task, follows it, and may say what it blocks; it holds nothing up until you accept it.
+- **There are no tools** to delete, move or rename tasks, change a task's repos or branch, add dependencies outside a plan or a proposal, accept proposals, drop tasks or set a PR's state. Those are yours, or belong to PR sync.
 
 Every change an agent makes is recorded in the task's history under its actor.
 
@@ -138,14 +138,17 @@ Returns the link:
 
 ### `propose_tasks`
 
-> Propose 1 to 20 new tasks you spotted, at top level or under `parent`. They arrive as proposed and wait for the user to accept or reject them, so don't start on one until it's accepted.
+> Propose 1 to 20 new tasks you spotted. They land next to your own task, under its parent (`place: "sibling"`, the default), or at top level with `place: "top"`; a `parent` you give wins over both. Each follows your own task: Airboss records that itself. Give each the ids it `blocks`, picked from what waits on your own task (get_task's `blocks`); they wait on it only once it's accepted. They arrive as proposed and wait for the user to accept or reject them, so don't start on one until it's accepted.
 
 | Argument | Type | Meaning |
 |---|---|---|
-| `parent` | number | The task to put them under. Left out, top level. |
-| `tasks` | list of 1 to 20 `{title, body?, repos?}` | `title` says what to do; `body` says why, and anything the user needs to decide; `repos` are the repos it touches, by name |
+| `place` | `sibling` or `top` | Where they go without `parent`: next to your own task, under its parent (the default), or at top level. |
+| `parent` | number | The task to put them under. Given, it wins over `place`. |
+| `tasks` | list of 1 to 20 `{title, body?, repos?, blocks?}` | `title` says what to do; `body` says why, and anything the user needs to decide; `repos` are the repos it touches, by name; `blocks` are the ids of tasks that can't finish without it |
 
-Everything is checked before the first task is added, so a bad title, repo or parent adds nothing. Returns the proposed tasks, each with `status: "proposed"` and `origin: "agent"`.
+Your own task is the one this thread is linked to, or of several, the one it was linked to last. Each proposal waits on it, which the app shows as "follows #10", unless the proposal sits under it; with no linked task, `sibling` means top level and nothing is followed. Each `blocks` id waits on the proposal. A proposal holds nothing up until you accept it, so a rejected one never did.
+
+Everything is checked before the first task is added, so a bad title, repo, parent or `blocks` id adds nothing. Returns the proposed tasks, each with `status: "proposed"` and `origin: "agent"`.
 
 ### `import_plan`
 

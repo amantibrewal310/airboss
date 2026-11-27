@@ -253,7 +253,7 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
    | `set_pr_state` | yes | (no) | (no) | yes | (no) | (no) |
    | `add_dependency` / `remove_dependency` | yes | (no) | yes | (no) | (no) | (no) |
 
-   An agent that is stuck sets `blocked` with a reason. Dropping is a status change, so only `me` can drop (rule 6). Agents never change a task's repos or branch.
+   An agent that is stuck sets `blocked` with a reason. Dropping is a status change, so only `me` can drop (rule 6). Agents never change a task's repos or branch. A new task's own dependencies come with `add_task` (rule 37), so an agent can give its proposal some; it still can't add or remove one between existing tasks.
 9. **Dropping drops the subtree.** Every open step under it moves to `dropped` in the same change, with one event each. Tasks already `done` stay `done`. A task with steps, the dropped one included, changes only through them and gets no event of its own (rule 10).
 10. **Parents are containers: a task with steps has no status of its own.**
     - A **step** is a subtask that isn't a proposal: neither one still `proposed` nor one I rejected. A task whose subtasks are all proposals has no steps yet and keeps its own status.
@@ -309,7 +309,8 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
 
 14. **No dependency loops, anywhere in the tree.** Before adding A-waits-on-B, a recursive query follows B's own blockers across the whole tree. If it reaches A, the dependency is rejected with `Error::Loop`.
 15. **No dependency between a task and its own ancestor or descendant** (`Error::InvalidTarget`). A parent waiting on its child, or the reverse, could never finish, because a parent finishes only through its steps (rule 10).
-16. **"Waiting" is worked out, never stored.** A task is waiting while any task it waits on, as it shows (rule 10), is neither `done` nor `dropped`. So waiting on a phase ends when the phase's last step finishes. Waiting never changes a task's status.
+16. **"Waiting" is worked out, never stored.** A task is waiting while any task it waits on, as it shows (rule 10), is open: neither `proposed`, `done` nor `dropped`. So waiting on a phase ends when the phase's last step finishes, and a proposal holds nothing up until I accept it. Waiting never changes a task's status. `waits_on(id)`, `ready()` and run order read blockers the same way.
+37. **A new task can arrive with its own dependencies.** `NewTask::waiting_on(id)` makes it wait on an existing task, and `NewTask::blocking(id)` makes an existing task wait on it, in the same change as `add_task`. Each pair is checked by rules 14 and 15 (a missing task is `Error::NotFound`), and any failure adds nothing at all. Each is recorded as a `waits_on_added` event on the task that waits, by the actor that added the task. They touch only the new task, so anyone who may add a task may give it these, an agent too: its task is a proposal, which holds nothing up until I accept it (rule 16).
 17. **Deleting a blocker** removes its dependencies and writes a `waits_on_removed` event on each task that was waiting.
 18. **Run order is a topological sort of a parent's direct subtasks, in waves.**
     - A dependency between tasks deeper down counts as a dependency between their top-level ancestors under that parent. For example, if a step in Phase 2 waits on a step in Phase 1, Phase 2 waits on Phase 1.
@@ -732,6 +733,24 @@ Task 59, from user feedback. Things with a deadline had nowhere to live, so they
 
 1. **`tasks.due_at`** (`007_due_dates.sql`, `ALTER TABLE … ADD COLUMN`, every row kept), `Task.due_at`, and `set_due` for `me` and agents (rules 8 and 36).
 2. **A day, not a time.** "Friday" means the whole of Friday wherever I am, so the column holds the calendar date and `attention` reads it in the system time zone. No model runs in the app: the agent works the date out, `core` only checks it's a real one.
+
+## v9: proposals with follows and blocks (27 Nov 2026)
+
+Task 56. Agents' proposals landed at top level with nothing tying them to the work that found them (#44, a follow-up to #10, and #45–#49 on 26–27 Nov). `propose_tasks` now puts them next to the agent's task, makes each follow it, and lets each name what it blocks ([SPEC-mcp](SPEC-mcp.md)).
+
+1. **`NewTask::waiting_on` and `NewTask::blocking`** (rule 37). `NewTask` gains `waits_on` and `blocks`; no migration, since dependencies are `task_deps` rows as before.
+2. **A proposal holds nothing up** (rule 16): `tree()`'s `waiting`, `waits_on(id)` and `ready()` now skip proposed blockers, as run order already did.
+
+**Decisions made while building v9:**
+
+- "Follows #10" is a dependency, the proposal waiting on the agent's task, not a column: the app already draws a proposal's blockers as "follows #n", and accepting a follow-up should leave it waiting on the work it follows.
+- Rejecting a proposal keeps its dependencies: a rejected proposal is dropped and hidden, so it holds nothing up and readers leave it out, as they did before.
+
+**Success criteria for v9:**
+
+- [x] A proposal arrives with what it waits on and what it blocks, each with its event (`tests/deps.rs`).
+- [x] It holds nothing up while proposed or once rejected, and does once accepted.
+- [x] A loop, a dependency on its own parent, or a missing task adds nothing.
 
 ## Open questions
 
