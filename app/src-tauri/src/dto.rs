@@ -156,6 +156,7 @@ pub struct TaskTs {
     origin: OriginTs,
     plan_key: Option<String>,
     branch: Option<String>,
+    due_at: Option<String>,
     priority: Option<PriorityTs>,
     created_at: TimestampTs,
 }
@@ -537,6 +538,7 @@ pub enum NeedsKindTs {
     Review,
     FailedRun,
     AgentStopped,
+    Due,
     Proposed,
     Ready,
     Quiet,
@@ -555,6 +557,7 @@ pub enum NeedsGroupTs {
     Reviews,
     FailedRuns,
     Stopped,
+    Due,
     Proposed,
     Ready,
     Quiet,
@@ -707,6 +710,8 @@ pub struct RowDto {
     pub repos_from_subtasks: bool,
     /// Its branch, or the nearest ancestor's (display only).
     pub branch: Option<String>,
+    /// The day it's due, `YYYY-MM-DD` in my own time zone (SPEC-core rule 36).
+    pub due_at: Option<String>,
     /// In `core`'s ready list, and a leaf.
     pub ready: bool,
     #[ts(as = "Option<TimestampTs>")]

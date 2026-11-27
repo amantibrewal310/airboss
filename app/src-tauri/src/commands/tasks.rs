@@ -519,6 +519,15 @@ pub fn set_branch(
     s.after_write()
 }
 
+/// Sets (or, blank, clears) the day a task is due, `YYYY-MM-DD`.
+pub fn set_due(s: &AppState, _c: Caller, id: TaskId, due: Option<String>) -> AppResult<Patch> {
+    let due = due.filter(|d| !d.trim().is_empty());
+    s.core_as(Ctx::Due(id), |st| {
+        st.set_due(id, due.as_deref(), &Actor::Me)
+    })?;
+    s.after_write()
+}
+
 /// `id` waits on `waits_on`.
 pub fn add_dependency(s: &AppState, _c: Caller, id: TaskId, waits_on: TaskId) -> AppResult<Patch> {
     let ctx = Ctx::Dependency { id, waits_on };

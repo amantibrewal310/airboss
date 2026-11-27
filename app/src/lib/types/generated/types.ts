@@ -300,7 +300,7 @@ export type NeedsChanged = { version: number, items: Array<NeedsItem>, count: nu
 /**
  * `services::NeedsGroup`, in display order.
  */
-export type NeedsGroup = "questions" | "reviews" | "failed_runs" | "stopped" | "proposed" | "ready" | "quiet";
+export type NeedsGroup = "questions" | "reviews" | "failed_runs" | "stopped" | "due" | "proposed" | "ready" | "quiet";
 
 /**
  * `services::NeedsItem`.
@@ -319,7 +319,7 @@ export type NeedsKey = string;
 /**
  * `services::NeedsKind`.
  */
-export type NeedsKind = "question" | "approval" | "review" | "failed_run" | "agent_stopped" | "proposed" | "ready" | "quiet";
+export type NeedsKind = "question" | "approval" | "review" | "failed_run" | "agent_stopped" | "due" | "proposed" | "ready" | "quiet";
 
 /**
  * `services::NeedsList`.
@@ -539,6 +539,10 @@ repos: Array<RepoId>, repos_from_subtasks: boolean,
  */
 branch: string | null, 
 /**
+ * The day it's due, `YYYY-MM-DD` in my own time zone (SPEC-core rule 36).
+ */
+due_at: string | null, 
+/**
  * In `core`'s ready list, and a leaf.
  */
 ready: boolean, ready_since: Timestamp | null, 
@@ -684,7 +688,7 @@ export type Target = { "thread": ThreadKey } | { "pr": { ref: PrRef, url: string
 /**
  * `core::Task`.
  */
-export type Task = { id: TaskId, parent: TaskId | null, repos: Array<RepoId>, title: string, body: string | null, status: Status, blocked_reason: string | null, position: number, origin: Origin, plan_key: string | null, branch: string | null, priority: Priority | null, created_at: Timestamp, };
+export type Task = { id: TaskId, parent: TaskId | null, repos: Array<RepoId>, title: string, body: string | null, status: Status, blocked_reason: string | null, position: number, origin: Origin, plan_key: string | null, branch: string | null, due_at: string | null, priority: Priority | null, created_at: Timestamp, };
 
 /**
  * Everything the task panel and page show for one task.

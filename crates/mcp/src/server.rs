@@ -28,7 +28,10 @@ const UPDATE_TASK: &str = "Report progress on a task: set `status`, add a `note`
 Set doing when you start, in_review when your PR is open, blocked with a `note` saying why. \
 Set done with a `note` saying what you did, but only on a task with no PR: a task with a PR \
 finishes by itself when the PR merges. A note alone records progress. A task with subtasks \
-has no status of its own: it shows what they add up to, so update the subtask you're on.";
+has no status of its own: it shows what they add up to, so update the subtask you're on. When \
+the user gives a deadline (\"by Friday\", \"in 2 days\"), set `due` to that day as YYYY-MM-DD, \
+worked out from today's date in their time zone; \"\" clears it. The task shows in their Needs \
+me from that day.";
 
 const LINK: &str = "Attach something to a task. With kind t3_thread, herdr_terminal or \
 claude_session and no `ref`, it links this thread: do that when you start on a task, with the \

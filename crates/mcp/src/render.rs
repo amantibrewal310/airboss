@@ -56,6 +56,9 @@ pub struct TaskView {
     pub repos: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub branch: Option<String>,
+    /// The date it's due, `YYYY-MM-DD` in the user's time zone.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub due_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub body: Option<String>,
     pub origin: Origin,
@@ -75,6 +78,7 @@ impl TaskView {
             blocked_reason: task.blocked_reason,
             parent: task.parent,
             branch: task.branch,
+            due_at: task.due_at,
             body: task.body,
             origin: task.origin,
             plan_key: task.plan_key,
@@ -272,6 +276,14 @@ impl ToolError {
         ToolError::new(
             "A branch name uses only letters, digits, and . _ / -, is at most 200 \
              characters, and can't contain .., start with - or /, or end with / or .lock.",
+        )
+    }
+
+    /// `core` refused a due date (core rule 36): say what one looks like.
+    pub fn bad_due() -> ToolError {
+        ToolError::new(
+            "A due date is a real day written YYYY-MM-DD, e.g. 2026-12-04. Work out \"Friday\" \
+             or \"in 2 days\" from today's date in the user's time zone first.",
         )
     }
 

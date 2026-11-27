@@ -504,9 +504,64 @@ fn update(
             id: id.0,
             status,
             note: note.map(str::to_string),
+            due: None,
         },
     )
     .map_err(|e| e.to_string())
+}
+
+fn update_due(
+    s: &mut Store,
+    id: TaskId,
+    status: Option<AgentStatus>,
+    due: &str,
+) -> Result<airboss_mcp::render::TaskView, String> {
+    tools::update_task(
+        s,
+        &t3(),
+        UpdateTask {
+            id: id.0,
+            status,
+            note: None,
+            due: Some(due.to_string()),
+        },
+    )
+    .map_err(|e| e.to_string())
+}
+
+#[test]
+fn update_task_sets_and_clears_a_due_date_as_this_agent() {
+    let mut s = store();
+    let id = add(&mut s, "send the deck");
+    let got = update_due(&mut s, id, None, "2026-12-04").unwrap();
+    assert_eq!(got.due_at.as_deref(), Some("2026-12-04"));
+    assert_eq!(got.status, Status::Todo);
+    let e = last_event(&s, id);
+    assert_eq!(e.body.as_deref(), Some("due: 2026-12-04"));
+    assert_eq!(e.actor, Actor::Agent(format!("t3/{THREAD}")));
+
+    // With a status in the same call, both land.
+    let got = update_due(&mut s, id, Some(AgentStatus::Doing), "2026-12-05").unwrap();
+    assert_eq!(got.due_at.as_deref(), Some("2026-12-05"));
+    assert_eq!(got.status, Status::Doing);
+
+    let got = update_due(&mut s, id, None, "").unwrap();
+    assert_eq!(got.due_at, None);
+    assert_eq!(last_event(&s, id).body.as_deref(), Some("due date cleared"));
+}
+
+#[test]
+fn update_task_with_a_spoken_date_says_to_work_it_out_and_writes_nothing() {
+    let mut s = store();
+    let id = add(&mut s, "send the deck");
+    let before = s.history(id).unwrap().len();
+    let err = update_due(&mut s, id, Some(AgentStatus::Doing), "Friday").unwrap_err();
+    assert!(
+        err.starts_with("A due date is a real day written YYYY-MM-DD"),
+        "{err}"
+    );
+    assert_eq!(s.history(id).unwrap().len(), before);
+    assert_eq!(s.task(id).unwrap().status, Status::Todo);
 }
 
 fn last_event(s: &Store, id: TaskId) -> airboss_core::Event {
@@ -637,11 +692,11 @@ fn update_task_needs_a_status_or_a_note() {
     let id = add(&mut s, "work");
     assert_eq!(
         update(&mut s, id, None, None).unwrap_err(),
-        "Give `status`, `note`, or both."
+        "Give `status`, `note`, `due`, or several."
     );
     assert_eq!(
         update(&mut s, id, None, Some(" ")).unwrap_err(),
-        "Give `status`, `note`, or both."
+        "Give `status`, `note`, `due`, or several."
     );
 }
 

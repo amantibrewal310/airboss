@@ -94,6 +94,7 @@ v4 added one:
 
 v7 added one:
 - `006_priority.sql` adds `tasks.priority INTEGER CHECK (priority IN (0, 1, 2, 3))`, null for every existing task (rule 35). `ADD COLUMN` rebuilds nothing.
+- `007_due_dates.sql` adds `tasks.due_at`, a `YYYY-MM-DD` date, null for every existing task (rule 36). `ADD COLUMN` rebuilds nothing.
 
 Every migration, any module's, runs with foreign keys off, since `PRAGMA foreign_keys` does nothing inside a transaction and a table rebuild would cascade or fail partway. It must pass `PRAGMA foreign_key_check` before it commits, and foreign keys go back on afterwards, whether it worked or not.
 
@@ -124,6 +125,8 @@ CREATE TABLE tasks (                     -- one thing to get done, at any depth
   origin         TEXT NOT NULL CHECK (origin IN ('me','agent','plan')),
   plan_key       TEXT,                   -- the plan's own id for this step; null unless origin = plan
   branch         TEXT,                   -- the branch its threads share; null: no branch yet
+  due_at         TEXT CHECK (due_at IS NULL OR due_at GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]'),
+                                         -- the day it's due, YYYY-MM-DD in my own time zone (migration 7); null: none
   created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   CHECK ((status = 'blocked') = (blocked_reason IS NOT NULL)),
   CHECK (parent_id IS NULL OR parent_id <> id),
@@ -240,6 +243,7 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
    | `edit_task` (title, notes, priority) | yes | (no) | (no) | (no) | (no) | (no) |
    | `link_repo` / `unlink_repo` | yes | (no) | yes | (no) | (no) | (no) |
    | `set_branch` | yes | (no) | (no) | (no) | (no) | yes |
+   | `set_due` | yes | yes | (no) | (no) | (no) | (no) |
    | `add_note` | yes | yes | (no) | yes | yes | yes |
    | `move_task` | yes | (no) | (no) | (no) | (no) | (no) |
    | `delete_task` | yes | (no) | (no) | (no) | (no) | (no) |
@@ -283,6 +287,10 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
 ### Priority (enforced by code)
 
 35. **A task has at most one priority, P0 (most urgent) to P3, or none.** It's stored as 0 to 3 and the database refuses anything else; null means none. `add_task` takes one in `NewTask::with_priority`, from anyone who may add (an agent's proposal keeps the one it suggests); plans add steps with none. After that only `me` changes it, through `edit_task`, whose `edited` event names it among the fields changed: `priority: P1` or `priority cleared`. Setting the priority it already has writes nothing. It is the task's own, never worked out from its steps (rule 10), and it never changes positions: sibling order within a parent stays rule 13's. Sorting by priority is for readers (`list_tasks`, `airboss ls`): P0 first, none last, ties in tree order.
+
+### Due dates (enforced by code)
+
+36. **A task may be due on a day,** `YYYY-MM-DD` in my own time zone; null means no due date. Agents turn "Friday" or "in 2 days" into the date; `core` stores only the day. `set_due` writes one `edited` event whose body names it, e.g. `due: 2026-12-04`, or `due date cleared`. A blank date clears it, and setting the date it already has writes nothing. Anything but a real day from year 1000 to 9999, written exactly so, is `Error::InvalidTarget`, and nothing is written. Any task may have one, a parent too, in any status; `attention` lists it when its day comes ([SPEC-attention](SPEC-attention.md)).
 
 ### Links (enforced by code)
 
@@ -717,6 +725,13 @@ Task 58, from user feedback. A task can carry a priority, P0 to P3, so the most 
 - [x] Set, change, clear, a no-op and the permissions, each with its event (`tests/priority.rs`).
 - [x] `list_tasks` filters and sorts, before the cap; the CLI lists, filters, sorts, sets and clears (`crates/mcp/tests`).
 - [x] The row's tag shows and is read to VoiceOver, and the row stays 38px (`TaskRow.test.ts`).
+
+## v8: due dates (27 Nov 2026)
+
+Task 59, from user feedback. Things with a deadline had nowhere to live, so they didn't come back on the day.
+
+1. **`tasks.due_at`** (`007_due_dates.sql`, `ALTER TABLE … ADD COLUMN`, every row kept), `Task.due_at`, and `set_due` for `me` and agents (rules 8 and 36).
+2. **A day, not a time.** "Friday" means the whole of Friday wherever I am, so the column holds the calendar date and `attention` reads it in the system time zone. No model runs in the app: the agent works the date out, `core` only checks it's a real one.
 
 ## Open questions
 

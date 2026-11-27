@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { applyPatch, type RowsState } from '../../src/lib/logic/patch';
-import { ago as agoText, clockTime, feedTime, relative, relativeLong } from '../../src/lib/logic/time';
+import { ago as agoText, clockTime, dueDay, dueLabel, feedTime, isDue, localDate, relative, relativeLong } from '../../src/lib/logic/time';
 import { needsLead } from '../../src/lib/logic/needs';
 import { threadSummary } from '../../src/lib/logic/copy';
 import type { ThreadDto } from '../../src/lib/types';
@@ -11,7 +11,7 @@ import { lastReport } from '../../src/lib/logic/connections';
 const row = (id: number, extra: Partial<RowDto> = {}): RowDto => ({
   id, parent: null, depth: 0, position: id, title: `T${id}`, status: 'todo', origin: 'me', priority: null, blocked_reason: null,
   waiting: false, waits_on: [], has_children: false, has_steps: false, progress: null, repos: [], repos_from_subtasks: false,
-  branch: null, ready: false, ready_since: null, ready_pill: false, quiet_days: null, needs: false,
+  branch: null, due_at: null, ready: false, ready_since: null, ready_pill: false, quiet_days: null, needs: false,
   needs_stale: false, live: null, last_at: '2026-11-25T10:00:00.000Z', last_actor: 'me', launched_in: null, ...extra,
 });
 
@@ -159,5 +159,29 @@ describe('connections', () => {
     expect(footerText([], 'Database moved').text).toBe('Database moved');
     // attention's own row when its table can't open.
     expect(footerText(mergeConnections([c('Needs me', false, "Didn't start")], 'unknown'), null).text).toBe("Needs me didn't start");
+  });
+});
+
+describe('due dates', () => {
+  // Local times, so these read the same in any zone.
+  const at = (y: number, m: number, d: number, h = 12) => new Date(y, m - 1, d, h).getTime();
+
+  it('reads a real YYYY-MM-DD as local midnight, and nothing else', () => {
+    expect(dueDay('2026-12-04')).toBe(at(2026, 12, 4, 0));
+    expect(dueDay('2028-02-29')).toBe(at(2028, 2, 29, 0));
+    for (const bad of ['2026-02-30', '2026-13-01', 'Friday', '2026-12-4', '', null]) expect(dueDay(bad)).toBeNull();
+  });
+
+  it('names the day, with the year only when it isn’t this one', () => {
+    expect(dueLabel('2026-12-04', at(2026, 11, 27))).toBe('Fri 4 Dec');
+    expect(dueLabel('2027-01-05', at(2026, 11, 27))).toBe('Tue 5 Jan 2027');
+    expect(localDate(at(2026, 3, 9))).toBe('2026-03-09');
+  });
+
+  it('is due from the first moment of its day', () => {
+    expect(isDue('2026-12-04', at(2026, 12, 4, 0))).toBe(true);
+    expect(isDue('2026-12-04', at(2026, 12, 4, 0) - 1)).toBe(false);
+    expect(isDue('2026-12-04', at(2026, 12, 9))).toBe(true);
+    expect(isDue(null, at(2026, 12, 9))).toBe(false);
   });
 });

@@ -162,6 +162,7 @@ pub(crate) mod fault {
     pub(crate) const TASK_INSERTED: &str = "tasks::add after insert";
     pub(crate) const TASK_EDITED: &str = "tasks::edit after update";
     pub(crate) const BRANCH_SET: &str = "tasks::set_branch after update";
+    pub(crate) const DUE_SET: &str = "tasks::set_due after update";
     pub(crate) const NOTE_RECORDED: &str = "tasks::add_note after event";
     pub(crate) const REPO_LINKED: &str = "repos::link_repo after insert";
     pub(crate) const REPO_UNLINKED: &str = "repos::unlink_repo after delete";

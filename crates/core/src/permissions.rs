@@ -17,6 +17,8 @@ pub(crate) enum Call {
     /// `link_repo` and `unlink_repo`.
     ChangeRepos,
     SetBranch,
+    /// `set_due`: agents turn "Friday" into a date for me (rule 36).
+    SetDue,
     AddNote,
     MoveTask,
     DeleteTask,
@@ -48,7 +50,7 @@ pub(crate) fn allowed(call: Call, actor: &Actor) -> Result<()> {
         AddRepo | EditRepo | RemoveRepo | EditTask | MoveTask | DeleteTask | RejectProposals => {
             *actor == Me
         }
-        AddTask | Unlink => matches!(actor, Me | Agent(_)),
+        AddTask | Unlink | SetDue => matches!(actor, Me | Agent(_)),
         AddPlan | ChangeRepos | ChangeDependency => matches!(actor, Me | Plan),
         // A plan arrives as a tree of tasks; it has nothing to say about one afterwards.
         AddNote => *actor != Plan,
@@ -89,6 +91,7 @@ mod tests {
             (Call::EditTask, vec![me.clone()]),
             (Call::ChangeRepos, vec![me.clone(), Actor::Plan]),
             (Call::SetBranch, vec![me.clone(), Actor::Launch]),
+            (Call::SetDue, vec![me.clone(), agent.clone()]),
             (
                 Call::AddNote,
                 every_actor()

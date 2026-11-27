@@ -310,6 +310,9 @@ fn detail_text(store: &Store, d: &TaskDetail, style: Style) -> String {
     if let Some(b) = &t.branch {
         field(&mut out, style, "Branch", std::slice::from_ref(b));
     }
+    if let Some(d) = &t.due_at {
+        field(&mut out, style, "Due", std::slice::from_ref(d));
+    }
     if let Some(body) = &t.body {
         let lines: Vec<String> = body.lines().map(str::to_string).collect();
         field(&mut out, style, "Notes", &lines);
@@ -1119,6 +1122,26 @@ pub fn branch(
     done_with(&t, json, |t| match &t.branch {
         Some(b) => format!("{} is on branch {b}", task_line(style, t)),
         None => format!("{} has no branch now", task_line(style, t)),
+    })
+}
+
+/// `airboss due`: sets the day the task is due, or clears it.
+pub fn due(
+    store: &mut Store,
+    id: i64,
+    date: Option<&str>,
+    json: bool,
+    style: Style,
+) -> Result<String, ToolError> {
+    let id = TaskId(id);
+    let task = store.set_due(id, date, ME).map_err(|e| match e {
+        Error::InvalidTarget => ToolError::bad_due(),
+        e => explain(store, ME, e, &Subject::task(id)),
+    })?;
+    let t = TaskView::new(task, &RepoNames::load(store)?);
+    done_with(&t, json, |t| match &t.due_at {
+        Some(d) => format!("{} is due {d}", task_line(style, t)),
+        None => format!("{} has no due date now", task_line(style, t)),
     })
 }
 

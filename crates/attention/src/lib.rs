@@ -7,6 +7,7 @@
 
 mod compute;
 mod db;
+mod due;
 mod hidden;
 mod kinds;
 mod quiet;
@@ -48,6 +49,9 @@ pub struct AttentionConfig {
     pub menu_items: usize,
     /// Changes this close together make one recompute: 150 ms.
     pub settle: Duration,
+    /// Seconds east of UTC that due dates are read in. `None`, the default, asks the system's
+    /// time zone at each moment, so daylight saving is followed; tests fix it.
+    pub utc_offset: Option<i32>,
 }
 
 const DAY: Duration = Duration::from_secs(86_400);
@@ -61,8 +65,27 @@ impl Default for AttentionConfig {
             stopped_after: Duration::from_secs(10 * 60),
             menu_items: 6,
             settle: Duration::from_millis(150),
+            utc_offset: None,
         }
     }
+}
+
+impl AttentionConfig {
+    /// The offset from UTC, in seconds, of my local time at `t`.
+    pub fn utc_offset_at(&self, t: SystemTime) -> i32 {
+        self.utc_offset.unwrap_or_else(|| system_offset(t))
+    }
+}
+
+/// The system time zone's offset at `t`; UTC when it can't be read.
+fn system_offset(t: SystemTime) -> i32 {
+    let Ok(since) = t.duration_since(std::time::UNIX_EPOCH) else {
+        return 0;
+    };
+    let Ok(at) = jiff::Timestamp::from_second(since.as_secs() as i64) else {
+        return 0;
+    };
+    jiff::tz::TimeZone::system().to_offset(at).seconds()
 }
 
 /// How long `dismiss`, `snooze` and `restore` wait for the worker. A recompute takes

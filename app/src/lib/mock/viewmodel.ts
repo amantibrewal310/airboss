@@ -284,6 +284,7 @@ export function buildRow(s: MockState, ix: TreeIndex, id: TaskId, needs: NeedsIt
     repos,
     repos_from_subtasks: fromSubtasks,
     branch: branchOf(s, id),
+    due_at: t.due_at,
     ready,
     ready_since: ready ? (s.readySince[id] ?? last.at) : null,
     ready_pill: mine.some((n) => n.kind === 'ready'),

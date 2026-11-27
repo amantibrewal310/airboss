@@ -8,6 +8,7 @@ export const KIND_LABEL: Record<NeedsKind, string> = {
   review: 'Review',
   failed_run: 'Failed run',
   agent_stopped: 'Agent stopped',
+  due: 'Due',
   proposed: 'Proposed subtasks',
   ready: 'Ready to start',
   quiet: 'Quiet 5+ days',
@@ -32,6 +33,7 @@ export const KIND_ICON: Record<NeedsKind, IconName> = {
   review: 'pr',
   failed_run: 'failed',
   agent_stopped: 'stopped',
+  due: 'calendar',
   proposed: 'proposed',
   ready: 'play',
   quiet: 'moon',
@@ -42,12 +44,13 @@ export const GROUP_LABEL: Record<NeedsGroup, string> = {
   reviews: 'Reviews',
   failed_runs: 'Failed runs',
   stopped: 'Stopped',
+  due: 'Due',
   proposed: 'Proposed',
   ready: 'Ready',
   quiet: 'Quiet',
 };
 
-export const GROUP_ORDER: NeedsGroup[] = ['questions', 'reviews', 'failed_runs', 'stopped', 'proposed', 'ready', 'quiet'];
+export const GROUP_ORDER: NeedsGroup[] = ['questions', 'reviews', 'failed_runs', 'stopped', 'due', 'proposed', 'ready', 'quiet'];
 
 /** The main action (↩ / ⌘↩) for each kind. */
 export function mainLabel(kind: NeedsKind): string {
@@ -63,6 +66,7 @@ export function mainLabel(kind: NeedsKind): string {
       return 'Accept all';
     case 'ready':
       return 'Do it';
+    case 'due':
     case 'quiet':
       return 'Open';
   }
@@ -70,7 +74,7 @@ export function mainLabel(kind: NeedsKind): string {
 
 /** Kinds whose card offers Mark done (Space in Needs me). */
 export function canMarkDone(kind: NeedsKind): boolean {
-  return kind === 'agent_stopped';
+  return kind === 'agent_stopped' || kind === 'due';
 }
 
 /** The quieter action beside it: Dismiss for most, Snooze 3 days, Reject all. */

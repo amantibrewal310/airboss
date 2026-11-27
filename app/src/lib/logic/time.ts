@@ -87,3 +87,33 @@ function dayMonth(t: number): string {
   const d = new Date(t);
   return `${d.getDate()} ${MONTHS[d.getMonth()]}`;
 }
+
+/** Local midnight of a `YYYY-MM-DD` date, in ms; null if it isn't one. */
+export function dueDay(date: string | null | undefined): number | null {
+  const m = date ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(date) : null;
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return d.getMonth() === Number(m[2]) - 1 ? d.getTime() : null;
+}
+
+/** Today's local date as `YYYY-MM-DD`. */
+export function localDate(now: number): string {
+  const d = new Date(now);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/** A due date as Props shows it: "Fri 4 Dec", with the year when it isn't this one. */
+export function dueLabel(date: string, now: number): string {
+  const t = dueDay(date);
+  if (t === null) return date;
+  const d = new Date(t);
+  const year = d.getFullYear() === new Date(now).getFullYear() ? '' : ` ${d.getFullYear()}`;
+  return `${WEEKDAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}${year}`;
+}
+
+/** Whether a due date has come: today or past, in local time. */
+export function isDue(date: string | null | undefined, now: number): boolean {
+  const t = dueDay(date);
+  return t !== null && t <= now;
+}

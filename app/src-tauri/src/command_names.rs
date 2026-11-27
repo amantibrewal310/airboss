@@ -26,6 +26,7 @@ pub const COMMAND_NAMES: &[&str] = &[
     "back_up_database",
     "pick_folder",
     "set_branch",
+    "set_due",
     "add_dependency",
     "remove_dependency",
     "add_link",

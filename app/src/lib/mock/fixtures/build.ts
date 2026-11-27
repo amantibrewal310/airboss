@@ -37,6 +37,8 @@ export interface TaskSpec {
   blocked?: string;
   priority?: Priority;
   branch?: string;
+  /** The day it's due, `YYYY-MM-DD`. */
+  due?: string;
   origin?: Task['origin'];
   /** How long ago it was created (ms). */
   created?: number;
@@ -89,6 +91,7 @@ export class SeedBuilder {
       origin,
       plan_key: null,
       branch: spec.branch ?? null,
+      due_at: spec.due ?? null,
       priority: spec.priority ?? null,
       created_at: created,
     });
@@ -244,6 +247,7 @@ const GROUP: Record<NeedsItem['kind'], NeedsItem['group']> = {
   review: 'reviews',
   failed_run: 'failed_runs',
   agent_stopped: 'stopped',
+  due: 'due',
   proposed: 'proposed',
   ready: 'ready',
   quiet: 'quiet',

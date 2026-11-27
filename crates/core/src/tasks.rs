@@ -37,6 +37,12 @@ impl crate::Store {
         self.write(|tx| set_branch(tx, id, branch, actor))
     }
 
+    /// Sets or clears the date the task is due, `YYYY-MM-DD` in my own time zone (rule 36).
+    /// `me` and agents only.
+    pub fn set_due(&mut self, id: TaskId, due: Option<&str>, actor: &Actor) -> Result<Task> {
+        self.write(|tx| set_due(tx, id, due, actor))
+    }
+
     /// True when the task has steps: subtasks that aren't proposals. Its status is then
     /// worked out from them, and it takes no branch, PR or status change but a drop (rule 10).
     pub fn has_steps(&self, id: TaskId) -> Result<bool> {
@@ -54,21 +60,21 @@ impl crate::Store {
 /// then its priority. The repos come from an index lookup per row, so every reader gets them without a
 /// second query.
 pub(crate) const TASK_COLUMNS: &str = "t.id, t.parent_id, t.title, t.body, t.status, \
-     t.blocked_reason, t.position, t.origin, t.plan_key, t.created_at, t.branch, \
+     t.blocked_reason, t.position, t.origin, t.plan_key, t.created_at, t.branch, t.due_at, \
      (SELECT group_concat(tr.repo_id, ',' ORDER BY r.name) \
       FROM task_repos tr JOIN repos r ON r.id = tr.repo_id WHERE tr.task_id = t.id), \
      t.priority";
 
 /// How many columns [`TASK_COLUMNS`] selects, so queries can read their own columns after it.
-pub(crate) const TASK_COLUMN_COUNT: usize = 13;
+pub(crate) const TASK_COLUMN_COUNT: usize = 14;
 
 /// Reads a row selected with [`TASK_COLUMNS`] (table alias `t`).
 pub(crate) fn from_row(row: &Row<'_>) -> rusqlite::Result<Task> {
     let status: String = row.get(4)?;
     let origin: String = row.get(7)?;
-    let repos: Option<String> = row.get(11)?;
-    let priority = match row.get::<_, Option<i64>>(12)? {
-        Some(n) => Some(Priority::from_int(n).ok_or_else(|| bad_text(12, &n.to_string()))?),
+    let repos: Option<String> = row.get(12)?;
+    let priority = match row.get::<_, Option<i64>>(13)? {
+        Some(n) => Some(Priority::from_int(n).ok_or_else(|| bad_text(13, &n.to_string()))?),
         None => None,
     };
     Ok(Task {
@@ -77,7 +83,7 @@ pub(crate) fn from_row(row: &Row<'_>) -> rusqlite::Result<Task> {
         repos: match repos {
             Some(list) => list
                 .split(',')
-                .map(|id| id.parse().map(RepoId).map_err(|_| bad_text(11, &list)))
+                .map(|id| id.parse().map(RepoId).map_err(|_| bad_text(12, &list)))
                 .collect::<rusqlite::Result<_>>()?,
             None => Vec::new(),
         },
@@ -89,6 +95,7 @@ pub(crate) fn from_row(row: &Row<'_>) -> rusqlite::Result<Task> {
         origin: Origin::parse(&origin).ok_or_else(|| bad_text(7, &origin))?,
         plan_key: row.get(8)?,
         branch: row.get(10)?,
+        due_at: row.get(11)?,
         priority,
         created_at: row.get(9)?,
     })
@@ -436,6 +443,68 @@ pub(crate) fn set_branch(
     get(tx, id)
 }
 
+/// Rule 36: `Error::InvalidTarget` unless `date` is a real calendar date written
+/// `YYYY-MM-DD`, from year 1000 to 9999.
+pub(crate) fn check_due_date(date: &str) -> Result<()> {
+    let b = date.as_bytes();
+    let shape = b.len() == 10
+        && b[4] == b'-'
+        && b[7] == b'-'
+        && b.iter()
+            .enumerate()
+            .all(|(i, c)| i == 4 || i == 7 || c.is_ascii_digit());
+    let num = |from: usize, to: usize| date.get(from..to).and_then(|d| d.parse::<u32>().ok());
+    let real = match (shape, num(0, 4), num(5, 7), num(8, 10)) {
+        (true, Some(year), Some(month), Some(day)) => {
+            let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+            let days = match month {
+                2 if leap => 29,
+                2 => 28,
+                4 | 6 | 9 | 11 => 30,
+                1..=12 => 31,
+                _ => 0,
+            };
+            year >= 1000 && (1..=days).contains(&day)
+        }
+        _ => false,
+    };
+    if real {
+        Ok(())
+    } else {
+        Err(Error::InvalidTarget)
+    }
+}
+
+/// Sets the due date and writes one `edited` event naming it. A blank date clears it, and
+/// setting the date it already has writes nothing (rule 36).
+pub(crate) fn set_due(
+    tx: &mut Tx<'_>,
+    id: TaskId,
+    due: Option<&str>,
+    actor: &Actor,
+) -> Result<Task> {
+    allowed(Call::SetDue, actor)?;
+    let due = due.map(str::trim).filter(|d| !d.is_empty());
+    if let Some(date) = due {
+        check_due_date(date)?;
+    }
+    let before = get(tx, id)?;
+    if due == before.due_at.as_deref() {
+        return Ok(before);
+    }
+    tx.execute(
+        "UPDATE tasks SET due_at = ?2 WHERE id = ?1",
+        params![id.0, due],
+    )?;
+    fault::hit(fault::DUE_SET)?;
+    let body = match due {
+        Some(d) => format!("due: {d}"),
+        None => "due date cleared".to_string(),
+    };
+    events::record(tx, id, EventKind::Edited, None, Some(&body), actor)?;
+    get(tx, id)
+}
+
 /// Writes a `note` event; rule 4 says a note has text, so a blank one is `NoteRequired`.
 pub(crate) fn add_note(tx: &mut Tx<'_>, id: TaskId, text: &str, actor: &Actor) -> Result<()> {
     allowed(Call::AddNote, actor)?;
@@ -485,6 +554,49 @@ mod tests {
         assert_eq!(counts(&store), before);
         assert_eq!(store.task(t.id).unwrap(), t);
         assert_eq!(store.last_committed, committed);
+    }
+
+    #[test]
+    fn a_failed_set_due_leaves_the_task_and_history_unchanged() {
+        let mut store = Store::open_in_memory().unwrap();
+        let t = store.add_task(NewTask::new("Before"), &Actor::Me).unwrap();
+        let before = counts(&store);
+        fault::arm(fault::DUE_SET);
+        assert!(store.set_due(t.id, Some("2026-12-04"), &Actor::Me).is_err());
+        assert_eq!(counts(&store), before);
+        assert_eq!(store.task(t.id).unwrap(), t);
+    }
+
+    #[test]
+    fn due_dates_must_be_real_days() {
+        for ok in [
+            "2026-12-04",
+            "2028-02-29",
+            "2000-02-29",
+            "9999-12-31",
+            "1000-01-01",
+        ] {
+            assert!(check_due_date(ok).is_ok(), "{ok}");
+        }
+        for bad in [
+            "2026-02-29",
+            "1900-02-29",
+            "2026-13-01",
+            "2026-00-10",
+            "2026-04-31",
+            "2026-12-00",
+            "26-12-04",
+            "2026-12-4",
+            "2026/12/04",
+            "2026-12-04T00:00",
+            "friday",
+            "",
+            "0999-01-01",
+            "+026-12-04",
+            "2026-1٢-04",
+        ] {
+            assert!(check_due_date(bad).is_err(), "{bad}");
+        }
     }
 
     #[test]

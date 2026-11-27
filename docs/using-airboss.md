@@ -54,11 +54,14 @@ Needs me is the list of decisions waiting on you, in a fixed order. The menu-bar
 | Reviews | A linked PR is open and isn't a draft, and no agent on its task is still running or waiting on you | Open PR | Dismiss |
 | Failed runs | A linked T3 thread's last run failed | Open thread | Dismiss |
 | Stopped | A task in progress whose agents have all stopped, with no open PR and nothing new for 10 minutes | Open thread | Mark done (Space), Set in review, Snooze 3 days, Dismiss |
+| Due | A task's due date has come (today or past), until it's done | Open | Mark done (Space), Snooze 3 days, Dismiss |
 | Proposed | An agent proposed subtasks | Accept all | Accept, Edit or Reject each; Reject all |
 | Ready | A task's last blocker finished, in the last 7 days | Do it | Dismiss |
 | Quiet | A task in progress, in review or blocked has had no activity for 5 days | Open | Snooze 3 days |
 
 ↑↓ move through the list, ↩ or ⌘↩ runs the main action, and ⌘⌫ dismisses. A dismissed item stays hidden, even after a restart, until something new happens: a new question, a new quiet stretch. When an item's source is offline, it's dimmed and says "May be out of date".
+
+**Due dates.** Tell an agent "by Friday" or "in 2 days" and it sets the date on the task; or set it yourself on the **Due** line of the task's panel, or with `airboss due`. The day it comes, the task shows under Due. There's no notification for it yet.
 
 When nothing needs you, the screen says so, with how many tasks are in progress and ready, and a button to show the ready ones.
 

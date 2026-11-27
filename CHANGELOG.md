@@ -7,6 +7,7 @@ What changed in each release of Airboss. The format follows [Keep a Changelog](h
 ### Added
 
 - **Priority, P0 to P3.** A task can carry a priority: `airboss add --priority p0`, `airboss edit --priority p2` or `--no-priority`. `airboss ls --priority p0,p1` keeps only those, and `--sort priority` lists the most urgent first, with siblings still in their order. Agents get the same `priority` filter and `sort` in `list_tasks`. Rows show it as a small P0–P3 tag after the title.
+- **Due dates.** A task can have a day it's due. Tell an agent "by Friday" or "in 2 days" and it sets the date; or pick one on the new **Due** line of a task's panel, or run `airboss due 12 2026-12-04`. From that day (your midnight, in your time zone) the task shows in Needs me under **Due** ("Due today", "Due yesterday", "Overdue by 3 days") until it's done, with Mark done, Snooze 3 days and Dismiss. No notifications for it yet.
 
 ### Changed
 

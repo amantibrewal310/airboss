@@ -1094,3 +1094,88 @@ fn a_proposal_accepted_from_another_handle_before_the_reject_lands_is_left_alone
     assert!(!kinds_of(&fresh, p1).contains(&EventKind::Rejected));
     assert_eq!(fresh.task(p2).unwrap().status, Status::Dropped);
 }
+
+// Rule 36: a task may be due on a calendar date, set by `me` or an agent, with an `edited`
+// event naming it.
+
+#[test]
+fn a_new_task_is_not_due() {
+    let mut s = store();
+    let t = s.add_task(NewTask::new("x"), &Actor::Me).unwrap();
+    assert_eq!(t.due_at, None);
+}
+
+#[test]
+fn a_due_date_is_set_changed_and_cleared_with_one_edited_event_each() {
+    let mut s = store();
+    let t = s
+        .add_task(NewTask::new("Send Vivek the deck"), &Actor::Me)
+        .unwrap();
+    let agent = Actor::Agent("t3/a1".into());
+
+    let set = s.set_due(t.id, Some("2026-12-04"), &agent).unwrap();
+    assert_eq!(set.due_at.as_deref(), Some("2026-12-04"));
+    assert_eq!(s.task(t.id).unwrap(), set);
+    let e = last_event(&s, t.id);
+    assert_eq!(e.kind, EventKind::Edited);
+    assert_eq!(e.body.as_deref(), Some("due: 2026-12-04"));
+    assert_eq!(e.actor, agent);
+
+    s.set_due(t.id, Some(" 2026-12-07 "), &Actor::Me).unwrap();
+    assert_eq!(s.task(t.id).unwrap().due_at.as_deref(), Some("2026-12-07"));
+    let in_tree = s.tree().unwrap();
+    assert_eq!(in_tree[0].task.due_at.as_deref(), Some("2026-12-07"));
+
+    let cleared = s.set_due(t.id, Some("  "), &Actor::Me).unwrap();
+    assert_eq!(cleared.due_at, None);
+    assert_eq!(
+        last_event(&s, t.id).body.as_deref(),
+        Some("due date cleared")
+    );
+    assert_eq!(s.history(t.id).unwrap().len(), 4);
+}
+
+#[test]
+fn setting_the_due_date_a_task_already_has_writes_nothing() {
+    let mut s = store();
+    let t = s.add_task(NewTask::new("x"), &Actor::Me).unwrap();
+    s.set_due(t.id, None, &Actor::Me).unwrap();
+    s.set_due(t.id, Some("2026-12-04"), &Actor::Me).unwrap();
+    let rx = s.subscribe();
+    s.set_due(t.id, Some("2026-12-04"), &Actor::Me).unwrap();
+    assert_eq!(s.history(t.id).unwrap().len(), 2);
+    assert!(rx.try_recv().is_err());
+}
+
+#[test]
+fn a_due_date_must_be_a_real_day_written_yyyy_mm_dd() {
+    let mut s = store();
+    let t = s.add_task(NewTask::new("x"), &Actor::Me).unwrap();
+    for bad in [
+        "Friday",
+        "in 2 days",
+        "2026-02-30",
+        "4/12/2026",
+        "2026-12-04T09:00:00Z",
+    ] {
+        let err = s.set_due(t.id, Some(bad), &Actor::Me).unwrap_err();
+        assert!(matches!(err, Error::InvalidTarget), "{bad}: {err:?}");
+    }
+    assert_eq!(s.task(t.id).unwrap().due_at, None);
+    assert_eq!(s.history(t.id).unwrap().len(), 1);
+    let err = s
+        .set_due(TaskId(999), Some("2026-12-04"), &Actor::Me)
+        .unwrap_err();
+    assert!(matches!(err, Error::NotFound), "{err:?}");
+}
+
+#[test]
+fn only_me_and_agents_set_due_dates() {
+    let mut s = store();
+    let t = s.add_task(NewTask::new("x"), &Actor::Me).unwrap();
+    for actor in [Actor::Plan, Actor::SyncGh, Actor::SyncT3, Actor::Launch] {
+        let err = s.set_due(t.id, Some("2026-12-04"), &actor).unwrap_err();
+        assert!(matches!(err, Error::NotAllowed), "{actor}: {err:?}");
+    }
+    assert_eq!(s.task(t.id).unwrap().due_at, None);
+}

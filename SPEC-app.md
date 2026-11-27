@@ -476,6 +476,7 @@ Every screen keeps DESIGN.md's layout, sizes and motion. This section adds data,
   - **Status** opens the status menu.
   - **Repos** are tags, plus "Link repo", which opens the repo checklist; its last line is "Add repos…". The tags carry "· from subtasks" when the repos are inherited.
   - **Branch** (mono) shows the task's branch, or in text-3 the one Do it would use (`Prepared.branch`). Click it to edit (`set_branch`); `core` refuses characters outside `[A-Za-z0-9._/-]` and the message shows inline.
+  - **Due** shows the day the task is due ("Fri 4 Dec", red-washed once it has come), or "None · set a date". Click to pick a day in a date field (`set_due`), × to clear it; a refusal shows inline.
   - **Parent** opens Jump in "Move under…" mode (`move_task`, last position).
   - **Waits on** lists every dependency, finished ones too, each with its status icon, or "Nothing · ⌘D to add". Hovering a tag shows ✕.
   - **Blocks:** the same, read-only.
@@ -1034,6 +1035,7 @@ Writes return `Patch` (shown as → P). All `core` calls act as `me`, with one l
 | `back_up_database` | | `path?` | save dialog, then `Store::backup(to, overwrite)` (not the database problem state if it fails) |
 | `pick_folder` | | `path?` | dialog plugin |
 | `set_branch` | `id, branch` | → P | `set_branch` |
+| `set_due` | `id, due` | → P | `set_due`; blank clears it (task 59) |
 | `add_dependency` / `remove_dependency` | `id, waits_on` | → P | `add_dependency` / `remove_dependency` |
 | `add_link` | `id, text, title?` | → P | classify, `link`; for a PR, `sync.lookup_pr` afterwards, then `link` again with the title |
 | `remove_link` | `link` | → P | `unlink` |

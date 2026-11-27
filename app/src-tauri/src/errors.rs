@@ -144,6 +144,8 @@ pub enum Ctx {
     Dependency { id: TaskId, waits_on: TaskId },
     /// Setting a task's branch.
     Branch(TaskId),
+    /// Setting a task's due date.
+    Due(TaskId),
     /// Linking or unlinking a link.
     Link,
     /// Linking or unlinking a repo on a task.
@@ -159,6 +161,7 @@ pub const MSG_LINK_GONE: &str = "That link no longer exists.";
 pub const MSG_UNDER_CLOSED: &str = "Tasks can't go under a proposed, done or dropped task.";
 pub const MSG_DEP_FAMILY: &str = "A task can't wait on its own parent or subtask.";
 pub const MSG_BRANCH: &str = "Branch names can use letters, digits, `.`, `_`, `/` and `-`.";
+pub const MSG_DUE: &str = "A due date is a real day, like 2026-12-04.";
 pub const MSG_REPO_EXISTS: &str = "A repo with that name or folder is already added.";
 pub const MSG_NOT_ALLOWED: &str = "That change isn't allowed.";
 pub const MSG_DB: &str =
@@ -247,7 +250,9 @@ impl AppError {
         match err {
             E::EmptyTitle => AppError::new(ErrorCode::EmptyTitle, MSG_EMPTY_TITLE),
             E::NotFound => match ctx {
-                Ctx::Task(id) | Ctx::Move(id) | Ctx::Branch(id) => AppError::task_gone(id),
+                Ctx::Task(id) | Ctx::Move(id) | Ctx::Branch(id) | Ctx::Due(id) => {
+                    AppError::task_gone(id)
+                }
                 Ctx::Dependency { id, .. } => AppError::task_gone(id),
                 Ctx::Repo(id) => AppError::new(
                     ErrorCode::NotFound,
@@ -262,6 +267,7 @@ impl AppError {
                 Ctx::Move(_) => AppError::new(ErrorCode::InvalidTarget, MSG_UNDER_CLOSED),
                 Ctx::Dependency { .. } => AppError::new(ErrorCode::InvalidTarget, MSG_DEP_FAMILY),
                 Ctx::Branch(_) => AppError::new(ErrorCode::InvalidTarget, MSG_BRANCH),
+                Ctx::Due(_) => AppError::new(ErrorCode::InvalidTarget, MSG_DUE),
                 Ctx::Link => AppError::new(ErrorCode::InvalidTarget, MSG_BAD_PR),
                 _ => not_allowed("InvalidTarget"),
             },

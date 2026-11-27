@@ -222,6 +222,19 @@ enum Command {
         #[command(flatten)]
         out: Out,
     },
+    /// Set the day a task is due, YYYY-MM-DD. From that day it shows in Needs me.
+    Due {
+        /// The task's id.
+        id: i64,
+        /// The day, e.g. 2026-12-04.
+        #[arg(required_unless_present = "clear", conflicts_with = "clear")]
+        date: Option<String>,
+        /// Clear the due date instead.
+        #[arg(long)]
+        clear: bool,
+        #[command(flatten)]
+        out: Out,
+    },
     /// Register, edit, remove and list repos, and link them to tasks.
     #[command(subcommand)]
     Repo(RepoCommand),
@@ -447,6 +460,15 @@ fn run(command: Command) -> Result<String, String> {
         } => {
             let name = if clear { None } else { name.as_deref() };
             cli::branch(store, id, name, out.json, style)
+        }
+        Command::Due {
+            id,
+            date,
+            clear,
+            out,
+        } => {
+            let date = if clear { None } else { date.as_deref() };
+            cli::due(store, id, date, out.json, style)
         }
         Command::Log { after, out } => cli::log(store, after, out.json, style),
         Command::Backup { path, force, out } => cli::backup(store, &path, force, out.json),
