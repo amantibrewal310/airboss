@@ -79,7 +79,7 @@ fn a_modules_migrations_run_once_each_across_handles() {
     assert_eq!(recorded(&conn, "sync"), vec![1, 2]);
     assert_eq!(
         recorded(&conn, "core"),
-        vec![1, 2, 3, 4, 5],
+        vec![1, 2, 3, 4, 5, 6],
         "core's own are untouched"
     );
     assert_eq!(count(&conn, "SELECT count(*) FROM sync_prs"), 1);
@@ -103,7 +103,7 @@ fn migrating_core_from_outside_is_refused() {
     let err = s.migrate_module("core", &[sneaky]).unwrap_err();
     assert!(matches!(err, Error::InvalidTarget), "{err:?}");
     let conn = raw(&s);
-    assert_eq!(recorded(&conn, "core"), vec![1, 2, 3, 4, 5]);
+    assert_eq!(recorded(&conn, "core"), vec![1, 2, 3, 4, 5, 6]);
     assert!(s.tree().is_ok(), "tasks is still there");
 }
 

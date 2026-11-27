@@ -71,9 +71,9 @@ $ airboss repo link 1 booking-api
 
 ## Tasks
 
-### `airboss add <TITLE> [--under <TASK>] [--repo <NAME>]… [--body <BODY>]`
+### `airboss add <TITLE> [--under <TASK>] [--repo <NAME>]… [--body <BODY>] [--priority <p0|p1|p2|p3>]`
 
-Adds a task as todo, at the end of its siblings. Give `--repo` again for more repos.
+Adds a task as todo, at the end of its siblings. Give `--repo` again for more repos. `--priority` sets how urgent it is, p0 the most; left out, it has none.
 
 ```console
 $ airboss add "Booking flow" --repo booking-web --repo booking-api --body "New booking flow, web and API."
@@ -84,7 +84,7 @@ $ airboss add "Slots endpoint" --under 1 --repo booking-api
 Added ○ #3 Slots endpoint under #1 in booking-api
 ```
 
-### `airboss ls [--all | --ready]`
+### `airboss ls [--all | --ready] [--priority <P>,…] [--sort <tree|priority>]`
 
 Shows the tree, one task per line. Done and dropped tasks are hidden unless you pass `--all`, but a done parent still shows when something under it is open. Rejected proposals never show.
 
@@ -103,9 +103,18 @@ $ airboss ls --ready
 #3  ○ Slots endpoint  booking-api               ready since 2026-11-25 21:25
 ```
 
+Once any task has a priority, a column after the id shows it. `--priority p0,p1` keeps only tasks with those priorities. `--sort priority` puts the most urgent first, P0 to P3, then tasks with none; tasks with the same priority keep their tree order, so siblings still rank by position. Either one lists tasks flat, without the tree's indent.
+
+```console
+$ airboss ls --sort priority
+#3  P0  ○ Slots endpoint  booking-api
+#1  P2  ○ Booking flow    booking-api, booking-web
+#2      ○ Slot picker     booking-web               waiting
+```
+
 ### `airboss show <ID>`
 
-Shows one task: status, parent, repos, branch, notes, links, subtasks, run order, what it waits on and blocks, and its history.
+Shows one task: status, priority, parent, repos, branch, notes, links, subtasks, run order, what it waits on and blocks, and its history.
 
 ```console
 $ airboss show 1
@@ -123,9 +132,9 @@ History
   2026-11-25 21:25  me  edited   branch cleared
 ```
 
-### `airboss edit <ID> [--title <TITLE>] [--body <BODY>]`
+### `airboss edit <ID> [--title <TITLE>] [--body <BODY>] [--priority <P> | --no-priority]`
 
-Changes a task's title or notes. An empty `--body ""` clears the notes.
+Changes a task's title, notes or priority. An empty `--body ""` clears the notes, and `--no-priority` clears the priority. History records a priority change as `priority: P1` or `priority cleared`.
 
 ```console
 $ airboss edit 2 --title "Web: slot picker"

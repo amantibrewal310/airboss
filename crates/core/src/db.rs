@@ -59,6 +59,10 @@ const CORE_MIGRATIONS: &[Migration] = &[
         version: 5,
         sql: include_str!("migrations/005_herdr_links.sql"),
     },
+    Migration {
+        version: 6,
+        sql: include_str!("migrations/006_priority.sql"),
+    },
 ];
 
 const CREATE_SCHEMA_MIGRATIONS: &str = "
@@ -262,7 +266,7 @@ mod tests {
     }
 
     /// `core`'s newest migration: every core migration, applied once.
-    const CORE_VERSION: i64 = 5;
+    const CORE_VERSION: i64 = 6;
 
     fn rows<T: rusqlite::types::FromSql>(conn: &Connection, sql: &str) -> Vec<Vec<Option<T>>> {
         let mut stmt = conn.prepare(sql).unwrap();
@@ -271,6 +275,36 @@ mod tests {
             .unwrap()
             .collect::<std::result::Result<_, _>>()
             .unwrap()
+    }
+
+    #[test]
+    fn migration_6_adds_a_priority_that_starts_unset_and_takes_only_0_to_3() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        migrate(&mut conn, "core", &CORE_MIGRATIONS[..5]).unwrap();
+        conn.execute_batch(
+            "INSERT INTO tasks (title, position, origin) VALUES ('one', 1, 'me'), ('two', 2, 'me');",
+        )
+        .unwrap();
+        let sql = "SELECT id, parent_id, title, body, status, position, origin, created_at FROM tasks ORDER BY id";
+        let before = rows::<rusqlite::types::Value>(&conn, sql);
+
+        migrate(&mut conn, "core", CORE_MIGRATIONS).unwrap();
+        assert_eq!(core_version(&conn), CORE_VERSION);
+        assert_eq!(rows(&conn, sql), before, "every task kept as it was");
+        assert_eq!(
+            rows::<i64>(&conn, "SELECT priority FROM tasks ORDER BY id"),
+            vec![vec![None], vec![None]],
+            "no task has a priority yet"
+        );
+        for p in 0..=3 {
+            conn.execute("UPDATE tasks SET priority = ?1 WHERE id = 1", [p])
+                .unwrap();
+        }
+        for bad in ["4", "-1", "'P1'"] {
+            let set = format!("UPDATE tasks SET priority = {bad} WHERE id = 1");
+            assert!(conn.execute(&set, []).is_err(), "{bad} is refused");
+        }
     }
 
     #[test]

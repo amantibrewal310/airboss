@@ -12,11 +12,11 @@ export function fullSeed(): MockSeed {
   const b = designBuilder();
 
   // Another plan, with a nested parent and two subtasks that wait on each other.
-  b.task({ id: 160, title: 'Menu-bar app v1', status: 'doing', repos: [AIRBOSS], branch: 'task-160-menu-bar-app', created: 7 * DAY, body: 'A menu-bar item with the Needs me count, a native menu, and quick add from anywhere.' });
+  b.task({ id: 160, title: 'Menu-bar app v1', status: 'doing', priority: 'p1', repos: [AIRBOSS], branch: 'task-160-menu-bar-app', created: 7 * DAY, body: 'A menu-bar item with the Needs me count, a native menu, and quick add from anywhere.' });
   b.task({ id: 161, title: 'Tray icon and count', status: 'done', parent: 160, repos: [AIRBOSS], created: 6 * DAY });
   b.task({ id: 162, title: 'Native menu', status: 'doing', parent: 160, repos: [AIRBOSS], created: 6 * DAY });
-  b.task({ id: 163, title: 'Menu items from Needs me', status: 'doing', parent: 162, repos: [AIRBOSS], created: 5 * DAY });
-  b.task({ id: 164, title: 'Clock times in the menu', parent: 162, repos: [AIRBOSS], created: 5 * DAY });
+  b.task({ id: 163, title: 'Menu items from Needs me', status: 'doing', priority: 'p0', parent: 162, repos: [AIRBOSS], created: 5 * DAY });
+  b.task({ id: 164, title: 'Clock times in the menu', priority: 'p3', parent: 162, repos: [AIRBOSS], created: 5 * DAY });
   b.task({ id: 165, title: 'Quick-add panel', parent: 160, repos: [AIRBOSS], created: 6 * DAY });
   b.task({ id: 166, title: 'Panel focus rules', parent: 160, repos: [AIRBOSS], created: 6 * DAY });
   b.task({ id: 171, title: 'Focus without activating the main window', parent: 166, repos: [AIRBOSS], created: 5 * DAY });

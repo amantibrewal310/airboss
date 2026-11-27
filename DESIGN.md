@@ -403,7 +403,7 @@ Progress is done ÷ all leaf subtasks at any depth. Only leaves count, so nested
 - Rows show the ring plus "done/total"; the page shows "35% · 7 of 20 done".
 
 ### Task rows
-- 38px, fixed. Left to right: fold arrow, status icon, id (34px, tabular), title, progress ring and fraction, live chip, needs-me dot, a flexible gap, pills (Blocked, waits on, Ready), repo tags, actor avatar, time.
+- 38px, fixed. Left to right: fold arrow, status icon, id (34px, tabular), title, priority tag, progress ring and fraction, live chip, needs-me dot, a flexible gap, pills (Blocked, waits on, Ready), repo tags, actor avatar, time.
 - Hover uses the hover wash; selection the selected wash; keyboard focus adds a 1px inset indigo outline.
 - Done rows dim their title to secondary text.
 - Repo pills (dot plus name) show every linked repo, up to two, then "+1". A task with no repo shows none.
@@ -412,6 +412,7 @@ Progress is done ÷ all leaf subtasks at any depth. Only leaves count, so nested
 
 ### Pills and tags
 - **Pill** (22px, fully rounded, hairline border, label type): Blocked (orange), Ready (green), "waits on 144, 145" (neutral, with the dependency icon), repo (with its dot; one per linked repo).
+- **Priority tag** (18px, 5px corners, Field Grey, 600 label type, tabular): P0 to P3 after a row's title, only when set. P0 and P1 in primary text, P2 and P3 in text-3. Never red: urgency isn't "needs you".
 - **Tag** (22px, 5px corners, Field Grey): property values in the detail panel: repos, branch (mono), parent, waits-on and blocks (each with the other task's status icon), links.
 
 ### Repos are linked, one or several

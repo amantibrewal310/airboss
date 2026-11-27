@@ -53,7 +53,7 @@ Repos are always named, never numbered, in arguments and results. An unknown rep
 
 ### `list_tasks`
 
-> List tasks in tree order. Start here: `mine: true` finds the tasks linked to this thread; otherwise filter by `repos`, `status`, `ready` or `query`. Done and dropped tasks are left out unless `status` names them. Returns at most 200 (`truncated` says there were more). Next: get_task on the task you'll work on.
+> List tasks in tree order. Start here: `mine: true` finds the tasks linked to this thread; otherwise filter by `repos`, `status`, `ready`, `query` or `priority` (p0 most urgent to p3). `sort: "priority"` puts the most urgent first. Done and dropped tasks are left out unless `status` names them. Returns at most 200 (`truncated` says there were more). Next: get_task on the task you'll work on.
 
 Read-only. Every filter is optional, and they combine.
 
@@ -64,6 +64,8 @@ Read-only. Every filter is optional, and they combine.
 | `mine` | bool | Tasks linked to this thread |
 | `ready` | bool | Tasks that can start now: todo, with nothing open to wait on |
 | `query` | text | Tasks whose title contains this, ignoring case |
+| `priority` | list of `p0`–`p3` | Tasks with any of these priorities; tasks with none are left out |
+| `sort` | `tree` or `priority` | `tree` (the default) keeps tree order. `priority` puts P0 first and tasks with no priority last; ties keep tree order. The cap applies after sorting. |
 
 Returns `{tasks, total, truncated}`. `total` is how many matched before the cap of 200.
 
@@ -71,7 +73,7 @@ Returns `{tasks, total, truncated}`. `total` is how many matched before the cap 
 {"tasks":[{"id":3,"title":"Slots endpoint","status":"doing","parent":1,"depth":1,"waiting":false,"repos":["booking-api"]}],"total":1,"truncated":false}
 ```
 
-`waiting` is true while the task waits on something that isn't done or dropped. `parent` is left out for a top-level task.
+`waiting` is true while the task waits on something that isn't done or dropped. `parent` is left out for a top-level task, and `priority` (`"p0"` to `"p3"`) when none is set; `get_task`'s task does the same.
 
 ### `get_task`
 

@@ -10,8 +10,8 @@ use std::io::Write as _;
 use std::path::Path;
 
 use airboss_core::{
-    Actor, Error, Event, EventId, EventKind, LinkKind, NewLink, NewTask, Origin, Repo, Status,
-    Store, TaskEdit, TaskId, TaskNode,
+    Actor, Error, Event, EventId, EventKind, LinkKind, NewLink, NewTask, Origin, Priority, Repo,
+    Status, Store, TaskEdit, TaskId, TaskNode,
 };
 use serde::Serialize;
 
@@ -20,7 +20,7 @@ use crate::render::{
     TaskView, ToolError, cut, explain, id_text, mark, pad, right, short_time, status_label,
     status_mark, width,
 };
-use crate::tools::{self, GetTask};
+use crate::tools::{self, GetTask, PriorityName, SortName};
 
 /// The widest a title column gets before titles are cut with "…".
 const TITLE_WIDTH: usize = 56;
@@ -34,13 +34,16 @@ struct Row {
     depth: u32,
     status: Status,
     waiting: bool,
+    priority: Option<Priority>,
     title: String,
     repos: String,
     pill: String,
 }
 
-/// Lays rows out in aligned columns: id, indented mark and title, repos, then a pill.
+/// Lays rows out in aligned columns: id, priority when any row has one, indented mark and
+/// title, repos, then a pill.
 fn table(rows: &[Row], style: Style) -> String {
+    let any_priority = rows.iter().any(|r| r.priority.is_some());
     let id_w = rows
         .iter()
         .map(|r| width(&id_text(r.id)))
@@ -65,8 +68,13 @@ fn table(rows: &[Row], style: Style) -> String {
             Status::Done | Status::Dropped => style.dim(&title),
             _ => title.clone(),
         };
+        let priority = match (any_priority, r.priority) {
+            (true, Some(p)) => format!("{}  ", style.bold(&p.to_string())),
+            (true, None) => "    ".to_string(),
+            (false, _) => String::new(),
+        };
         let mut line = format!(
-            "{}  {indent}{} {shown}{}",
+            "{}  {priority}{indent}{} {shown}{}",
             style.dim(&right(&id_text(r.id), id_w)),
             status_mark(style, r.status, r.waiting),
             " ".repeat(room.saturating_sub(width(&title))),
@@ -120,18 +128,32 @@ fn pill(style: Style, status: Status, waiting: bool, blocked_reason: Option<&str
     }
 }
 
-/// `airboss ls`.
-pub fn ls(
-    store: &Store,
-    all: bool,
-    ready: bool,
-    json: bool,
-    style: Style,
-) -> Result<String, ToolError> {
+/// What `airboss ls` lists, and in what order.
+#[derive(Debug, Clone, Default)]
+pub struct Ls {
+    /// Include done and dropped tasks.
+    pub all: bool,
+    /// Only tasks that can start now.
+    pub ready: bool,
+    /// Only tasks with one of these priorities; empty keeps every task.
+    pub priority: Vec<PriorityName>,
+    pub sort: SortName,
+}
+
+/// `airboss ls`. A filter or a priority sort lists tasks flat, since the tree's shape no
+/// longer holds; tree order still breaks ties.
+pub fn ls(store: &Store, args: Ls, json: bool, style: Style) -> Result<String, ToolError> {
+    let Ls {
+        all,
+        ready,
+        priority,
+        sort,
+    } = args;
     let core = ToolError::from_core;
     let names = RepoNames::load(store)?;
     let nodes = store.tree().map_err(core)?;
-    let (shown, since): (Vec<&TaskNode>, HashMap<TaskId, String>) = if ready {
+    let wanted: Vec<Priority> = priority.into_iter().map(Priority::from).collect();
+    let (mut shown, since): (Vec<&TaskNode>, HashMap<TaskId, String>) = if ready {
         let ready = store.ready().map_err(core)?;
         let since: HashMap<TaskId, String> =
             ready.into_iter().map(|r| (r.task.id, r.since)).collect();
@@ -145,6 +167,19 @@ pub fn ls(
     } else {
         (tree_rows(&nodes, all), HashMap::new())
     };
+    let filtered = !wanted.is_empty();
+    if filtered {
+        // Matching tasks only: the open ancestors `tree_rows` kept for shape don't match.
+        let closed = |n: &TaskNode| matches!(n.task.status, Status::Done | Status::Dropped);
+        shown.retain(|n| {
+            n.task.priority.is_some_and(|p| wanted.contains(&p)) && (all || !closed(n))
+        });
+    }
+    let sorted = sort == SortName::Priority;
+    if sorted {
+        tools::by_priority(&mut shown);
+    }
+    let flat = ready || filtered || sorted;
     if json {
         let tasks: Vec<NodeView> = shown
             .iter()
@@ -152,6 +187,7 @@ pub fn ls(
                 id: n.task.id,
                 title: n.task.title.clone(),
                 status: n.task.status,
+                priority: n.task.priority,
                 parent: n.task.parent,
                 depth: n.depth,
                 waiting: n.waiting,
@@ -168,6 +204,10 @@ pub fn ls(
         let hidden = !all && !nodes.is_empty();
         return Ok(match (ready, hidden) {
             (true, _) => "Nothing is ready to start.\n".into(),
+            (false, _) if filtered => {
+                let list: Vec<String> = wanted.iter().map(Priority::to_string).collect();
+                format!("No open tasks at {}.\n", list.join(" or "))
+            }
             (false, true) => {
                 "No open tasks. `airboss ls --all` shows done and dropped ones too.\n".into()
             }
@@ -178,9 +218,10 @@ pub fn ls(
         .iter()
         .map(|n| Row {
             id: n.task.id,
-            depth: if ready { 0 } else { n.depth },
+            depth: if flat { 0 } else { n.depth },
             status: n.task.status,
             waiting: n.waiting,
+            priority: n.task.priority,
             title: n.task.title.clone(),
             repos: names.names(&n.task.repos).join(", "),
             pill: match since.get(&n.task.id) {
@@ -250,6 +291,9 @@ fn detail_text(store: &Store, d: &TaskDetail, style: Style) -> String {
     );
     if let Some(reason) = &t.blocked_reason {
         field(&mut out, style, "Why", std::slice::from_ref(reason));
+    }
+    if let Some(p) = t.priority {
+        field(&mut out, style, "Priority", &[p.to_string()]);
     }
     if let Some(p) = t.parent {
         let title = store.task(p).map(|p| p.title).unwrap_or_default();
@@ -517,6 +561,7 @@ pub struct Add<'a> {
     pub under: Option<i64>,
     pub repos: &'a [String],
     pub body: Option<&'a str>,
+    pub priority: Option<PriorityName>,
 }
 
 /// `airboss add`: a new task, `todo`, at the end of its siblings.
@@ -533,6 +578,7 @@ pub fn add(
         .body
         .filter(|b| !b.trim().is_empty())
         .map(str::to_string);
+    new.priority = args.priority.map(Priority::from);
     for id in tools::repo_ids(&repos, args.repos)? {
         new = new.in_repo(id);
     }
@@ -735,20 +781,39 @@ pub fn reject(
     Ok(lines)
 }
 
-/// `airboss edit`: the title, the notes, or both. An empty `--body` clears the notes.
+/// What `airboss edit` changes; `None` leaves a field as it is.
+#[derive(Debug, Clone, Default)]
+pub struct Edit<'a> {
+    pub title: Option<&'a str>,
+    /// An empty string clears the notes.
+    pub body: Option<&'a str>,
+    /// `Some(None)` clears the priority.
+    pub priority: Option<Option<PriorityName>>,
+}
+
+/// `airboss edit`: the title, the notes, the priority, or any of them together.
 pub fn edit(
     store: &mut Store,
     id: i64,
-    title: Option<&str>,
-    body: Option<&str>,
+    args: Edit<'_>,
     json: bool,
     style: Style,
 ) -> Result<String, ToolError> {
+    let Edit {
+        title,
+        body,
+        priority,
+    } = args;
     let id = TaskId(id);
-    if title.is_none() && body.is_none() {
-        return Err(ToolError::new("Give --title, --body, or both."));
+    if title.is_none() && body.is_none() && priority.is_none() {
+        return Err(ToolError::new(
+            "Give --title, --body, --priority or --no-priority.",
+        ));
     }
     let mut change = TaskEdit::default();
+    if let Some(p) = priority {
+        change = change.priority(p.map(Priority::from));
+    }
     if let Some(t) = title {
         change = change.title(t);
     }

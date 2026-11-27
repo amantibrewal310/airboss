@@ -7,7 +7,8 @@
 //! Every type is exported into one file, `types.ts`.
 
 use airboss_core::{
-    EventId, EventKind, LinkId, LinkKind, Origin, PrState, Repo, RepoId, Status, Task, TaskId,
+    EventId, EventKind, LinkId, LinkKind, Origin, PrState, Priority, Repo, RepoId, Status, Task,
+    TaskId,
 };
 use airboss_services::{
     Availability, Chip, Connection, HerdrAgent, LaunchReport, Launcher, NeedsItem, NeedsList,
@@ -128,6 +129,17 @@ pub enum PrStateTs {
     Closed,
 }
 
+/// `core::Priority`: p0 is the most urgent.
+#[derive(TS)]
+#[ts(rename = "Priority", rename_all = "snake_case", export_to = "types.ts")]
+#[allow(dead_code)]
+pub enum PriorityTs {
+    P0,
+    P1,
+    P2,
+    P3,
+}
+
 /// `core::Task`.
 #[derive(TS)]
 #[ts(rename = "Task", export_to = "types.ts")]
@@ -144,6 +156,7 @@ pub struct TaskTs {
     origin: OriginTs,
     plan_key: Option<String>,
     branch: Option<String>,
+    priority: Option<PriorityTs>,
     created_at: TimestampTs,
 }
 
@@ -673,6 +686,9 @@ pub struct RowDto {
     pub status: Status,
     #[ts(as = "OriginTs")]
     pub origin: Origin,
+    /// Its own priority, P0 to P3, for the badge; `null` when none is set.
+    #[ts(as = "Option<PriorityTs>")]
+    pub priority: Option<Priority>,
     pub blocked_reason: Option<String>,
     /// Something it waits on is still open.
     pub waiting: bool,

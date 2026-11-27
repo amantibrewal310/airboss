@@ -9,7 +9,7 @@ import type { Connection, RowDto } from '../../src/lib/types';
 import { lastReport } from '../../src/lib/logic/connections';
 
 const row = (id: number, extra: Partial<RowDto> = {}): RowDto => ({
-  id, parent: null, depth: 0, position: id, title: `T${id}`, status: 'todo', origin: 'me', blocked_reason: null,
+  id, parent: null, depth: 0, position: id, title: `T${id}`, status: 'todo', origin: 'me', priority: null, blocked_reason: null,
   waiting: false, waits_on: [], has_children: false, has_steps: false, progress: null, repos: [], repos_from_subtasks: false,
   branch: null, ready: false, ready_since: null, ready_pill: false, quiet_days: null, needs: false,
   needs_stale: false, live: null, last_at: '2026-11-25T10:00:00.000Z', last_actor: 'me', launched_in: null, ...extra,

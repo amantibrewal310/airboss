@@ -85,6 +85,7 @@ impl Core {
             origin: Origin::Me,
             plan_key: None,
             branch: None,
+            priority: None,
             created_at: ts(0, 0),
         };
         if status != Status::Proposed

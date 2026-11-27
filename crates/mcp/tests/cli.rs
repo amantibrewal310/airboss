@@ -513,7 +513,104 @@ fn edit_changes_title_and_notes() {
     );
     let v = json(&db, &["edit", "1", "--body", ""]);
     assert!(v.get("body").is_none(), "{v}");
-    assert_eq!(fails(&db, &["edit", "1"]), "Give --title, --body, or both.");
+    assert_eq!(
+        fails(&db, &["edit", "1"]),
+        "Give --title, --body, --priority or --no-priority."
+    );
+}
+
+#[test]
+fn add_and_edit_set_and_clear_a_priority() {
+    let dir = TempDir::new();
+    let db = dir.db();
+    let v = json(&db, &["add", "Hotfix", "--priority", "p0"]);
+    assert_eq!(v["priority"], "p0");
+    let v = json(&db, &["edit", "1", "--priority", "p2"]);
+    assert_eq!(v["priority"], "p2");
+    assert!(ok(&db, &["show", "1"]).contains("Priority  P2"));
+    let v = json(&db, &["edit", "1", "--no-priority"]);
+    assert!(v.get("priority").is_none(), "{v}");
+    assert!(!ok(&db, &["show", "1"]).contains("Priority"));
+    let out = run(&db, &["edit", "1", "--priority", "p1", "--no-priority"]);
+    assert_eq!(out.status.code(), Some(2), "clap refuses both");
+    let out = run(&db, &["add", "X", "--priority", "high"]);
+    assert_eq!(out.status.code(), Some(2), "only p0 to p3");
+}
+
+/// Ops (P2) > Rotate keys (P0), Audit; Docs (P0); Later; Polish (P3).
+fn prioritised(db: &Path) {
+    ok(db, &["add", "Ops", "--priority", "p2"]);
+    ok(
+        db,
+        &["add", "Rotate keys", "--under", "1", "--priority", "p0"],
+    );
+    ok(db, &["add", "Audit", "--under", "1"]);
+    ok(db, &["add", "Docs", "--priority", "p0"]);
+    ok(db, &["add", "Later"]);
+    ok(db, &["add", "Polish", "--priority", "p3"]);
+}
+
+#[test]
+fn ls_shows_a_priority_column_once_any_task_has_one() {
+    let dir = TempDir::new();
+    let db = dir.db();
+    prioritised(&db);
+    assert_eq!(
+        ok(&db, &["ls"]),
+        "\
+#1  P2  ○ Ops
+#2  P0    ○ Rotate keys
+#3        ○ Audit
+#4  P0  ○ Docs
+#5      ○ Later
+#6  P3  ○ Polish
+"
+    );
+}
+
+#[test]
+fn ls_sort_priority_lists_flat_most_urgent_first() {
+    let dir = TempDir::new();
+    let db = dir.db();
+    prioritised(&db);
+    assert_eq!(
+        ok(&db, &["ls", "--sort", "priority"]),
+        "\
+#2  P0  ○ Rotate keys
+#4  P0  ○ Docs
+#1  P2  ○ Ops
+#6  P3  ○ Polish
+#3      ○ Audit
+#5      ○ Later
+"
+    );
+}
+
+#[test]
+fn ls_priority_keeps_only_those_priorities() {
+    let dir = TempDir::new();
+    let db = dir.db();
+    prioritised(&db);
+    assert_eq!(
+        ok(&db, &["ls", "--priority", "p0,p3"]),
+        "\
+#2  P0  ○ Rotate keys
+#4  P0  ○ Docs
+#6  P3  ○ Polish
+"
+    );
+    let v = json(&db, &["ls", "--priority", "p2"]);
+    let ids: Vec<i64> = v["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["id"].as_i64().unwrap())
+        .collect();
+    assert_eq!(ids, [1]);
+    assert_eq!(
+        ok(&db, &["ls", "--priority", "p1"]),
+        "No open tasks at P1.\n"
+    );
 }
 
 #[test]

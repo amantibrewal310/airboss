@@ -8,8 +8,8 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use airboss_core::{
-    Actor, DepRef, LinkKind, NewLink, NewTask, PlanTask, PrState, Repo, RepoId, Status, Store,
-    TaskId,
+    Actor, DepRef, LinkKind, NewLink, NewTask, PlanTask, PrState, Priority, Repo, RepoId, Status,
+    Store, TaskId, TaskNode,
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -56,6 +56,49 @@ impl From<StatusName> for Status {
     }
 }
 
+/// A priority, as tool arguments and the CLI spell it: p0 is the most urgent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema, clap::ValueEnum)]
+#[serde(rename_all = "snake_case")]
+#[value(rename_all = "snake_case")]
+pub enum PriorityName {
+    P0,
+    P1,
+    P2,
+    P3,
+}
+
+impl From<PriorityName> for Priority {
+    fn from(p: PriorityName) -> Priority {
+        match p {
+            PriorityName::P0 => Priority::P0,
+            PriorityName::P1 => Priority::P1,
+            PriorityName::P2 => Priority::P2,
+            PriorityName::P3 => Priority::P3,
+        }
+    }
+}
+
+/// The order `list_tasks` and `airboss ls` list tasks in.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, JsonSchema, clap::ValueEnum)]
+#[serde(rename_all = "snake_case")]
+#[value(rename_all = "snake_case")]
+pub enum SortName {
+    /// Tree order: depth-first, siblings in their chosen order.
+    #[default]
+    Tree,
+    /// Most urgent first, P0 to P3, then tasks with no priority; ties stay in tree order.
+    Priority,
+}
+
+/// Puts `nodes` most urgent first, P0 to P3 and then those with none. The sort is stable, so
+/// tasks with the same priority keep the tree order they came in: siblings by position.
+pub fn by_priority<N: std::borrow::Borrow<TaskNode>>(nodes: &mut [N]) {
+    nodes.sort_by_key(|n| {
+        let p = n.borrow().task.priority;
+        (p.is_none(), p)
+    });
+}
+
 /// Arguments for `list_tasks`. Every filter is optional, and they combine.
 #[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -75,6 +118,13 @@ pub struct ListTasks {
     /// Keep tasks whose title contains this text, ignoring case.
     #[serde(default)]
     pub query: Option<String>,
+    /// Keep tasks with any of these priorities. Tasks with none set are left out.
+    #[serde(default)]
+    pub priority: Option<Vec<PriorityName>>,
+    /// `tree` (the default) or `priority`: most urgent first, ties in tree order. The 200-task
+    /// cap applies after sorting.
+    #[serde(default)]
+    pub sort: SortName,
 }
 
 /// Arguments for `get_task`.
@@ -326,24 +376,38 @@ pub fn list_tasks(store: &Store, who: &Identity, args: ListTasks) -> Result<Task
         .query
         .map(|q| q.to_lowercase())
         .filter(|q| !q.is_empty());
+    let priorities: Option<Vec<Priority>> = args
+        .priority
+        .map(|list| list.into_iter().map(Priority::from).collect());
 
     let names = RepoNames::new(&repos);
-    let matching = store.tree().map_err(core)?.into_iter().filter(|n| {
-        let t = &n.task;
-        let status_ok = match &statuses {
-            Some(list) => list.contains(&t.status),
-            None => !matches!(t.status, Status::Done | Status::Dropped),
-        };
-        status_ok
-            && wanted_repos
-                .as_ref()
-                .is_none_or(|want| t.repos.iter().any(|r| want.contains(r)))
-            && mine.as_ref().is_none_or(|ids| ids.contains(&t.id))
-            && ready.as_ref().is_none_or(|ids| ids.contains(&t.id))
-            && query
-                .as_ref()
-                .is_none_or(|q| t.title.to_lowercase().contains(q))
-    });
+    let mut matching: Vec<TaskNode> = store
+        .tree()
+        .map_err(core)?
+        .into_iter()
+        .filter(|n| {
+            let t = &n.task;
+            let status_ok = match &statuses {
+                Some(list) => list.contains(&t.status),
+                None => !matches!(t.status, Status::Done | Status::Dropped),
+            };
+            status_ok
+                && wanted_repos
+                    .as_ref()
+                    .is_none_or(|want| t.repos.iter().any(|r| want.contains(r)))
+                && mine.as_ref().is_none_or(|ids| ids.contains(&t.id))
+                && ready.as_ref().is_none_or(|ids| ids.contains(&t.id))
+                && query
+                    .as_ref()
+                    .is_none_or(|q| t.title.to_lowercase().contains(q))
+                && priorities
+                    .as_ref()
+                    .is_none_or(|want| t.priority.is_some_and(|p| want.contains(&p)))
+        })
+        .collect();
+    if args.sort == SortName::Priority {
+        by_priority(&mut matching);
+    }
     let mut tasks = Vec::new();
     let mut total = 0;
     for n in matching {
@@ -354,6 +418,7 @@ pub fn list_tasks(store: &Store, who: &Identity, args: ListTasks) -> Result<Task
                 repos: names.names(&n.task.repos),
                 title: n.task.title,
                 status: n.task.status,
+                priority: n.task.priority,
                 parent: n.task.parent,
                 depth: n.depth,
                 waiting: n.waiting,

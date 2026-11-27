@@ -519,6 +519,7 @@ export class MockBackend implements Transport {
         origin: 'me',
         plan_key: null,
         branch: null,
+        priority: null,
         created_at: this.now(),
       });
       this.event(id, 'created');

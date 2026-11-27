@@ -3,11 +3,11 @@
 
 use std::path::Path;
 
-use airboss_core::{Actor, LinkKind, NewLink, NewTask, RepoId, Status, Store, TaskId};
+use airboss_core::{Actor, LinkKind, NewLink, NewTask, Priority, RepoId, Status, Store, TaskId};
 use airboss_mcp::identity::Identity;
 use airboss_mcp::tools::{
     self, AgentStatus, DependsOn, GetTask, ImportPlan, Link, LinkKindName, ListTasks, PlanStep,
-    PrStateName, Proposal, ProposeTasks, StatusName, UpdateTask,
+    PrStateName, PriorityName, Proposal, ProposeTasks, SortName, StatusName, UpdateTask,
 };
 
 const THREAD: &str = "97b5c8b5";
@@ -268,6 +268,110 @@ fn list_tasks_filters_combine() {
         ..ListTasks::default()
     };
     assert_eq!(titles(&s, args), ["web booking"]);
+}
+
+fn add_at(s: &mut Store, parent: Option<TaskId>, title: &str, p: Option<Priority>) -> TaskId {
+    let mut new = NewTask::new(title);
+    new.parent = parent;
+    new.priority = p;
+    s.add_task(new, &Actor::Me).unwrap().id
+}
+
+/// Ops (P2) > Rotate keys (P0), Audit (none); Docs (P0); Later (none); Polish (P3).
+fn prioritised() -> Store {
+    let mut s = store();
+    let ops = add_at(&mut s, None, "Ops", Some(Priority::P2));
+    add_at(&mut s, Some(ops), "Rotate keys", Some(Priority::P0));
+    add_at(&mut s, Some(ops), "Audit", None);
+    add_at(&mut s, None, "Docs", Some(Priority::P0));
+    add_at(&mut s, None, "Later", None);
+    add_at(&mut s, None, "Polish", Some(Priority::P3));
+    s
+}
+
+#[test]
+fn list_tasks_shows_each_tasks_priority() {
+    let s = prioritised();
+    let got = tools::list_tasks(&s, &t3(), ListTasks::default()).unwrap();
+    let shown: Vec<(&str, Option<Priority>)> = got
+        .tasks
+        .iter()
+        .map(|n| (n.title.as_str(), n.priority))
+        .collect();
+    assert_eq!(shown[0], ("Ops", Some(Priority::P2)));
+    assert_eq!(shown[2], ("Audit", None));
+    let json = serde_json::to_value(&got.tasks[0]).unwrap();
+    assert_eq!(json["priority"], "p2");
+    let json = serde_json::to_value(&got.tasks[2]).unwrap();
+    assert!(
+        json.get("priority").is_none(),
+        "no priority, no field: {json}"
+    );
+}
+
+#[test]
+fn list_tasks_priority_keeps_tasks_with_any_of_them() {
+    let s = prioritised();
+    let args = ListTasks {
+        priority: Some(vec![PriorityName::P0, PriorityName::P3]),
+        ..ListTasks::default()
+    };
+    assert_eq!(titles(&s, args), ["Rotate keys", "Docs", "Polish"]);
+}
+
+#[test]
+fn list_tasks_sort_priority_puts_p0_first_and_none_last_ties_in_tree_order() {
+    let s = prioritised();
+    let args = ListTasks {
+        sort: SortName::Priority,
+        ..ListTasks::default()
+    };
+    assert_eq!(
+        titles(&s, args),
+        ["Rotate keys", "Docs", "Ops", "Polish", "Audit", "Later"]
+    );
+    let args = ListTasks {
+        sort: SortName::Tree,
+        ..ListTasks::default()
+    };
+    assert_eq!(
+        titles(&s, args),
+        ["Ops", "Rotate keys", "Audit", "Docs", "Later", "Polish"]
+    );
+}
+
+#[test]
+fn list_tasks_sorts_before_the_cap() {
+    let mut s = store();
+    for i in 0..205 {
+        add(&mut s, &format!("t{i}"));
+    }
+    add_at(&mut s, None, "urgent", Some(Priority::P0));
+    let args = ListTasks {
+        sort: SortName::Priority,
+        ..ListTasks::default()
+    };
+    let got = tools::list_tasks(&s, &t3(), args).unwrap();
+    assert_eq!(got.tasks[0].title, "urgent");
+    assert_eq!((got.tasks.len(), got.total), (200, 206));
+}
+
+#[test]
+fn list_tasks_takes_priority_and_sort_as_agents_spell_them() {
+    let args: ListTasks =
+        serde_json::from_value(serde_json::json!({"priority": ["p1"], "sort": "priority"}))
+            .unwrap();
+    assert_eq!(args.priority, Some(vec![PriorityName::P1]));
+    assert_eq!(args.sort, SortName::Priority);
+    let bad = serde_json::from_value::<ListTasks>(serde_json::json!({"priority": ["P5"]}));
+    assert!(bad.is_err());
+}
+
+#[test]
+fn get_task_shows_the_priority() {
+    let s = prioritised();
+    let d = tools::get_task(&s, GetTask { id: 4 }).unwrap();
+    assert_eq!(d.task.priority, Some(Priority::P0));
 }
 
 #[test]
