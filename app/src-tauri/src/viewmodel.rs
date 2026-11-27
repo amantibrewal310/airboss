@@ -336,6 +336,7 @@ fn build_rows(
                     Vec::new()
                 },
                 has_children,
+                has_steps: node.has_steps,
                 progress: has_children.then_some(progress[i]),
                 repos_from_subtasks: !own_repos && has_children && !repos_u.is_empty(),
                 repos: repos_u,
@@ -398,7 +399,6 @@ fn plan_card(vm: &ViewModel, row: &RowDto) -> PlanCard {
     let current = waves.waves.iter().position(|w| w.iter().any(is_open));
     let subtree = vm.index.subtree(row.id);
     let under = || subtree.iter().skip(1).filter_map(|id| vm.rows.get(id));
-    let finish_it = progress.total > 0 && progress.done == progress.total;
     PlanCard {
         id: row.id,
         title: row.title.clone(),
@@ -407,19 +407,14 @@ fn plan_card(vm: &ViewModel, row: &RowDto) -> PlanCard {
         progress,
         waves: count(waves.waves.len()),
         current_wave: current.map(count),
-        next_up: if finish_it {
-            Vec::new()
-        } else {
-            under()
-                .filter(|r| r.ready)
-                .take(2)
-                .map(|r| NextUp {
-                    id: r.id,
-                    title: r.title.clone(),
-                })
-                .collect()
-        },
-        finish_it,
+        next_up: under()
+            .filter(|r| r.ready)
+            .take(2)
+            .map(|r| NextUp {
+                id: r.id,
+                title: r.title.clone(),
+            })
+            .collect(),
         working: count(under().filter(|r| r.live == Some(Chip::Working)).count()),
         blocked: progress.blocked,
         repos: row.repos.clone(),

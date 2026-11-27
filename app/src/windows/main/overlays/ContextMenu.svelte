@@ -47,6 +47,7 @@
       case 'drop':
         return row.status === 'dropped' ? 'Already dropped' : false;
       case 'toggle_done':
+        if (row.has_steps) return 'Its status follows its subtasks';
         return row.status === 'proposed' ? 'Accept the proposal first' : false;
       case 'add_waits_on':
         return closed ? `#${task} is ${row.status}` : false;

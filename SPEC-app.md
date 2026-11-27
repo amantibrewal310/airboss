@@ -223,8 +223,9 @@ There is one process, `Airboss.app`, with a Dock icon (activation policy Regular
 
 | Field of `RowDto` | Source |
 |---|---|
-| `id`, `parent`, `depth`, `position`, `title`, `status`, `origin`, `blocked_reason` | `tree` |
+| `id`, `parent`, `depth`, `position`, `title`, `status`, `origin`, `blocked_reason` | `tree`; a parent's status and reason are what its steps add up to (core rule 10) |
 | `waiting`, `waits_on` | `tree.waiting`, and `edges` whose blocker is open (only when waiting) |
+| `has_steps` | `tree.has_steps`: it has subtasks that aren't proposals, so its status follows them and it takes only Drop (core rule 10) |
 | `has_children`, `progress` | `{done, total, in_review, doing, blocked}` over leaf subtasks at any depth. Dropped subtasks are left out and proposed ones count as todo (DESIGN "Progress"). `None` for a leaf. |
 | `repos`, `repos_from_subtasks` | `Task.repos`; for a parent with none, the union over its subtree, flagged |
 | `branch` | `Task.branch`, or the nearest ancestor's (display only) |
@@ -353,8 +354,8 @@ The stores are classes in `lib/state/*.svelte.ts`, one exported instance each, w
   | Action | Inverse |
   |---|---|
   | Dismiss, Keep open, Snooze | `attention.restore(key)` |
-  | Status change (Space, S, ⌘B, Mark done, Finish it, Set in review) | `set_status` back to the previous status, with the previous blocked reason as the note if it was blocked |
-  | Drop | the same, for the task and every open subtask the drop took with it (previous statuses come from the view model before the change). **Not for an agent's proposals:** rule 9 drops them with their parent, but `me` can't make a proposal again (core rule 6), and putting one back as todo would accept it without me. So they stay dropped, and the undo toast says "Undid “Drop 142”. Its 2 proposals stay dropped." Dropping a proposal on its own is a reject, with no undo once written. |
+  | Status change (Space, S, ⌘B, Mark done, Set in review) | `set_status` back to the previous status, with the previous blocked reason as the note if it was blocked |
+  | Drop | the same, for the task and every open subtask the drop took with it (previous statuses come from the view model before the change). A task with steps isn't put back itself: its status comes back through its steps (core rule 10). **Not for an agent's proposals:** rule 9 drops them with their parent, but `me` can't make a proposal again (core rule 6), and putting one back as todo would accept it without me. So they stay dropped, and the undo toast says "Undid “Drop 142”. Its 2 proposals stay dropped." Dropping a proposal on its own is a reject, with no undo once written. |
   | Move or reorder | `move_task` back to the previous parent and position. Reorder moves past siblings the tree hides (rejected proposals, dropped tasks) to the visible neighbour's position, and an end move changes nothing and pushes no entry |
   | Reject, Reject all | **deferred:** the reject is written 5 s later (or at quit). Until then the item and rows are hidden locally, and undo cancels it. `core` can't turn a task back into a proposal, so this is the only honest undo. |
 
@@ -532,7 +533,6 @@ Every screen keeps DESIGN.md's layout, sizes and motion. This section adds data,
   | Review | Open PR (`open_url`) | Dismiss |
   | Proposed | Accept all (`accept_proposals`) | Accept, Edit (rename in place, then accept), or Reject each; Reject all |
   | Ready | Do it (`do_it`) | Dismiss |
-  | Finish it? | Mark done (`set_status` done) | Keep open (`needs_dismiss`) |
   | Quiet | Open (reveals the task in All tasks) | Snooze 3 days (`needs_snooze` with no date, so `attention` adds its default) |
 
 - **Clearing:**
@@ -541,14 +541,14 @@ Every screen keeps DESIGN.md's layout, sizes and motion. This section adds data,
   - The selection rule picks the next item.
   - Toasts for Dismiss, Snooze and Reject offer Undo.
 - **Header:** "Needs me N", and "checked 10:44" from `checked_at`.
-- **Empty:** DESIGN "Nothing needs you": a check, "Checked 10:44 · 10 in progress · 5 ready to start", and "Show ready tasks".
+- **Empty:** DESIGN "Nothing needs you": a check, "Checked 10:44 · 9 in progress · 5 ready to start", and "Show ready tasks".
 
 ### Plans
 
 - **Data:** `plans()` returns one `PlanCard` per open top-level parent, built from the view model:
   - progress
   - display waves: the count, the current one (the lowest with an open task) and one dot per wave
-  - Next up: up to two ready subtasks, "Finish it?" at 100%, or "Nothing ready"
+  - Next up: up to two ready subtasks, or "Nothing ready". A plan whose steps are all done shows done (core rule 10), so it has no card.
   - working agents and blocked subtasks
   - the repo union and `last_at`
 
@@ -606,7 +606,7 @@ One `NewTask.svelte` component serves both: as a modal on the scrim in the app, 
 
 ### Status menu and context menu
 
-- **Status menu** (S, or click a status icon): 1 Todo, 2 In progress, 3 In review, 4 Blocked, 5 Done, 6 Dropped. Number keys, ↑↓ and ↩ pick.
+- **Status menu** (S, or click a status icon): 1 Todo, 2 In progress, 3 In review, 4 Blocked, 5 Done, 6 Dropped. Number keys, ↑↓ and ↩ pick. On a task with steps only Dropped is enabled; the rest read "Follows its subtasks" (core rule 10). Mark done (Space), ⌘B and the context menu's Mark done say the same instead of calling `set_status`.
   - **Blocked** asks "Why is it blocked?" in a one-line popover. ↩ saves; an empty reason can't be saved.
   - **Dropped** confirms first: "Drop 142 and its 3 open subtasks?". Drop is the default button, and Esc cancels.
   - **On a proposed task,** the menu shows Accept and Reject instead.
@@ -647,7 +647,7 @@ Toasts are built from `LaunchReport`. Each names the task and offers what can be
 
 macOS notifications for what blocks an agent or needs me now (EM decision on the final audit). `notify.rs` decides, as pure functions; delivery goes through the `Notifications` trait (`RecordingNotifications` in tests, `UNUserNotificationCenter` in the app).
 
-- **When:** a new Needs me item of the kinds **Question, Approval, Failed run and Agent stopped**. Never for Review, Proposed, Ready, Finish it? or Quiet: quiet when nothing's happening.
+- **When:** a new Needs me item of the kinds **Question, Approval, Failed run and Agent stopped**. Never for Review, Proposed, Ready or Quiet: quiet when nothing's happening.
 - **Never twice:** each key notifies at most once in a run, even if it leaves and comes back (a dismiss undone, a snooze that ends).
 - **Not what was waiting at launch:** until sync has read every source once (`checked_at`) or a minute has passed, an item notifies only if it began waiting after the start (`since`); everything else is remembered as seen.
 - **Not while the main window is focused**, and not with the setting off. An item that arrives then is remembered too, so it doesn't notify later. A stale item ("May be out of date") is judged once it's fresh.
@@ -965,6 +965,15 @@ applyPatch(p: Patch) {
 | Toast duration | Toasts leave after 2.8 s | Undo and Retry need time to reach | Toasts with an action stay 5 s and pause on hover |
 | Undo of Reject | (not designed) | Rule 6: `me` can't set `proposed` | Reject is written 5 s later; until then it can be undone. Accept isn't undoable, for the same reason. |
 
+## Parents are containers (27 Nov 2026)
+
+Core rule 10 (task 53): a task with steps shows what they add up to, and takes no status change but Drop, no branch and no PR.
+
+- `RowDto.has_steps` carries it. The status menu, Space, ⌘B and the context menu's Mark done respect it; Drop still works and drops the open steps; undoing a drop puts back the steps, never the parent.
+- The parent actions stay as they were: Start ready and Plan it, with Do it as one thread in the context menu and ⌘K.
+- "Finish it?" is gone from Needs me, the plan card, notifications, the tray icons and the shortcut sheet.
+- The design data has no parent statuses or branches: Dark mode tokens keeps one step open (in progress, 75%), and the steps agents work on carry the branches.
+
 ## Open questions
 
 None. Launch at login and appearance were answered in tasks/program.md (25 Nov 2026).
@@ -1071,7 +1080,7 @@ Single letters, Space and arrows act only in `list`, `panel` and `sidebar` (see 
 | ↑ ↓ | move | move | move by row of cards | map: within a wave |
 | → ← | open or fold; into the first child or up to the parent | | move by card | map: across waves |
 | ↩ | rename | main action | open page | map: open station |
-| Space | done / not done | Mark done (Agent stopped, Finish it?) | | |
+| Space | done / not done (not on a parent: its status follows its subtasks) | Mark done (Agent stopped) | | |
 | S, 1–6 | status | | | |
 | R | link repos | | | |
 | ⌘↩ / ⇧⌘↩ | Do it / Plan it | main action | | the page's task or the selected station |
@@ -1104,6 +1113,7 @@ Global, from any app: the quick-add hotkey (⌃⌥N by default), on Pressed only
 | `EmptyTitle` | "A task needs a title." |
 | `NotFound` | "Task 144 no longer exists." (or "That link no longer exists.") |
 | `InvalidTarget` | Moving: "Tasks can't go under a proposed, done or dropped task." Dependency: "A task can't wait on its own parent or subtask." Branch: "Branch names can use letters, digits, `.`, `_`, `/` and `-`." |
+| `HasSteps` (code `invalid_target`) | "This task has subtasks: its status follows them, and PRs go on the subtasks." |
 | `Loop` | "That would make a loop: 145 already waits on 144." |
 | `AlreadyExists` | "A repo with that name or folder is already added." |
 | `NotAllowed`, `InvalidTransition` | "That change isn't allowed." (shouldn't happen as me; logged with detail) |

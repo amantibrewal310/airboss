@@ -74,6 +74,46 @@ export function liveKids(s: MockState, ix: TreeIndex, id: TaskId): TaskId[] {
   return kids(ix, id).filter((k) => s.tasks.get(k)!.status !== 'dropped');
 }
 
+/** Proposals I rejected: dropped, with a reject as their latest status change. */
+function rejectedIds(s: MockState): Set<TaskId> {
+  const last = new Map<TaskId, string>();
+  for (const e of s.events) if (e.kind === 'status' || e.kind === 'rejected') last.set(e.task, e.kind);
+  return new Set([...s.tasks.values()].filter((t) => t.status === 'dropped' && last.get(t.id) === 'rejected').map((t) => t.id));
+}
+
+/** A task's steps: subtasks that aren't proposals, open or rejected (SPEC-core rule 10). */
+export function stepsOf(s: MockState, ix: TreeIndex, id: TaskId, rejected: Set<TaskId> = rejectedIds(s)): TaskId[] {
+  return kids(ix, id).filter((k) => s.tasks.get(k)!.status !== 'proposed' && !rejected.has(k));
+}
+
+/**
+ * SPEC-core rule 10, which Rust works out on every read: a task with steps shows what they add
+ * up to. The mock writes it into the task, deepest first, before each rebuild. Dropped when
+ * every step is; done when every step is done or dropped; blocked when any step is; in
+ * progress when any is doing or in review, or some are finished and others not; else todo.
+ */
+export function rollUp(s: MockState): void {
+  const ix = indexTree(s);
+  const rejected = rejectedIds(s);
+  const parents = new Set<TaskId>();
+  for (const id of [...ix.order].reverse()) {
+    const steps = stepsOf(s, ix, id, rejected).map((k) => s.tasks.get(k)!);
+    if (!steps.length) continue;
+    parents.add(id);
+    const t = s.tasks.get(id)!;
+    const finished = steps.filter((x) => x.status === 'done' || x.status === 'dropped').length;
+    const blocked = steps.find((x) => x.status === 'blocked');
+    t.blocked_reason = null;
+    if (steps.every((x) => x.status === 'dropped')) t.status = 'dropped';
+    else if (finished === steps.length) t.status = 'done';
+    else if (blocked) {
+      t.status = 'blocked';
+      t.blocked_reason = parents.has(blocked.id) ? blocked.blocked_reason : `#${blocked.id} is blocked: ${blocked.blocked_reason ?? ''}`;
+    } else if (finished > 0 || steps.some((x) => x.status === 'doing' || x.status === 'in_review')) t.status = 'doing';
+    else t.status = 'todo';
+  }
+}
+
 export function subtree(ix: TreeIndex, id: TaskId): TaskId[] {
   const out: TaskId[] = [];
   const walk = (p: TaskId) => {
@@ -152,7 +192,7 @@ export function branchOf(s: MockState, id: TaskId): string | null {
 
 export function isReady(s: MockState, ix: TreeIndex, id: TaskId): boolean {
   const t = s.tasks.get(id)!;
-  return t.status === 'todo' && liveKids(s, ix, id).length === 0 && openBlockers(s, ix, id).length === 0;
+  return t.status === 'todo' && stepsOf(s, ix, id).length === 0 && openBlockers(s, ix, id).length === 0;
 }
 
 const CHIP_RANK: Record<Chip, number> = { waiting_on_you: 4, working: 3, your_turn: 2, stopped: 1 };
@@ -238,6 +278,7 @@ export function buildRow(s: MockState, ix: TreeIndex, id: TaskId, needs: NeedsIt
     waiting,
     waits_on: waiting ? openBlockers(s, ix, id) : [],
     has_children: progress !== null,
+    has_steps: stepsOf(s, ix, id).length > 0,
     progress,
     repos,
     repos_from_subtasks: fromSubtasks,
@@ -256,6 +297,7 @@ export function buildRow(s: MockState, ix: TreeIndex, id: TaskId, needs: NeedsIt
 }
 
 export function buildRows(s: MockState): { rows: Map<TaskId, RowDto>; order: TaskId[]; ix: TreeIndex } {
+  rollUp(s);
   const ix = indexTree(s);
   const needs = visibleNeeds(s);
   const rows = new Map<TaskId, RowDto>();
@@ -484,7 +526,6 @@ export function buildPlans(s: MockState): PlanCard[] {
       waves: map.waves.length,
       current_wave: current === -1 ? null : current,
       next_up: ready.slice(0, 2).map((k) => ({ id: k, title: s.tasks.get(k)!.title })),
-      finish_it: row.progress.total > 0 && row.progress.done === row.progress.total,
       working: under.filter((k) => rows.get(k)?.live === 'working').length,
       blocked: under.filter((k) => s.tasks.get(k)!.status === 'blocked').length,
       repos: row.repos,

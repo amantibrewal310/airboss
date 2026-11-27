@@ -70,7 +70,6 @@ pub enum NeedsKind {
     AgentStopped,
     Proposed,
     Ready,
-    FinishIt,
     Quiet,
 }
 
@@ -84,7 +83,6 @@ impl NeedsKind {
             NeedsKind::AgentStopped => NeedsGroup::Stopped,
             NeedsKind::Proposed => NeedsGroup::Proposed,
             NeedsKind::Ready => NeedsGroup::Ready,
-            NeedsKind::FinishIt => NeedsGroup::FinishIt,
             NeedsKind::Quiet => NeedsGroup::Quiet,
         }
     }
@@ -101,7 +99,6 @@ pub enum NeedsGroup {
     Stopped,
     Proposed,
     Ready,
-    FinishIt,
     Quiet,
 }
 

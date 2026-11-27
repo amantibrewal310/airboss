@@ -70,7 +70,6 @@ fn undoing_a_drop_restores_the_subtrees_previous_statuses() {
     let b = app.add("B", Some(p));
     let c = app.add("C", Some(p));
     app.core(|s| {
-        s.set_status(p, Status::Doing, None, &Actor::Me).unwrap();
         s.set_status(a, Status::Doing, None, &Actor::Me).unwrap();
         s.set_status(b, Status::Blocked, Some("why"), &Actor::Me)
             .unwrap();
@@ -81,8 +80,14 @@ fn undoing_a_drop_restores_the_subtrees_previous_statuses() {
     assert_eq!(r.undo.unwrap().label, format!("Drop #{}", p.0));
     assert_eq!(status(&app, a), Status::Dropped);
     assert_eq!(status(&app, c), Status::Done, "done stays done");
+    assert_eq!(
+        status(&app, p),
+        Status::Done,
+        "its open steps dropped, one done"
+    );
     tasks::undo(&app.state, M, None).unwrap();
-    assert_eq!(status(&app, p), Status::Doing);
+    // It comes back through its steps (SPEC-core rule 10): B is blocked again.
+    assert_eq!(status(&app, p), Status::Blocked);
     assert_eq!(status(&app, a), Status::Doing);
     let bt = app.core(|s| s.task(b).unwrap());
     assert_eq!(
@@ -90,6 +95,22 @@ fn undoing_a_drop_restores_the_subtrees_previous_statuses() {
         (Status::Blocked, Some("why"))
     );
     assert_eq!(status(&app, c), Status::Done);
+}
+
+#[test]
+fn a_parents_status_follows_its_steps_so_only_drop_changes_it() {
+    let app = TestApp::new();
+    let p = app.add("P", None);
+    app.add("A", Some(p));
+    app.sync_vm();
+    for to in [Status::Done, Status::Doing] {
+        let e = tasks::set_status(&app.state, M, p, to, None).unwrap_err();
+        assert_eq!(e.code, ErrorCode::InvalidTarget);
+        assert_eq!(e.message, airboss_app::errors::MSG_HAS_STEPS);
+    }
+    let e = tasks::toggle_done(&app.state, M, p).unwrap_err();
+    assert_eq!(e.code, ErrorCode::InvalidTarget);
+    assert_eq!(status(&app, p), Status::Todo);
 }
 
 #[test]
@@ -381,7 +402,6 @@ fn undoing_a_drop_leaves_the_agents_proposals_dropped() {
     let p = app.add("P", None);
     let a = app.add("A", Some(p));
     app.core(|s| {
-        s.set_status(p, Status::Doing, None, &Actor::Me).unwrap();
         s.set_status(a, Status::Doing, None, &Actor::Me).unwrap();
     });
     let x = proposal(&app, p, "x");

@@ -293,12 +293,29 @@ fn ten_minutes_count_from_the_latest_change_to_the_task_or_its_threads() {
 
 #[test]
 fn a_subtasks_change_doesnt_count_as_the_tasks_own() {
+    // A proposal under it, so it has no steps yet and keeps its own status.
     let core = Core::new()
         .task(7, None, Doing, &ts(1, 9))
-        .task(8, Some(7), Todo, &airboss_services::time::to_ts(after(9)))
+        .task(
+            8,
+            Some(7),
+            Proposed,
+            &airboss_services::time::to_ts(after(9)),
+        )
         .build();
     let sync = Links::new().thread(agent("a", Idle), &[7]).build();
     assert_eq!(stopped_keys(&run(core, sync, after(10))).len(), 1);
+}
+
+#[test]
+fn a_parent_in_progress_through_its_steps_is_never_stopped() {
+    // It shows doing because its step is; its own old thread asks nothing (SPEC-core rule 10).
+    let core = Core::new()
+        .task(7, None, Doing, &ts(1, 9))
+        .task(8, Some(7), Doing, &ts(1, 9))
+        .build();
+    let sync = Links::new().thread(agent("a", Idle), &[7]).build();
+    assert!(stopped_keys(&run(core, sync, after(60))).is_empty());
 }
 
 #[test]

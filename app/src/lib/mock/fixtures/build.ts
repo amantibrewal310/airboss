@@ -243,6 +243,5 @@ const GROUP: Record<NeedsItem['kind'], NeedsItem['group']> = {
   agent_stopped: 'stopped',
   proposed: 'proposed',
   ready: 'ready',
-  finish_it: 'finish_it',
   quiet: 'quiet',
 };

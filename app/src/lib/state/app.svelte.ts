@@ -86,6 +86,11 @@ export function asAppError(e: unknown): AppError {
   return { code: 'internal', message: 'Something went wrong inside Airboss; details are in the log.', detail: String(e) };
 }
 
+/** SPEC-core rule 10: a task with steps has no status of its own; Drop is the one change it takes. */
+function followsSteps(id: TaskId): string {
+  return `#${id}'s status follows its subtasks. Change those, or drop it.`;
+}
+
 export class App {
   readonly tasks = new TasksStore();
   readonly needs = new NeedsStore();
@@ -669,6 +674,7 @@ export class App {
   async toggleDone(id: TaskId | null = this.actionTask()): Promise<void> {
     const r = this.tasks.get(id);
     if (!r || r.status === 'proposed') return;
+    if (r.has_steps) return this.toast(followsSteps(r.id));
     try {
       const w = await api.toggleDone(r.id);
       this.applyWrite(w.patch);
@@ -683,6 +689,7 @@ export class App {
   async setStatus(id: TaskId, status: Status, note: string | null = null): Promise<void> {
     const r = this.tasks.get(id);
     if (!r) return;
+    if (r.has_steps && status !== 'dropped') return this.toast(followsSteps(id));
     if (status === 'blocked' && !note) return this.open({ kind: 'blocked', task: id, at: this.anchor(id) });
     if (status === 'dropped' && !note) {
       const open = this.openDescendants(id);
@@ -1099,13 +1106,6 @@ export class App {
           this.leave(item);
           await this.doIt(item.task);
           break;
-        case 'finish_it': {
-          this.leave(item);
-          const w = await api.setStatus(item.task, 'done', null);
-          this.applyWrite(w.patch);
-          this.undoToast(`Marked #${item.task} done`, w);
-          break;
-        }
         case 'quiet':
           this.reveal(item.task);
           break;
@@ -1116,10 +1116,9 @@ export class App {
     }
   }
 
-  /** Mark done (Space) on a kind that offers it: Agent stopped, Finish it?. As me, with Undo. */
+  /** Mark done (Space) on a kind that offers it: Agent stopped. As me, with Undo. */
   async markNeedDone(item: NeedsItem | null = this.needsItem): Promise<void> {
     if (!item || !canMarkDone(item.kind)) return;
-    if (item.kind === 'finish_it') return this.mainAction(item);
     await this.setNeedStatus(item, 'done');
   }
 
@@ -1142,13 +1141,13 @@ export class App {
     }
   }
 
-  /** Dismiss a Needs me item; on Finish it? this is Keep open. */
+  /** Dismiss a Needs me item. */
   async dismiss(item: NeedsItem | null = this.needsItem): Promise<void> {
     if (!item || !this.actOnce(item)) return;
     this.leave(item);
     try {
       const w = await api.needsDismiss(item.key);
-      this.undoToast(item.kind === 'finish_it' ? `Kept #${item.task} open` : `Dismissed #${item.task}`, w, { key: item.key });
+      this.undoToast(`Dismissed #${item.task}`, w, { key: item.key });
     } catch (e) {
       this.needs.unhide(item.key);
       this.fail(e);

@@ -50,9 +50,12 @@ const fn row(
 use Status::{Blocked, Doing, Done, InReview, Todo};
 
 /// The prototype's tasks (docs/design/prototype.html), in id order so each parent exists first.
+/// A parent's status is worked out from its steps (SPEC-core rule 10), so its own is `Todo`
+/// and never set. Dark mode tokens keeps one step open, so it shows in progress rather than
+/// the prototype's "Finish it?".
 const ROWS: &[Row] = &[
     row(98, "New laptop setup", Done, None, &["dotfiles"], 14 * DAY),
-    row(110, "Dark mode tokens", Doing, None, &["booking-web"], HOUR),
+    row(110, "Dark mode tokens", Todo, None, &["booking-web"], HOUR),
     row(
         111,
         "Colour tokens",
@@ -80,7 +83,7 @@ const ROWS: &[Row] = &[
     row(
         114,
         "Contrast check",
-        Done,
+        Todo,
         Some(110),
         &["booking-web"],
         3 * DAY,
@@ -103,7 +106,7 @@ const ROWS: &[Row] = &[
         HOUR,
     ),
     row(133, "Menu-bar count", Doing, None, &["airboss"], 12 * MIN),
-    row(142, "Booking flow", Doing, None, &[], 6 * MIN),
+    row(142, "Booking flow", Todo, None, &[], 6 * MIN),
     row(
         143,
         "API: slots endpoint",
@@ -161,7 +164,7 @@ const ROWS: &[Row] = &[
         2 * DAY,
     ),
     row(152, "Read sortie prior art", Todo, None, &[], 4 * DAY),
-    row(200, "Refunds", Doing, None, &[], 20 * MIN),
+    row(200, "Refunds", Todo, None, &[], 20 * MIN),
     row(
         201,
         "Schema: refunds table",
@@ -283,8 +286,9 @@ pub fn design(s: &mut Store) -> airboss_core::Result<Design> {
     for (a, b) in DEPS {
         s.add_dependency(TaskId(*a), TaskId(*b), &me)?;
     }
-    s.set_branch(TaskId(142), Some("task-142-booking-flow"), &me)?;
-    s.set_branch(TaskId(200), Some("task-200-refunds"), &me)?;
+    // Parents take no branch (SPEC-core rule 10); the steps agents work on have theirs.
+    s.set_branch(TaskId(144), Some("task-144-web-slot-picker"), &me)?;
+    s.set_branch(TaskId(202), Some("task-202-refund-service"), &me)?;
     let notes = [
         (
             142,

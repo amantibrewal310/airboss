@@ -156,7 +156,20 @@ pub(crate) fn set_status(
     actor: &Actor,
 ) -> Result<Task> {
     let note = note.filter(|n| !n.trim().is_empty());
-    check_status_change(actor, &facts(tx, id)?, to, note)?;
+    let facts = facts(tx, id)?;
+    // Rule 10: a parent's status follows its steps. Dropping it drops the open ones.
+    if crate::rollup::has_steps(tx, id)? {
+        valid_actor(actor)?;
+        return match (actor, to) {
+            (Actor::Me, Status::Dropped) => {
+                drop_subtree(tx, id, actor)?;
+                tasks::get(tx, id)
+            }
+            (_, Status::Dropped) => Err(Error::NotAllowed),
+            _ => Err(Error::HasSteps),
+        };
+    }
+    check_status_change(actor, &facts, to, note)?;
     // A change that changes nothing writes nothing, like an empty edit.
     let before = tasks::get(tx, id)?;
     let reason = if to == Status::Blocked { note } else { None };
@@ -218,13 +231,19 @@ fn reject_proposals(
 const DROPPED_WITH: &str = "dropped with #";
 
 /// Rule 9: drops every open task under `id`, with one event each. `done` ones stay `done`.
+/// A task with steps under it changes only through them (rule 10), so it gets no event.
 fn drop_subtree(tx: &mut Tx<'_>, id: TaskId, actor: &Actor) -> Result<()> {
     let open = query_all(
         tx,
         &format!(
             "{SUBTREE_CTE}
              SELECT t.id FROM tasks t JOIN sub ON t.id = sub.id
-             WHERE t.id <> ?1 AND t.status NOT IN ('done', 'dropped') ORDER BY t.id"
+             WHERE t.id <> ?1 AND t.status NOT IN ('done', 'dropped')
+               AND NOT EXISTS (SELECT 1 FROM tasks c
+                               WHERE c.parent_id = t.id AND c.status <> 'proposed'
+                                 AND NOT {})
+             ORDER BY t.id",
+            crate::rollup::rejected("c")
         ),
         params![id.0],
         |r| r.get(0).map(TaskId),

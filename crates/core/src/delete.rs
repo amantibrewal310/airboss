@@ -66,7 +66,8 @@ mod tests {
         s.add_task(new, &Actor::Me).unwrap().id
     }
 
-    /// P has A, X and B; X has X1, which has X2. X2 has a link and waits on A; W waits on X1.
+    /// P has A, X and B; X has X1, which has X2. X2 has a link, waits on A and is blocked, so
+    /// X1 shows blocked; W waits on X1.
     fn fixture(s: &mut Store) -> (TaskId, TaskId) {
         let p = add(s, "P", None);
         let a = add(s, "A", Some(p));
@@ -78,7 +79,7 @@ mod tests {
         s.link(x2, NewLink::pr("acme/web#1"), &Actor::Me).unwrap();
         s.add_dependency(x2, a, &Actor::Me).unwrap();
         s.add_dependency(w, x1, &Actor::Me).unwrap();
-        s.set_status(x1, Status::Blocked, Some("why"), &Actor::Me)
+        s.set_status(x2, Status::Blocked, Some("why"), &Actor::Me)
             .unwrap();
         (x, w)
     }
@@ -93,7 +94,7 @@ mod tests {
 
         let (tasks_after, counts) = snapshot(&s);
         assert_eq!(tasks_after.len(), tasks_before.len() - 3);
-        // X, X1, X2 created; X2 linked and waiting on A; X1 blocked.
+        // X, X1, X2 created; X2 linked, waiting on A and blocked.
         let subtree_events: i64 = 3 + 3;
         assert_eq!(
             counts,
@@ -132,6 +133,7 @@ mod tests {
         assert_eq!(s.last_committed, committed);
 
         s.set_status(x, Status::Dropped, None, &Actor::Me).unwrap();
-        assert_eq!(s.last_committed.len(), 3, "X, X1 and X2");
+        // X and X1 have steps, so their status follows them: only X2 changes.
+        assert_eq!(s.last_committed.len(), 1, "X2");
     }
 }

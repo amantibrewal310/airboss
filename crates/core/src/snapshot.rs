@@ -11,10 +11,10 @@ impl crate::Store {
         // Deferred: a read transaction, holding no lock beyond WAL's read snapshot. It only
         // reads, so dropping it at the end (a rollback) is all the cleanup it needs.
         let tx = self.conn.unchecked_transaction()?;
-        let tree = tasks::tree(&tx)?;
-        let ready = deps::ready_from(&tx, &tree)?;
+        let (tree, edges) = tasks::tree_and_edges(&tx)?;
+        let ready = deps::ready_from(&tx, &tree, &edges)?;
         Ok(CoreSnapshot {
-            edges: deps::edges(&tx)?,
+            edges,
             latest_event_id: events::latest_id(&tx)?,
             ready,
             tree,

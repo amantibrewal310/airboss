@@ -140,7 +140,6 @@ fn kind_icon(kind: NeedsKind) -> Image<'static> {
         NeedsKind::AgentStopped => tauri::include_image!("tray/needs-agent_stopped.png"),
         NeedsKind::Proposed => tauri::include_image!("tray/needs-proposed.png"),
         NeedsKind::Ready => tauri::include_image!("tray/needs-ready.png"),
-        NeedsKind::FinishIt => tauri::include_image!("tray/needs-finish_it.png"),
         NeedsKind::Quiet => tauri::include_image!("tray/needs-quiet.png"),
     }
 }

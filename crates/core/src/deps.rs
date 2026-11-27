@@ -1,9 +1,9 @@
 //! Dependencies between tasks: adding and removing them, the loop check, waiting and run
 //! order (rules 14–18).
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::events;
 use crate::model::{
@@ -37,8 +37,8 @@ impl crate::Store {
         dependencies(&self.conn, id)
     }
 
-    /// What can be picked up now: `todo` tasks with no open blockers, in tree order, each
-    /// with the time it became ready (rule 26).
+    /// What can be picked up now: `todo` tasks with no open blockers and no steps, in tree
+    /// order, each with the time it became ready (rule 26).
     pub fn ready(&self) -> Result<Vec<ReadyTask>> {
         ready(&self.conn)
     }
@@ -58,7 +58,8 @@ impl crate::Store {
 
 /// For every `todo` task, the time of the newest event that could have made it ready: its
 /// own `created` or `waits_on_removed` event, or a current blocker finishing. Newest goes
-/// by event id (rule 26).
+/// by event id (rule 26). A blocker with steps finishes through them (rule 10), which
+/// [`READY_SINCE_ONE_SQL`] counts for the few tasks waiting on one.
 const READY_SINCE_SQL: &str = "
 SELECT t.id, ifnull(
     (SELECT e.at FROM task_events e WHERE e.id = max(
@@ -71,21 +72,51 @@ SELECT t.id, ifnull(
     t.created_at)
 FROM tasks t WHERE t.status = 'todo'";
 
+/// [`READY_SINCE_SQL`] for task `?1` alone, with each blocker's steps finishing counted as
+/// the blocker finishing: a parent finishes when its last step does (rule 10).
+const READY_SINCE_ONE_SQL: &str = "
+WITH RECURSIVE under(top, id) AS (
+    SELECT waits_on_id, waits_on_id FROM task_deps WHERE task_id = ?1
+    UNION
+    SELECT u.top, c.id FROM tasks c JOIN under u ON c.parent_id = u.id
+)
+SELECT e.at FROM task_events e WHERE e.id = max(
+    ifnull((SELECT max(o.id) FROM task_events o
+            WHERE o.task_id = ?1 AND o.kind IN ('created', 'waits_on_removed')), 0),
+    ifnull((SELECT max(f.id) FROM under u JOIN task_events f ON f.task_id = u.id
+            WHERE (f.kind = 'rejected' AND u.id = u.top)
+               OR (f.kind = 'status' AND f.to_status IN ('done', 'dropped'))), 0))";
+
 fn ready(conn: &Connection) -> Result<Vec<ReadyTask>> {
-    ready_from(conn, &tasks::tree(conn)?)
+    let (tree, edges) = tasks::tree_and_edges(conn)?;
+    ready_from(conn, &tree, &edges)
 }
 
 /// The ready list worked out from a tree already built on `conn`, so a caller that has the
 /// tree never builds it twice (rule 30). Read it in the same transaction as the tree.
-pub(crate) fn ready_from(conn: &Connection, tree: &[TaskNode]) -> Result<Vec<ReadyTask>> {
+pub(crate) fn ready_from(
+    conn: &Connection,
+    tree: &[TaskNode],
+    edges: &[(TaskId, TaskId)],
+) -> Result<Vec<ReadyTask>> {
     let mut since: HashMap<TaskId, String> = query_all(conn, READY_SINCE_SQL, [], |r| {
         Ok((TaskId(r.get(0)?), r.get(1)?))
     })?
     .into_iter()
     .collect();
-    Ok(tree
+    // A parent isn't started itself; its steps are (rule 10).
+    let ready: Vec<&TaskNode> = tree
         .iter()
-        .filter(|n| n.task.status == Status::Todo && !n.waiting)
+        .filter(|n| n.task.status == Status::Todo && !n.waiting && !n.has_steps)
+        .collect();
+    for task in waiting_on_a_parent(tree, edges, &ready) {
+        let mut stmt = conn.prepare_cached(READY_SINCE_ONE_SQL)?;
+        if let Some(at) = stmt.query_row(params![task.0], |r| r.get(0)).optional()? {
+            since.insert(task, at);
+        }
+    }
+    Ok(ready
+        .into_iter()
         .map(|n| ReadyTask {
             since: since
                 .remove(&n.task.id)
@@ -93,6 +124,28 @@ pub(crate) fn ready_from(conn: &Connection, tree: &[TaskNode]) -> Result<Vec<Rea
             task: n.task.clone(),
         })
         .collect())
+}
+
+/// The tasks in `ready` that wait on a task with steps.
+fn waiting_on_a_parent(
+    tree: &[TaskNode],
+    edges: &[(TaskId, TaskId)],
+    ready: &[&TaskNode],
+) -> BTreeSet<TaskId> {
+    let parents: HashSet<TaskId> = tree
+        .iter()
+        .filter(|n| n.has_steps)
+        .map(|n| n.task.id)
+        .collect();
+    if parents.is_empty() {
+        return BTreeSet::new();
+    }
+    let ready: HashSet<TaskId> = ready.iter().map(|n| n.task.id).collect();
+    edges
+        .iter()
+        .filter(|(task, blocker)| ready.contains(task) && parents.contains(blocker))
+        .map(|&(task, _)| task)
+        .collect()
 }
 
 /// Every `(waiting, waits_on)` pair, finished tasks included, sorted (rule 30).
@@ -202,24 +255,19 @@ fn exists(conn: &Connection, task: TaskId, waits_on: TaskId) -> Result<bool> {
 }
 
 fn open_blockers(conn: &Connection, id: TaskId) -> Result<Vec<Task>> {
-    ensure_exists(conn, id)?;
-    query_all(
-        conn,
-        &format!(
-            "SELECT {TASK_COLUMNS} FROM task_deps d JOIN tasks t ON t.id = d.waits_on_id
-             WHERE d.task_id = ?1 AND t.status NOT IN ('done', 'dropped')
-             ORDER BY t.id"
-        ),
-        params![id.0],
-        tasks::from_row,
-    )
+    Ok(dependencies(conn, id)?
+        .waits_on
+        .into_iter()
+        .filter(|t| !matches!(t.status, Status::Done | Status::Dropped))
+        .collect())
 }
 
+/// Both sides, each task as it shows (rule 10).
 fn dependencies(conn: &Connection, id: TaskId) -> Result<Dependencies> {
     ensure_exists(conn, id)?;
     // `from` is the column naming `id`, `to` the one naming the other task.
     let side = |from: &str, to: &str| {
-        query_all(
+        let found = query_all(
             conn,
             &format!(
                 "SELECT {TASK_COLUMNS} FROM task_deps d JOIN tasks t ON t.id = d.{to}
@@ -227,7 +275,8 @@ fn dependencies(conn: &Connection, id: TaskId) -> Result<Dependencies> {
             ),
             params![id.0],
             tasks::from_row,
-        )
+        )?;
+        tasks::all_shown(conn, found)
     };
     Ok(Dependencies {
         waits_on: side("task_id", "waits_on_id")?,
@@ -275,36 +324,44 @@ pub(crate) fn on_task_deleting(tx: &mut Tx<'_>, id: TaskId, actor: &Actor) -> Re
     fault::hit(fault::DEPS_CLEARED)
 }
 
-/// Every dependency between two open tasks that starts in `?1`'s subtree, lifted to the
-/// direct subtasks the two ends sit under. A null blocker side means the blocker is outside,
-/// and the third column names it.
+/// Every dependency that starts in `?1`'s subtree: the waiting task, the direct subtask it
+/// sits under, the direct subtask the blocker sits under (null when the blocker is outside),
+/// and the blocker. Which ends are open is decided by what they show (rule 10).
 const LIFTED_SQL: &str = "
 WITH RECURSIVE sub(id, top) AS (
     SELECT id, id FROM tasks WHERE parent_id = ?1
     UNION ALL
     SELECT t.id, sub.top FROM tasks t JOIN sub ON t.parent_id = sub.id
 )
-SELECT DISTINCT s.top, b.top, CASE WHEN b.top IS NULL THEN d.waits_on_id END
+SELECT s.id, s.top, b.top, d.waits_on_id
 FROM sub s
-JOIN tasks st ON st.id = s.id
 JOIN task_deps d ON d.task_id = s.id
-JOIN tasks bt ON bt.id = d.waits_on_id
-LEFT JOIN sub b ON b.id = d.waits_on_id
-WHERE st.status NOT IN ('proposed', 'done', 'dropped')
-  AND bt.status NOT IN ('proposed', 'done', 'dropped')";
+LEFT JOIN sub b ON b.id = d.waits_on_id";
+
+/// Open for run order: neither an unaccepted proposal nor finished.
+fn runs(status: Status) -> bool {
+    !matches!(status, Status::Proposed | Status::Done | Status::Dropped)
+}
 
 fn run_order(conn: &Connection, parent: TaskId) -> Result<RunOrder> {
     ensure_exists(conn, parent)?;
-    let children = query_all(
+    // What everything under the parent shows; anything missing is a rejected proposal.
+    let shown = crate::rollup::shown_subtree(conn, parent)?;
+    let open_inside = |id: &TaskId| shown.get(id).is_some_and(|s| runs(s.status));
+    let children: Vec<Task> = query_all(
         conn,
-        &format!(
-            "SELECT {TASK_COLUMNS} FROM tasks t
-             WHERE t.parent_id = ?1 AND t.status NOT IN ('proposed', 'done', 'dropped')
-             ORDER BY t.position"
-        ),
+        &format!("SELECT {TASK_COLUMNS} FROM tasks t WHERE t.parent_id = ?1 ORDER BY t.position"),
         params![parent.0],
         tasks::from_row,
-    )?;
+    )?
+    .into_iter()
+    .filter_map(|mut t| {
+        let s = shown.get(&t.id)?;
+        t.status = s.status;
+        t.blocked_reason = s.blocked_reason.clone();
+        runs(t.status).then_some(t)
+    })
+    .collect();
     let index: HashMap<TaskId, usize> = children
         .iter()
         .enumerate()
@@ -317,20 +374,44 @@ fn run_order(conn: &Connection, parent: TaskId) -> Result<RunOrder> {
     let mut waits_for = vec![0usize; n];
     // The open tasks outside the parent holding each subtask; empty while nothing does.
     let mut outside: Vec<BTreeSet<TaskId>> = vec![BTreeSet::new(); n];
-    let mut stmt = conn.prepare(LIFTED_SQL)?;
-    let mut rows = stmt.query(params![parent.0])?;
-    while let Some(row) = rows.next()? {
+    // Outside blockers, as they show, read once each.
+    let mut outside_open: HashMap<TaskId, bool> = HashMap::new();
+    let mut seen: HashSet<(usize, usize)> = HashSet::new();
+    let lifted = query_all(conn, LIFTED_SQL, params![parent.0], |r| {
+        Ok((
+            TaskId(r.get(0)?),
+            TaskId(r.get(1)?),
+            r.get::<_, Option<i64>>(2)?.map(TaskId),
+            TaskId(r.get(3)?),
+        ))
+    })?;
+    for (step, top, blocker_top, blocker) in lifted {
         // A subtask left out (done or dropped) neither waits nor holds anything up.
-        let Some(&x) = index.get(&TaskId(row.get(0)?)) else {
+        let Some(&x) = index.get(&top) else {
             continue;
         };
-        match row.get::<_, Option<i64>>(1)? {
+        if !open_inside(&step) {
+            continue;
+        }
+        match blocker_top {
             None => {
-                outside[x].insert(TaskId(row.get(2)?));
+                let open = match outside_open.get(&blocker) {
+                    Some(&open) => open,
+                    None => {
+                        let open = runs(tasks::get(conn, blocker)?.status);
+                        outside_open.insert(blocker, open);
+                        open
+                    }
+                };
+                if open {
+                    outside[x].insert(blocker);
+                }
             }
             Some(y) => {
-                if let Some(&y) = index.get(&TaskId(y))
+                if open_inside(&blocker)
+                    && let Some(&y) = index.get(&y)
                     && y != x
+                    && seen.insert((x, y))
                 {
                     unblocks[y].push(x);
                     waits_for[x] += 1;

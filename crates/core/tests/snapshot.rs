@@ -74,10 +74,10 @@ fn a_snapshot_matches_each_read_made_on_its_own() {
     assert_eq!(snap.ready, s.ready().unwrap());
     assert_eq!(snap.latest_event_id, s.latest_event_id().unwrap());
 
-    // B and E are ready; C and D wait; P is ready too, as a todo task.
+    // B and E are ready; C and D wait; P has steps, so it isn't ready itself (rule 10).
     let ready: Vec<TaskId> = snap.ready.iter().map(|r| r.task.id).collect();
     assert!(ready.contains(&b));
-    assert_eq!(ready.len(), 3);
+    assert_eq!(ready.len(), 2);
 }
 
 #[test]

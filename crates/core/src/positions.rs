@@ -41,9 +41,13 @@ pub(crate) fn renumber(tx: &Tx<'_>, parent: Option<TaskId>) -> Result<()> {
     Ok(())
 }
 
-/// Rule 12: `parent` must exist and be able to take children, i.e. not be `proposed`,
-/// `done` or `dropped`.
+/// Rule 12: `parent` must exist and be able to take children: a task with steps always can,
+/// since its status follows them; one without can unless it's `proposed`, `done` or
+/// `dropped`.
 pub(crate) fn ensure_open_parent(conn: &Connection, parent: TaskId) -> Result<()> {
+    if crate::rollup::has_steps(conn, parent)? {
+        return Ok(());
+    }
     let status: Option<String> = conn
         .query_row(
             "SELECT status FROM tasks WHERE id = ?1",

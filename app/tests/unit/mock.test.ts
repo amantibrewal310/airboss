@@ -31,10 +31,21 @@ describe('mock view model (SPEC-app "The view model and patches")', () => {
     expect(rows.get(144)!.repos_from_subtasks).toBe(false);
   });
 
-  it('inherits the branch from the nearest ancestor', () => {
+  it('shows a step its own branch; parents take none (SPEC-core rule 10)', () => {
     const rows = rowsOf();
-    expect(rows.get(144)!.branch).toBe('task-142-booking-flow');
+    expect(rows.get(144)!.branch).toBe('task-144-web-slot-picker');
+    expect(rows.get(142)!.branch).toBeNull();
+    expect(rows.get(145)!.branch).toBeNull();
     expect(rows.get(128)!.branch).toBeNull();
+  });
+
+  it('shows each parent what its steps add up to (SPEC-core rule 10)', () => {
+    const rows = rowsOf();
+    expect([rows.get(142)!.status, rows.get(142)!.has_steps]).toEqual(['doing', true]);
+    expect([rows.get(200)!.status, rows.get(200)!.blocked_reason]).toEqual(['blocked', '#203 is blocked: Needs test keys from the payments dashboard']);
+    expect(rows.get(110)!.status).toBe('doing'); // three of four done
+    expect(rows.get(150)!.has_steps).toBe(false); // only proposals under it
+    expect(rows.get(146)!.has_steps).toBe(false);
   });
 
   it('picks the strongest live chip: waiting on you, then working, then stopped', () => {
@@ -162,12 +173,20 @@ describe('MockBackend', () => {
     expect(m.s.tasks.get(145)!.status).toBe('todo');
   });
 
+  it('refuses a status change on a parent but Drop, which drops its open steps', async () => {
+    await expect(m.invoke('set_status', { id: 142, status: 'done', note: null })).rejects.toMatchObject({ code: 'invalid_target' });
+    await expect(m.invoke('toggle_done', { id: 142 })).rejects.toMatchObject({ code: 'invalid_target' });
+    await m.invoke('set_status', { id: 142, status: 'dropped', note: null });
+    expect(m.s.tasks.get(144)!.status).toBe('dropped');
+    expect(m.s.tasks.get(142)!.status).toBe('done'); // 143 was done
+  });
+
   it('drops the Ready item once attention follows a Do it', async () => {
     let latest = 0;
     await m.listen('needs:changed', (n) => (latest = n.count));
     await m.invoke('do_it', { id: 146, place: null, again: false });
     await new Promise((r) => setTimeout(r, 20));
-    expect(latest).toBe(7);
+    expect(latest).toBe(6);
   });
 });
 

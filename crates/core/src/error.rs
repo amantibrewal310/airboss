@@ -24,6 +24,10 @@ pub enum Error {
     /// The target can't take this change, e.g. moving under a finished parent.
     #[error("invalid target")]
     InvalidTarget,
+    /// The task has steps, so its status follows them and it takes no status change other
+    /// than a drop, and no branch or PR, of its own (rule 10).
+    #[error("this task has subtasks; its status follows them")]
+    HasSteps,
     /// The change would create a loop in the tree or in the dependencies.
     #[error("this would create a loop")]
     Loop,

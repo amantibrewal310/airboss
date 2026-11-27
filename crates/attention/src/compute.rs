@@ -101,7 +101,6 @@ pub(crate) fn compute_full(
     kinds::reviews(&ctx, &mut all);
     kinds::proposed(&ctx, &mut all);
     kinds::ready(&ctx, &mut all);
-    kinds::finish(&ctx, &mut all);
     quiet::quiet(&ctx, &mut all, &mut wake);
 
     let live = all

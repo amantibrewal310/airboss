@@ -2,7 +2,7 @@
 //!
 //! **When** ([`Memory::decide`], pure): one notification for each *new* item of the kinds that
 //! block an agent or need me now: an agent's question or approval, a failed run, an agent that
-//! stopped. Never for proposals, reviews, ready tasks, quiet work or "Finish it?": quiet when
+//! stopped. Never for proposals, reviews, ready tasks, or quiet work: quiet when
 //! nothing's happening. Never for an item that existed at launch, never twice for one key, and
 //! never while the main window is focused (the item is in front of me already) or with the
 //! setting off. An item that arrives then is still remembered, so it doesn't notify later.
@@ -318,7 +318,6 @@ mod tests {
             ("r", NeedsKind::Review),
             ("p", NeedsKind::Proposed),
             ("y", NeedsKind::Ready),
-            ("x", NeedsKind::FinishIt),
             ("z", NeedsKind::Quiet),
         ];
         let items = all.iter().map(|(k, kind)| item(k, *kind, 144)).collect();

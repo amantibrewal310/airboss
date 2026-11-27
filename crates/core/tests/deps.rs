@@ -316,7 +316,8 @@ fn ready_lists_unblocked_todo_tasks_in_tree_order() {
     s.add_dependency(p2, p1, &Actor::Me).unwrap();
 
     let ready = ids(&ready_tasks(&s));
-    assert_eq!(ready, vec![p, p1, q]);
+    // The project has steps, so it isn't started itself; its steps are (rule 10).
+    assert_eq!(ready, vec![p1, q]);
     assert!(!ready.contains(&proposal), "proposals are not ready");
 }
 

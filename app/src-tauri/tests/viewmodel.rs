@@ -94,6 +94,8 @@ fn a_parent_shows_its_subtasks_repo_union_flagged_and_children_inherit_its_branc
         .unwrap()
         .id;
     let p = add(&mut s, "Parent", None);
+    // From before it had steps: a parent takes no new branch (SPEC-core rule 10).
+    s.set_branch(p, Some("task-1-parent"), &Actor::Me).unwrap();
     let a = s
         .add_task(NewTask::new("A").under(p).in_repo(web), &Actor::Me)
         .unwrap()
@@ -103,7 +105,6 @@ fn a_parent_shows_its_subtasks_repo_union_flagged_and_children_inherit_its_branc
         .unwrap()
         .id;
     let lone = add(&mut s, "Lone", None);
-    s.set_branch(p, Some("task-1-parent"), &Actor::Me).unwrap();
 
     let v = vm(&s);
     // Sorted by repo name, like core's own lists.
@@ -392,8 +393,8 @@ fn plan_cards_show_progress_waves_and_whats_next() {
     let _closed = {
         let q = add(&mut s, "Closed plan", None);
         let q1 = add(&mut s, "Q1", Some(q));
+        // Every step done, so the plan shows done (SPEC-core rule 10).
         status(&mut s, q1, Status::Done);
-        status(&mut s, q, Status::Done);
         q
     };
     let _leaf = add(&mut s, "Just a task", None);
@@ -415,13 +416,14 @@ fn plan_cards_show_progress_waves_and_whats_next() {
         card.next_up.iter().map(|n| n.id).collect::<Vec<_>>(),
         vec![b]
     );
-    assert!(!card.finish_it);
+    assert_eq!(card.status, Status::Doing, "a step is done and others open");
 
     status(&mut s, b, Status::Done);
     status(&mut s, c, Status::Done);
-    let cards = plan_cards(&vm(&s));
-    assert!(cards[0].finish_it && cards[0].next_up.is_empty());
-    assert_eq!(cards[0].current_wave, None);
+    assert!(
+        plan_cards(&vm(&s)).is_empty(),
+        "every step done: the plan is done, so it has no card"
+    );
 }
 
 // ---------------------------------------------------------------------------- run map

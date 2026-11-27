@@ -300,7 +300,7 @@ export type NeedsChanged = { version: number, items: Array<NeedsItem>, count: nu
 /**
  * `services::NeedsGroup`, in display order.
  */
-export type NeedsGroup = "questions" | "reviews" | "failed_runs" | "stopped" | "proposed" | "ready" | "finish_it" | "quiet";
+export type NeedsGroup = "questions" | "reviews" | "failed_runs" | "stopped" | "proposed" | "ready" | "quiet";
 
 /**
  * `services::NeedsItem`.
@@ -319,7 +319,7 @@ export type NeedsKey = string;
 /**
  * `services::NeedsKind`.
  */
-export type NeedsKind = "question" | "approval" | "review" | "failed_run" | "agent_stopped" | "proposed" | "ready" | "finish_it" | "quiet";
+export type NeedsKind = "question" | "approval" | "review" | "failed_run" | "agent_stopped" | "proposed" | "ready" | "quiet";
 
 /**
  * `services::NeedsList`.
@@ -399,10 +399,6 @@ current_wave: number | null,
  * Up to two ready subtasks.
  */
 next_up: Array<NextUp>, 
-/**
- * Every subtask is done: "Finish it?".
- */
-finish_it: boolean, 
 /**
  * Subtasks with a working agent.
  */
@@ -498,6 +494,11 @@ waiting: boolean,
  * The open tasks it waits on (empty unless `waiting`).
  */
 waits_on: Array<TaskId>, has_children: boolean, 
+/**
+ * It has steps, subtasks that aren't proposals: its status is worked out from them, and
+ * it takes no status change but Drop, no branch and no PR (SPEC-core rule 10).
+ */
+has_steps: boolean, 
 /**
  * Over leaf subtasks at any depth; `null` for a leaf.
  */

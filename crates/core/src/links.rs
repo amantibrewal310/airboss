@@ -178,6 +178,10 @@ pub(crate) fn link(tx: &mut Tx<'_>, task: TaskId, new: NewLink, actor: &Actor) -
     if let Some(found) = existing {
         return Ok(found);
     }
+    // Rule 10: a parent's PRs link to the steps they do. Old ones stay as history.
+    if new.kind == LinkKind::Pr && crate::rollup::has_steps(tx, task)? {
+        return Err(Error::HasSteps);
+    }
     // Rule 3: a PR link always has a state; the database rejects a state on anything else.
     let pr_state = match new.kind {
         LinkKind::Pr => Some(new.pr_state.unwrap_or(PrState::Open)),
@@ -257,7 +261,11 @@ pub(crate) fn set_pr_state(
         events::record(tx, task, EventKind::LinkState, None, Some(&body), actor)?;
         fault::hit(fault::PR_STATE_RECORDED)?;
         // Rule 7: a PR reopened on GitHub needs review again, so its task can't stay done.
-        if state == PrState::Open && crate::tasks::get(tx, task)?.status == Status::Done {
+        // A parent's status follows its steps, so an old PR on it reopens nothing (rule 10).
+        if state == PrState::Open
+            && !crate::rollup::has_steps(tx, task)?
+            && crate::tasks::get(tx, task)?.status == Status::Done
+        {
             let why = format!("reopened: PR {pr_ref} reopened");
             status::apply(tx, task, Status::InReview, Some(&why), actor)?;
         }

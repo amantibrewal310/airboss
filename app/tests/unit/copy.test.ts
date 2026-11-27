@@ -118,7 +118,7 @@ describe('copy', () => {
   it('a Needs me headline does not repeat the kind it sits under', () => {
     expect(headlineOf({ kind: 'ready', headline: 'Ready to start: 143 is done' })).toBe('143 is done');
     expect(headlineOf({ kind: 'question', headline: 'Use the existing date picker?' })).toBe('Use the existing date picker?');
-    expect(headlineOf({ kind: 'finish_it', headline: 'All 4 subtasks are done. Mark the parent done?' })).toBe('All 4 subtasks are done. Mark the parent done?');
+    expect(headlineOf({ kind: 'quiet', headline: 'No activity for 6 days.' })).toBe('No activity for 6 days.');
   });
 
   it('the shortcut sheet uses plain words', () => {

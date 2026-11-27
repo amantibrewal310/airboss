@@ -398,8 +398,11 @@ pub(crate) fn start(inner: &Inner, req: &StartRequest) -> Result<LaunchReport, S
     settle::settle_task(inner, req.task, inner.clock.now())?;
     let r = request(inner, req)?;
     let task = r.facts.task.id;
+    // A parent takes no branch (SPEC-core rule 10): a thread on the whole task works on
+    // the branch it would have, worked out again each time.
     if let Some(name) = &r.branch
         && r.facts.task.branch.is_none()
+        && !r.facts.has_steps
     {
         inner
             .core

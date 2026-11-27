@@ -71,7 +71,8 @@ impl HiddenStore {
             let mut out = Vec::new();
             for row in rows {
                 let (key, kind, task, until) = row?;
-                // The CHECK allows only known kinds; anything else is a hand-edited file.
+                // The CHECK allows only known kinds; anything else is a hand-edited file, or a
+                // "finish" row from before parents became containers (SPEC-core rule 10).
                 let Some(kind) = kind_from(&kind) else {
                     continue;
                 };
@@ -171,7 +172,6 @@ fn kind_text(kind: NeedsKind) -> &'static str {
         NeedsKind::AgentStopped => "stopped",
         NeedsKind::Proposed => "proposed",
         NeedsKind::Ready => "ready",
-        NeedsKind::FinishIt => "finish",
         NeedsKind::Quiet => "quiet",
     }
 }
@@ -185,7 +185,6 @@ fn kind_from(text: &str) -> Option<NeedsKind> {
         "stopped" => NeedsKind::AgentStopped,
         "proposed" => NeedsKind::Proposed,
         "ready" => NeedsKind::Ready,
-        "finish" => NeedsKind::FinishIt,
         "quiet" => NeedsKind::Quiet,
         _ => return None,
     })

@@ -421,6 +421,24 @@ fn update_task_sets_the_status_as_this_agent() {
 }
 
 #[test]
+fn update_task_on_a_parent_points_at_its_subtasks() {
+    let mut s = store();
+    let parent = add(&mut s, "plan");
+    add_under(&mut s, parent, "step");
+    let err = update(&mut s, parent, Some(AgentStatus::Doing), None).unwrap_err();
+    assert_eq!(
+        err,
+        format!(
+            "Task #{} has subtasks, so its status follows them, and PRs and branches go on the \
+             subtasks. Report on the subtask you're working on.",
+            parent.0
+        )
+    );
+    // A note still lands on it.
+    update(&mut s, parent, None, Some("planned")).unwrap();
+}
+
+#[test]
 fn update_task_with_only_a_note_adds_the_note() {
     let mut s = store();
     let id = add(&mut s, "work");

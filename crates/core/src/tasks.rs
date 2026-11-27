@@ -9,7 +9,7 @@ use crate::model::{Actor, EventKind, NewTask, Origin, Status, Task, TaskEdit, Ta
 use crate::permissions::{Call, allowed};
 use crate::sql::query_all;
 use crate::tx::Tx;
-use crate::{Error, EventId, RepoId, Result, TaskId, fault};
+use crate::{Error, EventId, RepoId, Result, TaskId, deps, fault, rollup};
 
 impl crate::Store {
     /// Adds one task at the end of its siblings, with a `created` event.
@@ -35,6 +35,13 @@ impl crate::Store {
     /// Sets or clears the branch the task's threads share (rule 25). `me` and `launch` only.
     pub fn set_branch(&mut self, id: TaskId, branch: Option<&str>, actor: &Actor) -> Result<Task> {
         self.write(|tx| set_branch(tx, id, branch, actor))
+    }
+
+    /// True when the task has steps: subtasks that aren't proposals. Its status is then
+    /// worked out from them, and it takes no branch, PR or status change but a drop (rule 10).
+    pub fn has_steps(&self, id: TaskId) -> Result<bool> {
+        ensure_exists(&self.conn, id)?;
+        rollup::has_steps(&self.conn, id)
     }
 
     /// Adds a note to a task's history. Anyone but `plan` may (rule 8).
@@ -97,14 +104,32 @@ fn ensure_row(conn: &Connection, sql: &str, id: i64) -> Result<()> {
     found.map(|_| ()).ok_or(Error::NotFound)
 }
 
+/// One task, showing what its steps add up to when it has any (rule 10).
 pub(crate) fn get(conn: &Connection, id: TaskId) -> Result<Task> {
-    conn.query_row(
-        &format!("SELECT {TASK_COLUMNS} FROM tasks t WHERE t.id = ?1"),
-        params![id.0],
-        from_row,
-    )
-    .optional()?
-    .ok_or(Error::NotFound)
+    let task = conn
+        .query_row(
+            &format!("SELECT {TASK_COLUMNS} FROM tasks t WHERE t.id = ?1"),
+            params![id.0],
+            from_row,
+        )
+        .optional()?
+        .ok_or(Error::NotFound)?;
+    shown(conn, task)
+}
+
+/// `task` as read from its row, with what its steps add up to in place of its stored status
+/// when it has any (rule 10).
+pub(crate) fn shown(conn: &Connection, mut task: Task) -> Result<Task> {
+    if let Some(s) = rollup::shown(conn, task.id)? {
+        task.status = s.status;
+        task.blocked_reason = s.blocked_reason;
+    }
+    Ok(task)
+}
+
+/// Every task in `tasks` as [`shown`] gives it.
+pub(crate) fn all_shown(conn: &Connection, tasks: Vec<Task>) -> Result<Vec<Task>> {
+    tasks.into_iter().map(|t| shown(conn, t)).collect()
 }
 
 /// The next free position among `parent`'s children (rule 13: 1-based, gap-free).
@@ -196,8 +221,17 @@ pub(crate) fn add(tx: &mut Tx<'_>, new: NewTask, actor: &Actor) -> Result<Task> 
 /// still `dropped` whose latest status change was a `rejected` event.
 ///
 /// Each node's own newest event comes from one index lookup in the same query; the
-/// subtree's newest is then one pass in Rust from the leaves up (rule 28).
+/// subtree's newest is then one pass in Rust from the leaves up (rule 28). A parent's status
+/// is worked out from its steps (rule 10), and waiting from what its blockers show (rule 16).
 pub(crate) fn tree(conn: &Connection) -> Result<Vec<TaskNode>> {
+    Ok(tree_and_edges(conn)?.0)
+}
+
+/// Every `(waiting, waits_on)` pair.
+pub(crate) type Edges = Vec<(TaskId, TaskId)>;
+
+/// [`tree`], and every dependency edge it was worked out with, for callers that need both.
+pub(crate) fn tree_and_edges(conn: &Connection) -> Result<(Vec<TaskNode>, Edges)> {
     let sql = format!(
         "WITH RECURSIVE walk(id, depth, path) AS (
              SELECT id, 0, printf('%010d', position) FROM tasks WHERE parent_id IS NULL
@@ -205,36 +239,76 @@ pub(crate) fn tree(conn: &Connection) -> Result<Vec<TaskNode>> {
              SELECT c.id, w.depth + 1, w.path || '.' || printf('%010d', c.position)
              FROM tasks c JOIN walk w ON c.parent_id = w.id
          )
-         SELECT {TASK_COLUMNS}, w.depth,
-                EXISTS (SELECT 1 FROM task_deps d JOIN tasks b ON b.id = d.waits_on_id
-                        WHERE d.task_id = t.id AND b.status NOT IN ('done', 'dropped')),
-                le.id, le.at, le.actor
+         SELECT {TASK_COLUMNS}, w.depth, le.id, le.at, le.actor
          FROM walk w JOIN tasks t ON t.id = w.id
          LEFT JOIN task_events le
                 ON le.id = (SELECT max(e.id) FROM task_events e WHERE e.task_id = t.id)
-         WHERE NOT (t.status = 'dropped'
-                    AND (SELECT e.kind FROM task_events e
-                         WHERE e.task_id = t.id AND e.kind IN ('status', 'rejected')
-                         ORDER BY e.id DESC LIMIT 1) = 'rejected')
-         ORDER BY w.path"
+         WHERE NOT {}
+         ORDER BY w.path",
+        rollup::rejected("t")
     );
     let n = TASK_COLUMN_COUNT;
     // Every task has a `created` event (rule 21), so a null here is a damaged file and the
     // read fails on it.
     let rows = query_all(conn, &sql, [], |row| {
-        let actor: String = row.get(n + 4)?;
-        let at: String = row.get(n + 3)?;
+        let actor: String = row.get(n + 3)?;
+        let at: String = row.get(n + 2)?;
         let node = TaskNode {
             task: from_row(row)?,
             depth: row.get(n)?,
-            waiting: row.get(n + 1)?,
+            waiting: false,
+            has_steps: false,
             last_event_at: at.clone(),
-            last_actor: actor.parse().map_err(|_| bad_text(n + 4, &actor))?,
+            last_actor: actor.parse().map_err(|_| bad_text(n + 3, &actor))?,
             subtree_last_event_at: at,
         };
-        Ok((node, EventId(row.get(n + 2)?)))
+        Ok((node, EventId(row.get(n + 1)?)))
     })?;
-    Ok(with_subtree_activity(rows))
+    let mut nodes = with_subtree_activity(rows);
+    roll_up(&mut nodes);
+    let edges = deps::edges(conn)?;
+    mark_waiting(&mut nodes, &edges);
+    Ok((nodes, edges))
+}
+
+/// Rule 10 over the whole tree: each parent shows what its steps add up to.
+fn roll_up(nodes: &mut [TaskNode]) {
+    let mut flat: Vec<rollup::Node> = nodes
+        .iter()
+        .map(|n| rollup::Node {
+            id: n.task.id,
+            parent: n.task.parent,
+            position: n.task.position,
+            status: n.task.status,
+            blocked_reason: n.task.blocked_reason.clone(),
+        })
+        .collect();
+    let parents = rollup::roll_up(&mut flat);
+    for ((node, shown), has_steps) in nodes.iter_mut().zip(flat).zip(parents) {
+        node.task.status = shown.status;
+        node.task.blocked_reason = shown.blocked_reason;
+        node.has_steps = has_steps;
+    }
+}
+
+/// Rule 16: a task waits while any task it waits on, as it shows, is neither done nor
+/// dropped. A blocker missing from the tree is a rejected proposal, so it's dropped.
+fn mark_waiting(nodes: &mut [TaskNode], edges: &[(TaskId, TaskId)]) {
+    let status: HashMap<TaskId, Status> =
+        nodes.iter().map(|n| (n.task.id, n.task.status)).collect();
+    let index: HashMap<TaskId, usize> = nodes
+        .iter()
+        .enumerate()
+        .map(|(i, n)| (n.task.id, i))
+        .collect();
+    for (task, blocker) in edges {
+        let open = status
+            .get(blocker)
+            .is_some_and(|s| !matches!(s, Status::Done | Status::Dropped));
+        if open && let Some(&i) = index.get(task) {
+            nodes[i].waiting = true;
+        }
+    }
 }
 
 /// Fills in each node's `subtree_last_event_at` from its own newest event and its
@@ -328,6 +402,10 @@ pub(crate) fn set_branch(
     let before = get(tx, id)?;
     if branch == before.branch.as_deref() {
         return Ok(before);
+    }
+    // Rule 10: a parent's work happens on its steps' branches. Clearing an old one is fine.
+    if branch.is_some() && rollup::has_steps(tx, id)? {
+        return Err(Error::HasSteps);
     }
     tx.execute(
         "UPDATE tasks SET branch = ?2 WHERE id = ?1",

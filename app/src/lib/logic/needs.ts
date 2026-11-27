@@ -10,7 +10,6 @@ export const KIND_LABEL: Record<NeedsKind, string> = {
   agent_stopped: 'Agent stopped',
   proposed: 'Proposed subtasks',
   ready: 'Ready to start',
-  finish_it: 'Finish it?',
   quiet: 'Quiet 5+ days',
 };
 
@@ -35,7 +34,6 @@ export const KIND_ICON: Record<NeedsKind, IconName> = {
   agent_stopped: 'stopped',
   proposed: 'proposed',
   ready: 'play',
-  finish_it: 'flag',
   quiet: 'moon',
 };
 
@@ -46,11 +44,10 @@ export const GROUP_LABEL: Record<NeedsGroup, string> = {
   stopped: 'Stopped',
   proposed: 'Proposed',
   ready: 'Ready',
-  finish_it: 'Finish it?',
   quiet: 'Quiet',
 };
 
-export const GROUP_ORDER: NeedsGroup[] = ['questions', 'reviews', 'failed_runs', 'stopped', 'proposed', 'ready', 'finish_it', 'quiet'];
+export const GROUP_ORDER: NeedsGroup[] = ['questions', 'reviews', 'failed_runs', 'stopped', 'proposed', 'ready', 'quiet'];
 
 /** The main action (↩ / ⌘↩) for each kind. */
 export function mainLabel(kind: NeedsKind): string {
@@ -66,8 +63,6 @@ export function mainLabel(kind: NeedsKind): string {
       return 'Accept all';
     case 'ready':
       return 'Do it';
-    case 'finish_it':
-      return 'Mark done';
     case 'quiet':
       return 'Open';
   }
@@ -75,12 +70,12 @@ export function mainLabel(kind: NeedsKind): string {
 
 /** Kinds whose card offers Mark done (Space in Needs me). */
 export function canMarkDone(kind: NeedsKind): boolean {
-  return kind === 'agent_stopped' || kind === 'finish_it';
+  return kind === 'agent_stopped';
 }
 
-/** The quieter action beside it: Dismiss for most, Keep open, Snooze 3 days, Reject all. */
+/** The quieter action beside it: Dismiss for most, Snooze 3 days, Reject all. */
 export function otherLabel(kind: NeedsKind): string {
-  return kind === 'finish_it' ? 'Keep open' : kind === 'quiet' ? 'Snooze 3 days' : kind === 'proposed' ? 'Reject all' : 'Dismiss';
+  return kind === 'quiet' ? 'Snooze 3 days' : kind === 'proposed' ? 'Reject all' : 'Dismiss';
 }
 
 /** Items grouped in the fixed order, each group with its items. */

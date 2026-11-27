@@ -1,4 +1,5 @@
-//! Agent stopped: a `doing` task whose agents have all stopped, with no PR to review.
+//! Agent stopped: a `doing` task whose agents have all stopped, with no PR to review. Never a
+//! parent, whose status follows its steps.
 //!
 //! A run that ends without a PR leaves its task `doing` with nothing to decide in any other
 //! kind until it turns Quiet days later. So once every linked thread is idle, settled or gone
@@ -24,14 +25,16 @@ struct Prs {
 }
 
 pub(crate) fn stopped(ctx: &Ctx<'_>, out: &mut Vec<Entry>, wake: &mut Wake) {
-    // Each `doing` task's linked threads; `None` for one sync has no view of yet.
+    // Each `doing` task's linked threads; `None` for one sync has no view of yet. A parent
+    // shows doing because a step is, and nothing finishes it (SPEC-core rule 10), so its
+    // threads ask nothing here.
     let mut threads: HashMap<TaskId, Vec<(&str, Option<&ThreadView>)>> = HashMap::new();
     for (key, tasks) in &ctx.sync.thread_tasks {
         let view = ctx.sync.threads.get(key);
         for &task in tasks {
             if ctx
                 .node(task)
-                .is_some_and(|n| n.task.status == Status::Doing)
+                .is_some_and(|n| n.task.status == Status::Doing && !n.has_steps)
             {
                 let list = threads.entry(task).or_default();
                 if !list.iter().any(|(r, _)| *r == key.r#ref) {

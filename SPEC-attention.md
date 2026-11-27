@@ -18,7 +18,7 @@ It builds on [`core`](SPEC-core.md) v3 and on `SyncService`, and implements `Att
 
 - **A library in the app process**, `crates/attention`, with one worker thread and one thread that waits on `sync`'s `Changes`. Driven by changes, plus one wake-up at the next known deadline (never more than 15 minutes away).
 - **One pure function decides everything:** `compute(inputs, hidden, now, config)` returns the items and the next deadline. Its inputs are the latest `StoreChange.snapshot` and `sync.snapshot()`, both `Arc`s. A change costs no `core` read at all.
-- **Nine kinds in eight groups:** the design's seven, plus Stopped for Agent stopped (EM, 26 Nov 2026, integration QA R5: a run that ends without a PR otherwise leaves its task `doing` with nothing in Needs me until it turns Quiet). Untracked threads aren't a kind; the design has no group for them.
+- **Eight kinds in seven groups:** the design's seven, plus Stopped for Agent stopped (EM, 26 Nov 2026, integration QA R5: a run that ends without a PR otherwise leaves its task `doing` with nothing in Needs me until it turns Quiet), less "Finish it?" (27 Nov 2026: a parent's status follows its steps, SPEC-core rule 10, so there's nothing to finish). Untracked threads aren't a kind; the design has no group for them.
 - **Each item's key names one occurrence** (one request, one PR, one quiet stretch). Dismiss hides that key; a new occurrence has a new key and shows. Snooze is a dismissal with an end time.
 - **The count** is the number of visible items; the menu bar shows it and the first 6 items.
 - **Thresholds** (EM, 25 Nov): quiet after 5 days, snooze for 3 days, "became ready" shown for 7 days, and a PR isn't a review while an agent on its task is still running. Agent stopped waits 10 minutes (EM, 26 Nov).
@@ -109,14 +109,13 @@ From `CoreSnapshot`: `tree` (statuses, titles, `last_event_at`, `subtree_last_ev
 | Approval (Questions) | the same, with an `Approval` request | `approval:<request id>` | request time | "Allow: {first line of the text}" · "Agent in {thread title} wants approval" | Open thread |
 | Review (Reviews) | a linked PR is `open`, not a draft, without a problem; its task is open; none of that task's threads is `Running` or `NeedsMe` | `review:<pr ref>` | `ready_since` | "PR #{n} · {title}" · "+{add} −{del} · checks {passing/failing/pending} · {approved/changes requested/review required}" | Open PR |
 | Failed run (Failed runs) | a linked T3 thread is `Errored`, and its task is open | `failed:<run id>` | the thread's `last_activity_at` | "{thread title} stopped: {error}" · "Thread stopped · {error}" | Open thread |
-| Agent stopped (Stopped) | the task is `doing`; it has at least one linked thread; every one is `Idle`, `Settled` or `Gone`; no linked PR is open (or of unknown state); and `stopped_after` (10 min) has passed since the last change | `stopped:<task id>:<last change>` | the last change: the newest of the task's own `last_event_at` and its threads' `last_activity_at` | "Agent stopped · no PR yet" (or "· no open PR" when its only PRs are closed or merged) · "{thread title} stopped", or "All {n} threads stopped" | Open thread (the most recently active one) |
+| Agent stopped (Stopped) | the task is `doing` and has no steps (a parent shows `doing` because a step is, SPEC-core rule 10); it has at least one linked thread; every one is `Idle`, `Settled` or `Gone`; no linked PR is open (or of unknown state); and `stopped_after` (10 min) has passed since the last change | `stopped:<task id>:<last change>` | the last change: the newest of the task's own `last_event_at` and its threads' `last_activity_at` | "Agent stopped · no PR yet" (or "· no open PR" when its only PRs are closed or merged) · "{thread title} stopped", or "All {n} threads stopped" | Open thread (the most recently active one) |
 | Proposed (Proposed) | tree nodes with status `proposed`: one item per parent; a top-level proposal is its own item | `proposed:<parent id>:<largest proposed id>`, or `proposed:<id>` | newest `created_at` in the group | "The agent proposed {n} subtasks" · "{n} proposed subtasks" | Accept all, Reject all, or each |
 | Ready (Ready) | in `ready`, with at least one edge `(task, _)` (so every blocker finished), and `since` within `ready_window` | `ready:<task id>:<since>` | `since` | "Ready to start: {ids} {is/are} done" · "{ids} done · ready to start" | Do it |
-| Finish it? (Finish it?) | an open parent whose subtasks that aren't dropped are all `done`, with at least one | `finish:<parent id>:<since>` | latest `last_event_at` of those subtasks | "All {n} subtasks are done. Mark the parent done?" · "All {n} subtasks done" | Mark done, or Keep open (dismisses) |
 | Quiet (Quiet) | `doing`, `in_review` or `blocked`; quiet for `quiet_after` or longer; no ancestor shown as quiet | `quiet:<task id>:<activity>` | last activity | "No activity for {d} days." plus " {n} open PRs." if any · "Quiet for {d} days" | Open, or Snooze 3 days |
 
 - **One item per request or PR.** A thread or PR linked to several open tasks gives one item, at the lowest task id; `for_task` shows it as a callout on each of those tasks.
-- **Proposed children count as not done,** so a parent with an open proposal isn't "Finish it?"; nor is a parent whose subtasks are all dropped. `core` never finishes a parent itself (rule 10).
+- **No "Finish it?".** A parent shows what its steps add up to (SPEC-core rule 10), so it's done when they are and nothing asks to finish it. Rows hidden under the old `finish` kind are skipped when read.
 - **Ready names its blockers** from `edges`, in id order, up to two ("143 and 145 are done"); more read "3 tasks it waited on are done". If one blocker has a merged PR in `pr_tasks`, the context reads "143 merged · ready to start".
 - **Last activity**, for Quiet, is the latest across the task and every task under it of: `subtree_last_event_at` (which includes `sync`'s failed-run notes); each linked thread's `last_activity_at`, where a `Running` or `NeedsMe` thread counts as now; and each linked PR's `updated_at`. One bottom-up pass over `tree`; Quiet is then checked top-down, so a quiet parent hides its quiet subtasks.
 - **Agent stopped** is one item per `doing` task, not per thread, because its actions (Mark done, Set in review) act on the task. A thread linked to two `doing` tasks gives each its own item. It clears when any condition stops holding: an agent runs or asks again, a thread errors (a Failed run shows instead), a PR opens, or the task leaves `doing`. A thread `sync` has no view of yet counts as not stopped, and so does a PR whose state isn't known yet, so nothing shows before `sync`'s first read. The task's own `last_event_at` counts, not its subtree's: a subtask's change isn't a change to this task. A new stop after the agent was resumed has a newer last change, so a new key, and shows again after a dismiss.
@@ -125,7 +124,7 @@ From `CoreSnapshot`: `tree` (statuses, titles, `last_event_at`, `subtree_last_ev
 
 ### Order
 
-Groups in the design's order, with Stopped right after Failed runs (both are a run that ended): Questions, Reviews, Failed runs, Stopped, Proposed, Ready, Finish it?, Quiet. Inside a group, newest `since` first; in Quiet, longest quiet first. Ties by task id, then key. `for_task` uses the same order.
+Groups in the design's order, with Stopped right after Failed runs (both are a run that ended): Questions, Reviews, Failed runs, Stopped, Proposed, Ready, Quiet. Inside a group, newest `since` first; in Quiet, longest quiet first. Ties by task id, then key. `for_task` uses the same order.
 
 ### What each action calls
 
@@ -185,7 +184,7 @@ Groups in the design's order, with Stopped right after Failed runs (both are a r
 
 Tests use a `FakeSync` (a `SyncService` returning chosen snapshots and bumping `Changes` on demand), `CoreSnapshot`s built by hand, and `FakeClock`. They never touch `gh`, `t3` or T3's database.
 
-- **`tests/kinds.rs`** calls `compute` directly: one test per kind showing, and one per rule hiding it (a question on a done task, a draft PR, a PR while its agent runs, a ready task with no edges, readiness older than the window, a parent with a proposed or only dropped subtasks, a quiet child under a quiet parent); the lowest-task-id rule; Ready naming blockers from `edges` and a merged PR.
+- **`tests/kinds.rs`** calls `compute` directly: one test per kind showing, and one per rule hiding it (a question on a done task, a draft PR, a PR while its agent runs, a ready task with no edges, readiness older than the window, a parent whose steps are all done, a parent in progress through its steps never "stopped", a quiet child under a quiet parent); the lowest-task-id rule; Ready naming blockers from `edges` and a merged PR.
 - **`tests/order.rs`:** group order, newest first, Quiet longest first, ties.
 - **`tests/stopped.rs`** (Agent stopped): a table of one case per rule (each stopped state, too early by 1 ms, a thread still running or waiting, one errored, no thread, an open, draft or unknown PR, only a closed PR, each other status); the last change counted from the task and every thread, not subtasks; `next_wake` at the 10 minutes and the config's value; one item per `doing` task; the order after Failed runs; Quiet giving way; a new stop being a new key; the worker's `Tick` at the deadline and `Woke` after a sleep.
 - **`tests/time.rs`:** exactly 5 days; `next_wake` equals last activity plus 5 days and is later than `now`; a sleep of 6 days, then `Woke`, puts the task in Quiet at once; a snooze ending; the 15-minute cap with nothing due.
@@ -210,7 +209,7 @@ crates/attention/
 ## Boundaries
 
 - **Always:** derive items only from the snapshots and `attention_hidden`; keep `compute` pure; recompute only on a message or at `next_wake`.
-- **Ask first:** a new kind or group (the design fixes eight groups, Stopped included); changing a default threshold; a new crate.
+- **Ask first:** a new kind or group (the design fixes seven groups, Stopped included, "Finish it?" gone); changing a default threshold; a new crate.
 - **Never:** change a task, link or status; read `core` after start; run `gh` or `t3` or read T3's files; poll; show untracked threads as items.
 
 ## Success criteria
@@ -365,9 +364,9 @@ pub struct NeedsItem {
     pub proposed: Vec<(TaskId, String)>,                // Proposed only
     pub stale: bool,
 }
-pub enum NeedsKind { Question, Approval, Review, FailedRun, AgentStopped, Proposed, Ready, FinishIt, Quiet }
+pub enum NeedsKind { Question, Approval, Review, FailedRun, AgentStopped, Proposed, Ready, Quiet }
 impl NeedsKind { pub fn group(self) -> NeedsGroup; }
-pub enum NeedsGroup { Questions, Reviews, FailedRuns, Stopped, Proposed, Ready, FinishIt, Quiet }   // display order
+pub enum NeedsGroup { Questions, Reviews, FailedRuns, Stopped, Proposed, Ready, Quiet }   // display order
 pub enum Target { Thread(ThreadKey), Pr { r#ref: PrRef, url: Option<String> }, Task(TaskId) }
 ```
 
@@ -399,3 +398,9 @@ The EM's decision on finding R5 (26 Nov 2026), in `tasks/program.md`:
 4. **Quiet gives way** to a visible Agent stopped item on the same task.
 5. **Actions:** Open thread (main), Mark done and Set in review (as me), Snooze 3 days and Dismiss.
 
+## Parents are containers: no "Finish it?" (27 Nov 2026)
+
+SPEC-core rule 10 (task 53, agreed with the user on 27 Nov 2026): a task with steps has no status of its own; it's done when its steps are. So:
+
+1. **The Finish it? kind and group are gone** (`NeedsKind::FinishIt`, `NeedsGroup::FinishIt`, `kinds::finish`). The migrations keep `'finish'` in the CHECK, since they're append-only; a hidden row of that kind is skipped when read, like any unknown kind.
+2. **Agent stopped skips parents.** A parent shows `doing` while a step is, and a thread linked to it from before it had steps would otherwise ask to finish something only its steps finish.

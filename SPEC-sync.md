@@ -21,6 +21,7 @@ It builds on [`core`](SPEC-core.md) v3 and implements `SyncService` from the sha
 - **Only GitHub decides PR state.** Every PR state that reaches `core` (`set_pr_state`, and the state a PR is linked with) was read by `sync:gh` from GitHub. A state seen only through T3 never reopens or finishes anything.
 - **GitHub through one batched `gh api graphql` call per account per pass.** One process and 1 rate-limit point cover up to 50 PRs. Every github.com account `gh` is logged in to is used, each with its own health, backoff and rate limit. Tokens live in a `Secret` and only ever reach a child process's environment.
 - **A task finishes** when all its PR links have a GitHub-read state of merged or closed, at least one merged, **and** none of its linked threads is `running` or `needs_me`. Until then the finish is held. The rule is the same for one repo or several: code isn't done while an agent on it is still working.
+- **A parent is never finished** (SPEC-core rule 10): a task with steps shows what its steps add up to, so it's done when they are. The finish check skips it, even when it has PRs linked from before it had steps, and a PR T3 lists on its thread isn't linked to it.
 - **T3 is read from its database, not its CLI** (`t3 thread show --json` costs 0.33 s of CPU a call; the database answers in about 1 ms). All T3-specific SQL lives in `src/t3/`. Anything unexpected there (an unknown status or kind, a required JSON key missing) marks T3 sync `Broken` with the reason. It never guesses.
 - **Watch with kqueue, never poll.** FSEvents doesn't report writes to a WAL file that a process keeps open, so `sync` watches T3's `-wal` with kqueue (`notify`'s kqueue backend) and re-arms the watch when the file is recreated. GitHub is the only timer: every 5 minutes, plus on demand.
 - **Notes:** only a failed run writes a history note (`sync:t3`). Questions and approvals are live state for Needs me, not history.
@@ -209,7 +210,7 @@ fragment pr on PullRequest {
 | rollup `state` SUCCESS / FAILURE, ERROR / PENDING, EXPECTED / no rollup | `checks` passing / failing / pending / none | |
 | `additions`, `deletions`, `title`, `url`, `headRefName`, `author.login`, `updatedAt`, `mergedAt` | same | |
 
-**Finishing.** The *finish check* for a task passes when it is `todo`, `doing`, `in_review` or `blocked`; every one of its PR links has an `observed_prs` state (a GitHub read); none is `open`; and at least one is `merged`. It runs only on these triggers, never because I changed a task:
+**Finishing.** The *finish check* for a task passes when it has no steps (`has_steps` is false: a parent's status follows its steps, SPEC-core rule 10); it is `todo`, `doing`, `in_review` or `blocked`; every one of its PR links has an `observed_prs` state (a GitHub read); none is `open`; and at least one is `merged`. It runs only on these triggers, never because I changed a task:
 
 1. **A PR left open:** GitHub says merged or closed where `observed_prs` or `core` still said `open`. Check every task linked to it.
 2. **A link's first read:** a PR link with no `observed_prs` row yet (or one `sync:t3` just made) is read, and is merged or closed. Check that link's tasks.
@@ -219,7 +220,7 @@ When the check passes: first `set_pr_state(ref, <GitHub state>, sync:gh)` for ea
 
 **Reopened.** GitHub says open where `core` says closed: `set_pr_state(ref, Open, sync:gh)`, and `core` moves done tasks linked to it back to `in_review` (rule 7).
 
-**PRs found on threads.** Each T3 pass reads `$.pullRequests[*]` of each linked thread (open tasks only). An entry counts when its `host` is `github.com` and its `linkedAt` is at or after the earliest `linked_at` of that thread's `t3_thread` links. Its ref is `PrRef::new(repository, number)`. A ref not in `pr_seen` or `pr_waiting` goes into `pr_waiting`, and a GitHub read follows 5 s later. Once GitHub has read it: `link(task, NewLink::pr(ref).with_url(url).with_title(title).with_pr_state(<GitHub state>), sync:t3)` for each task whose thread link is no newer than the entry's `linkedAt`, then, only once every one of those links is in `core`, the ref moves to `pr_seen` (so a link I remove isn't re-added), then trigger 2. A link `core` refuses, such as on a busy file, leaves the ref waiting, so the next pass links it. A ref GitHub can't read stays waiting with its error shown, retried with the account's backoff. T3's own `snapshot.state` is never used.
+**PRs found on threads.** Each T3 pass reads `$.pullRequests[*]` of each linked thread (open tasks only). An entry counts when its `host` is `github.com` and its `linkedAt` is at or after the earliest `linked_at` of that thread's `t3_thread` links. Its ref is `PrRef::new(repository, number)`. A ref not in `pr_seen` or `pr_waiting` goes into `pr_waiting`, and a GitHub read follows 5 s later. Once GitHub has read it: `link(task, NewLink::pr(ref).with_url(url).with_title(title).with_pr_state(<GitHub state>), sync:t3)` for each task whose thread link is no newer than the entry's `linkedAt`, then, only once every one of those links is in `core`, the ref moves to `pr_seen` (so a link I remove isn't re-added), then trigger 2. A link `core` refuses, such as on a busy file, leaves the ref waiting, so the next pass links it. `HasSteps` is the exception: a parent takes no PR (a thread on a whole parent links its PRs to the steps), so that task counts as done with and nothing is retried. A ref GitHub can't read stays waiting with its error shown, retried with the account's backoff. T3's own `snapshot.state` is never used.
 
 ### T3 threads
 
@@ -463,3 +464,10 @@ crates/sync/
 9. **Time:** wall-clock deadlines, 15-minute cap, `woke()`, `next_wake > now`; workers are `handle(msg, now)` state machines.
 10. **Cost:** Q1, Q2, Q4 and Q5 only for threads on open tasks; wake-ups and idle CPU stated.
 11. **`SyncService`:** `find_thread` (Q7), `thread_url`, T3's project list in `SyncSnapshot.projects` (Q8), `chip() -> Option<Chip>` and `Connection` names, matching the app's draft 2.
+
+## Parents are containers (27 Nov 2026)
+
+SPEC-core rule 10 makes a task with steps a container whose status follows them, replacing proposal #50 (the finish check never looked at subtasks, so a parent with a merged PR could finish with steps open).
+
+- The finish check skips a task with steps, and releases any hold on it. A merged PR linked to a parent before it had steps finishes nothing (`a_parent_with_an_old_pr_is_never_finished`).
+- A PR T3 lists on a parent's thread isn't linked to the parent; `core`'s `HasSteps` counts as done with, so the ref moves to `pr_seen` and isn't retried (`a_pr_on_a_parents_thread_is_left_for_its_steps`).

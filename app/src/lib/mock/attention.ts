@@ -1,13 +1,13 @@
 /*
   The mock's stand-in for `attention`: after a write it drops items whose reason has gone and
-  adds the Ready and Finish it? items a write can cause, as SPEC-attention's table describes.
+  adds the Ready items a write can cause, as SPEC-attention's table describes.
 */
 
 import type { NeedsGroup, NeedsItem, TaskId } from '../types';
 import { isOpen, ts, type MockState } from './model';
-import { indexTree, isReady, liveKids, openBlockers, visibleNeeds, type TreeIndex } from './viewmodel';
+import { indexTree, isReady, liveKids, openBlockers, stepsOf, visibleNeeds, type TreeIndex } from './viewmodel';
 
-export const GROUP_ORDER: NeedsGroup[] = ['questions', 'reviews', 'failed_runs', 'stopped', 'proposed', 'ready', 'finish_it', 'quiet'];
+export const GROUP_ORDER: NeedsGroup[] = ['questions', 'reviews', 'failed_runs', 'stopped', 'proposed', 'ready', 'quiet'];
 
 export function sortNeeds(items: NeedsItem[]): NeedsItem[] {
   return [...items].sort(
@@ -32,8 +32,9 @@ function stillHolds(s: MockState, ix: TreeIndex, n: NeedsItem): NeedsItem | null
       return th && th.view.state === want ? n : null;
     }
     case 'agent_stopped': {
-      // A doing task whose every linked thread stopped, with no open PR (SPEC-attention).
-      if (t.status !== 'doing') return null;
+      // A doing task whose every linked thread stopped, with no open PR (SPEC-attention). Never
+      // a parent: its status follows its steps (SPEC-core rule 10).
+      if (t.status !== 'doing' || stepsOf(s, ix, n.task).length) return null;
       const threads = [...s.threads.values()].filter((th) => th.tasks.includes(n.task));
       const stopped = threads.length > 0 && threads.every((th) => ['idle', 'settled', 'gone'].includes(th.view.state));
       const openPr = [...s.prs.values()].some((p) => p.state === 'open' && s.links.some((l) => l.task === n.task && l.kind === 'pr' && l.ref === p.ref));
@@ -60,17 +61,9 @@ function stillHolds(s: MockState, ix: TreeIndex, n: NeedsItem): NeedsItem | null
     }
     case 'ready':
       return isReady(s, ix, n.task) ? n : null;
-    case 'finish_it':
-      return finishable(s, ix, n.task) ? n : null;
     case 'quiet':
       return t.status === 'doing' || t.status === 'in_review' || t.status === 'blocked' ? n : null;
   }
-}
-
-function finishable(s: MockState, ix: TreeIndex, id: TaskId): boolean {
-  const t = s.tasks.get(id)!;
-  const kids = liveKids(s, ix, id);
-  return isOpen(t.status) && kids.length > 0 && kids.every((k) => s.tasks.get(k)!.status === 'done');
 }
 
 /** Recomputes the list. Returns true when it changed (and bumps `version`). */
@@ -97,22 +90,6 @@ export function recomputeNeeds(s: MockState, version: { value: number }): boolea
         since: now,
         headline: `Ready to start: ${names} ${verb} done`,
         context: `${names} done · ready to start`,
-        target: { task: t.id },
-        proposed: [],
-        stale: false,
-      });
-    }
-    if (finishable(s, ix, t.id) && !has('finish_it', t.id)) {
-      const n = liveKids(s, ix, t.id).length;
-      kept.push({
-        key: `finish:${t.id}:${now}`,
-        kind: 'finish_it',
-        group: 'finish_it',
-        task: t.id,
-        task_title: t.title,
-        since: now,
-        headline: `All ${n} subtasks are done. Mark the parent done?`,
-        context: `All ${n} subtasks done`,
         target: { task: t.id },
         proposed: [],
         stale: false,

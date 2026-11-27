@@ -1,4 +1,5 @@
 //! The finish check: a task's PRs merged on GitHub finish it, once no agent on it works.
+//! A task with steps is never finished: its status follows them.
 //!
 //! It runs only on a trigger (a PR left open, a link's first read, a hold ending), never
 //! because I changed a task, so a task I reopen stays open. Each step is safe to repeat.
@@ -50,9 +51,11 @@ pub(crate) fn check(
 ) -> Outcome {
     let read = {
         let store = lock(store);
-        store.task(task).and_then(|t| Ok((t, store.links(task)?)))
+        store
+            .task(task)
+            .and_then(|t| Ok((t, store.links(task)?, store.has_steps(task)?)))
     };
-    let (t, links) = match read {
+    let (t, links, parent) = match read {
         Ok(found) => found,
         Err(Error::NotFound) => {
             release(db, task);
@@ -64,7 +67,9 @@ pub(crate) fn check(
         }
     };
     let prs: Vec<_> = links.iter().filter(|l| l.kind == LinkKind::Pr).collect();
-    if !is_open(t.status) || prs.is_empty() {
+    // A parent's status follows its steps, so nothing finishes it, not even an old PR
+    // linked to it before it had steps (SPEC-core rule 10).
+    if parent || !is_open(t.status) || prs.is_empty() {
         release(db, task);
         return Outcome::NotYet;
     }
