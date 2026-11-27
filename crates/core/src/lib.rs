@@ -35,7 +35,7 @@ pub use error::{Error, NEWER_DATABASE, Result};
 pub use location::{DB_VAR, default_db_path};
 pub use model::TaskEdit;
 pub use model::{
-    Actor, Event, EventKind, NewTask, Origin, Repo, Status, Task, TaskNode, UnknownValue,
+    Actor, Event, EventKind, NewTask, Origin, Priority, Repo, Status, Task, TaskNode, UnknownValue,
 };
 pub use model::{CoreSnapshot, Dependencies, OutsideWait, ReadyTask, RejectOutcome, RunOrder};
 pub use model::{DepRef, PlanResult, PlanTask};

@@ -141,6 +141,52 @@ impl FromStr for Status {
     }
 }
 
+/// How urgent a task is, P0 the most. A task may have none; then it sorts after P3.
+///
+/// Serializes as `"p0"` to `"p3"` and prints as `P0` to `P3`; it's stored as 0 to 3. It only
+/// ranks tasks for filtering and sorting: sibling order within a parent stays its own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Priority {
+    P0,
+    P1,
+    P2,
+    P3,
+}
+
+impl Priority {
+    /// All four, most urgent first.
+    pub const ALL: [Priority; 4] = [Priority::P0, Priority::P1, Priority::P2, Priority::P3];
+
+    /// The number stored in the database, 0 to 3.
+    pub(crate) fn as_int(self) -> i64 {
+        self as i64
+    }
+
+    /// Reads the stored number back.
+    pub(crate) fn from_int(n: i64) -> Option<Priority> {
+        Priority::ALL.into_iter().find(|p| p.as_int() == n)
+    }
+}
+
+impl fmt::Display for Priority {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "P{}", self.as_int())
+    }
+}
+
+impl FromStr for Priority {
+    type Err = UnknownValue;
+
+    /// Reads `P0` to `P3`, in either case.
+    fn from_str(text: &str) -> Result<Priority, UnknownValue> {
+        Priority::ALL
+            .into_iter()
+            .find(|p| p.to_string().eq_ignore_ascii_case(text.trim()))
+            .ok_or_else(|| UnknownValue(text.to_string()))
+    }
+}
+
 /// How a task came to exist.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -187,6 +233,8 @@ pub struct Task {
     pub plan_key: Option<String>,
     /// The branch every thread for this task shares; `None` until one is chosen.
     pub branch: Option<String>,
+    /// How urgent it is; `None` when no priority is set. Its own, never worked out from steps.
+    pub priority: Option<Priority>,
     pub created_at: String,
 }
 
@@ -197,6 +245,8 @@ pub struct NewTask {
     pub parent: Option<TaskId>,
     pub repos: Vec<RepoId>,
     pub body: Option<String>,
+    #[serde(default)]
+    pub priority: Option<Priority>,
 }
 
 impl NewTask {
@@ -225,6 +275,12 @@ impl NewTask {
     /// Adds notes.
     pub fn with_body(mut self, body: impl Into<String>) -> NewTask {
         self.body = Some(body.into());
+        self
+    }
+
+    /// Gives it a priority.
+    pub fn with_priority(mut self, priority: Priority) -> NewTask {
+        self.priority = Some(priority);
         self
     }
 }
@@ -330,12 +386,14 @@ pub struct Event {
     pub at: String,
 }
 
-/// What `me` changes about a task. `None` leaves a field as it is; for the body,
-/// `Some(None)` clears it. Repos change through `link_repo` and `unlink_repo`.
+/// What `me` changes about a task. `None` leaves a field as it is; for the body and the
+/// priority, `Some(None)` clears it. Repos change through `link_repo` and `unlink_repo`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskEdit {
     pub title: Option<String>,
     pub body: Option<Option<String>>,
+    #[serde(default)]
+    pub priority: Option<Option<Priority>>,
 }
 
 impl TaskEdit {
@@ -348,6 +406,12 @@ impl TaskEdit {
     /// Replaces the notes; `None` clears them.
     pub fn body(mut self, body: Option<&str>) -> TaskEdit {
         self.body = Some(body.map(str::to_string));
+        self
+    }
+
+    /// Sets the priority; `None` clears it.
+    pub fn priority(mut self, priority: Option<Priority>) -> TaskEdit {
+        self.priority = Some(priority);
         self
     }
 }

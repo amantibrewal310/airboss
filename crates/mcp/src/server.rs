@@ -15,9 +15,10 @@ use crate::render::ToolError;
 use crate::tools;
 
 const LIST_TASKS: &str = "List tasks in tree order. Start here: `mine: true` finds the tasks \
-linked to this thread; otherwise filter by `repos`, `status`, `ready` or `query`. Done and \
-dropped tasks are left out unless `status` names them. Returns at most 200 (`truncated` says \
-there were more). Next: get_task on the task you'll work on.";
+linked to this thread; otherwise filter by `repos`, `status`, `ready`, `query` or `priority` \
+(p0 most urgent to p3). `sort: \"priority\"` puts the most urgent first. Done and dropped tasks \
+are left out unless `status` names them. Returns at most 200 (`truncated` says there were \
+more). Next: get_task on the task you'll work on.";
 
 const GET_TASK: &str = "Read one task before working on it: notes, repos, branch, links, the \
 last 20 history entries, what it waits on and what waits on it, subtasks and their run order. \

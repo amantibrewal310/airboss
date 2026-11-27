@@ -9,8 +9,8 @@ use std::fmt;
 use std::io::IsTerminal;
 
 use airboss_core::{
-    Actor, Error, Event, EventId, EventKind, Link, LinkId, LinkKind, Origin, PrState, Repo, RepoId,
-    Status, Store, Task, TaskId,
+    Actor, Error, Event, EventId, EventKind, Link, LinkId, LinkKind, Origin, PrState, Priority,
+    Repo, RepoId, Status, Store, Task, TaskId,
 };
 use serde::Serialize;
 
@@ -48,6 +48,8 @@ pub struct TaskView {
     pub title: String,
     pub status: Status,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub priority: Option<Priority>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub blocked_reason: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent: Option<TaskId>,
@@ -69,6 +71,7 @@ impl TaskView {
             repos: repos.names(&task.repos),
             title: task.title,
             status: task.status,
+            priority: task.priority,
             blocked_reason: task.blocked_reason,
             parent: task.parent,
             branch: task.branch,
@@ -86,6 +89,8 @@ pub struct NodeView {
     pub id: TaskId,
     pub title: String,
     pub status: Status,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub priority: Option<Priority>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent: Option<TaskId>,
     pub depth: u32,

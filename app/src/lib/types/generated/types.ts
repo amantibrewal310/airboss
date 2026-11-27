@@ -430,6 +430,11 @@ export type PrView = { ref: PrRef, linked: boolean, url: string | null, title: s
 export type Prepared = { repos: Array<Repo>, from_subtasks: boolean, needs_choice: boolean, choices: Array<Repo>, branch: string | null, research_dir: string, waiting_on: Array<TaskId>, started: Array<StartedThread>, };
 
 /**
+ * `core::Priority`: p0 is the most urgent.
+ */
+export type Priority = "p0" | "p1" | "p2" | "p3";
+
+/**
  * Leaf subtasks at any depth: dropped ones left out, proposed ones counted as todo.
  */
 export type Progress = { done: number, total: number, in_review: number, doing: number, blocked: number, };
@@ -485,7 +490,11 @@ export type Review = "approved" | "changes_requested" | "required" | "none";
 /**
  * One row of the task list: everything it draws, worked out in Rust.
  */
-export type RowDto = { id: TaskId, parent: TaskId | null, depth: number, position: number, title: string, status: Status, origin: Origin, blocked_reason: string | null, 
+export type RowDto = { id: TaskId, parent: TaskId | null, depth: number, position: number, title: string, status: Status, origin: Origin, 
+/**
+ * Its own priority, P0 to P3, for the badge; `null` when none is set.
+ */
+priority: Priority | null, blocked_reason: string | null, 
 /**
  * Something it waits on is still open.
  */
@@ -657,7 +666,7 @@ export type Target = { "thread": ThreadKey } | { "pr": { ref: PrRef, url: string
 /**
  * `core::Task`.
  */
-export type Task = { id: TaskId, parent: TaskId | null, repos: Array<RepoId>, title: string, body: string | null, status: Status, blocked_reason: string | null, position: number, origin: Origin, plan_key: string | null, branch: string | null, created_at: Timestamp, };
+export type Task = { id: TaskId, parent: TaskId | null, repos: Array<RepoId>, title: string, body: string | null, status: Status, blocked_reason: string | null, position: number, origin: Origin, plan_key: string | null, branch: string | null, priority: Priority | null, created_at: Timestamp, };
 
 /**
  * Everything the task panel and page show for one task.

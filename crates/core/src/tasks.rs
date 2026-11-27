@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use crate::events::{self, bad_text};
-use crate::model::{Actor, EventKind, NewTask, Origin, Status, Task, TaskEdit, TaskNode};
+use crate::model::{Actor, EventKind, NewTask, Origin, Priority, Status, Task, TaskEdit, TaskNode};
 use crate::permissions::{Call, allowed};
 use crate::sql::query_all;
 use crate::tx::Tx;
@@ -27,7 +27,7 @@ impl crate::Store {
         tree(&self.conn)
     }
 
-    /// Changes a task's title or notes. Only `me` does this (rule 8).
+    /// Changes a task's title, notes or priority. Only `me` does this (rule 8).
     pub fn edit_task(&mut self, id: TaskId, change: TaskEdit, actor: &Actor) -> Result<Task> {
         self.write(|tx| edit(tx, id, change, actor))
     }
@@ -50,22 +50,27 @@ impl crate::Store {
     }
 }
 
-/// A task's columns (table alias `t`), its repos last as ids joined by commas in repo-name
-/// order. The repos come from an index lookup per row, so every reader gets them without a
+/// A task's columns (table alias `t`), its repos as ids joined by commas in repo-name order,
+/// then its priority. The repos come from an index lookup per row, so every reader gets them without a
 /// second query.
 pub(crate) const TASK_COLUMNS: &str = "t.id, t.parent_id, t.title, t.body, t.status, \
      t.blocked_reason, t.position, t.origin, t.plan_key, t.created_at, t.branch, \
      (SELECT group_concat(tr.repo_id, ',' ORDER BY r.name) \
-      FROM task_repos tr JOIN repos r ON r.id = tr.repo_id WHERE tr.task_id = t.id)";
+      FROM task_repos tr JOIN repos r ON r.id = tr.repo_id WHERE tr.task_id = t.id), \
+     t.priority";
 
 /// How many columns [`TASK_COLUMNS`] selects, so queries can read their own columns after it.
-pub(crate) const TASK_COLUMN_COUNT: usize = 12;
+pub(crate) const TASK_COLUMN_COUNT: usize = 13;
 
 /// Reads a row selected with [`TASK_COLUMNS`] (table alias `t`).
 pub(crate) fn from_row(row: &Row<'_>) -> rusqlite::Result<Task> {
     let status: String = row.get(4)?;
     let origin: String = row.get(7)?;
     let repos: Option<String> = row.get(11)?;
+    let priority = match row.get::<_, Option<i64>>(12)? {
+        Some(n) => Some(Priority::from_int(n).ok_or_else(|| bad_text(12, &n.to_string()))?),
+        None => None,
+    };
     Ok(Task {
         id: TaskId(row.get(0)?),
         parent: row.get::<_, Option<i64>>(1)?.map(TaskId),
@@ -84,6 +89,7 @@ pub(crate) fn from_row(row: &Row<'_>) -> rusqlite::Result<Task> {
         origin: Origin::parse(&origin).ok_or_else(|| bad_text(7, &origin))?,
         plan_key: row.get(8)?,
         branch: row.get(10)?,
+        priority,
         created_at: row.get(9)?,
     })
 }
@@ -159,6 +165,7 @@ pub(crate) struct NewRow<'a> {
     pub body: Option<&'a str>,
     pub origin: Origin,
     pub plan_key: Option<&'a str>,
+    pub priority: Option<Priority>,
 }
 
 /// Writes one task row at the end of `parent`'s children, and links its repos, with no
@@ -175,8 +182,8 @@ pub(crate) fn insert_row(conn: &Connection, row: NewRow<'_>, actor: &Actor) -> R
     };
     let position = next_position(conn, row.parent)?;
     conn.execute(
-        "INSERT INTO tasks (parent_id, title, body, status, position, origin, plan_key)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        "INSERT INTO tasks (parent_id, title, body, status, position, origin, plan_key, priority)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         params![
             row.parent.map(|p| p.0),
             row.title,
@@ -184,7 +191,8 @@ pub(crate) fn insert_row(conn: &Connection, row: NewRow<'_>, actor: &Actor) -> R
             status.as_str(),
             position,
             row.origin.as_str(),
-            row.plan_key
+            row.plan_key,
+            row.priority.map(Priority::as_int)
         ],
     )?;
     let id = TaskId(conn.last_insert_rowid());
@@ -209,6 +217,7 @@ pub(crate) fn add(tx: &mut Tx<'_>, new: NewTask, actor: &Actor) -> Result<Task> 
             body: new.body.as_deref(),
             origin,
             plan_key: None,
+            priority: new.priority,
         },
         actor,
     )?;
@@ -342,9 +351,16 @@ pub(crate) fn edit(tx: &mut Tx<'_>, id: TaskId, edit: TaskEdit, actor: &Actor) -
         None => before.title.clone(),
     };
     let body = edit.body.unwrap_or_else(|| before.body.clone());
+    let priority = edit.priority.unwrap_or(before.priority);
+    // The priority names its new value, as `set_branch` names the branch.
+    let priority_change = match priority {
+        Some(p) => format!("priority: {p}"),
+        None => "priority cleared".to_string(),
+    };
     let changed: Vec<&str> = [
         (title != before.title, "title"),
         (body != before.body, "body"),
+        (priority != before.priority, priority_change.as_str()),
     ]
     .into_iter()
     .filter_map(|(c, name)| c.then_some(name))
@@ -353,8 +369,8 @@ pub(crate) fn edit(tx: &mut Tx<'_>, id: TaskId, edit: TaskEdit, actor: &Actor) -
         return Ok(before);
     }
     tx.execute(
-        "UPDATE tasks SET title = ?2, body = ?3 WHERE id = ?1",
-        params![id.0, title, body],
+        "UPDATE tasks SET title = ?2, body = ?3, priority = ?4 WHERE id = ?1",
+        params![id.0, title, body, priority.map(Priority::as_int)],
     )?;
     fault::hit(fault::TASK_EDITED)?;
     events::record(
