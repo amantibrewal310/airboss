@@ -274,6 +274,7 @@ export function buildRow(s: MockState, ix: TreeIndex, id: TaskId, needs: NeedsIt
     title: t.title,
     status: t.status,
     origin: t.origin,
+    priority: t.priority,
     blocked_reason: t.blocked_reason,
     waiting,
     waits_on: waiting ? openBlockers(s, ix, id) : [],

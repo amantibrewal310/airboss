@@ -55,6 +55,18 @@ describe('TaskRow', () => {
     expect((await show(146)).el.querySelector('.pill.ok')?.textContent).toBe('Ready');
   });
 
+  it('badges a task’s priority after its title, and says it to VoiceOver', async () => {
+    const { el } = await show(163);
+    const badge = el.querySelector<HTMLElement>('.pri');
+    expect(badge?.textContent).toBe('P0');
+    expect(badge?.title).toBe('Priority P0');
+    expect(name(el)).toContain('priority P0');
+    expect(el.getBoundingClientRect().height).toBe(38);
+    expect(visible((await show(163, 340)).el.querySelector('.pri'))).toBe(true);
+    // No priority, no badge.
+    expect((await show(144)).el.querySelector('.pri')).toBeNull();
+  });
+
   it('truncates a long title with an ellipsis and a tooltip, never wrapping', async () => {
     const { el } = await show(194, 700);
     const t = el.querySelector<HTMLElement>('.t')!;

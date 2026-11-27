@@ -4,6 +4,10 @@ What changed in each release of Airboss. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Added
+
+- **Priority, P0 to P3.** A task can carry a priority: `airboss add --priority p0`, `airboss edit --priority p2` or `--no-priority`. `airboss ls --priority p0,p1` keeps only those, and `--sort priority` lists the most urgent first, with siblings still in their order. Agents get the same `priority` filter and `sort` in `list_tasks`. Rows show it as a small P0–P3 tag after the title.
+
 ### Changed
 
 - **A task with subtasks has no status of its own.** It shows what its subtasks add up to: done when every one is done or dropped, dropped when all are, blocked when any is (naming which), in progress when any is under way or some are finished, otherwise todo. A plan with 8 of 38 steps done now shows in progress, not done. Its old status is ignored, not changed.

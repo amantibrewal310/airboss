@@ -12,7 +12,7 @@
 
   /**
    * One task row: exactly 38px, nothing wraps. Left to right: fold arrow, status, id, title,
-   * progress, live chip, needs-me dot, gap, pills, repo pills, actor, time. No effects and no
+   * priority badge, progress, live chip, needs-me dot, gap, pills, repo pills, actor, time. No effects and no
    * listeners: the list handles clicks by delegation through the data-* attributes.
    */
   let {
@@ -63,6 +63,7 @@
       row.id,
       row.title,
       SHAPE_LABEL[shape],
+      row.priority ? `priority ${row.priority.toUpperCase()}` : '',
       row.status === 'blocked' && row.blocked_reason ? `blocked: ${row.blocked_reason}` : '',
       row.waiting ? `waits on ${row.waits_on.join(', ')}` : '',
       row.progress ? `${row.progress.done} of ${row.progress.total} done` : '',
@@ -126,6 +127,9 @@
     <input bind:this={input} class="rename" value={row.title} aria-label="Rename {row.id}" onkeydown={renameKey} onblur={() => onrename?.(input?.value ?? null)} />
   {:else}
     <span class="t" use:fullTitle={row.title} aria-hidden="true">{row.title}</span>
+  {/if}
+  {#if row.priority}
+    <span class="pri {row.priority}" title="Priority {row.priority.toUpperCase()}" aria-hidden="true">{row.priority.toUpperCase()}</span>
   {/if}
   {#if row.progress}
     <span class="prog" title="{pct}% done" aria-hidden="true">
@@ -259,6 +263,24 @@
     padding: 0 6px;
     outline: none;
     font-weight: 500;
+  }
+  /* A tag, not a pill: Field Grey, 5px corners. P0 and P1 read in full text colour; red stays
+     for "needs you" only (DESIGN), so urgency is weight, not colour. */
+  .pri {
+    font-variant-numeric: tabular-nums;
+    font-size: var(--fs-label);
+    line-height: 14px;
+    font-weight: 600;
+    height: 18px;
+    padding: 2px 5px;
+    border-radius: 5px;
+    background: var(--bg-input);
+    color: var(--text-3);
+    flex: none;
+  }
+  .pri.p0,
+  .pri.p1 {
+    color: var(--text);
   }
   .prog {
     font-variant-numeric: tabular-nums;
