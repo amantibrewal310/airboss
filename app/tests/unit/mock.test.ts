@@ -68,6 +68,14 @@ describe('mock view model (SPEC-app "The view model and patches")', () => {
     expect(rows.get(145)!.signal).toEqual({ kind: 'waiting_on' });
   });
 
+  it('lets a proposed blocker hold nothing until it is accepted (SPEC-core rule 16)', () => {
+    const s = stateFromSeed(loadFixture('design'));
+    s.tasks.get(144)!.status = 'proposed';
+    const rows = buildRows(s).rows;
+    expect(rows.get(145)!.waiting).toBe(false);
+    expect(rows.get(147)!.waits_on).toEqual([145, 146]);
+  });
+
   it('builds DESIGN’s Refunds run map: waves of 3, 2, 1 and 2, one outside blocker', () => {
     const s = stateFromSeed(loadFixture('design'));
     const map = buildRunMap(s, indexTree(s), 200);

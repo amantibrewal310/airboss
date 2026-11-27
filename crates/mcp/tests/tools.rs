@@ -6,8 +6,8 @@ use std::path::Path;
 use airboss_core::{Actor, LinkKind, NewLink, NewTask, Priority, RepoId, Status, Store, TaskId};
 use airboss_mcp::identity::Identity;
 use airboss_mcp::tools::{
-    self, AgentStatus, DependsOn, GetTask, ImportPlan, Link, LinkKindName, ListTasks, PlanStep,
-    PrStateName, PriorityName, Proposal, ProposeTasks, SortName, StatusName, UpdateTask,
+    self, AgentStatus, DependsOn, GetTask, ImportPlan, Link, LinkKindName, ListTasks, Place,
+    PlanStep, PrStateName, PriorityName, Proposal, ProposeTasks, SortName, StatusName, UpdateTask,
 };
 
 const THREAD: &str = "97b5c8b5";
@@ -848,6 +848,7 @@ fn proposal(title: &str) -> Proposal {
         title: title.into(),
         body: None,
         repos: vec![],
+        blocks: vec![],
     }
 }
 
@@ -860,11 +861,44 @@ fn propose(
         s,
         &t3(),
         ProposeTasks {
+            place: Place::Sibling,
             parent: parent.map(|p| p.0),
             tasks,
         },
     )
     .map_err(|e| e.to_string())
+}
+
+fn propose_at(
+    s: &mut Store,
+    place: Place,
+    tasks: Vec<Proposal>,
+) -> Result<Vec<airboss_mcp::render::TaskView>, String> {
+    tools::propose_tasks(
+        s,
+        &t3(),
+        ProposeTasks {
+            place,
+            parent: None,
+            tasks,
+        },
+    )
+    .map_err(|e| e.to_string())
+}
+
+/// Links this test's thread to `id`, as Do it does.
+fn link_thread(s: &mut Store, id: TaskId) {
+    s.link(id, NewLink::new(LinkKind::T3Thread, THREAD), &Actor::Me)
+        .unwrap();
+}
+
+fn waits_on_ids(s: &Store, id: TaskId) -> Vec<TaskId> {
+    s.dependencies(id)
+        .unwrap()
+        .waits_on
+        .iter()
+        .map(|t| t.id)
+        .collect()
 }
 
 fn task_count(s: &Store) -> usize {
@@ -959,6 +993,121 @@ fn propose_tasks_under_a_missing_parent_names_it() {
         err,
         "There's no task #8. List the tasks to find the right id."
     );
+}
+
+#[test]
+fn propose_tasks_lands_next_to_the_callers_task_and_follows_it() {
+    let mut s = store();
+    let plan = add(&mut s, "Plan");
+    let mine = add_under(&mut s, plan, "My step");
+    let later = add_under(&mut s, plan, "Waits on my step");
+    s.add_dependency(later, mine, &Actor::Me).unwrap();
+    link_thread(&mut s, mine);
+
+    let got = propose(
+        &mut s,
+        None,
+        vec![Proposal {
+            blocks: vec![later.0],
+            ..proposal("Other repo's part")
+        }],
+    )
+    .unwrap();
+    let p = got[0].id;
+    assert_eq!(got[0].parent, Some(plan));
+    assert_eq!(waits_on_ids(&s, p), [mine], "follows the caller's task");
+    assert_eq!(waits_on_ids(&s, later), [mine, p]);
+    // Still a proposal, so it holds nothing up: `later` waits on `mine` alone.
+    assert_eq!(
+        s.waits_on(later)
+            .unwrap()
+            .iter()
+            .map(|t| t.id)
+            .collect::<Vec<_>>(),
+        [mine]
+    );
+}
+
+#[test]
+fn propose_tasks_at_top_still_follows_and_an_explicit_parent_wins() {
+    let mut s = store();
+    let plan = add(&mut s, "Plan");
+    let mine = add_under(&mut s, plan, "My step");
+    let elsewhere = add(&mut s, "Elsewhere");
+    link_thread(&mut s, mine);
+
+    let top = propose_at(&mut s, Place::Top, vec![proposal("Top")]).unwrap();
+    assert_eq!(top[0].parent, None);
+    assert_eq!(waits_on_ids(&s, top[0].id), [mine]);
+
+    let under = propose(&mut s, Some(elsewhere), vec![proposal("Under")]).unwrap();
+    assert_eq!(under[0].parent, Some(elsewhere));
+    assert_eq!(waits_on_ids(&s, under[0].id), [mine]);
+}
+
+#[test]
+fn propose_tasks_under_the_callers_own_task_does_not_follow_it() {
+    let mut s = store();
+    let mine = add(&mut s, "My task");
+    link_thread(&mut s, mine);
+    let got = propose(&mut s, Some(mine), vec![proposal("A step")]).unwrap();
+    assert_eq!(got[0].parent, Some(mine));
+    assert!(waits_on_ids(&s, got[0].id).is_empty());
+}
+
+#[test]
+fn propose_tasks_with_no_linked_task_goes_to_top_level_and_follows_nothing() {
+    let mut s = store();
+    add(&mut s, "Someone else's");
+    let got = propose(&mut s, None, vec![proposal("Idea")]).unwrap();
+    assert_eq!(got[0].parent, None);
+    assert!(waits_on_ids(&s, got[0].id).is_empty());
+}
+
+#[test]
+fn propose_tasks_follows_the_task_this_thread_was_linked_to_last() {
+    let mut s = store();
+    let first = add(&mut s, "First");
+    let plan = add(&mut s, "Plan");
+    let second = add_under(&mut s, plan, "Second");
+    link_thread(&mut s, second);
+    link_thread(&mut s, first);
+    let got = propose(&mut s, None, vec![proposal("Next")]).unwrap();
+    assert_eq!(got[0].parent, None, "next to #first, at top level");
+    assert_eq!(waits_on_ids(&s, got[0].id), [first]);
+}
+
+#[test]
+fn propose_tasks_refuses_blocks_it_cant_add_and_writes_nothing() {
+    let mut s = store();
+    let mine = add(&mut s, "Mine");
+    let finished = add(&mut s, "Finished");
+    set(&mut s, finished, Status::Done);
+    link_thread(&mut s, mine);
+    let before = task_count(&s);
+
+    let blocking = |ids: Vec<i64>| Proposal {
+        blocks: ids,
+        ..proposal("P")
+    };
+    assert_eq!(
+        propose(&mut s, None, vec![proposal("fine"), blocking(vec![99])]).unwrap_err(),
+        "There's no task #99. List the tasks to find the right id."
+    );
+    assert_eq!(
+        propose(&mut s, None, vec![blocking(vec![finished.0])]).unwrap_err(),
+        format!(
+            "Task #{} is done, so nothing new can hold it up. Leave it out of `blocks`.",
+            finished.0
+        )
+    );
+    // Blocking its own task would wait on itself through "follows".
+    assert_eq!(
+        propose(&mut s, None, vec![blocking(vec![mine.0])]).unwrap_err(),
+        "\"P\": That would make a loop of tasks waiting on each other. Remove one of the \
+         dependencies."
+    );
+    assert_eq!(task_count(&s), before);
 }
 
 // ---- import_plan ----

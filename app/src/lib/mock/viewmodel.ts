@@ -20,6 +20,7 @@ import type {
   RowDto,
   RunEdge,
   RunMap,
+  Status,
   Task,
   TaskDetail,
   TaskId,
@@ -135,8 +136,14 @@ export function ancestors(s: MockState, id: TaskId): TaskId[] {
   return out;
 }
 
+/** A blocker in `status` holds up what waits on it: open, and not a proposal (SPEC-core rule 16). */
+function holds(status: Status): boolean {
+  return isOpen(status) && status !== 'proposed';
+}
+
+/** The blockers holding `id` up. */
 export function openBlockers(s: MockState, ix: TreeIndex, id: TaskId): TaskId[] {
-  return (ix.blockers.get(id) ?? []).filter((b) => isOpen(s.tasks.get(b)!.status)).sort((a, b) => a - b);
+  return (ix.blockers.get(id) ?? []).filter((b) => holds(s.tasks.get(b)!.status)).sort((a, b) => a - b);
 }
 
 export function isWaiting(s: MockState, ix: TreeIndex, id: TaskId): boolean {
@@ -376,7 +383,7 @@ export function buildRunMap(s: MockState, ix: TreeIndex, parent: TaskId): RunMap
       const done = s.tasks.get(on)!.status === 'done';
       const prev = lifted.get(key);
       lifted.set(key, { from, to, done: prev ? prev.done && done : done });
-    } else if (from === undefined && !inParent.has(on) && isOpen(s.tasks.get(on)!.status)) {
+    } else if (from === undefined && !inParent.has(on) && holds(s.tasks.get(on)!.status)) {
       outside.set(to, (outside.get(to) ?? new Set()).add(on));
     }
   }

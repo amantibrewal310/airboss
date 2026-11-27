@@ -273,10 +273,13 @@ fn build_rows(
         union[i] = own;
     }
 
-    // Open blockers per waiting task.
+    // Blockers that hold each waiting task up: open, and not a proposal (SPEC-core rule 16).
     let mut blockers: HashMap<TaskId, Vec<TaskId>> = HashMap::new();
     for &(waiting, waits_on) in &snap.edges {
-        if status_of.get(&waits_on).is_some_and(|&s| is_open(s)) {
+        if status_of
+            .get(&waits_on)
+            .is_some_and(|&s| is_open(s) && s != Status::Proposed)
+        {
             blockers.entry(waiting).or_default().push(waits_on);
         }
     }

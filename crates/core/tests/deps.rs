@@ -663,3 +663,104 @@ fn removing_the_last_open_blocker_makes_a_task_ready_since_then() {
     s.remove_dependency(c, b, &Actor::Me).unwrap();
     assert_eq!(since(&s, c), newest_at(&s, c));
 }
+
+// ---- Rule 37: a new task's own dependencies; rule 16: proposals hold nothing ----
+
+#[test]
+fn a_proposal_arrives_with_what_it_waits_on_and_what_it_blocks() {
+    let mut s = store();
+    let mine = top(&mut s, "Agent's task");
+    let later = top(&mut s, "Waits on the agent's task");
+    s.add_dependency(later, mine, &Actor::Me).unwrap();
+    let p = s
+        .add_task(
+            NewTask::new("Other repo's part")
+                .waiting_on(mine)
+                .waiting_on(mine)
+                .blocking(later),
+            &common::agent(),
+        )
+        .unwrap();
+    assert_eq!(p.status, Status::Proposed);
+    let deps = s.dependencies(p.id).unwrap();
+    assert_eq!(ids(&deps.waits_on), vec![mine]);
+    assert_eq!(ids(&deps.blocks), vec![later]);
+    assert_eq!(
+        kinds(&s, p.id),
+        vec![EventKind::Created, EventKind::WaitsOnAdded]
+    );
+    let on_later = s.history(later).unwrap();
+    let last = on_later.last().unwrap();
+    assert_eq!(last.kind, EventKind::WaitsOnAdded);
+    assert_eq!(
+        last.body.as_deref(),
+        Some(format!("waits on #{}", p.id.0).as_str())
+    );
+    assert_eq!(last.actor, common::agent());
+}
+
+#[test]
+fn a_proposal_holds_nothing_until_it_is_accepted() {
+    let mut s = store();
+    let x = top(&mut s, "X");
+    let p = s
+        .add_task(NewTask::new("P").blocking(x), &common::agent())
+        .unwrap()
+        .id;
+    assert!(!waiting(&s, x));
+    assert!(s.waits_on(x).unwrap().is_empty());
+    assert_eq!(ids(&ready_tasks(&s)), vec![x]);
+
+    set_status(&mut s, p, Status::Todo);
+    assert!(waiting(&s, x));
+    assert_eq!(ids(&s.waits_on(x).unwrap()), vec![p]);
+    assert_eq!(ids(&ready_tasks(&s)), vec![p]);
+}
+
+#[test]
+fn a_rejected_proposal_holds_nothing() {
+    let mut s = store();
+    let x = top(&mut s, "X");
+    let p = s
+        .add_task(NewTask::new("P").blocking(x), &common::agent())
+        .unwrap()
+        .id;
+    s.reject_proposals(&[p], None, &Actor::Me).unwrap();
+    assert!(!waiting(&s, x));
+    assert_eq!(ids(&ready_tasks(&s)), vec![x]);
+}
+
+#[test]
+fn a_new_tasks_dependencies_follow_rules_14_and_15_or_nothing_is_added() {
+    let mut s = store();
+    let parent = top(&mut s, "Parent");
+    let a = top(&mut s, "A");
+    let b = top(&mut s, "B");
+    s.add_dependency(a, b, &Actor::Me).unwrap();
+    let tasks_before = s.tree().unwrap().len();
+
+    // Under the parent, blocking it: a parent can't wait on its own step.
+    let err = s
+        .add_task(
+            NewTask::new("P").under(parent).blocking(parent),
+            &common::agent(),
+        )
+        .unwrap_err();
+    assert!(matches!(err, Error::InvalidTarget), "{err:?}");
+    // Waiting on A and blocking B, which A waits on: B → P → A → B.
+    let err = s
+        .add_task(
+            NewTask::new("P").waiting_on(a).blocking(b),
+            &common::agent(),
+        )
+        .unwrap_err();
+    assert!(matches!(err, Error::Loop), "{err:?}");
+    // A task that isn't there.
+    let err = s
+        .add_task(NewTask::new("P").blocking(TaskId(999)), &common::agent())
+        .unwrap_err();
+    assert!(matches!(err, Error::NotFound), "{err:?}");
+
+    assert_eq!(s.tree().unwrap().len(), tasks_before);
+    assert_eq!(s.dependency_edges().unwrap(), vec![(a, b)]);
+}

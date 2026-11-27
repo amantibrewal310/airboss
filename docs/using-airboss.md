@@ -118,7 +118,7 @@ Nothing starts by itself. Select a ready task and press ⌘↩.
 
 ## Proposals
 
-Agents don't create tasks. They propose them, and proposals wait for you, under their parent, in Needs me.
+Agents don't create tasks. They propose them, and proposals wait for you, under their parent, in Needs me. A proposal lands next to the task the agent was working on, follows it, and may say what it would block ("follows #12 · would block #20"). Until you accept it, it holds nothing up.
 
 - **Accept** makes a proposal a todo task. **Accept all** does that for the group.
 - **Edit** lets you rename it first, then accepts it.

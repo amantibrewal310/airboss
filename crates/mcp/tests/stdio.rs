@@ -30,6 +30,10 @@ fn initialize_names_the_server_and_the_actor() {
         "{instructions}"
     );
     assert!(instructions.contains("list_tasks"), "{instructions}");
+    assert!(
+        instructions.contains("Don't widen your own task"),
+        "{instructions}"
+    );
     assert!(mcp.finish());
 }
 
