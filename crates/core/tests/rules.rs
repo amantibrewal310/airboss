@@ -1095,7 +1095,7 @@ fn a_proposal_accepted_from_another_handle_before_the_reject_lands_is_left_alone
     assert_eq!(fresh.task(p2).unwrap().status, Status::Dropped);
 }
 
-// Rule 35: a task may be due on a calendar date, set by `me` or an agent, with an `edited`
+// Rule 36: a task may be due on a calendar date, set by `me` or an agent, with an `edited`
 // event naming it.
 
 #[test]

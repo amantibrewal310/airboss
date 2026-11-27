@@ -259,6 +259,69 @@ fn task_detail_skips_prepare_for_closed_tasks_and_says_a_gone_task_is_gone() {
 }
 
 #[test]
+fn task_detail_lists_the_proposals_under_it_with_who_made_them_and_their_edges() {
+    let app = TestApp::new();
+    let p = app.add("Plan", None);
+    let phase = app.add("Phase", Some(p));
+    let step = app.add("Step", Some(phase));
+    let propose = |title: &str, under: TaskId, who: &str| {
+        app.core(|s| {
+            s.add_task(
+                airboss_core::NewTask::new(title).under(under),
+                &Actor::Agent(who.into()),
+            )
+            .unwrap()
+            .id
+        })
+    };
+    let a = propose("A", p, "t3/one");
+    let b = propose("B", phase, "t3/two");
+    app.core(|s| {
+        s.add_dependency(a, step, &Actor::Me).unwrap();
+        s.add_dependency(step, b, &Actor::Me).unwrap();
+    });
+    app.sync_vm();
+
+    let d = detail::task_detail(&app.state, M, p, 1, 30).unwrap();
+    let got: Vec<_> = d
+        .proposals
+        .iter()
+        .map(|x| {
+            (
+                x.id,
+                x.parent,
+                x.by.as_str(),
+                x.follows.clone(),
+                x.blocks.clone(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        got,
+        vec![
+            (a, p, "agent:t3/one", vec![step], vec![]),
+            (b, phase, "agent:t3/two", vec![], vec![step]),
+        ]
+    );
+    assert!(d.proposals.iter().all(|x| !x.at.is_empty()));
+    // A leaf has none; neither does a parent once they're accepted.
+    assert!(
+        detail::task_detail(&app.state, M, step, 1, 30)
+            .unwrap()
+            .proposals
+            .is_empty()
+    );
+    tasks::accept_proposals(&app.state, M, vec![a, b]).unwrap();
+    assert!(
+        detail::task_detail(&app.state, M, p, 1, 30)
+            .unwrap()
+            .proposals
+            .is_empty()
+    );
+    app.assert_lock_free();
+}
+
+#[test]
 fn run_map_plans_and_quickadd_data_read_the_view_model() {
     let app = TestApp::new();
     let web = repo(&app, "web");

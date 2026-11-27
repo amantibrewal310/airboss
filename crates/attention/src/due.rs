@@ -1,4 +1,4 @@
-//! Due: an open task whose due date (SPEC-core rule 35) is today or past, in my own time
+//! Due: an open task whose due date (SPEC-core rule 36) is today or past, in my own time
 //! zone. It shows from the first moment of that day until the task is done or dropped, its date
 //! changes or is cleared, or I dismiss or snooze it.
 //!

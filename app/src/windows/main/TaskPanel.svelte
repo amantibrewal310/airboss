@@ -8,7 +8,8 @@
   import Callouts from './detail/Callouts.svelte';
   import Props from './detail/Props.svelte';
   import Notes from './detail/Notes.svelte';
-  import WavesList from './detail/WavesList.svelte';
+  import PlanSections from './detail/PlanSections.svelte';
+  import LinksFold from './detail/LinksFold.svelte';
   import Threads from './detail/Threads.svelte';
   import Activity from './detail/Activity.svelte';
   import Skeleton from './detail/Skeleton.svelte';
@@ -23,6 +24,8 @@
   const detail = $derived(app.detail.detail);
   const fresh = $derived(detail !== null && detail.task.id === id);
   const crumbs = $derived(row ? ancestorsOf(app.tasks.rows, row.id).reverse() : []);
+  /** A parent's panel reads as decisions: its steps by what they ask of me come first (task 54). */
+  const plan = $derived(!!row?.has_children);
 </script>
 
 {#if row}
@@ -42,19 +45,22 @@
     {#if !app.conn.launchReady}<T3Banner />{/if}
     <div class="pk">
       <Title task={row.id} title={row.title} />
+      {#if plan}
+        <PlanSections task={row.id} map={fresh ? detail!.waves : null} proposals={fresh ? detail!.proposals : null} />
+      {/if}
       {#if app.detail.skeleton && !fresh}
         <Skeleton />
       {:else if app.detail.error && !fresh}
         <p class="missing">{app.detail.error}</p>
       {:else}
-        <Callouts items={app.needs.forTask(row.id)} />
-        <Props {row} {detail} />
-        <Notes task={row.id} body={fresh ? detail!.task.body : null} />
-        {#if fresh && detail!.waves && detail!.waves.nodes.length}
-          <section class="sec" aria-label="Subtasks">
-            <h3>Subtasks <span>{detail!.waves.waves.length} {detail!.waves.waves.length === 1 ? 'wave' : 'waves'}</span></h3>
-            <WavesList map={detail!.waves} />
-          </section>
+        {#if plan}
+          <Notes task={row.id} body={fresh ? detail!.task.body : null} />
+          {#if fresh && detail!.links.length}<LinksFold links={detail!.links} />{/if}
+          <Props {row} {detail} plan />
+        {:else}
+          <Callouts items={app.needs.forTask(row.id)} />
+          <Props {row} {detail} />
+          <Notes task={row.id} body={fresh ? detail!.task.body : null} />
         {/if}
         {#if fresh}
           <Threads links={detail!.links} />
@@ -149,20 +155,6 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
-  }
-  .sec {
-    padding-top: 6px;
-  }
-  .sec h3 {
-    font-size: var(--fs-meta);
-    font-weight: 600;
-    color: var(--text-2);
-    line-height: 16px;
-  }
-  .sec h3 span {
-    color: var(--text-3);
-    font-weight: 500;
-    margin-left: 4px;
   }
   .missing {
     color: var(--text-2);

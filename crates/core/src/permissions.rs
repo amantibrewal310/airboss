@@ -17,7 +17,7 @@ pub(crate) enum Call {
     /// `link_repo` and `unlink_repo`.
     ChangeRepos,
     SetBranch,
-    /// `set_due`: agents turn "Friday" into a date for me (rule 35).
+    /// `set_due`: agents turn "Friday" into a date for me (rule 36).
     SetDue,
     AddNote,
     MoveTask,

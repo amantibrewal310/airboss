@@ -12,6 +12,7 @@ import type {
   NeedsItem,
   PrState,
   PrView,
+  Priority,
   Repo,
   RepoId,
   Status,
@@ -34,6 +35,7 @@ export interface TaskSpec {
   repos?: RepoId[];
   body?: string;
   blocked?: string;
+  priority?: Priority;
   branch?: string;
   /** The day it's due, `YYYY-MM-DD`. */
   due?: string;
@@ -90,6 +92,7 @@ export class SeedBuilder {
       plan_key: null,
       branch: spec.branch ?? null,
       due_at: spec.due ?? null,
+      priority: spec.priority ?? null,
       created_at: created,
     });
     const by: Actor = origin === 'plan' ? 'plan' : origin === 'agent' ? 'agent:planner' : 'me';

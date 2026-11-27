@@ -86,6 +86,7 @@ impl Core {
             plan_key: None,
             branch: None,
             due_at: None,
+            priority: None,
             created_at: ts(0, 0),
         };
         if status != Status::Proposed

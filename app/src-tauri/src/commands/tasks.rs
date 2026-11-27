@@ -88,6 +88,7 @@ pub fn create_task(s: &AppState, c: Caller, task: CreateTaskInput) -> AppResult<
         parent,
         repos,
         body: body.filter(|b| !b.trim().is_empty()),
+        priority: None,
     };
     let ctx = Ctx::Move(parent.unwrap_or(TaskId(0)));
     let created = s

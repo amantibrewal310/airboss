@@ -14,10 +14,13 @@
    * The properties grid: Status, (Progress on the page), Due, Repos, Branch, Parent, Waits on,
    * Blocks, Links. 104px labels in the panel, 86px in the page's rail; 30px per line.
    */
-  let { row, detail, rail = false }: { row: RowDto; detail: TaskDetail | null; rail?: boolean } = $props();
+  let { row, detail, rail = false, plan = false }: { row: RowDto; detail: TaskDetail | null; rail?: boolean; plan?: boolean } = $props();
+  // `plan`: the parent panel, whose links fold under the notes. A parent with steps also shows
+  // no Status (the summary line says where it stands) and no Branch (it takes none).
   const app = useApp();
 
   const shape = $derived(shapeOf(row));
+  const container = $derived(plan && row.has_steps);
   const repos = $derived(row.repos.map((id) => app.tasks.repoById.get(id)).filter((r) => !!r));
   const parent = $derived(row.parent === null ? null : app.row(row.parent));
   const prepared = $derived(detail?.task.id === row.id ? detail.prepared : null);
@@ -116,6 +119,7 @@
 </script>
 
 <div class="props" class:rail>
+  {#if !container}
   <div class="p">
     <span class="l">Status</span>
     <button type="button" class="v hov" data-status-for={row.id} onclick={(e) => app.open({ kind: 'status', task: row.id, at: anchorOf(e) })}>
@@ -124,6 +128,7 @@
       {#if row.status === 'blocked' && row.blocked_reason}<span class="faint trunc">· {row.blocked_reason}</span>{/if}
     </button>
   </div>
+  {/if}
 
   {#if rail && row.progress}
     <div class="p">
@@ -175,7 +180,7 @@
     </span>
   </div>
 
-  {#if own || editingBranch}
+  {#if !container && (own || editingBranch)}
     <div class="p" class:wrap={!!branchError}>
       <span class="l">Branch</span>
       <span class="v col">
@@ -236,6 +241,7 @@
     </div>
   {/if}
 
+  {#if !plan}
   <div class="p" class:wrap={rail}>
     <span class="l">Links</span>
     <span class="v tags">
@@ -251,6 +257,7 @@
       {/if}
     </span>
   </div>
+  {/if}
 </div>
 
 <style>

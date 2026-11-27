@@ -79,12 +79,19 @@ export function layoutRunMap(map: RunMap, available: number): MapLayout {
     column,
     stations: [...stations.values()],
     paths,
-    heads: map.waves.map((_, i) => ({ x: i * column + 6, label: `Wave ${i + 1}` })),
+    heads: map.waves.map((_, i) => ({ x: i * column + 6, label: ordinal(i + 1) })),
     dividers: Array.from({ length: count - 1 }, (_, i) => (i + 1) * column),
   };
 }
 
 const r = (n: number) => Math.round(n * 100) / 100;
+
+/** A column's place in run order, "1st", "2nd", "3rd", "4th"…; the UI doesn't say "wave". */
+export function ordinal(n: number): string {
+  const tens = n % 100;
+  const suffix = tens >= 11 && tens <= 13 ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' } as Record<number, string>)[n % 10] ?? 'th';
+  return `${n}${suffix}`;
+}
 
 /** A line from blocker `a` to task `b`. */
 export function edgePath(a: Station, b: Station, column: number): string {

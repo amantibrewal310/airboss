@@ -92,6 +92,10 @@ v2 edited `001_core.sql` in place instead of adding a migration 002, because no 
 v4 added one:
 - `004_repo_ids.sql` rebuilds `repos` the same way, keeping every row, both UNIQUEs, and every `task_repos` row with its foreign key and cascade, so no repo id is ever handed out twice (rule 33). The new table is built as `repos_new` and renamed to `repos`, which leaves `task_repos`' `REFERENCES repos(id)` pointing at it. Copying the ids seeds `sqlite_sequence` at max(id).
 
+v7 added one:
+- `006_priority.sql` adds `tasks.priority INTEGER CHECK (priority IN (0, 1, 2, 3))`, null for every existing task (rule 35). `ADD COLUMN` rebuilds nothing.
+- `007_due_dates.sql` adds `tasks.due_at`, a `YYYY-MM-DD` date, null for every existing task (rule 36). `ADD COLUMN` rebuilds nothing.
+
 Every migration, any module's, runs with foreign keys off, since `PRAGMA foreign_keys` does nothing inside a transaction and a table rebuild would cascade or fail partway. It must pass `PRAGMA foreign_key_check` before it commits, and foreign keys go back on afterwards, whether it worked or not.
 
 ```sql
@@ -122,7 +126,7 @@ CREATE TABLE tasks (                     -- one thing to get done, at any depth
   plan_key       TEXT,                   -- the plan's own id for this step; null unless origin = plan
   branch         TEXT,                   -- the branch its threads share; null: no branch yet
   due_at         TEXT CHECK (due_at IS NULL OR due_at GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]'),
-                                         -- the day it's due, YYYY-MM-DD in my own time zone (migration 6); null: none
+                                         -- the day it's due, YYYY-MM-DD in my own time zone (migration 7); null: none
   created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   CHECK ((status = 'blocked') = (blocked_reason IS NOT NULL)),
   CHECK (parent_id IS NULL OR parent_id <> id),
@@ -236,7 +240,7 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
    | `edit_repo` / `remove_repo` | yes | (no) | (no) | (no) | (no) | (no) |
    | `add_task` | yes, as `todo` | yes, always as `proposed` | (no) | (no) | (no) | (no) |
    | `add_tasks` (a plan) | yes | (no) | yes | (no) | (no) | (no) |
-   | `edit_task` (title, notes) | yes | (no) | (no) | (no) | (no) | (no) |
+   | `edit_task` (title, notes, priority) | yes | (no) | (no) | (no) | (no) | (no) |
    | `link_repo` / `unlink_repo` | yes | (no) | yes | (no) | (no) | (no) |
    | `set_branch` | yes | (no) | (no) | (no) | (no) | yes |
    | `set_due` | yes | yes | (no) | (no) | (no) | (no) |
@@ -280,7 +284,13 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
     - It can't contain `..`, start with `-` or `/`, or end with `/` or `.lock`.
     - Anything else is `Error::InvalidTarget`, and nothing is written. `launch` passes the name to `git` and `t3`, so it must never read as an option or a path outside the repo.
 
-35. **A task may be due on a day,** `YYYY-MM-DD` in my own time zone; null means no due date. Agents turn "Friday" or "in 2 days" into the date; `core` stores only the day. `set_due` writes one `edited` event whose body names it, e.g. `due: 2026-12-04`, or `due date cleared`. A blank date clears it, and setting the date it already has writes nothing. Anything but a real day from year 1000 to 9999, written exactly so, is `Error::InvalidTarget`, and nothing is written. Any task may have one, a parent too, in any status; `attention` lists it when its day comes ([SPEC-attention](SPEC-attention.md)).
+### Priority (enforced by code)
+
+35. **A task has at most one priority, P0 (most urgent) to P3, or none.** It's stored as 0 to 3 and the database refuses anything else; null means none. `add_task` takes one in `NewTask::with_priority`, from anyone who may add (an agent's proposal keeps the one it suggests); plans add steps with none. After that only `me` changes it, through `edit_task`, whose `edited` event names it among the fields changed: `priority: P1` or `priority cleared`. Setting the priority it already has writes nothing. It is the task's own, never worked out from its steps (rule 10), and it never changes positions: sibling order within a parent stays rule 13's. Sorting by priority is for readers (`list_tasks`, `airboss ls`): P0 first, none last, ties in tree order.
+
+### Due dates (enforced by code)
+
+36. **A task may be due on a day,** `YYYY-MM-DD` in my own time zone; null means no due date. Agents turn "Friday" or "in 2 days" into the date; `core` stores only the day. `set_due` writes one `edited` event whose body names it, e.g. `due: 2026-12-04`, or `due date cleared`. A blank date clears it, and setting the date it already has writes nothing. Anything but a real day from year 1000 to 9999, written exactly so, is `Error::InvalidTarget`, and nothing is written. Any task may have one, a parent too, in any status; `attention` lists it when its day comes ([SPEC-attention](SPEC-attention.md)).
 
 ### Links (enforced by code)
 
@@ -372,7 +382,7 @@ impl Store {
     // tasks
     pub fn add_task(&mut self, new: NewTask, actor: &Actor) -> Result<Task>;
     pub fn add_tasks(&mut self, parent: Option<TaskId>, plan: &[PlanTask], actor: &Actor) -> Result<PlanResult>;
-    pub fn edit_task(&mut self, id: TaskId, edit: TaskEdit, actor: &Actor) -> Result<Task>;  // title, notes
+    pub fn edit_task(&mut self, id: TaskId, edit: TaskEdit, actor: &Actor) -> Result<Task>;  // title, notes, priority
     pub fn link_repo(&mut self, id: TaskId, repo: RepoId, actor: &Actor) -> Result<()>;      // twice: no-op
     pub fn unlink_repo(&mut self, id: TaskId, repo: RepoId, actor: &Actor) -> Result<()>;    // not linked: NotFound
     pub fn set_branch(&mut self, id: TaskId, branch: Option<&str>, actor: &Actor) -> Result<Task>;  // a parent: HasSteps
@@ -696,11 +706,31 @@ Agreed with the user on 27 Nov 2026 (task 53, under 52; replaces proposal #50). 
 - [x] A parent takes new steps whatever it shows; a finished task without steps still doesn't.
 - [x] The 2,000-task timings stay within their targets.
 
-## v7: due dates (27 Nov 2026)
+## v7: priority (27 Nov 2026)
+
+Task 58, from user feedback. A task can carry a priority, P0 to P3, so the most urgent work can be found and listed first without reordering the tree.
+
+1. **`tasks.priority`**, nullable, in `006_priority.sql`; `Priority` in the model, `Task.priority`, `NewTask::with_priority` and `TaskEdit::priority` (rule 35).
+2. **Readers sort; positions don't change.** `list_tasks` takes `priority` and `sort` ([SPEC-mcp](SPEC-mcp.md)), and `airboss ls` takes `--priority` and `--sort priority`. The app's rows carry the priority and draw it as a tag after the title ([DESIGN](DESIGN.md)).
+
+**Decisions made while building v7:**
+
+- Stored as an integer so P0 sorts first in SQL too; null sorts last in every reader.
+- Only `me` edits it, like the title, so an agent can suggest one on a proposal but never re-rank my work.
+- `import_plan` steps get none; a plan's order is its run order. Setting it from the app is a separate task.
+
+**Success criteria for v7:**
+
+- [x] The migration keeps every task and refuses anything but 0 to 3 (`db.rs` unit test).
+- [x] Set, change, clear, a no-op and the permissions, each with its event (`tests/priority.rs`).
+- [x] `list_tasks` filters and sorts, before the cap; the CLI lists, filters, sorts, sets and clears (`crates/mcp/tests`).
+- [x] The row's tag shows and is read to VoiceOver, and the row stays 38px (`TaskRow.test.ts`).
+
+## v8: due dates (27 Nov 2026)
 
 Task 59, from user feedback. Things with a deadline had nowhere to live, so they didn't come back on the day.
 
-1. **`tasks.due_at`** (`006_due_dates.sql`, `ALTER TABLE … ADD COLUMN`, every row kept), `Task.due_at`, and `set_due` for `me` and agents (rules 8 and 35).
+1. **`tasks.due_at`** (`007_due_dates.sql`, `ALTER TABLE … ADD COLUMN`, every row kept), `Task.due_at`, and `set_due` for `me` and agents (rules 8 and 36).
 2. **A day, not a time.** "Friday" means the whole of Friday wherever I am, so the column holds the calendar date and `attention` reads it in the system time zone. No model runs in the app: the agent works the date out, `core` only checks it's a real one.
 
 ## Open questions

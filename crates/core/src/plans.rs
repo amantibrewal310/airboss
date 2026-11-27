@@ -180,6 +180,7 @@ fn insert(
             body: step.body.as_deref(),
             origin: Origin::Plan,
             plan_key: Some(&step.key),
+            priority: None,
         },
         actor,
     )

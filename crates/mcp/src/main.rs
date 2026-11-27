@@ -10,7 +10,7 @@ use airboss_core::{LinkKind, NewLink, Status};
 use airboss_mcp::cli::{self, SetStatus, Target};
 use airboss_mcp::identity::Identity;
 use airboss_mcp::render::Style;
-use airboss_mcp::tools::LinkKindName;
+use airboss_mcp::tools::{LinkKindName, PriorityName, SortName};
 
 /// A to-do list where agents do the work.
 ///
@@ -51,6 +51,13 @@ enum Command {
         /// Only tasks that can start now: todo, with nothing open to wait on.
         #[arg(long, conflicts_with = "all")]
         ready: bool,
+        /// Only tasks with this priority, p0 to p3. Give several with commas: p0,p1.
+        #[arg(long, value_name = "P", value_delimiter = ',')]
+        priority: Vec<PriorityName>,
+        /// The order: tree, or priority (most urgent first, then none; ties in tree order).
+        /// A filter or a priority sort lists tasks flat.
+        #[arg(long, value_name = "ORDER", default_value = "tree")]
+        sort: SortName,
         #[command(flatten)]
         out: Out,
     },
@@ -74,6 +81,9 @@ enum Command {
         /// Notes.
         #[arg(long)]
         body: Option<String>,
+        /// How urgent it is: p0 (most) to p3.
+        #[arg(long, value_name = "P")]
+        priority: Option<PriorityName>,
         #[command(flatten)]
         out: Out,
     },
@@ -127,7 +137,7 @@ enum Command {
         #[command(flatten)]
         out: Out,
     },
-    /// Change a task's title or notes.
+    /// Change a task's title, notes or priority.
     Edit {
         /// The task's id.
         id: i64,
@@ -137,6 +147,12 @@ enum Command {
         /// The new notes; an empty string clears them.
         #[arg(long)]
         body: Option<String>,
+        /// The new priority: p0 (most urgent) to p3.
+        #[arg(long, value_name = "P", conflicts_with = "no_priority")]
+        priority: Option<PriorityName>,
+        /// Clear the priority.
+        #[arg(long)]
+        no_priority: bool,
         #[command(flatten)]
         out: Out,
     },
@@ -344,6 +360,7 @@ fn run(command: Command) -> Result<String, String> {
             under,
             repos,
             body,
+            priority,
             out,
         } => {
             let args = cli::Add {
@@ -351,10 +368,25 @@ fn run(command: Command) -> Result<String, String> {
                 under,
                 repos: &repos,
                 body: body.as_deref(),
+                priority,
             };
             cli::add(store, args, out.json, style)
         }
-        Command::Ls { all, ready, out } => cli::ls(store, all, ready, out.json, style),
+        Command::Ls {
+            all,
+            ready,
+            priority,
+            sort,
+            out,
+        } => {
+            let args = cli::Ls {
+                all,
+                ready,
+                priority,
+                sort,
+            };
+            cli::ls(store, args, out.json, style)
+        }
         Command::Show { id, out } => cli::show(store, id, out.json, style),
         Command::Set {
             id,
@@ -376,15 +408,21 @@ fn run(command: Command) -> Result<String, String> {
             id,
             title,
             body,
+            priority,
+            no_priority,
             out,
-        } => cli::edit(
-            store,
-            id,
-            title.as_deref(),
-            body.as_deref(),
-            out.json,
-            style,
-        ),
+        } => {
+            let args = cli::Edit {
+                title: title.as_deref(),
+                body: body.as_deref(),
+                priority: match (priority, no_priority) {
+                    (Some(p), _) => Some(Some(p)),
+                    (None, true) => Some(None),
+                    (None, false) => None,
+                },
+            };
+            cli::edit(store, id, args, out.json, style)
+        }
         Command::Mv {
             id,
             under,

@@ -328,6 +328,7 @@ fn build_rows(
                 title: task.title.clone(),
                 status: task.status,
                 origin: task.origin,
+                priority: task.priority,
                 blocked_reason: task.blocked_reason.clone(),
                 waiting: node.waiting,
                 waits_on: if node.waiting {

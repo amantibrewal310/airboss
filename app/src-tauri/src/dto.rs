@@ -7,7 +7,8 @@
 //! Every type is exported into one file, `types.ts`.
 
 use airboss_core::{
-    EventId, EventKind, LinkId, LinkKind, Origin, PrState, Repo, RepoId, Status, Task, TaskId,
+    EventId, EventKind, LinkId, LinkKind, Origin, PrState, Priority, Repo, RepoId, Status, Task,
+    TaskId,
 };
 use airboss_services::{
     Availability, Chip, Connection, HerdrAgent, LaunchReport, Launcher, NeedsItem, NeedsList,
@@ -128,6 +129,17 @@ pub enum PrStateTs {
     Closed,
 }
 
+/// `core::Priority`: p0 is the most urgent.
+#[derive(TS)]
+#[ts(rename = "Priority", rename_all = "snake_case", export_to = "types.ts")]
+#[allow(dead_code)]
+pub enum PriorityTs {
+    P0,
+    P1,
+    P2,
+    P3,
+}
+
 /// `core::Task`.
 #[derive(TS)]
 #[ts(rename = "Task", export_to = "types.ts")]
@@ -145,6 +157,7 @@ pub struct TaskTs {
     plan_key: Option<String>,
     branch: Option<String>,
     due_at: Option<String>,
+    priority: Option<PriorityTs>,
     created_at: TimestampTs,
 }
 
@@ -676,6 +689,9 @@ pub struct RowDto {
     pub status: Status,
     #[ts(as = "OriginTs")]
     pub origin: Origin,
+    /// Its own priority, P0 to P3, for the badge; `null` when none is set.
+    #[ts(as = "Option<PriorityTs>")]
+    pub priority: Option<Priority>,
     pub blocked_reason: Option<String>,
     /// Something it waits on is still open.
     pub waiting: bool,
@@ -694,7 +710,7 @@ pub struct RowDto {
     pub repos_from_subtasks: bool,
     /// Its branch, or the nearest ancestor's (display only).
     pub branch: Option<String>,
-    /// The day it's due, `YYYY-MM-DD` in my own time zone (SPEC-core rule 35).
+    /// The day it's due, `YYYY-MM-DD` in my own time zone (SPEC-core rule 36).
     pub due_at: Option<String>,
     /// In `core`'s ready list, and a leaf.
     pub ready: bool,
@@ -955,6 +971,28 @@ pub struct DepDto {
     pub waiting: bool,
 }
 
+/// An open proposal under a task: who made it and when, so the panel can tell which ones
+/// came from one agent turn, and what it follows and blocks.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export_to = "types.ts")]
+pub struct ProposalDto {
+    #[ts(as = "TaskIdTs")]
+    pub id: TaskId,
+    #[ts(as = "TaskIdTs")]
+    pub parent: TaskId,
+    /// Who proposed it, as text ("agent:t3/…").
+    #[ts(as = "ActorTs")]
+    pub by: String,
+    #[ts(as = "TimestampTs")]
+    pub at: Timestamp,
+    /// The tasks it waits on, finished ones too.
+    #[ts(as = "Vec<TaskIdTs>")]
+    pub follows: Vec<TaskId>,
+    /// The tasks that wait on it.
+    #[ts(as = "Vec<TaskIdTs>")]
+    pub blocks: Vec<TaskId>,
+}
+
 /// A line from a blocker to the task waiting on it, lifted to the parent's subtasks.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[ts(export_to = "types.ts")]
@@ -1011,6 +1049,8 @@ pub struct TaskDetail {
     pub blocks: Vec<DepDto>,
     /// For a task with subtasks: its display waves.
     pub waves: Option<RunMap>,
+    /// The open proposals anywhere under it, in id order.
+    pub proposals: Vec<ProposalDto>,
     #[ts(as = "Vec<NeedsItemTs>")]
     pub needs: Vec<NeedsItem>,
     /// What Do it would do; `null` for proposed, done and dropped tasks (or when launch can't
