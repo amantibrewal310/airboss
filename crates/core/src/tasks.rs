@@ -230,7 +230,30 @@ pub(crate) fn add(tx: &mut Tx<'_>, new: NewTask, actor: &Actor) -> Result<Task> 
     )?;
     fault::hit(fault::TASK_INSERTED)?;
     events::record(tx, id, EventKind::Created, None, None, actor)?;
+    add_own_dependencies(tx, id, &new, actor)?;
     get(tx, id)
+}
+
+/// Rule 37: the dependencies a new task arrives with, each checked by rules 14 and 15 and
+/// recorded on the task that waits. They touch only the new task, so anyone who may add it
+/// may add them, an agent too: its task is a proposal, and a proposal holds nothing up until
+/// I accept it (rule 16).
+fn add_own_dependencies(tx: &mut Tx<'_>, id: TaskId, new: &NewTask, actor: &Actor) -> Result<()> {
+    let pairs = new
+        .waits_on
+        .iter()
+        .map(|&on| (id, on))
+        .chain(new.blocks.iter().map(|&waiter| (waiter, id)));
+    for (task, on) in pairs {
+        ensure_exists(tx, task)?;
+        ensure_exists(tx, on)?;
+        if deps::check_new(tx, task, on)? {
+            deps::insert(tx, task, on, actor)?;
+            let body = format!("waits on #{}", on.0);
+            events::record(tx, task, EventKind::WaitsOnAdded, None, Some(&body), actor)?;
+        }
+    }
+    Ok(())
 }
 
 /// The whole tree, depth-first, siblings in position order. Hides proposals I rejected: tasks
@@ -307,8 +330,9 @@ fn roll_up(nodes: &mut [TaskNode]) {
     }
 }
 
-/// Rule 16: a task waits while any task it waits on, as it shows, is neither done nor
-/// dropped. A blocker missing from the tree is a rejected proposal, so it's dropped.
+/// Rule 16: a task waits while any task it waits on, as it shows, is open: neither a
+/// proposal nor done nor dropped. A blocker missing from the tree is a rejected proposal, so
+/// it's dropped.
 fn mark_waiting(nodes: &mut [TaskNode], edges: &[(TaskId, TaskId)]) {
     let status: HashMap<TaskId, Status> =
         nodes.iter().map(|n| (n.task.id, n.task.status)).collect();
@@ -318,9 +342,7 @@ fn mark_waiting(nodes: &mut [TaskNode], edges: &[(TaskId, TaskId)]) {
         .map(|(i, n)| (n.task.id, i))
         .collect();
     for (task, blocker) in edges {
-        let open = status
-            .get(blocker)
-            .is_some_and(|s| !matches!(s, Status::Done | Status::Dropped));
+        let open = status.get(blocker).is_some_and(|&s| deps::holds(s));
         if open && let Some(&i) = index.get(task) {
             nodes[i].waiting = true;
         }

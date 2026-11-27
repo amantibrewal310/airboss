@@ -262,11 +262,26 @@ pub struct Link {
     pub title: Option<String>,
 }
 
+/// Where `propose_tasks` puts proposals when no `parent` is given.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Place {
+    /// Next to your own task: under its parent, or at top level when it has none.
+    #[default]
+    Sibling,
+    /// At top level.
+    Top,
+}
+
 /// Arguments for `propose_tasks`.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ProposeTasks {
-    /// The task to put them under. Left out: top level.
+    /// Where they go when `parent` is left out: `sibling` (the default), next to your own
+    /// task, under its parent; or `top`, at top level.
+    #[serde(default)]
+    pub place: Place,
+    /// The task to put them under. Given, it wins over `place`.
     #[serde(default)]
     pub parent: Option<i64>,
     /// 1 to 20 tasks, added in this order.
@@ -287,6 +302,11 @@ pub struct Proposal {
     /// Do it offers to add it.
     #[serde(default)]
     pub repos: Vec<String>,
+    /// Tasks that can't finish without this one, by id. Pick from what waits on your own
+    /// task (get_task's `blocks`). Each waits on this one once the user accepts it; until
+    /// then it holds nothing up.
+    #[serde(default)]
+    pub blocks: Vec<i64>,
 }
 
 /// Arguments for `import_plan`.
@@ -572,7 +592,11 @@ fn missing_ref(kind: LinkKind) -> ToolError {
 }
 
 /// Proposes new work. Every task arrives `proposed` and waits for the user to accept it.
-/// Everything is checked before the first one is added.
+///
+/// It goes under `parent` when given, else next to the caller's own task (`place: sibling`)
+/// or at top level. Each follows the caller's own task: it waits on it, which the app shows
+/// as "follows #n". Each also blocks the tasks it names; neither dependency holds anything up
+/// until the user accepts the proposal. Everything is checked before the first one is added.
 pub fn propose_tasks(
     store: &mut Store,
     who: &Identity,
@@ -584,25 +608,35 @@ pub fn propose_tasks(
         )));
     }
     let actor = &who.actor;
-    let parent = args.parent.map(TaskId);
-    let under = Subject {
-        parent,
-        ..Subject::default()
-    };
-    if let Some(p) = parent {
-        let status = store
-            .task(p)
-            .map_err(|e| explain(store, actor, e, &under))?
-            .status;
-        if matches!(status, Status::Proposed | Status::Done | Status::Dropped) {
-            return Err(explain(
-                store,
-                actor,
-                airboss_core::Error::InvalidTarget,
-                &under,
-            ));
+    let own = own_task(store, who)?;
+    let parent = match (args.parent.map(TaskId), args.place) {
+        (Some(p), _) => {
+            let under = Subject {
+                parent: Some(p),
+                ..Subject::default()
+            };
+            let status = store
+                .task(p)
+                .map_err(|e| explain(store, actor, e, &under))?
+                .status;
+            if matches!(status, Status::Proposed | Status::Done | Status::Dropped) {
+                return Err(explain(
+                    store,
+                    actor,
+                    airboss_core::Error::InvalidTarget,
+                    &under,
+                ));
+            }
+            Some(p)
         }
-    }
+        (None, Place::Sibling) => own.as_ref().and_then(|t| t.parent),
+        (None, Place::Top) => None,
+    };
+    // A proposal under the caller's own task can't also wait on it (SPEC-core rule 15).
+    let follows = match &own {
+        Some(t) if !within(store, parent, t.id)? => Some(t.id),
+        _ => None,
+    };
     let repos = store.repos().map_err(ToolError::from_core)?;
     let mut new = Vec::with_capacity(args.tasks.len());
     for p in args.tasks {
@@ -615,16 +649,46 @@ pub fn propose_tasks(
         for id in repo_ids(&repos, &p.repos)? {
             task = task.in_repo(id);
         }
+        if let Some(f) = follows {
+            task = task.waiting_on(f);
+        }
+        for id in p.blocks {
+            let id = TaskId(id);
+            let blocked = store.task(id).map_err(|e| {
+                explain(
+                    store,
+                    actor,
+                    e,
+                    &Subject {
+                        others: vec![id],
+                        ..Subject::default()
+                    },
+                )
+            })?;
+            if matches!(blocked.status, Status::Done | Status::Dropped) {
+                return Err(ToolError::new(format!(
+                    "Task #{} is {}, so nothing new can hold it up. Leave it out of `blocks`.",
+                    id.0, blocked.status
+                )));
+            }
+            task = task.blocking(id);
+        }
         new.push(task);
     }
     let names = RepoNames::new(&repos);
+    let under = Subject {
+        parent,
+        ..Subject::default()
+    };
     let mut added: Vec<TaskView> = Vec::with_capacity(new.len());
     for task in new {
+        let title = task.title.trim().to_string();
         match store.add_task(task, actor) {
             Ok(t) => added.push(TaskView::new(t, &names)),
             Err(e) => {
                 let ToolError(why) = explain(store, actor, e, &under);
                 let done: Vec<String> = added.iter().map(|t| format!("#{}", t.id.0)).collect();
+                let why = format!("\"{title}\": {why}");
                 return Err(ToolError::new(if done.is_empty() {
                     why
                 } else {
@@ -634,6 +698,47 @@ pub fn propose_tasks(
         }
     }
     Ok(added)
+}
+
+/// The caller's own task: the one this thread is linked to, or of several, the one it was
+/// linked to last. Proposals and rejected ones don't count. `None` when the server doesn't
+/// know its thread or the thread isn't linked to a task.
+fn own_task(store: &Store, who: &Identity) -> Result<Option<airboss_core::Task>, ToolError> {
+    let core = ToolError::from_core;
+    let mut best: Option<(airboss_core::LinkId, airboss_core::Task)> = None;
+    for (kind, r) in who.thread_links() {
+        for id in store.tasks_for_link(kind, r).map_err(core)? {
+            let task = store.task(id).map_err(core)?;
+            if matches!(task.status, Status::Proposed | Status::Dropped) {
+                continue;
+            }
+            let newest = store
+                .links(id)
+                .map_err(core)?
+                .into_iter()
+                .filter(|l| l.kind == kind && l.r#ref == r)
+                .map(|l| l.id)
+                .max();
+            if let Some(link) = newest
+                && best.as_ref().is_none_or(|(b, _)| link > *b)
+            {
+                best = Some((link, task));
+            }
+        }
+    }
+    Ok(best.map(|(_, t)| t))
+}
+
+/// True when `place` is `task` or somewhere under it.
+fn within(store: &Store, place: Option<TaskId>, task: TaskId) -> Result<bool, ToolError> {
+    let mut at = place;
+    while let Some(id) = at {
+        if id == task {
+            return Ok(true);
+        }
+        at = store.task(id).map_err(ToolError::from_core)?.parent;
+    }
+    Ok(false)
 }
 
 /// Imports a plan the user settled in plan-review, as `plan`, so its tasks start `todo`.

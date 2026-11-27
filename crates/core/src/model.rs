@@ -250,6 +250,13 @@ pub struct NewTask {
     pub body: Option<String>,
     #[serde(default)]
     pub priority: Option<Priority>,
+    /// Tasks the new one waits on, added with it (rule 37).
+    #[serde(default)]
+    pub waits_on: Vec<TaskId>,
+    /// Tasks that wait on the new one, added with it (rule 37). An agent's task is a
+    /// proposal, so these hold nothing until I accept it (rule 16).
+    #[serde(default)]
+    pub blocks: Vec<TaskId>,
 }
 
 impl NewTask {
@@ -286,6 +293,22 @@ impl NewTask {
         self.priority = Some(priority);
         self
     }
+
+    /// Makes it wait on `task` from the start. A task given twice is added once.
+    pub fn waiting_on(mut self, task: TaskId) -> NewTask {
+        if !self.waits_on.contains(&task) {
+            self.waits_on.push(task);
+        }
+        self
+    }
+
+    /// Makes `task` wait on it from the start. A task given twice is added once.
+    pub fn blocking(mut self, task: TaskId) -> NewTask {
+        if !self.blocks.contains(&task) {
+            self.blocks.push(task);
+        }
+        self
+    }
 }
 
 /// A task as it appears in the tree view.
@@ -294,7 +317,7 @@ pub struct TaskNode {
     pub task: Task,
     /// 0 for a top-level task.
     pub depth: u32,
-    /// True while any task it waits on is neither done nor dropped (rule 16).
+    /// True while any task it waits on is open: neither proposed, done nor dropped (rule 16).
     pub waiting: bool,
     /// True when it has steps: subtasks that aren't proposals. Its status is then worked out
     /// from them, and it takes no branch, PR or Do it of its own (rule 10).

@@ -26,7 +26,8 @@ impl crate::Store {
         self.write(|tx| remove(tx, id, waits_on, actor))
     }
 
-    /// The tasks `id` still waits on: its blockers that are neither done nor dropped.
+    /// The tasks `id` still waits on: its blockers that are open, neither proposed, done nor
+    /// dropped (rule 16).
     pub fn waits_on(&self, id: TaskId) -> Result<Vec<Task>> {
         open_blockers(&self.conn, id)
     }
@@ -258,8 +259,14 @@ fn open_blockers(conn: &Connection, id: TaskId) -> Result<Vec<Task>> {
     Ok(dependencies(conn, id)?
         .waits_on
         .into_iter()
-        .filter(|t| !matches!(t.status, Status::Done | Status::Dropped))
+        .filter(|t| holds(t.status))
         .collect())
+}
+
+/// True when a blocker in `status` holds up the tasks waiting on it (rule 16): it's open, and
+/// not a proposal I haven't accepted yet.
+pub(crate) fn holds(status: Status) -> bool {
+    !matches!(status, Status::Proposed | Status::Done | Status::Dropped)
 }
 
 /// Both sides, each task as it shows (rule 10).
@@ -338,16 +345,11 @@ FROM sub s
 JOIN task_deps d ON d.task_id = s.id
 LEFT JOIN sub b ON b.id = d.waits_on_id";
 
-/// Open for run order: neither an unaccepted proposal nor finished.
-fn runs(status: Status) -> bool {
-    !matches!(status, Status::Proposed | Status::Done | Status::Dropped)
-}
-
 fn run_order(conn: &Connection, parent: TaskId) -> Result<RunOrder> {
     ensure_exists(conn, parent)?;
     // What everything under the parent shows; anything missing is a rejected proposal.
     let shown = crate::rollup::shown_subtree(conn, parent)?;
-    let open_inside = |id: &TaskId| shown.get(id).is_some_and(|s| runs(s.status));
+    let open_inside = |id: &TaskId| shown.get(id).is_some_and(|s| holds(s.status));
     let children: Vec<Task> = query_all(
         conn,
         &format!("SELECT {TASK_COLUMNS} FROM tasks t WHERE t.parent_id = ?1 ORDER BY t.position"),
@@ -359,7 +361,7 @@ fn run_order(conn: &Connection, parent: TaskId) -> Result<RunOrder> {
         let s = shown.get(&t.id)?;
         t.status = s.status;
         t.blocked_reason = s.blocked_reason.clone();
-        runs(t.status).then_some(t)
+        holds(t.status).then_some(t)
     })
     .collect();
     let index: HashMap<TaskId, usize> = children
@@ -398,7 +400,7 @@ fn run_order(conn: &Connection, parent: TaskId) -> Result<RunOrder> {
                 let open = match outside_open.get(&blocker) {
                     Some(&open) => open,
                     None => {
-                        let open = runs(tasks::get(conn, blocker)?.status);
+                        let open = holds(tasks::get(conn, blocker)?.status);
                         outside_open.insert(blocker, open);
                         open
                     }

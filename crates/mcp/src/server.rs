@@ -39,9 +39,12 @@ kind the server's instructions name. Link every PR you open (kind \
 pr, ref owner/repo#42, plus `url`), to the task it does: on a task with subtasks, to the \
 subtask. Linking the same thing twice returns the existing link.";
 
-const PROPOSE_TASKS: &str = "Propose 1 to 20 new tasks you spotted, at top level or under \
-`parent`. They arrive as proposed and wait for the user to accept or reject them, so don't \
-start on one until it's accepted.";
+const PROPOSE_TASKS: &str = "Propose 1 to 20 new tasks you spotted. They land next to your \
+own task, under its parent (`place: \"sibling\"`, the default), or at top level with \
+`place: \"top\"`; a `parent` you give wins over both. Each follows your own task: Airboss \
+records that itself. Give each the ids it `blocks`, picked from what waits on your own task \
+(get_task's `blocks`); they wait on it only once it's accepted. They arrive as proposed and \
+wait for the user to accept or reject them, so don't start on one until it's accepted.";
 
 const IMPORT_PLAN: &str = "Import a plan the user settled in plan-review as a tree of tasks, \
 under `parent` or at top level. Only for a settled plan: `plan_file` must be that plan's file, \
@@ -134,7 +137,9 @@ impl AirbossServer {
              as they happen: doing when you start, in_review once your PR is open, blocked with \
              a note saying why. Link every PR you open; a task with a PR finishes by itself when \
              it merges, so never set it done. Propose new work with propose_tasks; don't create \
-             it. Use import_plan only for a plan the user settled in plan-review. When you stop \
+             it. Don't widen your own task: ship your part so it's safe without a missing \
+             piece, and propose that piece, such as another repo's work, as a sibling that \
+             says what it blocks. Use import_plan only for a plan the user settled in plan-review. When you stop \
              and something is left for the user, end your reply with \"Next on your side:\" and \
              what they need to do; Airboss shows that part of your last reply on the task.",
             self.who.actor

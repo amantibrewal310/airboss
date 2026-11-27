@@ -55,7 +55,13 @@ pub fn display_waves(vm: &ViewModel, parent: TaskId) -> RunMap {
                 *done &= !open(&waits_on);
             }
             Some(_) => {}
-            None if !inside.contains(&waits_on) && open(&waits_on) => {
+            // A proposal outside holds nothing up until it's accepted (SPEC-core rule 16).
+            None if !inside.contains(&waits_on)
+                && open(&waits_on)
+                && vm
+                    .node(waits_on)
+                    .is_some_and(|n| n.task.status != Status::Proposed) =>
+            {
                 outside.entry(rank[&wn]).or_default().insert(waits_on);
             }
             None => {}
