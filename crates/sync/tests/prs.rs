@@ -273,6 +273,31 @@ fn a_pr_merging_finishes_its_task_within_one_pass() {
 }
 
 #[test]
+fn a_parent_with_an_old_pr_is_never_finished() {
+    let core = Core::new();
+    let t = task_with_pr(&core, "acme/web#1");
+    core.lock()
+        .add_task(airboss_core::NewTask::new("Step").under(t), &Actor::Me)
+        .unwrap();
+    let gh = me_only().pr("acme/web#1", FakePr::open("me"));
+    let mut rig = Rig::new(core, gh.clone());
+    rig.first_pass();
+    gh.set_state("acme/web#1", "MERGED");
+    let (_, logs) = capture_logs(|| rig.send(GhMsg::Tick, at(3 + FIVE_MIN)));
+    assert!(
+        logs.iter().all(|l| !l.contains("refused")),
+        "skipped, not tried: {logs:?}"
+    );
+    assert_eq!(rig.core.status(t), Status::Todo, "it follows its step");
+    assert!(rig.status_events(t).is_empty());
+    assert_eq!(
+        rig.pr_state_in_core(t, "acme/web#1"),
+        Some(PrState::Merged),
+        "the PR's state is still recorded"
+    );
+}
+
+#[test]
 fn a_link_whose_first_read_is_merged_finishes_its_task() {
     let core = Core::new();
     let gh = me_only().pr("acme/web#2", merged("me"));
@@ -665,6 +690,29 @@ fn a_pr_on_a_thread_is_linked_only_after_github_read_it_with_githubs_state() {
         rig.core.status(t),
         Status::Done,
         "its first read was merged"
+    );
+}
+
+#[test]
+fn a_pr_on_a_parents_thread_is_left_for_its_steps() {
+    let core = Core::new();
+    let t = core.task("Whole plan, one thread");
+    core.link(t, LinkKind::T3Thread, "t-prs");
+    core.lock()
+        .add_task(airboss_core::NewTask::new("Step").under(t), &Actor::Me)
+        .unwrap();
+    let f = prs_fixture(&core, t);
+    let gh = me_only().pr("acme/web#7", merged("me"));
+    let mut rig = Rig::with_t3(core, gh, f);
+    let ((), logs) = capture_logs(|| {
+        rig.first_pass();
+    });
+    let links = rig.core.lock().links(t).unwrap();
+    assert!(links.iter().all(|l| l.kind != LinkKind::Pr), "{links:?}");
+    assert_eq!(rig.core.status(t), Status::Todo);
+    assert!(
+        logs.iter().all(|l| !l.contains("couldn't link PR")),
+        "nothing to retry: {logs:?}"
     );
 }
 

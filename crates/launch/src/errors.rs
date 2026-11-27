@@ -211,6 +211,21 @@ pub(crate) fn task_closed(task: TaskId, status: airboss_core::Status) -> Service
     )
 }
 
+/// A parent shows done or dropped because every step is (SPEC-core rule 10).
+pub(crate) fn steps_closed(task: TaskId, status: airboss_core::Status) -> ServiceError {
+    let all = match status {
+        airboss_core::Status::Dropped => "dropped",
+        _ => "done or dropped",
+    };
+    ServiceError::new(
+        ErrorCode::TaskClosed,
+        format!(
+            "Every subtask of task {} is {all}. Reopen or add one to start it.",
+            task.0
+        ),
+    )
+}
+
 pub(crate) fn needs_choice(task: TaskId) -> ServiceError {
     ServiceError::new(
         ErrorCode::NeedsChoice,

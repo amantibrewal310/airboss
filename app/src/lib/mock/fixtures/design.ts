@@ -27,12 +27,11 @@ export function designBuilder(): SeedBuilder {
   const b = new SeedBuilder(NOW);
   b.repo(AIRBOSS, 'airboss').repo(WEB, 'booking-web').repo(API, 'booking-api').repo(DOTFILES, 'dotfiles');
 
-  // Booking flow
+  // Booking flow. A parent's status is worked out from its steps (SPEC-core rule 10), and it
+  // takes no branch: the steps agents work on have theirs.
   b.task({
     id: 142,
     title: 'Booking flow',
-    status: 'doing',
-    branch: 'task-142-booking-flow',
     body: 'Let people pick a slot and get a confirmation. Split across the API and the web app. The Slack thread has the product asks; the plan has the phases.',
     created: 4 * DAY,
   });
@@ -41,6 +40,7 @@ export function designBuilder(): SeedBuilder {
     id: 144,
     title: 'Web: slot picker',
     status: 'doing',
+    branch: 'task-144-web-slot-picker',
     parent: 142,
     repos: [WEB],
     body: 'Keyboard support is a must: arrows move between slots, Return books. Use the design tokens from the dark mode work.',
@@ -68,7 +68,6 @@ export function designBuilder(): SeedBuilder {
     url: 'https://acme.slack.com/archives/C04BOOKING/p1732012345',
     ago: 3 * DAY,
   });
-  b.moved(142, 'doing', 2 * DAY + 2 * HOUR, 'me');
   b.event(142, 'note', 2 * DAY + 3 * HOUR, 'plan', { body: 'Plan added 5 subtasks and 5 waits-on.' });
   b.thread(144, 'slot-picker', 'needs_me', {
     repo: 'booking-web',
@@ -85,9 +84,9 @@ export function designBuilder(): SeedBuilder {
   b.readySince[146] = b.at(HOUR);
 
   // Refunds
-  b.task({ id: 200, title: 'Refunds', status: 'doing', branch: 'task-200-refunds', body: 'Refunds from the booking page, end to end.', created: 3 * DAY + 4 * HOUR });
+  b.task({ id: 200, title: 'Refunds', body: 'Refunds from the booking page, end to end.', created: 3 * DAY + 4 * HOUR });
   b.task({ id: 201, title: 'Schema: refunds table', status: 'done', parent: 200, repos: [API], created: 3 * DAY });
-  b.task({ id: 202, title: 'Refund service', status: 'doing', parent: 200, repos: [API], created: 3 * DAY });
+  b.task({ id: 202, title: 'Refund service', status: 'doing', branch: 'task-202-refund-service', parent: 200, repos: [API], created: 3 * DAY });
   b.task({ id: 203, title: 'Payment webhook', status: 'blocked', parent: 200, repos: [API], blocked: 'Needs test keys from the payments dashboard', created: 3 * DAY });
   b.task({ id: 204, title: 'Refund button', status: 'in_review', parent: 200, repos: [WEB], created: 3 * DAY });
   b.task({ id: 205, title: 'Refund status page', parent: 200, repos: [WEB], created: 3 * DAY });
@@ -102,7 +101,6 @@ export function designBuilder(): SeedBuilder {
   b.moved(203, 'blocked', 5 * HOUR, 'agent:payment-webhook', 'Needs test keys from the payments dashboard');
   b.pr(204, 'acme/booking-web#61', 'open', { title: 'Refund button', add: 96, del: 4, checks: 'passing', ago: 2 * HOUR });
   b.moved(204, 'in_review', 2 * HOUR, 'agent:refund-button');
-  b.moved(200, 'doing', DAY, 'me');
   b.readySince[206] = b.at(DAY);
 
   // Top-level work
@@ -115,16 +113,17 @@ export function designBuilder(): SeedBuilder {
   b.task({ id: 154, title: 'Find worktrees whose branch has merged', status: 'proposed', parent: 150, repos: [AIRBOSS], origin: 'agent', created: 3 * HOUR });
   b.task({ id: 155, title: 'Write a dry-run cleanup command', status: 'proposed', parent: 150, repos: [AIRBOSS], origin: 'agent', created: 3 * HOUR });
 
-  b.task({ id: 110, title: 'Dark mode tokens', status: 'doing', repos: [WEB], created: 8 * DAY });
+  // Three of four steps done: in progress, not the prototype's "Finish it?" (SPEC-core rule 10).
+  b.task({ id: 110, title: 'Dark mode tokens', repos: [WEB], created: 8 * DAY });
   for (const [id, title] of [
     [111, 'Colour tokens'],
     [112, 'Swap hard-coded colours'],
     [113, 'Dark screenshots'],
-    [114, 'Contrast check'],
   ] as const) {
     b.task({ id, title, status: 'done', parent: 110, repos: [WEB], created: 8 * DAY });
     b.moved(id, 'done', HOUR + (114 - id) * 3 * HOUR, 'sync:gh');
   }
+  b.task({ id: 114, title: 'Contrast check', parent: 110, repos: [WEB], created: 8 * DAY });
 
   b.task({ id: 151, title: 'Rotate local MCP token', repos: [AIRBOSS, DOTFILES], created: 2 * DAY });
   b.task({ id: 152, title: 'Read sortie prior art', created: 4 * DAY });
@@ -213,15 +212,6 @@ export function designBuilder(): SeedBuilder {
     headline: 'Ready to start: 143 is done',
     context: '143 merged · ready to start',
     target: { task: 146 },
-  });
-  b.need({
-    key: `finish:110:${b.at(HOUR)}`,
-    kind: 'finish_it',
-    task: 110,
-    since: b.at(HOUR),
-    headline: 'All 4 subtasks are done. Mark the parent done?',
-    context: 'All 4 subtasks done',
-    target: { task: 110 },
   });
   b.need({
     key: `quiet:120:${b.at(6 * DAY)}`,

@@ -124,7 +124,7 @@ describe('NeedsInbox', () => {
     const { app } = await startApp('nothing');
     await render(Harness, { app, component: NeedsInbox });
     expect(document.querySelector('h2')!.textContent).toBe('Nothing needs you');
-    expect(document.body.textContent!.replace(/\s+/g, ' ')).toMatch(/Checked \d\d:\d\d · 10 in progress · \d+ ready to start/);
+    expect(document.body.textContent!.replace(/\s+/g, ' ')).toMatch(/Checked \d\d:\d\d · 9 in progress · \d+ ready to start/);
     expect(document.querySelector('.empty button')?.textContent).toContain('Show ready tasks');
   });
 

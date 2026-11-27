@@ -39,16 +39,6 @@ describe('P0-1: a quick second main action in Needs me', () => {
     await wait(50);
     expect(count(backend.calls, 'open_thread')).toBe(2);
   });
-
-  it('runs Finish it? once on ↩↩ (one main action per item per settle)', async () => {
-    const { app, backend } = await startApp();
-    app.selectNeed(app.needs.visible.find((n) => n.kind === 'finish_it')!.key);
-    app.runCommand('needs_main');
-    app.runCommand('needs_main');
-    await wait(300);
-    expect(count(backend.calls, 'set_status')).toBe(1);
-    expect(app.toasts.list.filter((t) => t.text.includes('110'))).toHaveLength(1);
-  });
 });
 
 describe('P0-2: a menu opened by a key press', () => {

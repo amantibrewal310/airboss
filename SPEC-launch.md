@@ -25,9 +25,9 @@ Each new thread is linked to its task, and the task moves to `doing`. A retry or
 - **The `t3` CLI, not T3's local server.** T3's CLI source (in its app bundle) shows `t3 thread start` finds the running server, gets a short-lived session token from T3's own auth store, calls the server's `t3_thread_launch` tool and revokes the token. Calling the server directly would mean reading T3's secrets. The CLI is T3's supported interface, resolves project paths and gives clear errors. About 0.3 s of CPU per call is fine for a button.
 - **A pending record before every `t3` call.** `launch` commits a `pending` row to its own table, then runs `t3`. Until the row is `started`, `failed` or `lost`, nothing starts another thread for that task, repo and mode. A pending row is settled by `t3`'s answer, or later through `sync.find_thread(project, branch)`.
 - **One thread per repo, one after another**, all on one branch. A failure in one repo doesn't stop the others, unless T3 itself is unavailable.
-- **The branch** is the task's own `branch`, or `task-<id>-<slug>`, saved with `set_branch(…, launch)` before the first thread. Every name follows `core`'s branch rule and `git check-ref-format --branch`.
+- **The branch** is the task's own `branch`, or `task-<id>-<slug>`, saved with `set_branch(…, launch)` before the first thread. Every name follows `core`'s branch rule and `git check-ref-format --branch`. A parent (a task with steps, SPEC-core rule 10) takes no branch: "Do it as one thread" on it uses `task-<id>-<slug>` (or an old branch it already had) without saving it, and its brief has the agent link each PR to the step it does.
 - **The worktree base** is the repo's default branch (`origin/HEAD`), unless `launch_repos.base_ref` overrides it. T3 fetches before it checks out.
-- **Plan it** starts one thread without a worktree (planning changes no code), in the task's first repo, or in `Place::NoRepo`'s folder. It also moves the task to `doing`.
+- **Plan it** starts one thread without a worktree (planning changes no code), in the task's first repo, or in `Place::NoRepo`'s folder. It also moves the task to `doing`, unless it has steps: a parent's status follows them (SPEC-core rule 10).
 - **Do it refuses a waiting task** (`ErrorCode::Waiting`, naming its open blockers). Plan it doesn't: planning while blocked is fine.
 - **"Start in <repo>"** is the app linking the repo as `me`, then `Place::TaskRepos`. **"No repo: research only"** is `Place::NoRepo(prepared.research_dir)`, `~/.t3/scratch` by default (T3's "No project" on this Mac).
 - **Siblings find each other through Airboss:** each brief says the other threads are linked to the task and `get_task` lists them. Thread ids exist only after each start, so no brief can name them.
@@ -171,7 +171,7 @@ A pending Plan it or research row has no branch to look up, so it stays pending 
 
 ### prepare(task, mode)
 
-- Refuses `proposed` tasks (`TaskProposed`), and `done` or `dropped` ones (`TaskClosed`; the app offers "Reopen and start").
+- Refuses `proposed` tasks (`TaskProposed`), and `done` or `dropped` ones (`TaskClosed`; the app offers "Reopen and start"). A parent shows done or dropped only when every step is, so its `TaskClosed` says so: "Every subtask of task 3 is done or dropped. Reopen or add one to start it."
 - `repos`: `Task.repos`; if empty, the union of its open subtasks' repos from `tree()`, with `from_subtasks` set.
 - `needs_choice`: Do it with no repos at all. `choices`: every registered repo. `research_dir`: from the config.
 - `branch`: the name Do it would use, not saved. `waiting_on`: the task's open blockers (`waits_on`). `started`: threads already started for this task.
@@ -181,7 +181,7 @@ A pending Plan it or research row has no branch to look up, so it stays pending 
 
 1. Check as in `prepare`. Do it with open blockers: `Err(Waiting)`, "Task 146 waits on 143 and 145." Do it with `TaskRepos` and no repo: `Err(NeedsChoice)`.
 2. Settle this task's pending rows.
-3. Do it: work out the branch and, if the task had none, `set_branch(task, Some(name), launch)`. If that fails, return the error: nothing has started.
+3. Do it: work out the branch and, if the task had none and has no steps, `set_branch(task, Some(name), launch)`. If that fails, return the error: nothing has started. A parent's branch is never saved (SPEC-core rule 10).
 4. For each place, in order (repos by name; or the one folder):
    - A `started` row for this task, repo and mode, and not `again`: `skipped`.
    - A `pending` row and not `again`: `failed` with `AlreadyStarting`, "booking-api is still starting. Check T3, or choose Start again."
@@ -190,7 +190,7 @@ A pending Plan it or research row has no branch to look up, so it stays pending 
    - Insert the `pending` row and commit. Then run `t3`.
    - On the JSON: the row becomes `started`, `launch_repos.t3_project_id` is updated, and `link(task, NewLink { kind: T3Thread, ref: threadId, title: Some(<title>) }, launch)` runs. If the link fails, the thread is reported with `linked: false` and the worker links it on its next pass.
 5. Errors meaning T3 can't start anything (`T3Missing`, `T3NotRunning`, `T3Unreachable`, `T3TooOld`, `Timeout`) stop the loop; the remaining places are reported failed with the same error. Other errors fail only their place.
-6. If anything started and the task is `todo` or `blocked`: `set_status(task, Doing, None, launch)`. `InvalidTransition` counts as success, with `moved_to_doing: false`. Any other error is logged; the threads still count as started.
+6. If anything started and the task is `todo` or `blocked`: `set_status(task, Doing, None, launch)`. `InvalidTransition` counts as success, with `moved_to_doing: false`, and so does `HasSteps` (a parent's status follows its steps). Any other error is logged; the threads still count as started.
 7. Return `LaunchReport { started, skipped, failed, branch, moved_to_doing }`. `start` returns `Err` only when nothing could begin (steps 1 and 3).
 
 ### Branch names
@@ -431,3 +431,10 @@ crates/launch/
 5. **Safety:** branch names follow `core`'s rule as well as git's; all user-written text sits in a nonce-fenced task block that the brief says is the work to do, never a source of new instructions.
 6. **Time:** wall-clock deadlines, a 15-minute cap and `woke()`.
 7. **Core calls:** `migrate_module`; no fallbacks.
+
+## Parents are containers (27 Nov 2026)
+
+SPEC-core rule 10: a task with steps has no status, branch or PR of its own. On a parent the app's actions are Start ready (Do it on each ready step) and Plan it; Do it as one thread stays in the context menu and ⌘K.
+
+- `Facts.has_steps` comes from the tree. Do it as one thread on a parent uses its branch name without `set_branch`, and the move to `doing` treats `HasSteps` like `InvalidTransition` (`a_thread_on_a_whole_parent_saves_no_branch_and_leaves_its_status_to_its_steps`).
+- `TaskClosed` on a parent names its subtasks (`steps_closed`).

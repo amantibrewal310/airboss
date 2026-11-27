@@ -56,7 +56,6 @@ Needs me is the list of decisions waiting on you, in a fixed order. The menu-bar
 | Stopped | A task in progress whose agents have all stopped, with no open PR and nothing new for 10 minutes | Open thread | Mark done (Space), Set in review, Snooze 3 days, Dismiss |
 | Proposed | An agent proposed subtasks | Accept all | Accept, Edit or Reject each; Reject all |
 | Ready | A task's last blocker finished, in the last 7 days | Do it | Dismiss |
-| Finish it? | Every subtask of an open parent is done | Mark done | Keep open |
 | Quiet | A task in progress, in review or blocked has had no activity for 5 days | Open | Snooze 3 days |
 
 ↑↓ move through the list, ↩ or ⌘↩ runs the main action, and ⌘⌫ dismisses. A dismissed item stays hidden, even after a restart, until something new happens: a new question, a new quiet stretch. When an item's source is offline, it's dimmed and says "May be out of date".
@@ -76,7 +75,7 @@ Every task has two buttons in its panel.
 - If one repo fails and another starts, the toast offers **Retry**, which starts only the failed one. A repo that isn't a T3 project yet gets **Add to T3 and retry**.
 - A repo that already has a thread from this task is skipped. **Start again** starts a fresh one, on a new branch such as `task-142-booking-flow-2`.
 
-**Start ready** takes Do it's place on a task with subtasks, such as a settled plan or one of its phases. The button counts the steps that can start now: open subtasks with no subtasks of their own, nothing open to wait on, and no waiting phase above them. It runs Do it on each of those steps, so every step gets its own thread, worktree and branch, and moves to in progress by itself. One toast says what started. A step with no repo isn't started; the toast names it and offers to start it, and Do it then asks where. Once those steps finish, the next ones become ready, and Start ready shows the new count. To hand the whole task to one agent anyway, use **Do it as one thread** from the right-click menu or ⌘K. That agent is told to report on each step, not on the parent.
+**Start ready** takes Do it's place on a task with subtasks, such as a settled plan or one of its phases. The button counts the steps that can start now: open subtasks with no subtasks of their own, nothing open to wait on, and no waiting phase above them. It runs Do it on each of those steps, so every step gets its own thread, worktree and branch, and moves to in progress by itself. One toast says what started. A step with no repo isn't started; the toast names it and offers to start it, and Do it then asks where. Once those steps finish, the next ones become ready, and Start ready shows the new count. To hand the whole task to one agent anyway, use **Do it as one thread** from the right-click menu or ⌘K. That agent is told to report on each step, not on the parent, and links each PR to the step it does. The parent takes no branch of its own and doesn't move to in progress: its status follows its steps.
 
 **Plan it** (⇧⌘↩) starts one thread that plans the task with you, with no worktree, because planning changes no code. When you tell it the plan is settled, it calls `import_plan`, and the plan's phases and steps appear as subtasks, with their dependencies, and the plan file linked. Sending the plan again adds only new steps.
 
@@ -94,13 +93,15 @@ Claude Code asks whether you trust a folder the first time it runs there, and ea
 
 You rarely set a status by hand. It comes from four places, and the activity list shows which one each change came from.
 
+A task with subtasks has no status of its own: it shows what its subtasks add up to. It's done when every subtask is done or dropped (with at least one done), dropped when all are dropped, blocked when any is (its reason names which), in progress when any is in progress or in review or some are finished, and otherwise todo. So a plan with 8 of 38 steps done shows in progress, and nothing has to finish it. Proposals don't count until you accept them. A parent takes no branch or PR of its own; its PRs go on its subtasks.
+
 - **Agents**, through the MCP tools: in progress when they start, in review when their PR is up, blocked with a reason, and notes along the way. An agent can mark a task done only if it has no PR, and must say what it did.
 - **GitHub**, through `gh`: every linked open PR is read about every 5 minutes, and again when you open its task. When all of a task's PRs have merged or closed, with at least one merged, the task is done. If an agent on it is still running or waiting on you, Airboss waits until it stops. A PR reopened on GitHub moves its done task back to in review. PRs that T3 Code lists on a linked thread are linked to the task too.
 - **T3 Code**, read from its database: each linked thread shows as Working, Waiting on you (it asked a question or wants approval), Your turn (it finished and waits for your next message) or Stopped (it failed or was settled), with its question or error. A failed run adds a note to the task. T3 state never changes a task's status by itself.
 - **Herdr**, from `hc events`: each linked terminal shows as Working, Waiting on you (Herdr says it's blocked on you), Your turn (it finished) or Stopped. When the agent asks for something, Needs me shows what Herdr reports, such as "Allow: trust this folder".
 - **Claude Code** sessions run outside T3 Code and Herdr: linked sessions show as working or stopped.
 
-The rest is yours: accepting proposals, dropping tasks, and finishing a task whose PR hasn't merged. Space marks the selected task done, or not done. S opens the status menu: 1 Todo, 2 In progress, 3 In review, 4 Blocked (asks why), 5 Done, 6 Dropped (asks first, because it drops every open subtask too).
+The rest is yours: accepting proposals, dropping tasks, and finishing a task whose PR hasn't merged. Space marks the selected task done, or not done. S opens the status menu: 1 Todo, 2 In progress, 3 In review, 4 Blocked (asks why), 5 Done, 6 Dropped (asks first, because it drops every open subtask too). On a parent only Dropped is offered: to close a phase that still has open steps, drop those steps, or drop the phase, which drops them for you.
 
 ## Run order and waves
 
@@ -124,7 +125,7 @@ Agents don't create tasks. They propose them, and proposals wait for you, under 
 
 ⌘Z undoes your last change, and so does **Undo** on its toast. Airboss keeps your last 20 changes until you quit.
 
-- **Undoable:** dismiss, keep open, snooze, status changes, drops (with the subtasks they took), moves and reorders, and rejects.
+- **Undoable:** dismiss, snooze, status changes, drops (with the subtasks they took), moves and reorders, and rejects.
 - **Rejects** are written 5 seconds later, so they can be taken back. Quitting writes them at once.
 - **Not undoable:** accepting a proposal, creating, renaming, notes, links, dependencies, repos, Do it and Plan it. Text fields keep their own ⌘Z.
 - If someone else changed the task since, such as an agent, the undo is refused with "144 changed since; nothing was undone."

@@ -41,6 +41,7 @@ The rules live in the task store, not in the server, so the CLI and the app foll
 
 - **Status:** an agent can move a task that is todo, in progress, in review or blocked to in progress, in review or blocked. Blocked needs a note saying why.
 - **Done:** an agent can finish a task only if it has **no** PR link, and only with a note saying what it did. A task with a PR finishes when GitHub says its PRs merged.
+- **Parents:** a task with subtasks has no status of its own; it shows what its subtasks add up to. Changing its status, or linking a PR to it, is refused with a message pointing at its subtasks. Notes still go on it.
 - **New work** arrives as proposals, which wait for you to accept or reject them.
 - **There are no tools** to delete, move or rename tasks, change a task's repos or branch, add dependencies outside a plan, accept proposals, drop tasks or set a PR's state. Those are yours, or belong to PR sync.
 
@@ -99,7 +100,7 @@ Threads that Do it started for the task show up in `links` as `t3_thread` links,
 
 ### `update_task`
 
-> Report progress on a task: set `status`, add a `note`, or both. Set doing when you start, in_review when your PR is open, blocked with a `note` saying why. Set done with a `note` saying what you did, but only on a task with no PR: a task with a PR finishes by itself when the PR merges. A note alone records progress.
+> Report progress on a task: set `status`, add a `note`, or both. Set doing when you start, in_review when your PR is open, blocked with a `note` saying why. Set done with a `note` saying what you did, but only on a task with no PR: a task with a PR finishes by itself when the PR merges. A note alone records progress. A task with subtasks has no status of its own: it shows what they add up to, so update the subtask you're on.
 
 | Argument | Type | Meaning |
 |---|---|---|
@@ -111,7 +112,7 @@ Give `status`, `note`, or both. Returns the task after the change, in the same s
 
 ### `link`
 
-> Attach something to a task. With kind t3_thread, herdr_terminal or claude_session and no `ref`, it links this thread: do that when you start on a task, with the kind the server's instructions name. Link every PR you open (kind pr, ref owner/repo#42, plus `url`). Linking the same thing twice returns the existing link.
+> Attach something to a task. With kind t3_thread, herdr_terminal or claude_session and no `ref`, it links this thread: do that when you start on a task, with the kind the server's instructions name. Link every PR you open (kind pr, ref owner/repo#42, plus `url`), to the task it does: on a task with subtasks, to the subtask. Linking the same thing twice returns the existing link.
 
 Idempotent.
 

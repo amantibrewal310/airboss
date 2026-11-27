@@ -169,6 +169,8 @@ pub const MSG_DB_TOO_NEW: &str =
 pub const MSG_INTERNAL: &str = "Something went wrong inside Airboss; details are in the log.";
 pub const MSG_NOT_A_LINK: &str = "Paste a link or a file path.";
 pub const MSG_BAD_PR: &str = "That isn't a GitHub pull request.";
+pub const MSG_HAS_STEPS: &str =
+    "This task has subtasks: its status follows them, and PRs go on the subtasks.";
 pub const MSG_URL_NOT_ALLOWED: &str = "Airboss only opens https links, files and T3 threads.";
 pub const MSG_FILE_GONE: &str = "That file no longer exists.";
 pub const MSG_FILE_UNREADABLE: &str = "Airboss can't reach that file.";
@@ -263,6 +265,7 @@ impl AppError {
                 Ctx::Link => AppError::new(ErrorCode::InvalidTarget, MSG_BAD_PR),
                 _ => not_allowed("InvalidTarget"),
             },
+            E::HasSteps => AppError::new(ErrorCode::InvalidTarget, MSG_HAS_STEPS),
             E::Loop => match ctx {
                 Ctx::Dependency { id, waits_on } => AppError::new(
                     ErrorCode::Loop,

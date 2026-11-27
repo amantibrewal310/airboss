@@ -576,79 +576,20 @@ fn readiness_older_than_the_window_is_hidden() {
     assert!(run(core(), Links::new().build(), at(8, 0)).items.is_empty());
 }
 
-// ---------- Finish it? ----------
+// ---------- Parents ----------
 
 #[test]
-fn an_open_parent_with_every_subtask_done_asks_to_finish() {
-    let core = Core::new()
-        .titled(110, None, Doing, &ts(1, 0), "Menu bar")
-        .task(111, Some(110), Done, &ts(2, 0))
-        .task(112, Some(110), Done, &ts(2, 4))
-        .task(113, Some(110), Dropped, &ts(2, 9))
-        .build();
-    let out = run(core, Links::new().build(), at(3, 0));
-    let item = &out.items[0];
-    assert_eq!(item.key, key(&format!("finish:110:{}", ts(2, 4))));
-    assert_eq!(item.kind, NeedsKind::FinishIt);
-    assert_eq!(item.group, NeedsGroup::FinishIt);
-    assert_eq!(item.task, id(110));
-    assert_eq!(item.since, ts(2, 4));
-    assert_eq!(
-        item.headline,
-        "All 2 subtasks are done. Mark the parent done?"
-    );
-    assert_eq!(item.context, "All 2 subtasks done");
-    assert_eq!(item.target, Target::Task(id(110)));
-}
-
-#[test]
-fn finish_it_is_hidden_unless_every_kept_subtask_is_done() {
-    let cases: [(&str, Vec<airboss_core::Status>); 4] = [
-        ("an open subtask", vec![Done, Doing]),
-        ("a proposed subtask", vec![Done, Proposed]),
-        ("only dropped subtasks", vec![Dropped, Dropped]),
-        ("no subtasks", vec![]),
-    ];
-    for (why, kids) in cases {
-        let mut core = Core::new().task(1, None, Doing, &ts(1, 0));
-        for (i, s) in kids.into_iter().enumerate() {
-            core = core.task(10 + i as i64, Some(1), s, &ts(1, 0));
-        }
-        let out = run(core.build(), Links::new().build(), at(3, 0));
-        assert!(
-            out.items.iter().all(|i| i.kind != NeedsKind::FinishIt),
-            "{why}"
-        );
-    }
-}
-
-#[test]
-fn a_closed_parent_isnt_asked_to_finish() {
-    for status in [Done, Dropped, Proposed] {
+fn a_parent_whose_steps_are_all_done_asks_nothing() {
+    // Its status follows its steps (SPEC-core rule 10), so there's nothing to finish.
+    for shown in [Done, Doing] {
         let core = Core::new()
-            .task(1, None, status, &ts(1, 0))
-            .task(2, Some(1), Done, &ts(1, 0))
+            .titled(110, None, shown, &ts(1, 0), "Menu bar")
+            .task(111, Some(110), Done, &ts(2, 0))
+            .task(112, Some(110), Dropped, &ts(2, 9))
             .build();
         let out = run(core, Links::new().build(), at(3, 0));
-        assert!(
-            out.items.iter().all(|i| i.kind != NeedsKind::FinishIt),
-            "{status:?}"
-        );
+        assert!(out.items.is_empty(), "{shown:?}: {:?}", out.items);
     }
-}
-
-#[test]
-fn finish_it_counts_direct_subtasks_only() {
-    // 1's only child is 2, which is done; 3 under 2 doesn't count for 1.
-    let core = Core::new()
-        .task(1, None, Doing, &ts(1, 0))
-        .task(2, Some(1), Done, &ts(1, 0))
-        .task(3, Some(2), Done, &ts(1, 0))
-        .build();
-    let out = run(core, Links::new().build(), at(3, 0));
-    let item = out.items.iter().find(|i| i.task == id(1)).unwrap();
-    assert_eq!(item.headline, "1 subtask is done. Mark the parent done?");
-    assert_eq!(item.context, "1 subtask done");
 }
 
 // ---------- Quiet ----------

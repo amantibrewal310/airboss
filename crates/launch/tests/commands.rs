@@ -381,6 +381,28 @@ fn subtasks_repos_are_used_when_the_task_has_none() {
 }
 
 #[test]
+fn a_thread_on_a_whole_parent_saves_no_branch_and_leaves_its_status_to_its_steps() {
+    let h = H::new();
+    let web = h.repo("web");
+    let parent = h.task("Parent", &[]);
+    h.store
+        .lock()
+        .unwrap()
+        .add_task(
+            NewTask::new("Child").under(parent.id).in_repo(web.id),
+            &Actor::Me,
+        )
+        .unwrap();
+    let report = h.launch.start(&do_it(parent.id)).unwrap();
+    let branch = format!("task-{}-parent", parent.id.0);
+    assert_eq!(h.t3.starts()[0].flag("--branch"), Some(branch.as_str()));
+    assert!(!report.moved_to_doing);
+    let after = h.get(parent.id);
+    assert_eq!(after.branch, None, "a parent takes no branch");
+    assert_eq!(after.status, Status::Todo, "its step is still todo");
+}
+
+#[test]
 fn hostile_task_text_reaches_t3_only_as_one_argv_entry_or_on_stdin() {
     let h = H::new();
     let web = h.repo("web");

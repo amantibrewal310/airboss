@@ -4,6 +4,15 @@ What changed in each release of Airboss. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Changed
+
+- **A task with subtasks has no status of its own.** It shows what its subtasks add up to: done when every one is done or dropped, dropped when all are, blocked when any is (naming which), in progress when any is under way or some are finished, otherwise todo. A plan with 8 of 38 steps done now shows in progress, not done. Its old status is ignored, not changed.
+- **Nothing finishes a parent by hand any more.** The status menu, Space and ⌘B offer only Drop on a parent, which drops its open subtasks. A parent takes no branch or PR of its own, so a merged PR linked to it long ago can't finish it; its PRs go on its subtasks.
+
+### Removed
+
+- **"Finish it?" in Needs me**, and on plan cards. A parent is done when its subtasks are.
+
 ## [0.1.0-alpha.7] - 2026-11-26
 
 ### Added

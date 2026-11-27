@@ -44,6 +44,8 @@ import {
   openBlockers,
   parentOptions,
   prepare,
+  rollUp,
+  stepsOf,
   subtree,
   threadsFor,
   visibleNeeds,
@@ -69,6 +71,9 @@ export interface MockDelays {
   /** Update and restart, from the download's first step to Restarting… */
   install: number;
 }
+
+/** `errors.rs`'s MSG_HAS_STEPS. */
+const HAS_STEPS = 'This task has subtasks: its status follows them, and PRs go on the subtasks.';
 
 const DEFAULT_DELAYS: MockDelays = { launch: 1200, attention: 250, reject: 5000, lookup: 600, install: 1500 };
 
@@ -124,6 +129,7 @@ export class MockBackend implements Transport {
 
   constructor(seed: MockSeed, opts: { delays?: Partial<MockDelays> } = {}) {
     this.s = stateFromSeed(seed);
+    rollUp(this.s);
     this.s.needs = sortNeeds(this.s.needs);
     this.seedNow = this.s.nowMs;
     this.delays = { ...DEFAULT_DELAYS, ...opts.delays };
@@ -187,6 +193,7 @@ export class MockBackend implements Transport {
 
   /** Rebuild, diff and send `tree:patch`; then let `attention` follow. */
   private commit(created: TaskId[] = []): Patch {
+    // buildRows works parents' statuses out from their steps first (SPEC-core rule 10).
     const { rows, order } = buildRows(this.s);
     const next = { rows, order, repos: structuredClone(this.s.repos) };
     const patch = diff(++this.seq, this.last, next, created);
@@ -320,6 +327,20 @@ export class MockBackend implements Transport {
     this.event(id, 'status', { to: status, actor, ...(note ? { body: note } : {}) });
   }
 
+  /** SPEC-core rule 10: a task with steps takes no status change but Drop. */
+  private hasSteps(id: TaskId): boolean {
+    return stepsOf(this.s, indexTree(this.s), id).length > 0;
+  }
+
+  /** Rule 12: under a task with steps, or an open task that isn't a proposal. */
+  private ensureOpenParent(id: TaskId): void {
+    const p = this.task(id);
+    if (this.hasSteps(id)) return;
+    if (!isOpen(p.status) || p.status === 'proposed') {
+      throw fail('invalid_target', "Tasks can't go under a proposed, done or dropped task.");
+    }
+  }
+
   private repoName(id: RepoId): string {
     return this.s.repos.find((r) => r.id === id)?.name ?? `repo ${id}`;
   }
@@ -414,8 +435,10 @@ export class MockBackend implements Transport {
       const started: StartedThread = { key: { source, ref }, mode, repo, title, linked: true };
       report.started.push(started);
     }
-    if (report.started.length && !t.branch && prepared.branch) t.branch = prepared.branch;
-    if (report.started.length && mode === 'do_it' && (t.status === 'todo' || t.status === 'blocked')) {
+    // A parent takes no branch and no status of its own (SPEC-core rule 10).
+    const parent = this.hasSteps(id);
+    if (report.started.length && !parent && !t.branch && prepared.branch) t.branch = prepared.branch;
+    if (report.started.length && !parent && mode === 'do_it' && (t.status === 'todo' || t.status === 'blocked')) {
       this.setStatusRaw(id, 'doing', null, 'launch');
       report.moved_to_doing = true;
     }
@@ -481,12 +504,7 @@ export class MockBackend implements Transport {
     create_task: async ({ task: input }) => {
       const title = input.title.trim();
       if (!title) throw fail('empty_title', 'A task needs a title.');
-      if (input.parent !== null) {
-        const p = this.task(input.parent);
-        if (!isOpen(p.status) || p.status === 'proposed') {
-          throw fail('invalid_target', "Tasks can't go under a proposed, done or dropped task.");
-        }
-      }
+      if (input.parent !== null) this.ensureOpenParent(input.parent);
       const id = Math.max(0, ...this.s.tasks.keys()) + 1;
       const siblings = [...this.s.tasks.values()].filter((t) => t.parent === input.parent);
       this.s.tasks.set(id, {
@@ -546,13 +564,18 @@ export class MockBackend implements Transport {
       const t = this.task(id);
       if (status === 'proposed') throw fail('not_allowed', "That change isn't allowed.");
       if (status === 'blocked' && !note?.trim()) throw fail('invalid_transition', 'A blocked task needs a reason.');
+      const parent = this.hasSteps(id);
+      if (parent && status !== 'dropped') throw fail('invalid_target', HAS_STEPS);
       const before = new Map<TaskId, { status: Status; reason: string | null }>();
-      const touched = status === 'dropped' ? [id, ...subtree(indexTree(this.s), id).filter((k) => isOpen(this.s.tasks.get(k)!.status))] : [id];
+      // As in Rust: a parent changes only through its steps, so a drop touches its open steps.
+      const ix = indexTree(this.s);
+      const touched = status === 'dropped' ? [id, ...subtree(ix, id).filter((k) => isOpen(this.s.tasks.get(k)!.status))] : [id];
+      for (const k of [...touched]) if (stepsOf(this.s, ix, k).length) touched.splice(touched.indexOf(k), 1);
       for (const k of touched) {
         const x = this.s.tasks.get(k)!;
         before.set(k, { status: x.status, reason: x.blocked_reason });
       }
-      if (t.status === status && status !== 'blocked') return { patch: null, undo: null };
+      if ((t.status === status && status !== 'blocked') || !touched.length) return { patch: null, undo: null };
       for (const k of touched) this.setStatusRaw(k, status, k === id ? note : null);
       const label = status === 'done' ? `Mark done #${id}` : status === 'dropped' ? `Drop #${id}` : status === 'blocked' ? `Mark blocked #${id}` : `Move #${id} to ${LABEL[status]}`;
       // As in Rust: a dropped proposal stays dropped (me can't make a proposal again).
@@ -564,6 +587,7 @@ export class MockBackend implements Transport {
 
     toggle_done: ({ id }) => {
       const t = this.task(id);
+      if (this.hasSteps(id)) throw fail('invalid_target', HAS_STEPS);
       const prev = { status: t.status, reason: t.blocked_reason };
       const to: Status = t.status === 'done' ? (this.s.statusBefore.get(id) ?? 'todo') : 'done';
       if (to === 'blocked') this.setStatusRaw(id, 'blocked', prev.reason ?? 'Blocked');
@@ -605,13 +629,11 @@ export class MockBackend implements Transport {
     move_task: ({ id, parent, position }) => {
       const t = this.task(id);
       if (parent !== null) {
-        const p = this.task(parent);
+        this.task(parent);
         if (parent === id || ancestors(this.s, parent).includes(id)) {
           throw fail('invalid_target', "A task can't go under itself or one of its subtasks.");
         }
-        if (!isOpen(p.status) || p.status === 'proposed') {
-          throw fail('invalid_target', "Tasks can't go under a proposed, done or dropped task.");
-        }
+        this.ensureOpenParent(parent);
       }
       const prev = { parent: t.parent, position: t.position };
       this.place(id, parent, position);

@@ -26,12 +26,14 @@ Next: link this thread to it, then update_task as you go.";
 const UPDATE_TASK: &str = "Report progress on a task: set `status`, add a `note`, or both. \
 Set doing when you start, in_review when your PR is open, blocked with a `note` saying why. \
 Set done with a `note` saying what you did, but only on a task with no PR: a task with a PR \
-finishes by itself when the PR merges. A note alone records progress.";
+finishes by itself when the PR merges. A note alone records progress. A task with subtasks \
+has no status of its own: it shows what they add up to, so update the subtask you're on.";
 
 const LINK: &str = "Attach something to a task. With kind t3_thread, herdr_terminal or \
 claude_session and no `ref`, it links this thread: do that when you start on a task, with the \
 kind the server's instructions name. Link every PR you open (kind \
-pr, ref owner/repo#42, plus `url`). Linking the same thing twice returns the existing link.";
+pr, ref owner/repo#42, plus `url`), to the task it does: on a task with subtasks, to the \
+subtask. Linking the same thing twice returns the existing link.";
 
 const PROPOSE_TASKS: &str = "Propose 1 to 20 new tasks you spotted, at top level or under \
 `parent`. They arrive as proposed and wait for the user to accept or reject them, so don't \

@@ -101,7 +101,7 @@
         <button type="button" class="sec" onclick={s.run}>{s.label} {#if s.keys}<Kbd keys={s.keys} />{/if}</button>
       {/each}
       <button type="button" class="ghost" onclick={() => app.dismiss(item)}>
-        {item.kind === 'finish_it' ? 'Keep open' : 'Dismiss'} <Kbd keys="mod+backspace" joined />
+        Dismiss <Kbd keys="mod+backspace" joined />
       </button>
     </div>
   </div>

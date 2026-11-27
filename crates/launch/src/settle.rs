@@ -259,7 +259,9 @@ pub(crate) fn link(inner: &Inner, row: &Row) -> bool {
 pub(crate) fn move_to_doing(inner: &Inner, task: TaskId) -> bool {
     match inner.core.move_to_doing(task) {
         Ok(_) => true,
-        Err(Error::InvalidTransition) => false,
+        // A parent's status follows its steps (SPEC-core rule 10), so a thread on the whole
+        // task leaves it as it is.
+        Err(Error::InvalidTransition | Error::HasSteps) => false,
         Err(Error::NotFound) => {
             forget(inner, task);
             false

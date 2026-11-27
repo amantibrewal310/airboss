@@ -180,7 +180,8 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
 ```
 
 **What isn't stored, and why:**
-- **"Waiting"** is worked out from `task_deps` and the blockers' statuses.
+- **A parent's status** is worked out from its steps on every read (rule 10). The `status` column of a task with steps is ignored, never migrated.
+- **"Waiting"** is worked out from `task_deps` and the blockers' statuses, as they show.
 - **A task's "last activity"** is its newest event, and a subtree's is the newest event in it (rule 28).
 - **"Ready since"** comes from the blockers' events (rule 26).
 - **A parent's repos** are only its own. The union over its subtasks is the app's to show.
@@ -203,7 +204,7 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
 
 ### Who may change status (enforced by code)
 
-6. **Status changes follow this table.** Anything else gets `Error::NotAllowed`, or `Error::InvalidTransition` when the actor is allowed in general but not from this status.
+6. **Status changes follow this table.** Anything else gets `Error::NotAllowed`, or `Error::InvalidTransition` when the actor is allowed in general but not from this status. The table is for tasks without steps: a task with steps takes only `me`'s drop, and anything else is `Error::HasSteps`, or `NotAllowed` for another actor's drop (rule 10).
 
    | Actor | From | To | Conditions |
    |---|---|---|---|
@@ -246,8 +247,19 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
    | `add_dependency` / `remove_dependency` | yes | (no) | yes | (no) | (no) | (no) |
 
    An agent that is stuck sets `blocked` with a reason. Dropping is a status change, so only `me` can drop (rule 6). Agents never change a task's repos or branch.
-9. **Dropping drops the subtree.** Every open task under it moves to `dropped` in the same change, with one event each. Tasks already `done` stay `done`.
-10. **A parent is never finished automatically.** When its last subtask becomes `done`, `attention` suggests finishing it, and I decide.
+9. **Dropping drops the subtree.** Every open step under it moves to `dropped` in the same change, with one event each. Tasks already `done` stay `done`. A task with steps, the dropped one included, changes only through them and gets no event of its own (rule 10).
+10. **Parents are containers: a task with steps has no status of its own.**
+    - A **step** is a subtask that isn't a proposal: neither one still `proposed` nor one I rejected. A task whose subtasks are all proposals has no steps yet and keeps its own status.
+    - What a task with steps shows, everywhere `core` hands out a `Task` (`task`, `tree`, `snapshot`, `waits_on`, `dependencies`, `run_order`, `ready`), is worked out from its direct steps as they show, from the deepest level up:
+      - `dropped` when every step is dropped;
+      - `done` when every step is done or dropped, with at least one done;
+      - `blocked` when any step is, with `blocked_reason` naming the first blocked step, e.g. `#203 is blocked: Needs test keys`;
+      - `doing` (in progress) when any step is `doing` or `in_review`, or some steps are finished and others aren't;
+      - otherwise `todo`.
+    - Its stored status is ignored, not migrated, and nothing writes it again. If its last step is moved away or deleted, its stored status shows again.
+    - So nothing finishes a parent: it's done when its steps are. `set_status` on a parent is `Error::HasSteps` for every target but `dropped`. Dropping it (by `me` only, as rule 6 says) drops its open steps (rule 9) and writes no event on the parent itself; it then shows `dropped`, or `done` if a step was done. The trade-off: a phase can't be marked done while steps are open; drop those steps instead.
+    - A parent takes no branch and no PR link: `set_branch` with a name and `link` with a PR are `Error::HasSteps` (clearing an old branch is allowed). Its PRs link to the steps they do. Branches, PR links and thread links it had before it had steps stay, as history: an old PR on it reopens nothing (rule 7), and `sync:gh` never finishes it.
+    - `has_steps(id)` and `TaskNode.has_steps` say whether a task is a parent in this sense.
 
 ### Repos and branch (enforced by code)
 
@@ -275,24 +287,24 @@ CREATE INDEX links_kind_ref_idx ON links(kind, ref);
 ### Tree and order (enforced by code)
 
 11. **No cycles in the tree.** A task can't be moved under itself or under one of its own subtasks.
-12. **Moves are rejected under a `proposed`, `done` or `dropped` parent** (`Error::InvalidTarget`). New tasks can't be added there either.
+12. **Moves are rejected under a `proposed`, `done` or `dropped` task with no steps** (`Error::InvalidTarget`). New tasks can't be added there either. A task with steps takes new ones whatever it shows, since its status follows them: a new step under a plan that shows `done` makes it in progress again.
 13. **Positions start at 1 and are gap-free.** Every add, move and delete renumbers the siblings it affects. An out-of-range position is clamped: 0 becomes 1, and anything past the end becomes the end. Renumbering writes no events. Only the moved task gets one.
 
 ### Dependencies (enforced by code)
 
 14. **No dependency loops, anywhere in the tree.** Before adding A-waits-on-B, a recursive query follows B's own blockers across the whole tree. If it reaches A, the dependency is rejected with `Error::Loop`.
-15. **No dependency between a task and its own ancestor or descendant** (`Error::InvalidTarget`). A parent waiting on its child, or the reverse, could never finish, because of rule 10.
-16. **"Waiting" is worked out, never stored.** A task is waiting while any task it waits on is neither `done` nor `dropped`. Waiting never changes a task's status.
+15. **No dependency between a task and its own ancestor or descendant** (`Error::InvalidTarget`). A parent waiting on its child, or the reverse, could never finish, because a parent finishes only through its steps (rule 10).
+16. **"Waiting" is worked out, never stored.** A task is waiting while any task it waits on, as it shows (rule 10), is neither `done` nor `dropped`. So waiting on a phase ends when the phase's last step finishes. Waiting never changes a task's status.
 17. **Deleting a blocker** removes its dependencies and writes a `waits_on_removed` event on each task that was waiting.
 18. **Run order is a topological sort of a parent's direct subtasks, in waves.**
     - A dependency between tasks deeper down counts as a dependency between their top-level ancestors under that parent. For example, if a step in Phase 2 waits on a step in Phase 1, Phase 2 waits on Phase 1.
     - Kahn's algorithm makes the waves: wave 1 is every open subtask that waits on nothing under the parent, wave 2 is everything that waits only on wave 1, and so on. Within a wave, tasks keep their sibling order.
     - A subtask that also waits on an open task outside the parent goes in a separate `waiting_outside` group at the end, not in a wave. Each entry lists its blockers: the open tasks outside the parent that hold it, directly, through its subtree, or through a sibling it waits on. They're sorted by id.
     - Lifting can make subtasks wait on each other in a loop even when their steps don't, for example when Phase 1 and Phase 2 each have a step waiting on the other phase. Kahn's algorithm can't place those subtasks, or anything waiting on them; these go in a `tangled` group, so the rest of the order still shows. They keep their sibling order.
-    - `done` and `dropped` subtasks are left out, and so are `proposed` ones until I accept them. A dependency on an unaccepted proposal doesn't hold anything back in run order.
+    - `done` and `dropped` subtasks are left out, and so are `proposed` ones until I accept them. A dependency on an unaccepted proposal doesn't hold anything back in run order. Every subtask and blocker counts as it shows (rule 10), so a phase whose steps are all done leaves the order.
     - Run order is only shown. Nothing starts by itself.
 
-26. **A ready task knows since when.** `ready()` gives each task the time its last blocker became `done` or `dropped` (a `status` event to either, or a `rejected` event), or stopped being a blocker (a `waits_on_removed` event on the task). If it never waited, or every blocker finished before it was created, that's its creation time. "Last" goes by event id, never by time.
+26. **A ready task knows since when.** `ready()` lists `todo` tasks with no open blockers and no steps (a parent isn't started itself; its steps are, rule 10). It gives each the time its last blocker became `done` or `dropped` (a `status` event to either, or a `rejected` event), or stopped being a blocker (a `waits_on_removed` event on the task). A blocker with steps finishes when its last step does, so its steps' `status` events to `done` or `dropped` count. If it never waited, or every blocker finished before it was created, that's its creation time. "Last" goes by event id, never by time.
 27. **`dependencies(id)` lists every dependency, both ways,** finished blockers included: what the task waits on, and what waits on it, each sorted by id. `waits_on(id)` still lists open blockers only.
 
 ### Plans (enforced by code)
@@ -358,7 +370,8 @@ impl Store {
     pub fn edit_task(&mut self, id: TaskId, edit: TaskEdit, actor: &Actor) -> Result<Task>;  // title, notes
     pub fn link_repo(&mut self, id: TaskId, repo: RepoId, actor: &Actor) -> Result<()>;      // twice: no-op
     pub fn unlink_repo(&mut self, id: TaskId, repo: RepoId, actor: &Actor) -> Result<()>;    // not linked: NotFound
-    pub fn set_branch(&mut self, id: TaskId, branch: Option<&str>, actor: &Actor) -> Result<Task>;
+    pub fn set_branch(&mut self, id: TaskId, branch: Option<&str>, actor: &Actor) -> Result<Task>;  // a parent: HasSteps
+    pub fn has_steps(&self, id: TaskId) -> Result<bool>;  // rule 10
     pub fn add_note(&mut self, id: TaskId, text: &str, actor: &Actor) -> Result<()>;
     pub fn move_task(&mut self, id: TaskId, parent: Option<TaskId>, position: u32, actor: &Actor) -> Result<()>;
     pub fn set_status(&mut self, id: TaskId, to: Status, note: Option<&str>, actor: &Actor) -> Result<Task>;
@@ -388,14 +401,14 @@ impl Store {
     pub fn waits_on(&self, id: TaskId) -> Result<Vec<Task>>;   // its open blockers
     pub fn dependencies(&self, id: TaskId) -> Result<Dependencies>;  // both ways, finished ones too
     pub fn dependency_edges(&self) -> Result<Vec<(TaskId, TaskId)>>; // every (waiting, waits_on), finished ones too
-    pub fn ready(&self) -> Result<Vec<ReadyTask>>;             // `todo`, no open blockers, with since
+    pub fn ready(&self) -> Result<Vec<ReadyTask>>;             // `todo`, no open blockers, no steps, with since
     pub fn run_order(&self, parent: TaskId) -> Result<RunOrder>;  // { waves, waiting_outside, tangled }
 }
 
 pub struct Task { id, parent, repos: Vec<RepoId>, title, body, status, blocked_reason, position,
                   origin, plan_key, branch: Option<String>, created_at }
 pub struct NewTask { title, parent, repos: Vec<RepoId>, body }       // .in_repo(r) adds one; call it again for more
-pub struct TaskNode { task: Task, depth: u32, waiting: bool,
+pub struct TaskNode { task: Task, depth: u32, waiting: bool, has_steps: bool,
                       last_event_at: String, last_actor: Actor, subtree_last_event_at: String }
 pub struct NewLink { kind, r#ref, url, pr_state, title: Option<String> }  // .with_title(t)
 pub struct Link { id, task, kind, r#ref, url, pr_state, title: Option<String>, linked_by, linked_at }
@@ -412,8 +425,8 @@ pub struct PlanTask { key: String, title: String, body: Option<String>, repos: V
                       depends_on: Vec<DepRef>, children: Vec<PlanTask> }
 pub enum DepRef { Key(String), Task(TaskId) }
 
-pub enum Error { EmptyTitle, AlreadyExists, NotFound, NotAllowed, InvalidTransition, NoteRequired, InvalidTarget, Loop,
-                 DuplicateKey, Db(rusqlite::Error) }
+pub enum Error { EmptyTitle, AlreadyExists, NotFound, NotAllowed, InvalidTransition, NoteRequired, InvalidTarget, HasSteps,
+                 Loop, DuplicateKey, Db(rusqlite::Error) }
 impl Error {
     pub fn is_storage_failure(&self) -> bool;  // Db with SQLite's IOERR, CORRUPT, NOTADB or CANTOPEN (not BUSY or LOCKED);
                                                // the app shows these as its database problem state (integration QA R2)
@@ -459,7 +472,8 @@ fn check_status_change(actor: &Actor, task: &TaskFacts, to: Status, note: Option
   - Rule 6 gets one test per row of its table, plus the cases it rejects.
   - Rule 8 gets one test per "no" in its table.
 - **Isolation:** every test uses `Store::open_in_memory()`, so no test touches disk or another test's data.
-- **Tree tests:** nesting 5 levels deep, moving a subtree, clamping and renumbering, moves into a `done` parent rejected, and cycles.
+- **Tree tests:** nesting 5 levels deep, moving a subtree, clamping and renumbering, moves under a `done` task without steps rejected, and cycles.
+- **Parent tests** (`tests/parents.rs`, rule 10): each shown status, a blocked parent's reason, a stored status ignored, proposals not steps, only a drop changing a parent, no branch or PR on a parent, waiting and ready-since through a parent, run order by phases as they show, and rule 12 for a parent.
 - **Dependency tests:**
   - a chain: C waits on B, which waits on A
   - loops of length 2, 3 and 5, rejected even when they cross different parents
@@ -566,7 +580,7 @@ v3:
 ## Decisions (settled 25 Nov 2026)
 
 - **Sibling order:** whole numbers, renumbered on every add, move and delete (rule 13).
-- **Parent done:** never automatic. `attention` suggests it (rule 10).
+- **Parent done:** worked out from its steps, never set (rule 10; replaced "`attention` suggests it" on 27 Nov 2026).
 - **`sync:t3`:** never changes status, to keep v1 simple (rule 6).
 - **Dropping a parent** drops its open subtree (rule 9).
 - **Agents finish only PR-less work,** with a note. Code finishes when its PRs merge (rules 6 and 7).
@@ -649,6 +663,33 @@ The final audit of `main` found gaps that need `core`. They're folded into the r
 - [x] A mix of proposed, accepted, already dropped, missing and repeated ids rejects only the proposals, each with one event, and leaves the rest untouched (`reject_proposals_rejects_what_is_still_proposed_and_skips_the_rest`).
 - [x] A proposal accepted through a second `Store` handle before the reject lands stays `todo`, with no `rejected` event (`a_proposal_accepted_from_another_handle_before_the_reject_lands_is_left_alone`).
 - [x] A reject that fails partway rejects nothing and tells nobody; an empty list writes nothing; only `me` may reject.
+
+## v6: parents are containers (27 Nov 2026)
+
+Agreed with the user on 27 Nov 2026 (task 53, under 52; replaces proposal #50). Parents acted like tasks, with their own status, branch, thread and PR, so a plan could show done with 8 of 38 steps done, and nothing ever finished a parent: `sync:gh`'s finish check never looked at subtasks.
+
+1. **A task with steps shows a status worked out from them** (rule 10), in every read. The rule's two open points were settled with the user: a parent with some steps finished and the rest `todo` shows in progress, and `dropped` is the one status change a parent takes.
+2. **Nothing finishes a parent**, so `attention`'s "Finish it?" is gone ([SPEC-attention](SPEC-attention.md)) and `sync:gh` skips parents ([SPEC-sync](SPEC-sync.md)).
+3. **A parent takes no branch or PR** (`Error::HasSteps`); a thread on the whole task uses a branch it never saves ([SPEC-launch](SPEC-launch.md)).
+4. **Rule 12** lets a parent take new steps whatever it shows; rule 16 and run order read blockers and phases as they show; `ready()` leaves parents out.
+
+**Decisions made while building v6:**
+
+- The status is worked out on read, not stored, so an old parent's stored status needs no migration and is simply ignored. `tree()` rolls the whole tree up in one pass from the leaves and then marks waiting from the edges it already reads; `task()` and the other single reads walk only that task's subtree, and only when it has steps.
+- A proposal isn't a step, so an agent proposing under the task it works on doesn't take that task's status away. Once I accept it, the task is a parent.
+- A blocked parent's `blocked_reason` names the first blocked step in sibling order, at any depth, so the reason always says which task needs unblocking.
+- Dropping a parent writes events only on the steps it drops: a phase under it changes through its own steps too.
+- `ready()`'s since for a task waiting on a parent comes from a second query run only for those tasks, so the 2,000-task timings stay where they were.
+
+**Success criteria for v6:**
+
+- [x] A parent shows dropped, done, blocked, in progress or todo as rule 10 says, through `task()` and `tree()` alike, deepest level first (`tests/parents.rs`, `rollup.rs` unit tests).
+- [x] Its stored status is ignored; proposals aren't steps; a rejected proposal isn't either.
+- [x] Only `me`'s drop changes a parent, and it writes events only on the steps it drops.
+- [x] A parent takes no new branch or PR link; an old PR reopening reopens nothing.
+- [x] Waiting on a parent ends when its last step finishes, and ready-since is that step's finish; a parent is never in `ready()`; run order reads phases as they show.
+- [x] A parent takes new steps whatever it shows; a finished task without steps still doesn't.
+- [x] The 2,000-task timings stay within their targets.
 
 ## Open questions
 

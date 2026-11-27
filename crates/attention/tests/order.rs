@@ -63,7 +63,7 @@ fn groups_come_in_the_designs_order() {
 }
 
 #[test]
-fn finish_it_sits_between_ready_and_quiet() {
+fn ready_sits_before_quiet() {
     let core = Core::new()
         .task(1, None, Doing, &ts(0, 0))
         .task(2, None, Todo, &ts(9, 0))
@@ -78,10 +78,7 @@ fn finish_it_sits_between_ready_and_quiet() {
         .iter()
         .map(|i| i.kind)
         .collect();
-    assert_eq!(
-        kinds,
-        vec![NeedsKind::Ready, NeedsKind::FinishIt, NeedsKind::Quiet]
-    );
+    assert_eq!(kinds, vec![NeedsKind::Ready, NeedsKind::Quiet]);
 }
 
 #[test]

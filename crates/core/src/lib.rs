@@ -16,6 +16,7 @@ mod permissions;
 mod plans;
 mod positions;
 mod repos;
+mod rollup;
 mod snapshot;
 mod sql;
 mod status;

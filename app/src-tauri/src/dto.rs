@@ -526,7 +526,6 @@ pub enum NeedsKindTs {
     AgentStopped,
     Proposed,
     Ready,
-    FinishIt,
     Quiet,
 }
 
@@ -545,7 +544,6 @@ pub enum NeedsGroupTs {
     Stopped,
     Proposed,
     Ready,
-    FinishIt,
     Quiet,
 }
 
@@ -682,6 +680,9 @@ pub struct RowDto {
     #[ts(as = "Vec<TaskIdTs>")]
     pub waits_on: Vec<TaskId>,
     pub has_children: bool,
+    /// It has steps, subtasks that aren't proposals: its status is worked out from them, and
+    /// it takes no status change but Drop, no branch and no PR (SPEC-core rule 10).
+    pub has_steps: bool,
     /// Over leaf subtasks at any depth; `null` for a leaf.
     pub progress: Option<Progress>,
     /// Its own repos, or for a parent with none the union over its subtree.
@@ -1044,8 +1045,6 @@ pub struct PlanCard {
     pub current_wave: Option<u32>,
     /// Up to two ready subtasks.
     pub next_up: Vec<NextUp>,
-    /// Every subtask is done: "Finish it?".
-    pub finish_it: bool,
     /// Subtasks with a working agent.
     pub working: u32,
     pub blocked: u32,

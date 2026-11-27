@@ -537,6 +537,9 @@ impl GhWorker {
                                 check.insert(task);
                             }
                         }
+                        // A parent's PRs go on its steps, and the agent links them there
+                        // (SPEC-core rule 10): nothing to retry.
+                        Err(airboss_core::Error::HasSteps) => {}
                         Err(e) => {
                             all_linked = false;
                             log(&format!("couldn't link PR {r} to task {}: {e}", task.0));

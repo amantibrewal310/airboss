@@ -153,6 +153,8 @@ fn pr_view(r: &str, state: PrState, head: Option<&str>, linked: bool) -> PrView 
 fn task_detail_gathers_links_threads_history_deps_needs_and_prepare() {
     let app = TestApp::new();
     let p = app.add("Booking flow", None);
+    // Before it had steps: a parent takes no branch (SPEC-core rule 10).
+    app.core(|s| s.set_branch(p, Some("task-1-booking"), &Actor::Me).unwrap());
     let t = app.add("Web: slot picker", Some(p));
     let blocker = app.add("API", Some(p));
     let after = app.add("Confirm", Some(p));
@@ -166,7 +168,6 @@ fn task_detail_gathers_links_threads_history_deps_needs_and_prepare() {
             &Actor::Me,
         )
         .unwrap();
-        s.set_branch(p, Some("task-1-booking"), &Actor::Me).unwrap();
         s.add_note(t, "from the agent", &Actor::Agent("t3/slot-picker".into()))
             .unwrap();
     });

@@ -33,7 +33,7 @@
     [
       `${pct}% done, ${card.progress.done} of ${card.progress.total}`,
       card.waves === 0 ? 'no waves yet' : card.current_wave === null ? 'all waves done' : `wave ${card.current_wave + 1} of ${card.waves}`,
-      card.next_up.length ? `next up ${card.next_up.map((n) => `${n.id} ${n.title}`).join(', ')}` : card.finish_it ? 'finish it?' : 'nothing ready',
+      card.next_up.length ? `next up ${card.next_up.map((n) => `${n.id} ${n.title}`).join(', ')}` : 'nothing ready',
       card.working ? `${card.working} working` : '',
       card.blocked ? `${card.blocked} blocked` : '',
     ]
@@ -88,8 +88,6 @@
           {#each card.next_up as n (n.id)}
             <button type="button" class="pill ok" onclick={(e) => (e.stopPropagation(), onnext(n.id))}>{n.id} {n.title}</button>
           {/each}
-        {:else if card.finish_it}
-          <span class="pill ok">Finish it?</span>
         {:else}
           <span class="faint">Nothing ready</span>
         {/if}

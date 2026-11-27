@@ -178,7 +178,9 @@ pub struct Task {
     pub repos: Vec<RepoId>,
     pub title: String,
     pub body: Option<String>,
+    /// Its own status, or, when it has steps, what they add up to (rule 10).
     pub status: Status,
+    /// Why it's blocked. On a parent, which step is blocked and why (rule 10).
     pub blocked_reason: Option<String>,
     pub position: u32,
     pub origin: Origin,
@@ -235,6 +237,9 @@ pub struct TaskNode {
     pub depth: u32,
     /// True while any task it waits on is neither done nor dropped (rule 16).
     pub waiting: bool,
+    /// True when it has steps: subtasks that aren't proposals. Its status is then worked out
+    /// from them, and it takes no branch, PR or Do it of its own (rule 10).
+    pub has_steps: bool,
     /// When its own newest event happened (rule 28).
     pub last_event_at: String,
     /// Who made its own newest event.

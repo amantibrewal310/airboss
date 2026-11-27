@@ -421,6 +421,16 @@ fn message(err: &Error, facts: &Facts) -> String {
             }
             _ => "A task can't wait on its own parent or subtask. Remove that dependency.".into(),
         },
+        Error::HasSteps => match facts.task {
+            Some((id, ..)) => format!(
+                "Task #{} has subtasks, so its status follows them, and PRs and branches go on \
+                 the subtasks. Report on the subtask you're working on.",
+                id.0
+            ),
+            None => "That task has subtasks, so its status follows them, and PRs and branches \
+                     go on the subtasks. Report on the subtask you're working on."
+                .into(),
+        },
         Error::Loop => match (facts.parent, facts.task) {
             (Some((parent, _)), Some((id, ..))) => format!(
                 "Task #{} is inside #{}, so #{} can't move under it.",

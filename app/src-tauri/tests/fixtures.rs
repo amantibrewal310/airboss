@@ -388,16 +388,6 @@ fn needs(proposals: &[TaskId]) -> Vec<NeedsItem> {
             Target::Task(TaskId(146)),
         ),
         item(
-            "finish:110",
-            NeedsKind::FinishIt,
-            110,
-            "Dark mode tokens",
-            HOUR,
-            "All 4 subtasks are done. Mark the parent done?",
-            "All 4 subtasks done",
-            Target::Task(TaskId(110)),
-        ),
-        item(
             "quiet:120",
             NeedsKind::Quiet,
             120,

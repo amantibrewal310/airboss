@@ -45,7 +45,7 @@ fn group(s: &Store, parent: Option<TaskId>) -> Vec<(TaskId, u32)> {
 // ---- Rule 9: dropping drops the subtree ----
 
 #[test]
-fn dropping_a_three_level_subtree_drops_every_open_task_and_keeps_done_ones() {
+fn dropping_a_three_level_subtree_drops_every_open_step_and_keeps_done_ones() {
     let mut s = store();
     let root = top(&mut s, "Root");
     let a = under(&mut s, root, "A");
@@ -58,12 +58,12 @@ fn dropping_a_three_level_subtree_drops_every_open_task_and_keeps_done_ones() {
         .unwrap()
         .id;
     let outside = top(&mut s, "Outside");
-    set(&mut s, a, Status::Doing);
+    set(&mut s, a1, Status::Doing);
     set(&mut s, a2, Status::Done);
     set(&mut s, b1, Status::Blocked);
     assert_eq!(status(&s, proposal), Status::Proposed);
 
-    let open = [a, b, a1, b1, proposal];
+    let open = [a1, b1, proposal];
     let before: Vec<usize> = [root, a, b, a1, a2, b1, proposal, outside]
         .iter()
         .map(|&id| event_count(&s, id))
@@ -72,7 +72,10 @@ fn dropping_a_three_level_subtree_drops_every_open_task_and_keeps_done_ones() {
     s.set_status(root, Status::Dropped, None, &Actor::Me)
         .unwrap();
 
-    assert_eq!(status(&s, root), Status::Dropped);
+    // Parents show what their steps add up to (rule 10): A2 was done, so A and Root are.
+    assert_eq!(status(&s, root), Status::Done);
+    assert_eq!(status(&s, a), Status::Done);
+    assert_eq!(status(&s, b), Status::Dropped);
     for id in open {
         assert_eq!(status(&s, id), Status::Dropped, "{id:?}");
         let history = s.history(id).unwrap();
@@ -94,8 +97,9 @@ fn dropping_a_three_level_subtree_drops_every_open_task_and_keeps_done_ones() {
         .map(|&id| event_count(&s, id))
         .collect();
     let added: Vec<usize> = after.iter().zip(&before).map(|(x, y)| x - y).collect();
-    // root, a, b, a1 dropped; a2 done; b1, proposal dropped; outside untouched.
-    assert_eq!(added, vec![1, 1, 1, 1, 0, 1, 1, 0]);
+    // a1, b1 and the proposal dropped; parents change only through their steps; a2 done;
+    // outside untouched.
+    assert_eq!(added, vec![0, 0, 0, 1, 0, 1, 1, 0]);
 }
 
 #[test]
@@ -130,7 +134,8 @@ fn dropping_a_leaf_drops_only_the_leaf() {
         .unwrap();
 
     assert_eq!(status(&s, leaf), Status::Dropped);
-    assert_eq!(status(&s, p), Status::Todo);
+    // One step finished and one open: in progress (rule 10).
+    assert_eq!(status(&s, p), Status::Doing);
     assert_eq!(status(&s, sibling), Status::Todo);
     assert_eq!(event_count(&s, p), 1);
     assert_eq!(event_count(&s, sibling), 1);

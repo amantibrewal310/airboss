@@ -68,7 +68,8 @@ describe('StatusMenu', () => {
     await wait(30);
     await userEvent.keyboard('{Enter}');
     await wait(30);
-    expect(app.tasks.rows.get(142)!.status).toBe('dropped');
+    // Its open steps are dropped and one was done, so it shows done (SPEC-core rule 10).
+    expect(app.tasks.rows.get(142)!.status).toBe('done');
   });
 
   it('offers Accept and Reject on a proposed task', async () => {

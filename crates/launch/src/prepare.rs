@@ -19,6 +19,9 @@ pub(crate) struct Facts {
     /// Every registered repo, by name.
     pub repos: Vec<Repo>,
     pub run_order: Option<RunOrder>,
+    /// It has steps, so it takes no branch and no status change of its own (SPEC-core
+    /// rule 10): a thread on the whole task uses a branch it never saves.
+    pub has_steps: bool,
 }
 
 /// A `core` error about one task, for the user.
@@ -37,7 +40,9 @@ impl Facts {
                 let task = s.task(id)?;
                 let tree = s.tree()?;
                 let has_children = tree.iter().any(|n| n.task.parent == Some(id));
+                let has_steps = tree.iter().any(|n| n.task.id == id && n.has_steps);
                 Ok(Facts {
+                    has_steps,
                     waits_on: s.waits_on(id)?,
                     deps: s.dependencies(id)?,
                     links: s.links(id)?,
@@ -58,6 +63,9 @@ impl Facts {
     pub fn check_open(&self) -> Result<(), ServiceError> {
         match self.task.status {
             Status::Proposed => Err(errors::task_proposed(self.task.id)),
+            s @ (Status::Done | Status::Dropped) if self.has_steps => {
+                Err(errors::steps_closed(self.task.id, s))
+            }
             s @ (Status::Done | Status::Dropped) => Err(errors::task_closed(self.task.id, s)),
             _ => Ok(()),
         }

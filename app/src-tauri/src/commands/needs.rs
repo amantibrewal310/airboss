@@ -34,7 +34,7 @@ fn hidden(undo: UndoEntry) -> UndoableWrite {
     }
 }
 
-/// Hides this occurrence for good (Dismiss, and Keep open on Finish it?).
+/// Hides this occurrence for good (Dismiss).
 pub fn needs_dismiss(s: &AppState, _c: Caller, key: String) -> AppResult<UndoableWrite> {
     let key = NeedsKey(key);
     let task = item_task(s, &key);

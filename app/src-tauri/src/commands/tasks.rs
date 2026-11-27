@@ -207,7 +207,9 @@ pub fn set_status(
     // Previous statuses come from the view model before the change, and the undo entry starts
     // at the cursor that view model was built at, so an agent's write the app hasn't caught up
     // with yet refuses the undo.
-    let (before, after): (Vec<(TaskId, Status, Option<String>)>, _) = s.vm_at(|vm| {
+    // `(task, status, blocked reason, has steps)`.
+    type Before = Vec<(TaskId, Status, Option<String>, bool)>;
+    let (before, after): (Before, _) = s.vm_at(|vm| {
         let ids = if status == Status::Dropped {
             vm.index.subtree(id)
         } else {
@@ -216,10 +218,10 @@ pub fn set_status(
         ids.into_iter()
             .filter_map(|t| vm.rows.get(&t))
             .filter(|r| r.id == id || open(r.status))
-            .map(|r| (r.id, r.status, r.blocked_reason.clone()))
+            .map(|r| (r.id, r.status, r.blocked_reason.clone(), r.has_steps))
             .collect()
     });
-    let Some(&(_, from, _)) = before.first() else {
+    let Some(&(_, from, ..)) = before.first() else {
         return Err(AppError::task_gone(id));
     };
     let note = note.filter(|n| !n.trim().is_empty());
@@ -237,15 +239,18 @@ pub fn set_status(
     let dropped_proposals = |prev: Status| status == Status::Dropped && prev == Status::Proposed;
     let kept = before
         .iter()
-        .filter(|(t, prev, _)| *t != id && dropped_proposals(*prev))
+        .filter(|(t, prev, ..)| *t != id && dropped_proposals(*prev))
         .count();
+    // A parent comes back through its steps (SPEC-core rule 10), so it isn't put back itself.
     let before: Vec<_> = before
         .into_iter()
-        .filter(|(_, prev, _)| *prev != Status::Dropped && !dropped_proposals(*prev))
+        .filter(|(_, prev, _, steps)| {
+            !steps && *prev != Status::Dropped && !dropped_proposals(*prev)
+        })
         .collect();
     let inverse: Vec<Inverse> = before
         .iter()
-        .map(|(t, prev, reason)| Inverse::SetStatus {
+        .map(|(t, prev, reason, _)| Inverse::SetStatus {
             id: *t,
             status: undo_status(*prev),
             note: if *prev == Status::Blocked {
@@ -262,7 +267,7 @@ pub fn set_status(
             undo: None,
         });
     }
-    let tasks = before.iter().map(|(t, _, _)| *t).collect();
+    let tasks = before.iter().map(|(t, ..)| *t).collect();
     let kept = match kept {
         0 => None,
         1 => Some("Its proposal stays dropped.".to_string()),

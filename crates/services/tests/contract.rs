@@ -44,7 +44,6 @@ fn every_kind_has_its_group_and_groups_sort_in_display_order() {
         AgentStopped,
         Proposed,
         Ready,
-        FinishIt,
         Quiet,
     ]
     .into_iter()
@@ -60,7 +59,6 @@ fn every_kind_has_its_group_and_groups_sort_in_display_order() {
             NeedsGroup::Stopped,
             NeedsGroup::Proposed,
             NeedsGroup::Ready,
-            NeedsGroup::FinishIt,
             NeedsGroup::Quiet,
         ]
     );

@@ -9,7 +9,7 @@ use airboss_services::{
     Checks, NeedsKind, PrView, RequestKind, Review, Target, ThreadState, ThreadView,
 };
 
-use crate::compute::{Ctx, Entry, ItemFor, count, is_open, stamp};
+use crate::compute::{Ctx, Entry, ItemFor, count, stamp};
 
 /// Questions, approvals and failed runs, from linked threads.
 pub(crate) fn threads(ctx: &Ctx<'_>, out: &mut Vec<Entry>) {
@@ -315,64 +315,6 @@ fn ready_text(on: &[TaskId], merged: &HashSet<TaskId>) -> (String, String) {
         _ => format!("{} {}", ids.join(" and "), on.first().map_or("done", done)),
     };
     (headline, format!("{context} · ready to start"))
-}
-
-/// Open parents whose direct subtasks that aren't dropped are all done, with at least one.
-/// A proposed subtask counts as not done.
-pub(crate) fn finish(ctx: &Ctx<'_>, out: &mut Vec<Entry>) {
-    // Per parent position: kept subtasks, done ones, the newest done one's last event.
-    let mut kids: Vec<(usize, usize, Option<&str>)> = vec![(0, 0, None); ctx.core.tree.len()];
-    for node in &ctx.core.tree {
-        let Some(&p) = node.task.parent.and_then(|p| ctx.index.get(&p)) else {
-            continue;
-        };
-        let k = &mut kids[p];
-        match node.task.status {
-            Status::Dropped => {}
-            Status::Done => {
-                k.0 += 1;
-                k.1 += 1;
-                let at = node.last_event_at.as_str();
-                if k.2.is_none_or(|newest| at > newest) {
-                    k.2 = Some(at);
-                }
-            }
-            _ => k.0 += 1,
-        }
-    }
-    for (node, &(kept, done, newest)) in ctx.core.tree.iter().zip(&kids) {
-        let Some(newest) = newest.filter(|_| kept > 0 && kept == done) else {
-            continue;
-        };
-        if !is_open(node.task.status) {
-            continue;
-        }
-        let since = stamp(newest);
-        let (headline, context) = match done {
-            1 => (
-                "1 subtask is done. Mark the parent done?".to_string(),
-                "1 subtask done".to_string(),
-            ),
-            n => (
-                format!("All {n} subtasks are done. Mark the parent done?"),
-                format!("All {n} subtasks done"),
-            ),
-        };
-        let item = ItemFor {
-            kind: NeedsKind::FinishIt,
-            key: format!("finish:{}:{since}", node.task.id.0),
-            node,
-            since,
-            headline,
-            context,
-            target: Target::Task(node.task.id),
-        };
-        out.push(Entry {
-            item: item.build(false),
-            tasks: vec![node.task.id],
-            changes_at: None,
-        });
-    }
 }
 
 /// The noun, plural unless there's one.

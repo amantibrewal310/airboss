@@ -9,7 +9,8 @@
 
   /**
    * S, or click a status icon: 1 Todo … 6 Dropped. Number keys, ↑↓ and ↩ pick. Blocked asks why;
-   * Dropped confirms. A proposed task offers Accept and Reject instead.
+   * Dropped confirms. A proposed task offers Accept and Reject instead. A task with subtasks
+   * shows what they add up to, so Dropped is the only one it takes (SPEC-core rule 10).
    */
   let { task, at }: { task: TaskId; at: Anchor } = $props();
   const app = useApp();
@@ -32,6 +33,7 @@
           label: SHAPE_LABEL[s],
           hint: String(i + 1),
           icon: icon(s),
+          disabled: row?.has_steps && s !== 'dropped' ? 'Follows its subtasks' : false,
           run: () => void app.setStatus(task, s),
         })),
   );

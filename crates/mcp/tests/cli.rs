@@ -61,6 +61,14 @@ fn seed(db: &Path) -> Vec<TaskId> {
         .add_task(NewTask::new("Booking").in_repo(web).in_repo(api), &me)
         .unwrap()
         .id;
+    // From before it had subtasks: a parent takes no new branch or PR (rule 10).
+    s.set_branch(booking, Some("booking-flow"), &me).unwrap();
+    s.link(
+        booking,
+        NewLink::pr("acme/web#42").with_title("Booking PR"),
+        &me,
+    )
+    .unwrap();
     let schema = s
         .add_task(NewTask::new("Schema").under(booking), &me)
         .unwrap()
@@ -80,13 +88,6 @@ fn seed(db: &Path) -> Vec<TaskId> {
         .add_task(NewTask::new("Idea"), &Actor::Agent("t3/x".into()))
         .unwrap()
         .id;
-    s.set_branch(booking, Some("booking-flow"), &me).unwrap();
-    s.link(
-        booking,
-        NewLink::pr("acme/web#42").with_title("Booking PR"),
-        &me,
-    )
-    .unwrap();
     vec![booking, schema, endpoint, docs, old, idea]
 }
 
@@ -125,7 +126,7 @@ fn ls_prints_the_tree_with_marks_in_aligned_columns() {
     assert_eq!(
         text,
         "\
-#1  ○ Booking   api, web
+#1  ◑ Booking   api, web
 #2    ◑ Schema
 #3    ○ API               waiting
 #4  ⊖ Docs                blocked: needs copy
@@ -149,26 +150,40 @@ fn ls_keeps_a_finished_parent_when_something_under_it_is_open() {
     let p = s.add_task(NewTask::new("Parent"), &Actor::Me).unwrap().id;
     s.add_task(NewTask::new("Child"), &Actor::Me).unwrap();
     let c = s
-        .add_task(NewTask::new("Open child").under(p), &Actor::Me)
+        .add_task(NewTask::new("Done step").under(p), &Actor::Me)
         .unwrap()
         .id;
-    s.set_status(p, Status::Done, None, &Actor::Me).unwrap();
-    s.set_status(c, Status::Todo, None, &Actor::Me).unwrap();
+    s.set_status(c, Status::Done, None, &Actor::Me).unwrap();
+    // A proposal isn't a step, so the parent shows done with it open underneath.
+    s.add_task(
+        NewTask::new("Open idea").under(p),
+        &Actor::Agent("t3/x".into()),
+    )
+    .unwrap();
     drop(s);
     let text = ok(&dir.db(), &["ls"]);
     assert!(text.contains("● Parent"), "{text}");
-    assert!(text.contains("  ○ Open child"), "{text}");
+    assert!(text.contains("  ◌ Open idea"), "{text}");
 }
 
 #[test]
 fn ls_ready_lists_what_can_start_now() {
     let dir = TempDir::new();
-    seed(&dir.db());
+    let ids = seed(&dir.db());
+    assert_eq!(
+        ok(&dir.db(), &["ls", "--ready"]).trim(),
+        "Nothing is ready to start."
+    );
+    // Schema done frees API. Booking has steps, so it's never ready itself (rule 10).
+    let mut s = Store::open(&dir.db()).unwrap();
+    s.set_status(ids[1], Status::Done, None, &Actor::Me)
+        .unwrap();
+    drop(s);
     let text = ok(&dir.db(), &["ls", "--ready"]);
     let lines: Vec<&str> = text.lines().collect();
     assert_eq!(lines.len(), 1, "{text}");
     assert!(
-        lines[0].starts_with("#1  ○ Booking  api, web  ready since 20"),
+        lines[0].starts_with("#3  ○ API") && lines[0].contains("ready since 20"),
         "{text}"
     );
 }
@@ -201,7 +216,7 @@ fn show_prints_every_section() {
     let text = ok(&dir.db(), &["show", "1"]);
     for want in [
         "#1 Booking",
-        "Status    ○ Todo",
+        "Status    ◑ In progress",
         "Repos     api, web",
         "Branch    booking-flow",
         "Links     pr  Booking PR  acme/web#42  open",
@@ -261,7 +276,7 @@ fn log_shows_recent_history_newest_last() {
     for (line, id) in lines.iter().zip(&ids) {
         assert!(line.starts_with(&format!("{id:>width$}  ")), "{line}");
     }
-    assert!(lines.last().unwrap().contains("linked"), "{text}");
+    assert!(lines.last().unwrap().contains("created"), "{text}");
     assert!(text.contains("→ in progress"), "{text}");
     assert!(text.contains("agent:t3/x"), "{text}");
 }
@@ -275,7 +290,7 @@ fn log_after_shows_only_newer_events() {
     let after = all[n - 2]["id"].as_i64().unwrap().to_string();
     let newer = json(&dir.db(), &["log", "--after", &after]);
     assert_eq!(newer.as_array().unwrap().len(), 1);
-    assert_eq!(newer[0]["kind"], "linked");
+    assert_eq!(newer[0]["kind"], "created");
 
     // The id on a text line works too.
     let text = ok(&dir.db(), &["log"]);
@@ -284,7 +299,7 @@ fn log_after_shows_only_newer_events() {
     assert_eq!(id, after);
     let newer = ok(&dir.db(), &["log", "--after", id]);
     assert_eq!(newer.lines().count(), 1);
-    assert!(newer.contains("linked"), "{newer}");
+    assert!(newer.contains("agent:t3/x"), "{newer}");
 }
 
 #[test]

@@ -87,10 +87,16 @@ impl Core {
             branch: None,
             created_at: ts(0, 0),
         };
+        if status != Status::Proposed
+            && let Some(p) = self.nodes.iter_mut().find(|x| Some(x.task.id.0) == parent)
+        {
+            p.has_steps = true;
+        }
         self.nodes.push(TaskNode {
             task,
             depth,
             waiting: false,
+            has_steps: false,
             last_event_at: last.to_string(),
             last_actor: Actor::Me,
             subtree_last_event_at: last.to_string(),
