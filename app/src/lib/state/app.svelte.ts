@@ -1224,6 +1224,19 @@ export class App {
     }
   }
 
+  /** Accept all on one agent turn's proposals in the parent panel (they share one parent). */
+  async acceptTurn(ids: TaskId[]): Promise<void> {
+    if (ids.length === 1) return this.acceptOne(ids[0]!);
+    const item = this.needs.visible.find((n) => n.kind === 'proposed' && ids.every((id) => n.proposed.some(([p]) => p === id)));
+    if (item) return this.acceptProposals(item, ids);
+    try {
+      this.applyWrite(await api.acceptProposals(ids));
+      this.toast(`Accepted ${ids.length} subtasks`);
+    } catch (e) {
+      this.fail(e);
+    }
+  }
+
   /** Retry on a reject Rust couldn't write: hide the rows again and reject them with Undo. */
   async rejectAgain(ids: TaskId[]): Promise<void> {
     if (ids.length === 1) return this.rejectOne(ids[0]!);

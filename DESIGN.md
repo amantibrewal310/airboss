@@ -434,21 +434,32 @@ In the Threads section of the detail panel the labels shorten to Running, Waitin
 - **Agent stopped:** a run that ended without a PR. The task is in progress, every agent on it has stopped (not failed: that's a Failed run), no PR is open, and nothing has changed for 10 minutes. Its icon is a circle with a pause, the line reads "refund-service stopped" with the time beside it, and the card's headline is "Agent stopped · no PR yet" ("no open PR" when its only PRs are closed). It sits right after Failed runs, since both are a run that ended, and before the calmer kinds. It leaves as soon as an agent runs again, a PR opens or the task moves on.
 - A cleared item slides 10px left and fades over 180ms, then the list closes up.
 - **Empty state:** a check, "Nothing needs you", when it was last checked, counts of in-progress and ready tasks, and a button to show ready tasks.
-- **In the detail panel:** the same items appear as red-washed callouts above the properties.
+- **In the detail panel:** the same items appear as red-washed callouts above the properties. On a parent they are rows under **Needs you** instead (see "Parent panel").
 
 ### Run-order map
 A parent's subtasks drawn as a map, on the full task page:
-- **Columns** are waves, headed "Wave 1", "Wave 2", split by hairlines. Within a wave, tasks stack in sibling order, 80px apart. There are no repo lanes: repos are optional, so a station shows its repo dots in its subline instead.
+- **Columns** are steps of the run order, headed "1st", "2nd", "3rd", split by hairlines. The UI never says "wave". Within a column, tasks stack in sibling order, 80px apart. There are no repo lanes: repos are optional, so a station shows its repo dots in its subline instead.
 - **Stations** are the subtasks' 16px status icons, ringed in the surface colour so lines stop cleanly. Under each: the title (12.5px, 500) and "id · state" (11.5px). State reads "ready" in green, "blocked" in orange, "waits on 202, 204" or "waits outside: 128", followed by the task's repo dots if it has any.
 - **Lines** run from blocker to task, 1.75px with round caps, in neutral grey: solid (text-3) when the blocker is done, dashed (2 on, 5 off, text-2) while waiting. A line between neighbouring waves bends with a smooth curve just before the task. A line that skips a wave drops into the gap between rows, runs along it, and rises into the task, so it never crosses another station.
 - **Outside blocker:** a short grey dashed stub (about 50px) into the station, with no source drawn.
 - **Hover** a station to trace it: its lines thicken to 2.5px and all others fade to 18%. Click selects (indigo wash; ⌘↩ starts it); double-click opens it.
 - A legend under the map explains solid and dashed lines.
-- **Waves list:** the other form of the same data. "Wave 1 · can start now", "· in parallel" when a wave holds more than one task, then 32px rows with status, id, title, pills and any repo dots. The detail panel always uses the Waves list; the full page has a Waves / Map switch and opens on Map.
-- **Large parents:** fall back to the Waves list. The prototype has no automatic threshold yet: the map is 460–780px wide and its columns just get narrower as waves are added, so pick the cut-off when building.
+- **List:** the other form, the parent panel's Ready now, In progress, Next and Done. The full page has a List / Map switch and opens on Map.
+- **Large parents:** fall back to the List, above 40 subtasks or 8 columns.
+
+### Parent panel
+A parent's detail panel answers what needs me, what can start and where the plan stands, before any data (task 54). Top to bottom:
+- **Summary line:** "6 of 19 done · 2 ready · 4 to review · 1 blocked", leaving out the parts that are zero.
+- **Needs you:** the Needs me items about the parent or any step under it, one row each with its own action (Open thread, Open PR, Open). Ready to start items are left out: Ready now lists them. Proposals are rows of their own, with Accept and Reject each, and "follows #12 · would block #20" when known. Proposals one agent made under one parent within two minutes of each other count as one turn; such a group is framed with "3 proposed together" and **Accept all**.
+- **Ready now:** what Start ready would start, with Start ready.
+- **In progress:** steps in progress, in review or blocked.
+- **Next:** open steps that can't start yet, with what they wait on.
+- **Done:** folded, "Done 6", opening on click.
+- Then the notes, **Links** folded under them, and Repos, Parent, Waits on and Blocks. No Status row (the summary line says where it stands) and no Branch row (a parent takes none).
+- Every list holds leaf steps at any depth, the ones progress counts, sorted by run order: the column of the step's top-level subtask, then tree order.
 
 ### Plans cards
-Raised cards, 12px corners, hairline border; hover lifts 1px and darkens the border; the selected card gets an indigo border and focus halo. Each card: status icon, title, id; the percentage at 26px with "7 of 20 done" and a 22px ring; the stacked bar; then rows for Wave (with a 18×5px dot per wave: indigo done, amber current), Next up (Ready pills), Agents (a working chip and a blocked count), Repos.
+Raised cards, 12px corners, hairline border; hover lifts 1px and darkens the border; the selected card gets an indigo border and focus halo. Each card: status icon, title, id; the percentage at 26px with "7 of 20 done" and a 22px ring; the stacked bar; then rows for Next up (Ready pills), Agents (a working chip and a blocked count), Repos.
 
 ### Sidebar and connections footer
 - Navigation items are 28px with a 16px icon, label and a count in text-3. Needs me comes first and shows a red count badge (18px, fully rounded) instead of a plain count. Then Ready to start, Plans, In progress, All tasks.
@@ -534,7 +545,7 @@ Things the design shows that SPEC-core.md doesn't store or expose yet. Owner in 
 - **PR state and diff stats on PR links** [sync]: rows and cards show "merged", "checks passed", "+412 −38"; sync owns observed PRs.
 - **Live thread state per linked thread: running, waiting on you, stopped** [sync]: drives the live chips; core only stores the link.
 - **The shared branch name per parent task** [launch]: the page shows a Branch property and Do it starts one thread per repo on that branch; core has no branch field.
-- **Outside blockers' ids from `run_order`** [core]: `run_order` returns waves of tasks only; the map and Waves list show "waits outside: 128". `waits_on(id)` can supply them, but only with one call per subtask.
+- **Outside blockers' ids from `run_order`** [core]: `run_order` returns waves of tasks only; the map and the step lists show "waits outside: 128". `waits_on(id)` can supply them, but only with one call per subtask.
 - **Every dependency in both directions, finished ones included** [core]: `waits_on` returns open blockers only, but the map draws solid lines from finished blockers and the panel lists Waits on (done ones too) and Blocks.
 - **Notes on a task** [core]: the spec says agents add notes, and `set_status` takes a note, but the tasks table's columns aren't listed and nothing names an editable notes body. The panel shows one per task.
 - **"Became ready at" and "quiet since" times** [attention, with core exposing them]: `ready()` says which tasks are ready but not since when, and `tree()` doesn't say when a task (or its subtree) last changed or who changed it. Each row shows a time and an actor, and "Quiet 5+ days" needs the latest event across a subtree. Both can be found from events, but not cheaply for 2,000 tasks unless core returns the last event time and actor with each tree node.

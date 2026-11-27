@@ -950,6 +950,28 @@ pub struct DepDto {
     pub waiting: bool,
 }
 
+/// An open proposal under a task: who made it and when, so the panel can tell which ones
+/// came from one agent turn, and what it follows and blocks.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export_to = "types.ts")]
+pub struct ProposalDto {
+    #[ts(as = "TaskIdTs")]
+    pub id: TaskId,
+    #[ts(as = "TaskIdTs")]
+    pub parent: TaskId,
+    /// Who proposed it, as text ("agent:t3/…").
+    #[ts(as = "ActorTs")]
+    pub by: String,
+    #[ts(as = "TimestampTs")]
+    pub at: Timestamp,
+    /// The tasks it waits on, finished ones too.
+    #[ts(as = "Vec<TaskIdTs>")]
+    pub follows: Vec<TaskId>,
+    /// The tasks that wait on it.
+    #[ts(as = "Vec<TaskIdTs>")]
+    pub blocks: Vec<TaskId>,
+}
+
 /// A line from a blocker to the task waiting on it, lifted to the parent's subtasks.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[ts(export_to = "types.ts")]
@@ -1006,6 +1028,8 @@ pub struct TaskDetail {
     pub blocks: Vec<DepDto>,
     /// For a task with subtasks: its display waves.
     pub waves: Option<RunMap>,
+    /// The open proposals anywhere under it, in id order.
+    pub proposals: Vec<ProposalDto>,
     #[ts(as = "Vec<NeedsItemTs>")]
     pub needs: Vec<NeedsItem>,
     /// What Do it would do; `null` for proposed, done and dropped tasks (or when launch can't

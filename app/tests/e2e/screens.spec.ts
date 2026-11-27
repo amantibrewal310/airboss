@@ -78,6 +78,11 @@ const SCREENS: Screen[] = [
       await page.getByRole('option', { name: /Agent stopped: 202/ }).click();
     },
   },
+  // Task 54: not a design screen; a parent's panel reads as decisions (summary, Needs you,
+  // Ready now, In progress, Next, Done folded).
+  { name: '15-parent-panel', url: '/?fixture=design&view=all&select=200' },
+  // Proposals one by one, with Accept all for the ones one agent turn made.
+  { name: '16-parent-proposals', url: '/?fixture=design&view=all&select=150' },
 ];
 
 for (const theme of ['dark', 'light'] as const) {

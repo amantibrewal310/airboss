@@ -105,5 +105,5 @@ test('plan cards hold no controls inside an option', async ({ page }) => {
   await expect(page.locator('[role="option"]')).toHaveCount(0);
   const card = page.getByRole('article', { name: 'Booking flow' });
   await expect(card).toBeFocused();
-  await expect(card).toHaveAccessibleDescription(/^20% done, 1 of 5, wave 1 of 3/);
+  await expect(card).toHaveAccessibleDescription(/^20% done, 1 of 5, (next up|nothing ready)/);
 });
