@@ -136,6 +136,6 @@ describe('the command registry', () => {
 
   it('builds the sheet and the context menu from the registry', () => {
     expect(sheetRows('ctrl+alt+n').map((r) => r.label)).toContain('Quick add from any app');
-    expect(CONTEXT_MENU.filter((x) => x !== '-')).toHaveLength(13);
+    expect(CONTEXT_MENU.filter((x) => x !== '-')).toHaveLength(14);
   });
 });

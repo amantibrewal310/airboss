@@ -104,6 +104,7 @@ pub const TASK_MENU: &[Option<Item>] = &[
     )),
     None,
     Some(item("status", "Change Status…  S", None, true)),
+    Some(item("priority", "Set Priority…  P", None, true)),
     Some(item("toggle_done", "Mark Done  Space", None, true)),
     Some(item("rename", "Rename  ↩", None, true)),
     Some(item("link_repos", "Link Repos…  R", None, true)),

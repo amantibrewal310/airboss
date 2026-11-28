@@ -27,6 +27,7 @@ pub const COMMAND_NAMES: &[&str] = &[
     "pick_folder",
     "set_branch",
     "set_due",
+    "set_priority",
     "add_dependency",
     "remove_dependency",
     "add_link",

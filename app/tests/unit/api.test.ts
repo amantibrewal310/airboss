@@ -6,7 +6,7 @@ import { setTransport, type Transport } from '../../src/lib/api/transport';
 /** The command names, as Appendix A of SPEC-app.md lists them, SPEC-herdr's `herdr_folders` and SPEC-updates' three. */
 const APPENDIX_A = `bootstrap task_detail run_map plans quickadd_data t3_projects herdr_folders create_task rename_task
 edit_notes set_status toggle_done accept_proposals reject_proposals move_task reorder link_repo
-unlink_repo add_repos edit_repo remove_repo back_up_database pick_folder set_branch set_due add_dependency remove_dependency add_link remove_link
+unlink_repo add_repos edit_repo remove_repo back_up_database pick_folder set_branch set_due set_priority add_dependency remove_dependency add_link remove_link
 add_note do_it plan_it add_to_t3 reopen_and_start open_thread open_url needs_dismiss needs_snooze
 needs_restore undo recheck_connections copy_text install_cli connect_claude get_settings set_settings
 notification_permission open_notification_settings set_folded

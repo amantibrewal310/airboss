@@ -747,6 +747,14 @@ export class MockBackend implements Transport {
       return this.commit();
     },
 
+    set_priority: ({ id, priority }) => {
+      const t = this.task(id);
+      if (t.priority === priority) return this.commit();
+      t.priority = priority;
+      this.event(id, 'edited', { body: priority ? `priority: ${priority.toUpperCase()}` : 'priority cleared' });
+      return this.commit();
+    },
+
     add_dependency: ({ id, waitsOn }) => {
       this.task(id);
       this.task(waitsOn);

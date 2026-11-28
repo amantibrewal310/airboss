@@ -19,6 +19,7 @@ import type {
   Patch,
   PlanCard,
   NotificationPermission,
+  Priority,
   RepoId,
   RowDto,
   RunMap,
@@ -543,12 +544,12 @@ export class App {
   }
 
   /** Where a menu for this task opens: under its status icon, its row, or the middle. */
-  anchor(id: TaskId, what: 'status' | 'row' | 'do' = 'status'): Anchor {
+  anchor(id: TaskId, what: 'status' | 'priority' | 'row' | 'do' = 'status'): Anchor {
     const sel =
       what === 'do'
         ? '[data-do-it]'
-        : what === 'status'
-          ? `[data-status-for="${id}"]`
+        : what === 'status' || what === 'priority'
+          ? `[data-${what}-for="${id}"]`
           : `[data-row="${id}"]`;
     const el = document.querySelector(sel) ?? document.querySelector(`[data-row="${id}"]`);
     if (el) {
@@ -789,6 +790,15 @@ export class App {
       return null;
     } catch (e) {
       return asAppError(e).message;
+    }
+  }
+
+  /** Sets how urgent a task is, P0 to P3, or clears it with null. */
+  async setPriority(id: TaskId, priority: Priority | null): Promise<void> {
+    try {
+      this.applyWrite(await api.setPriority(id, priority));
+    } catch (e) {
+      this.fail(e);
     }
   }
 
@@ -1690,6 +1700,11 @@ export class App {
         const id2 = this.actionTask();
         if (id2 === null) return;
         return this.open({ kind: 'status', task: id2, at: this.anchor(id2) });
+      }
+      case 'priority': {
+        const id2 = this.actionTask();
+        if (id2 === null) return;
+        return this.open({ kind: 'priority', task: id2, at: this.anchor(id2, 'priority') });
       }
       case 'link_repos': {
         const id2 = this.actionTask();

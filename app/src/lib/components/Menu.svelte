@@ -11,6 +11,8 @@
     /** A reason means the item can't run; it shows greyed with the reason as its tooltip. */
     disabled?: string | false;
     checked?: boolean;
+    /** A key that picks this item at once (the priority menu's 0–3). */
+    key?: string;
     /** Keeps the menu open after running (checklists). */
     stay?: boolean;
     run: () => void;
@@ -83,6 +85,10 @@
       e.stopPropagation();
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       pick(live[hl]);
+    } else if (!e.metaKey && !e.ctrlKey && !e.altKey && live.some((i) => i.key === e.key)) {
+      e.preventDefault();
+      e.stopPropagation();
+      pick(live.find((i) => i.key === e.key), true);
     } else if (numbered && /^[1-9]$/.test(e.key) && !e.metaKey && !e.ctrlKey) {
       e.preventDefault();
       e.stopPropagation();

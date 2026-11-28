@@ -28,6 +28,7 @@ import type {
   OpenTarget,
   Patch,
   PlanCard,
+  Priority,
   UpdateStatus,
   QuickaddData,
   QuickaddReset,
@@ -75,6 +76,7 @@ export interface Commands {
   pick_folder: C<None, string | null>;
   set_branch: C<{ id: TaskId; branch: string }, Patch>;
   set_due: C<{ id: TaskId; due: string }, Patch>;
+  set_priority: C<{ id: TaskId; priority: Priority | null }, Patch>;
   add_dependency: C<{ id: TaskId; waitsOn: TaskId }, Patch>;
   remove_dependency: C<{ id: TaskId; waitsOn: TaskId }, Patch>;
   add_link: C<{ id: TaskId; text: string; title: string | null }, Patch>;
@@ -137,7 +139,7 @@ export const COMMAND_NAMES = [
   'bootstrap', 'task_detail', 'run_map', 'plans', 'quickadd_data', 't3_projects', 'herdr_folders', 'create_task',
   'rename_task', 'edit_notes', 'set_status', 'toggle_done', 'accept_proposals', 'reject_proposals',
   'move_task', 'reorder', 'link_repo', 'unlink_repo', 'add_repos', 'edit_repo', 'remove_repo',
-  'back_up_database', 'pick_folder', 'set_branch', 'set_due',
+  'back_up_database', 'pick_folder', 'set_branch', 'set_due', 'set_priority',
   'add_dependency', 'remove_dependency', 'add_link', 'remove_link', 'add_note', 'do_it', 'plan_it',
   'add_to_t3', 'reopen_and_start', 'open_thread', 'open_url', 'needs_dismiss', 'needs_snooze',
   'needs_restore', 'undo', 'recheck_connections', 'copy_text', 'install_cli', 'connect_claude', 'get_settings',

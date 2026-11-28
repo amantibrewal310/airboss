@@ -2,6 +2,7 @@
   import { useApp } from '../../lib/state/context';
   import Jump from './Jump.svelte';
   import StatusMenu from './overlays/StatusMenu.svelte';
+  import PriorityMenu from './overlays/PriorityMenu.svelte';
   import ContextMenu from './overlays/ContextMenu.svelte';
   import StartInMenu from './overlays/StartInMenu.svelte';
   import RepoChecklist from './overlays/RepoChecklist.svelte';
@@ -24,6 +25,8 @@
       <Jump mode={o.mode} task={o.mode === 'jump' ? null : o.task} />
     {:else if o.kind === 'status'}
       <StatusMenu task={o.task} at={o.at} />
+    {:else if o.kind === 'priority'}
+      <PriorityMenu task={o.task} at={o.at} />
     {:else if o.kind === 'context'}
       <ContextMenu task={o.task} at={o.at} />
     {:else if o.kind === 'start_in'}

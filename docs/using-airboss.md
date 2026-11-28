@@ -106,6 +106,8 @@ A task with subtasks has no status of its own: it shows what its subtasks add up
 
 The rest is yours: accepting proposals, dropping tasks, and finishing a task whose PR hasn't merged. Space marks the selected task done, or not done. S opens the status menu: 1 Todo, 2 In progress, 3 In review, 4 Blocked (asks why), 5 Done, 6 Dropped (asks first, because it drops every open subtask too). On a parent only Dropped is offered: to close a phase that still has open steps, drop those steps, or drop the phase, which drops them for you.
 
+**Priority.** P opens the priority menu on the selected task: 0 to 3 set P0 (most urgent) to P3, ⌫ clears it. It's also on the **Priority** line of the task's panel, in the right-click menu and under Task › Set Priority…, or `airboss edit --priority`.
+
 ## Run order and waves
 
 A task can wait on others (⌘D). A waiting task shows a "waiting" mark and isn't ready until everything it waits on is done or dropped.

@@ -416,7 +416,7 @@ Progress is done ÷ all leaf subtasks at any depth. Only leaves count, so nested
 ### Pills and tags
 - **Pill** (22px, fully rounded, hairline border, label type): repo (with its dot; one per linked repo), Ready (green, on plan cards).
 - **Row chip** (20px, fully rounded, label type, a 12px icon): see "One signal each" under Task rows.
-- **Priority tag** (18px, 5px corners, Field Grey, 600 label type, tabular): P0 to P3 after a row's title, only when set. P0 and P1 in primary text, P2 and P3 in text-3. Never red: urgency isn't "needs you".
+- **Priority tag** (18px, 5px corners, Field Grey, 600 label type, tabular): P0 to P3 after a row's title, only when set. P0 and P1 in primary text, P2 and P3 in text-3. Never red: urgency isn't "needs you". The panel's **Priority** line shows the same tag, or "None · set a priority"; click it, or press P, for the priority menu (P0 to P3, None; 0–3 and ⌫ pick).
 - **Tag** (22px, 5px corners, Field Grey): property values in the detail panel: repos, branch (mono), parent, waits-on and blocks (each with the other task's status icon), links.
 
 ### Repos are linked, one or several
@@ -489,6 +489,7 @@ Single-letter keys only work when no field has focus. Every shortcut also lives 
 | Return | Rename the task; in Needs me, run the main action; in Plans, open |
 | Space | Mark done or not done (not on a parent, whose status follows its subtasks); in Needs me, Mark done (Agent stopped, Due) |
 | S, then 1–6 | Change status |
+| P, then 0–3 or ⌫ | Set priority, or clear it |
 | R | Link repos (checklist) |
 | ⌘↩ | Do it (in Needs me: the main action) |
 | ⇧⌘↩ | Plan it |

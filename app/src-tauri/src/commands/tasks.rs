@@ -4,7 +4,7 @@
 
 use std::time::Instant;
 
-use airboss_core::{Actor, EventId, NewTask, Status, TaskEdit, TaskId};
+use airboss_core::{Actor, EventId, NewTask, Priority, Status, TaskEdit, TaskId};
 use serde::{Deserialize, Serialize};
 
 use crate::classify::classify;
@@ -524,6 +524,19 @@ pub fn set_due(s: &AppState, _c: Caller, id: TaskId, due: Option<String>) -> App
     let due = due.filter(|d| !d.trim().is_empty());
     s.core_as(Ctx::Due(id), |st| {
         st.set_due(id, due.as_deref(), &Actor::Me)
+    })?;
+    s.after_write()
+}
+
+/// Sets (or, `None`, clears) how urgent a task is, P0 to P3 (rule 35).
+pub fn set_priority(
+    s: &AppState,
+    _c: Caller,
+    id: TaskId,
+    priority: Option<Priority>,
+) -> AppResult<Patch> {
+    s.core_as(Ctx::Task(id), |st| {
+        st.edit_task(id, TaskEdit::default().priority(priority), &Actor::Me)
     })?;
     s.after_write()
 }

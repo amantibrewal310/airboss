@@ -21,7 +21,7 @@ use airboss_app::errors::{AppError, ErrorCode};
 use airboss_app::menu::{FocusContext, WindowName, Zone};
 use airboss_app::settings::{Appearance, Settings};
 use airboss_app::{Caller, UiEvent};
-use airboss_core::{Actor, LinkKind, NewLink, PrState, RepoId, Status, TaskId};
+use airboss_core::{Actor, LinkKind, NewLink, PrState, Priority, RepoId, Status, TaskId};
 use airboss_services::{
     AttentionService, Availability, Checks, Chip, Connection, ErrorCode as SvcCode, LaunchReport,
     Mode, NeedsKind, Place, PrRef, PrView, Prepared, Review, ServiceError, Source, StartedThread,
@@ -549,6 +549,24 @@ fn rename_notes_note_and_branch_return_their_patches() {
     );
     let p = tasks::set_due(&app.state, M, t, Some(" ".into())).unwrap();
     assert_eq!(p.upserts[0].due_at, None);
+    let p = tasks::set_priority(&app.state, M, t, Some(Priority::P1)).unwrap();
+    assert_eq!(p.upserts[0].priority, Some(Priority::P1));
+    assert_eq!(
+        app.core(|s| s.task(t).unwrap().priority),
+        Some(Priority::P1)
+    );
+    let p = tasks::set_priority(&app.state, M, t, None).unwrap();
+    assert_eq!(p.upserts[0].priority, None);
+    assert_eq!(
+        err_code(tasks::set_priority(
+            &app.state,
+            M,
+            TaskId(404),
+            Some(Priority::P0)
+        ))
+        .1,
+        "Task #404 no longer exists."
+    );
     assert_eq!(
         err_code(tasks::set_due(
             &app.state,
