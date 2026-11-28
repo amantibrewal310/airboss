@@ -144,7 +144,7 @@ Returns the link:
 |---|---|---|
 | `place` | `sibling` or `top` | Where they go without `parent`: next to your own task, under its parent (the default), or at top level. |
 | `parent` | number | The task to put them under. Given, it wins over `place`. |
-| `tasks` | list of 1 to 20 `{title, body?, repos?, blocks?}` | `title` says what to do; `body` says why, and anything the user needs to decide; `repos` are the repos it touches, by name; `blocks` are the ids of tasks that can't finish without it |
+| `tasks` | list of 1 to 20 `{title, body?, repos?, blocks?, priority?}` | `title` says what to do; `body` says why, and anything the user needs to decide; `repos` are the repos it touches, by name; `blocks` are the ids of tasks that can't finish without it; `priority` is how urgent the agent thinks it is, `p0` (most urgent) to `p3`, which the user can change after accepting |
 
 Your own task is the one this thread is linked to, or of several, the one it was linked to last. Each proposal waits on it, which the app shows as "follows #10", unless the proposal sits under it; with no linked task, `sibling` means top level and nothing is followed. Each `blocks` id waits on the proposal. A proposal holds nothing up until you accept it, so a rejected one never did.
 

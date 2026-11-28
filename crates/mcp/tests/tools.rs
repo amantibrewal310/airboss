@@ -849,6 +849,7 @@ fn proposal(title: &str) -> Proposal {
         body: None,
         repos: vec![],
         blocks: vec![],
+        priority: None,
     }
 }
 
@@ -934,6 +935,40 @@ fn propose_tasks_always_makes_proposals() {
     assert_eq!(s.task(got[0].id).unwrap().repos, [web]);
     let e = last_event(&s, got[1].id);
     assert_eq!(e.actor, Actor::Agent(format!("t3/{THREAD}")));
+}
+
+#[test]
+fn propose_tasks_keeps_the_priority_an_agent_suggests() {
+    let mut s = store();
+    let got = propose(
+        &mut s,
+        None,
+        vec![
+            Proposal {
+                priority: Some(PriorityName::P1),
+                ..proposal("Urgent")
+            },
+            proposal("Whenever"),
+        ],
+    )
+    .unwrap();
+    assert_eq!(got[0].priority, Some(Priority::P1));
+    assert_eq!(s.task(got[0].id).unwrap().priority, Some(Priority::P1));
+    assert_eq!(got[1].priority, None);
+    assert_eq!(s.task(got[1].id).unwrap().priority, None);
+}
+
+#[test]
+fn propose_tasks_takes_priority_as_agents_spell_it() {
+    let args: ProposeTasks = serde_json::from_value(
+        serde_json::json!({"tasks": [{"title": "Fix it", "priority": "p0"}]}),
+    )
+    .unwrap();
+    assert_eq!(args.tasks[0].priority, Some(PriorityName::P0));
+    let bad = serde_json::from_value::<ProposeTasks>(
+        serde_json::json!({"tasks": [{"title": "Fix it", "priority": "high"}]}),
+    );
+    assert!(bad.is_err());
 }
 
 #[test]
