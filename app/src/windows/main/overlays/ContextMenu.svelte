@@ -19,6 +19,7 @@
     do_it: ICONS.play,
     plan_it: ICONS.waves,
     do_it_whole: ICONS.play,
+    priority: ICONS.flag,
     toggle_done: ICONS.check,
     rename: ICONS.edit,
     link_repos: ICONS.repo,

@@ -11,7 +11,7 @@
   import { dueLabel, isDue } from '../../../lib/logic/time';
 
   /**
-   * The properties grid: Status, (Progress on the page), Due, Repos, Branch, Parent, Waits on,
+   * The properties grid: Status, (Progress on the page), Priority, Due, Repos, Branch, Parent, Waits on,
    * Blocks, Links. 104px labels in the panel, 86px in the page's rail; 30px per line.
    */
   let { row, detail, rail = false, plan = false }: { row: RowDto; detail: TaskDetail | null; rail?: boolean; plan?: boolean } = $props();
@@ -139,6 +139,17 @@
       </span>
     </div>
   {/if}
+
+  <div class="p">
+    <span class="l">Priority</span>
+    <span class="v">
+      {#if row.priority}
+        <button type="button" class="tag pri {row.priority}" data-priority-for={row.id} title="Change the priority (P)" onclick={(e) => app.open({ kind: 'priority', task: row.id, at: anchorOf(e) })}>{row.priority.toUpperCase()}</button>
+      {:else}
+        <button type="button" class="faint link" data-priority-for={row.id} onclick={(e) => app.open({ kind: 'priority', task: row.id, at: anchorOf(e) })}>None · set a priority</button>
+      {/if}
+    </span>
+  </div>
 
   <div class="p" class:wrap={!!dueError}>
     <span class="l">Due</span>
@@ -360,6 +371,16 @@
   }
   .tag.mono :global(svg) {
     color: var(--text-2);
+  }
+  /* As the row's priority tag: P0 and P1 in primary text, P2 and P3 in text-3, never red. */
+  .tag.pri {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-3);
+  }
+  .tag.pri.p0,
+  .tag.pri.p1 {
+    color: var(--text);
   }
   .dep {
     padding: 0;

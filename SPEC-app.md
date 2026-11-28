@@ -474,6 +474,7 @@ Every screen keeps DESIGN.md's layout, sizes and motion. This section adds data,
 - **Needs me callouts:** one red-washed callout per item, with the item's main action and Dismiss.
 - **Properties:**
   - **Status** opens the status menu.
+  - **Priority** shows the task's priority as a tag (P0 to P3), or "None · set a priority". Click it to open the priority menu. A parent with steps shows it too: it's the task's own (core rule 35).
   - **Repos** are tags, plus "Link repo", which opens the repo checklist; its last line is "Add repos…". The tags carry "· from subtasks" when the repos are inherited.
   - **Branch** (mono) shows the task's branch, or in text-3 the one Do it would use (`Prepared.branch`). Click it to edit (`set_branch`); `core` refuses characters outside `[A-Za-z0-9._/-]` and the message shows inline.
   - **Due** shows the day the task is due ("Fri 4 Dec", red-washed once it has come), or "None · set a date". Click to pick a day in a date field (`set_due`), × to clear it; a refusal shows inline.
@@ -608,11 +609,12 @@ One `NewTask.svelte` component serves both: as a modal on the scrim in the app, 
 ### Status menu and context menu
 
 - **Status menu** (S, or click a status icon): 1 Todo, 2 In progress, 3 In review, 4 Blocked, 5 Done, 6 Dropped. Number keys, ↑↓ and ↩ pick. On a task with steps only Dropped is enabled; the rest read "Follows its subtasks" (core rule 10). Mark done (Space), ⌘B and the context menu's Mark done say the same instead of calling `set_status`.
+- **Priority menu** (P, Task › Set Priority…, ⌘K, the context menu, or click Priority in the panel): P0 · most urgent, P1, P2, P3 · least urgent, None. 0–3 pick a priority at once and ⌫ clears it; ↑↓ and ↩ pick. It opens on the priority the task has (`set_priority`, as me; picking the one it has writes nothing).
   - **Blocked** asks "Why is it blocked?" in a one-line popover. ↩ saves; an empty reason can't be saved.
   - **Dropped** confirms first: "Drop 142 and its 3 open subtasks?". Drop is the default button, and Esc cancels.
   - **On a proposed task,** the menu shows Accept and Reject instead.
   - Every status change toasts with Undo.
-- **Context menu** (right-click a row or station): Do it, Plan it, Status… S, Mark done Space, Rename ↩, Link repos… R, Add waits-on… ⌘D, Move up ⌥⌘↑, Move down ⌥⌘↓, Open page ⌘↓, Copy task number ⇧⌘C, Drop ⌘⌫. Commands that can't run are greyed, with the reason as a tooltip.
+- **Context menu** (right-click a row or station): Do it, Plan it, Status… S, Priority… P, Mark done Space, Rename ↩, Link repos… R, Add waits-on… ⌘D, Move up ⌥⌘↑, Move down ⌥⌘↓, Open page ⌘↓, Copy task number ⇧⌘C, Drop ⌘⌫. Commands that can't run are greyed, with the reason as a tooltip.
 
 ### Do it and Plan it results
 
@@ -1036,6 +1038,7 @@ Writes return `Patch` (shown as → P). All `core` calls act as `me`, with one l
 | `pick_folder` | | `path?` | dialog plugin |
 | `set_branch` | `id, branch` | → P | `set_branch` |
 | `set_due` | `id, due` | → P | `set_due`; blank clears it (task 59) |
+| `set_priority` | `id, priority` | → P | `edit_task` with `TaskEdit::priority`; `null` clears it (task 70) |
 | `add_dependency` / `remove_dependency` | `id, waits_on` | → P | `add_dependency` / `remove_dependency` |
 | `add_link` | `id, text, title?` | → P | classify, `link`; for a PR, `sync.lookup_pr` afterwards, then `link` again with the title |
 | `remove_link` | `link` | → P | `unlink` |

@@ -8,7 +8,7 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{Arc, Mutex};
 
-use airboss_core::{LinkId, RepoId, Status, TaskId};
+use airboss_core::{LinkId, Priority, RepoId, Status, TaskId};
 use airboss_services::ThreadKey;
 
 use crate::commands::tasks::{self, Direction};
@@ -202,6 +202,8 @@ commands! {
     pick_folder(PickFolderArgs) => repos::pick_folder, [] -> Option<String>;
     set_branch(SetBranchArgs) => tasks::set_branch, [id: TaskId, branch: Option<String>] -> Patch;
     set_due(SetDueArgs) => tasks::set_due, [id: TaskId, due: Option<String>] -> Patch;
+    set_priority(SetPriorityArgs) => tasks::set_priority,
+        [id: TaskId, priority: Option<Priority>] -> Patch;
     add_dependency(AddDependencyArgs) => tasks::add_dependency, [id: TaskId, waits_on: TaskId] -> Patch;
     remove_dependency(RemoveDependencyArgs) => tasks::remove_dependency,
         [id: TaskId, waits_on: TaskId] -> Patch;

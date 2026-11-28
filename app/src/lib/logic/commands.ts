@@ -59,6 +59,7 @@ export const COMMAND_IDS = [
   'rename',
   'toggle_done',
   'status',
+  'priority',
   'link_repos',
   'do_it',
   'plan_it',
@@ -131,6 +132,7 @@ export const COMMANDS: Command[] = [
   // The selected task
   { id: 'toggle_done', label: 'Mark done', bind: [['space', 'letter']], views: LIST, needsTask: true, menu: 'task' },
   { id: 'status', label: 'Status…', bind: [['s', 'letter']], views: LIST, needsTask: true, menu: 'task' },
+  { id: 'priority', label: 'Priority…', bind: [['p', 'letter']], views: LIST, needsTask: true, menu: 'task', palette: true },
   { id: 'link_repos', label: 'Link repos…', bind: [['r', 'letter']], views: LIST, needsTask: true, menu: 'task' },
   { id: 'do_it', label: 'Do it', bind: [['mod+enter', 'task']], views: TASKS, needsTask: true, menu: 'task', palette: true },
   { id: 'plan_it', label: 'Plan it', bind: [['shift+mod+enter', 'task']], views: TASKS, needsTask: true, menu: 'task', palette: true },
@@ -185,7 +187,7 @@ export function keysOf(id: CommandId): string {
 }
 
 /**
- * The shortcut sheet, in DESIGN's two-column order (row by row), plus ⌥⌘↑↓, ⌘Z and F6.
+ * The shortcut sheet, in DESIGN's two-column order (row by row), plus ⌥⌘↑↓, ⌘Z, F6 and P.
  * `hotkey` is the quick-add key from Settings.
  */
 export function sheetRows(hotkey: string): { label: string; keys: string }[] {
@@ -218,6 +220,7 @@ export function sheetRows(hotkey: string): { label: string; keys: string }[] {
     { label: 'Undo', keys: 'mod+z' },
     { label: 'In progress', keys: 'g p' },
     { label: 'Notifications', keys: 'f6' },
+    { label: 'Set priority', keys: 'p' },
   ];
 }
 
@@ -228,6 +231,7 @@ export const CONTEXT_MENU: (CommandId | '-')[] = [
   'do_it_whole',
   '-',
   'status',
+  'priority',
   'toggle_done',
   'rename',
   'link_repos',

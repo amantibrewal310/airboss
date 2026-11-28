@@ -16,6 +16,7 @@ export type Overlay =
   | { kind: 'sheet' }
   | { kind: 'settings' }
   | { kind: 'status'; task: TaskId; at: Anchor }
+  | { kind: 'priority'; task: TaskId; at: Anchor }
   | { kind: 'context'; task: TaskId; at: Anchor }
   | { kind: 'repos'; task: TaskId; at: Anchor }
   | { kind: 'start_in'; task: TaskId; at: Anchor; choices: Repo[]; researchDir: string; then?: (place: DoItPlace) => void }
