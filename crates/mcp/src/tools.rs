@@ -307,6 +307,10 @@ pub struct Proposal {
     /// then it holds nothing up.
     #[serde(default)]
     pub blocks: Vec<i64>,
+    /// How urgent you think it is, `p0` (most urgent) to `p3`. Left out: none. The user can
+    /// change it once they accept the proposal.
+    #[serde(default)]
+    pub priority: Option<PriorityName>,
 }
 
 /// Arguments for `import_plan`.
@@ -646,6 +650,9 @@ pub fn propose_tasks(
         let mut task = NewTask::new(p.title);
         task.parent = parent;
         task.body = p.body.filter(|b| !b.trim().is_empty());
+        if let Some(priority) = p.priority {
+            task = task.with_priority(priority.into());
+        }
         for id in repo_ids(&repos, &p.repos)? {
             task = task.in_repo(id);
         }
